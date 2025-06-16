@@ -59,7 +59,7 @@ brew install git
 
 2. **Clone this repository**:
    ```bash
-   git clone <your-repo-url> ~/.config/nix-darwin
+   git clone https://github.com/AlxWrtl/NixConfig.git ~/.config/nix-darwin
    cd ~/.config/nix-darwin
    ```
 

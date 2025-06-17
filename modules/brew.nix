@@ -10,11 +10,10 @@
     # Only keeping apps that are macOS-specific, proprietary, or not available in Nix
     casks = [
       # === macOS-Specific System Tools ===
-      "1password"                    # Password manager (macOS Keychain integration)
-      "onyx"                         # System maintenance (macOS-specific)
+      "1password"                   # Password manager (macOS Keychain integration)
+      "onyx"                        # System maintenance (macOS-specific)
       "cleaner-one"                 # System cleaner (macOS-specific)
-      "dozer"                       # Menu bar organizer (macOS-specific)
-      "istat-menus"                 # Advanced system monitor (macOS-specific)
+      "hiddenbar"                   # Menu bar organizer (macOS-specific)
 
       # === Development Tools ===
       "docker"                      # Docker Desktop (better macOS integration)
@@ -36,12 +35,17 @@
 
       # === Proprietary/Commercial Software ===
       "microsoft-teams"             # Microsoft Teams (corporate features)
+      "whatsapp"                    #
 
       # === Media Servers ===
       "plex-media-server"           # Media server (better integration via Homebrew)
 
-      # === Communication (macOS-specific features) ===
+      # === Communication ===
       "spark"                       # Email client (Mac-specific features)
+
+      # === Browsers ===
+      arc-browser         # Modern browser
+      google-chrome       # Chrome browser
     ];
 
     # === Mac App Store Applications ===
@@ -51,9 +55,6 @@
       "Pages" = 409201541;           # Apple's word processor
       "Numbers" = 409203825;         # Apple's spreadsheet app
       "Keynote" = 409183694;         # Apple's presentation app
-
-      # === Apple Development Tools ===
-      "Xcode" = 497799835;           # Apple's IDE (App Store exclusive)
 
       # === Productivity ===
       "Trello" = 1278508951;         # Project management

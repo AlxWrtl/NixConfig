@@ -57,18 +57,29 @@ brew install git
    curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
    ```
 
-2. **Clone this repository**:
+2. **Install Homebrew** (if not already installed):
+   ```bash
+   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+   ```
+
+   After installation, add Homebrew to your PATH:
+   ```bash
+   echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+   eval "$(/opt/homebrew/bin/brew shellenv)"
+   ```
+
+3. **Clone this repository**:
    ```bash
    git clone https://github.com/AlxWrtl/NixConfig.git ~/.config/nix-darwin
    cd ~/.config/nix-darwin
    ```
 
-3. **Apply the configuration**:
+5. **Apply the configuration**:
    ```bash
    nix run nix-darwin -- switch --flake .#alex-mbp
    ```
 
-4. **For subsequent updates**:
+6. **For subsequent updates**:
    ```bash
    darwin-rebuild switch --flake .#alex-mbp
    ```
@@ -83,32 +94,35 @@ After applying the configuration:
 ## 🏗️ What's Included
 
 ### 📦 Development Tools (via Nix)
-- **Editors**: VSCode with prettierd
+- **Editors**: VSCode with prettierd (code formatter daemon)
 - **Languages & Runtimes**: Node.js 23, UV (Python package manager)
-- **Package Managers**: PNPM, Yarn
-- **Development Utilities**: Git, GitHub CLI, jq, yq
-- **Build Tools**: CMake, pkg-config
+- **Package Managers**: PNPM
+- **Development Utilities**: Git, jq (JSON processor), yq (YAML processor), curl
 
 ### 🖥️ Terminal & CLI Tools (via Nix)
 - **Shell**: Zsh with Powerlevel10k theme, autosuggestions, syntax highlighting
 - **Navigation**: zoxide (smart cd), fzf (fuzzy finder), eza (modern ls)
 - **File Tools**: bat (syntax-highlighted cat), tree, fd (find alternative), ripgrep
-- **Utilities**: rsync, keka (archive tool), atuin (shell history)
+- **Utilities**: rsync, keka (archive tool), atuin (shell history), appcleaner
 
-### 🌐 Browsers (via Nix)
+### 🎬 Media Applications (via Nix)
+- **VLC**: Media player
+
+### 🌐 Browsers (via Homebrew)
 - **Arc Browser**: Modern browsing experience
 - **Google Chrome**: Comprehensive web development
 
 ### 🍺 macOS-Native Applications (via Homebrew)
 - **Terminal**: Ghostty (GPU-accelerated)
+- **Editors**: Cursor (AI-powered code editor)
 - **Productivity**: Raycast (Spotlight replacement), Notion (workspace)
-- **Communication**: Discord, Spotify
+- **Communication**: Discord, Spotify, WhatsApp, Microsoft Teams, Spark (email)
 - **Development**: Docker Desktop, Figma
-- **System Tools**: 1Password, OnyX, Cleaner-One, Dozer, iStat Menus
-- **Professional**: Microsoft Teams, Plex Media Server, Spark
+- **System Tools**: 1Password, OnyX, Cleaner-One, HiddenBar
+- **Media Servers**: Plex Media Server
 
 ### 📱 Mac App Store Applications
-- **Apple Suite**: Pages, Numbers, Keynote, Xcode
+- **Apple Suite**: Pages, Numbers, Keynote
 - **Design Tools**: Affinity Publisher, Designer, Photo
 - **Utilities**: DaisyDisk, The Unarchiver, Trello
 
@@ -241,7 +255,7 @@ darwin-rebuild --rollback
 - **Modern Shell**: Zsh + Powerlevel10k with smart completions
 - **CLI Tools**: Best-in-class replacements for standard Unix tools
 - **Development Ready**: Git, Node.js, package managers pre-configured
-- **Editor Integration**: VSCode and development tools ready
+- **Editor Integration**: VSCode, Cursor and development tools ready
 
 ### ✅ Hybrid Package Management
 - **~95% Nix**: Development tools, CLI utilities, system packages

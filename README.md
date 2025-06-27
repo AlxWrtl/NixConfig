@@ -319,6 +319,9 @@ nix-store --optimise
 
 # Homebrew cleanup (automatic on rebuild)
 brew cleanup && brew autoremove
+
+# Removes all cache files and outdated versions
+brew cleanup --prune=all
 ```
 
 ### Rollback if Needed

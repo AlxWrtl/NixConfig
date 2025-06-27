@@ -13,6 +13,12 @@
       autoload -Uz compinit
       compinit -C
 
+      # ---- Configure case-insensitive completion ----
+      zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
+      zstyle ':completion:*' menu select
+      zstyle ':completion:*:*:cd:*' tag-order local-directories directory-stack path-directories
+      zstyle ':completion:*:cd:*' ignore-parents parent pwd
+
       # ---- Initialize bash completion ----
       autoload -U bashcompinit
       bashcompinit

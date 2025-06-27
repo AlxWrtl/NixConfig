@@ -1,56 +1,39 @@
 { config, pkgs, lib, inputs, ... }:
 
 {
-  # Font configuration
+  # === OPTIMIZED FONT CONFIGURATION ===
 
   fonts = {
-    # Enable font management
-    fontDir.enable = true;
-
-    # System fonts
+    # System fonts with smart categorization
     packages = with pkgs; [
-      # Nerd Fonts (includes powerline glyphs and icons)
+
+      # === PROGRAMMING FONTS WITH NERD FONT ICONS ===
+      # These include powerline glyphs and developer icons
       nerd-fonts.meslo-lg      # MesloLGS NF (recommended for Powerlevel10k)
-      nerd-fonts.hack          # Hack Nerd Font (good programming font)
-      nerd-fonts.fira-code     # FiraCode Nerd Font (ligatures)
-      nerd-fonts.jetbrains-mono # JetBrains Mono Nerd Font
-      nerd-fonts.source-code-pro # Source Code Pro Nerd Font
+      nerd-fonts.hack          # Hack Nerd Font (clean programming font)
+      nerd-fonts.fira-code     # FiraCode Nerd Font (programming ligatures)
+      nerd-fonts.jetbrains-mono # JetBrains Mono Nerd Font (modern)
+      nerd-fonts.sauce-code-pro # Source Code Pro Nerd Font (Adobe)
 
-      # Standard fonts
-      meslo-lgs-nf             # MesloLGS NF (direct package)
+      # === ADDITIONAL PROGRAMMING FONTS ===
+      cascadia-code           # Microsoft's Cascadia Code (VS Code default)
+      inconsolata             # Inconsolata font (Google)
 
-      # Apple system fonts (if available)
-      # These are usually included with macOS
+      # === INTERNATIONAL SUPPORT FONTS ===
+      noto-fonts              # Google Noto fonts (universal coverage)
+      noto-fonts-cjk-sans     # CJK (Chinese, Japanese, Korean) support
+      noto-fonts-emoji        # Emoji support (latest Unicode standard)
 
-      # Additional programming fonts
-      cascadia-code           # Microsoft's Cascadia Code
-      inconsolata             # Inconsolata font
-      source-code-pro         # Adobe Source Code Pro
-
-      # Additional fonts for international support
-      noto-fonts              # Google Noto fonts
-      noto-fonts-cjk          # CJK (Chinese, Japanese, Korean) support
-      noto-fonts-emoji        # Emoji support
-
-      # Apple fonts (system fonts, usually available by default on macOS)
-      # These don't need to be explicitly installed on macOS
     ];
   };
 
-  # Font-related environment variables
+  # === FONT-RELATED ENVIRONMENT VARIABLES ===
   environment.variables = {
-    # Fontconfig configuration
+    # Fontconfig configuration path
     FONTCONFIG_FILE = "${pkgs.fontconfig.out}/etc/fonts/fonts.conf";
-  };
 
-  # System defaults for font rendering (macOS specific)
-  system.defaults = {
-    NSGlobalDomain = {
-      # Font smoothing
-      AppleFontSmoothing = 1; # Enable font smoothing for external displays
-
-      # Text rendering improvements
-      CGFontRenderingFontSmoothingDisabled = false;
-    };
+    # Terminal font preferences (can be overridden by terminal apps)
+    TERMINAL_FONT = "MesloLGS Nerd Font";
+    EDITOR_FONT = "JetBrainsMono Nerd Font";
   };
 }

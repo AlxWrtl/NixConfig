@@ -11,10 +11,9 @@
       url = "github:nix-community/home-manager/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-    nix-homebrew.url = "github:zhaofengli-wip/nix-homebrew";
   };
 
-  outputs = inputs@{ self, nix-darwin, nixpkgs, nix-homebrew, home-manager, ... }:
+  outputs = inputs@{ self, nix-darwin, nixpkgs, home-manager, ... }:
   {
     # Build darwin flake using:
     # $ darwin-rebuild switch --flake .#alex-mbp
@@ -25,28 +24,17 @@
         # Host-specific configuration
         ./hosts/alex-mbp/configuration.nix
 
-        # Shared modules
-        ./modules/system.nix
-        ./modules/packages.nix
-        ./modules/shell.nix
-        ./modules/fonts.nix
-        ./modules/ui.nix
-        ./modules/brew.nix
+        # === CORE SYSTEM MODULES ===
+        ./modules/system.nix        # System-wide settings and preferences
+        ./modules/packages.nix      # Core system packages and utilities
+        ./modules/shell.nix         # Shell configuration and environment
+        ./modules/fonts.nix         # Font management and typography
+        ./modules/ui.nix            # User interface and desktop settings
 
-        # nix-homebrew integration
-        nix-homebrew.darwinModules.nix-homebrew
-        {
-          nix-homebrew = {
-            enable = true;
-            enableRosetta = true;
-            user = "alexandrewertel";
-            autoMigrate = true;
-          };
-        }
+        # === SPECIALIZED MODULES ===
+        ./modules/development.nix   # Development tools and programming environments
+        ./modules/brew.nix          # Homebrew package management (GUI apps)
       ];
     };
-
-    # Expose the packages set for convenience
-    darwinPackages = self.darwinConfigurations."alex-mbp".pkgs;
   };
 }

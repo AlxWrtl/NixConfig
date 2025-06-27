@@ -4,8 +4,6 @@
   # macOS UI/UX system defaults configuration
 
   system.defaults = {
-
-    # === Dock Configuration ===
     dock = {
       autohide = true;                    # Auto-hide the dock
       orientation = "left";               # Dock on the left side
@@ -19,19 +17,23 @@
       wvous-tr-corner = 1;               # Top-right hot corner: disabled
       wvous-tl-corner = 1;               # Top-left hot corner: disabled
       expose-animation-duration = 0.1;    # Faster Mission Control animations
-      expose-group-by-app = false;       # Don't group windows by application in Mission Control
+      expose-group-apps = false;         # Don't group windows by application in Mission Control
       mru-spaces = false;                # Don't automatically rearrange Spaces
-      persistent-apps = [                # Pinned applications
+      persistent-apps = [
+        { spacer = { small = true; }; }
         "/Applications/Arc.app"
+        { spacer = { small = true; }; }
         "/Applications/Ghostty.app"
+        { spacer = { small = true; }; }
         "/Applications/Cursor.app"
+        { spacer = { small = true; }; }
       ];
     };
 
-    # === Finder Configuration ===
+    # === Finder Configuration (should be safe) ===
     finder = {
       # View options
-      FXPreferredViewStyle = "Nlsv";           # List view by default
+      FXPreferredViewStyle = "clmv";           # Column view by default
       FXDefaultSearchScope = "SCcf";           # Search current folder by default
 
       # Desktop options
@@ -58,106 +60,90 @@
       _FXSortFoldersFirst = true;              # Sort folders first
     };
 
-    # === Global Preferences ===
+    # === Global Preferences (minimal set) ===
     NSGlobalDomain = {
       # Appearance
       AppleInterfaceStyle = "Dark";            # Dark mode
-      AppleAccentColor = 1;                    # Blue accent color
-      AppleHighlightColor = "0.65 0.85 1.0";  # Blue highlight color
 
-      # Keyboard behavior
-      InitialKeyRepeat = 6;                    # Fast initial key repeat (lower = faster)
-      KeyRepeat = 6;                           # Fast key repeat (lower = faster)
-      ApplePressAndHoldEnabled = false;        # Disable press-and-hold for accented characters
-
-      # Mouse and trackpad
-      AppleEnableMouseSwipeNavigateWithScrolls = true;  # Enable swipe navigation
-      AppleEnableSwipeNavigateWithScrolls = true;       # Enable swipe navigation
-
-      # Text and input
+      # Text and input (should be safe)
       NSAutomaticCapitalizationEnabled = false;        # Disable automatic capitalization
       NSAutomaticDashSubstitutionEnabled = false;      # Disable smart dashes
       NSAutomaticPeriodSubstitutionEnabled = false;    # Disable automatic period substitution
       NSAutomaticQuoteSubstitutionEnabled = false;     # Disable smart quotes
       NSAutomaticSpellingCorrectionEnabled = false;    # Disable automatic spelling correction
-
-      # Window behavior
-      NSTableViewDefaultSizeMode = 1;                  # Small sidebar icon size
-      NSWindowShouldDragOnGesture = true;             # Enable window dragging by clicking anywhere
-      NSDocumentSaveNewDocumentsToCloud = false;      # Don't save to iCloud by default
-
-      # Menu behavior
-      AppleMenuBarVisibleInFullscreen = true;         # Show menu bar in full screen
+      ApplePressAndHoldEnabled = true;                 # Enable press-and-hold for accent characters
 
       # Function keys
       "com.apple.keyboard.fnState" = true;            # Use F1, F2, etc. as standard function keys
 
-      # Miscellaneous
-      AppleShowScrollBars = "Automatic";               # Show scroll bars automatically
-      NSNavPanelExpandedStateForSaveMode = true;      # Expand save panels by default
-      NSNavPanelExpandedStateForSaveMode2 = true;     # Expand save panels by default
-      PMPrintingExpandedStateForPrint = true;         # Expand print panels by default
-      PMPrintingExpandedStateForPrint2 = true;        # Expand print panels by default
+      # Keyboard repeat speed
+      KeyRepeat = 8;                                   # Fastest possible key repeat (1 = maximum speed)
+      InitialKeyRepeat = 10;                           # Minimal delay before repeat (10 = very fast start)
     };
 
-    # === Trackpad Configuration ===
-    trackpad = {
-      Clicking = true;                         # Enable tap to click
-      Dragging = true;                        # Enable trackpad dragging
-      TrackpadRightClick = true;              # Enable right click
-      TrackpadThreeFingerDrag = true;         # Enable three finger drag
-      TrackpadThreeFingerTapGesture = 2;      # Three finger tap for lookup
-      FirstClickThreshold = 1;                # Light click pressure
-      SecondClickThreshold = 1;               # Light force click pressure
-      TrackpadCornerSecondaryClick = 2;       # Right corner for right click
-      TrackpadFiveFingerPinchGesture = 2;     # Five finger pinch for Launchpad
-      TrackpadFourFingerVertSwipeGesture = 2; # Four finger swipe up for Mission Control
-      TrackpadFourFingerHorizSwipeGesture = 2; # Four finger swipe for app switching
-    };
-
-    # === Menu Bar Clock ===
-    menuExtraClock = {
-      Show24Hour = true;                      # 24-hour time format
-      ShowAMPM = false;                       # Don't show AM/PM
-      ShowDayOfWeek = true;                   # Show day of week
-      ShowDate = 1;                           # Show date (1 = when space allows)
-      ShowSeconds = false;                    # Don't show seconds
-    };
-
-    # === Security & Privacy ===
+    # === Security & Privacy (should be safe) ===
     LaunchServices = {
       LSQuarantine = false;                   # Disable quarantine for downloaded applications
     };
 
-    # === Screen Saver ===
+    # === Additional Security Preferences ===
+    SoftwareUpdate = {
+      AutomaticallyInstallMacOSUpdates = false;  # Don't auto-install macOS updates
+    };
+
+    # === Spotlight Configuration ===
+    spaces = {
+      spans-displays = false;                 # Don't span Spaces across displays
+    };
+
+    # Disable Spotlight search hotkey and hide menubar icon
+    CustomUserPreferences = {
+      "com.apple.symbolichotkeys" = {
+        AppleSymbolicHotKeys = {
+          # Disable Spotlight search (⌘Space)
+          "64" = {
+            enabled = false;
+            value = {
+              parameters = [ 32 49 1048576 ];
+              type = "standard";
+            };
+          };
+          # Disable Spotlight window (⌘Option+Space)
+          "65" = {
+            enabled = false;
+            value = {
+              parameters = [ 32 49 1572864 ];
+              type = "standard";
+            };
+          };
+        };
+      };
+    };
+
+    # === Screen Saver (should be safe) ===
     screensaver = {
       askForPassword = true;                  # Require password after screensaver
       askForPasswordDelay = 0;                # Require password immediately
     };
-
-    # === Universal Access ===
-    universalaccess = {
-      reduceMotion = false;                   # Don't reduce motion (animations)
-      reduceTransparency = false;             # Don't reduce transparency
-    };
-
-    # === Spaces & Mission Control ===
-    spaces = {
-      spans-displays = false;                 # Don't span displays with spaces
-    };
-
-    # === Control Center (macOS Big Sur+) ===
-    controlcenter = {
-      BatteryShowPercentage = true;           # Show battery percentage
-      Bluetooth = true;                       # Show Bluetooth in Control Center
-      Display = true;                         # Show display controls
-      Sound = true;                          # Show sound controls
-    };
   };
 
-  # Additional UI-related system configuration
+  # === DISABLED: Keyboard configuration for testing ===
   system.keyboard = {
-    enableKeyMapping = true;                  # Enable key mapping
-    remapCapsLockToEscape = false;           # Don't remap Caps Lock to Escape (optional)
+    enableKeyMapping = true;
+    remapCapsLockToEscape = false;
+  };
+
+  # === Power Management ===
+  # Configure sleep and display settings to match your preferences
+  power.sleep = {
+    # Turn display off on battery when inactive - For 5 minutes
+    # Turn display off on power adapter when inactive - For 5 minutes
+    display = 5;                           # Display sleeps after 5 minutes
+
+    # Start Screen Saver when inactive - For 10 minutes
+    computer = 10;                         # Computer sleeps after 10 minutes
+
+    # Hard disk sleep can be left default or configured
+    harddisk = 10;                         # Hard disk sleeps after 10 minutes
   };
 }

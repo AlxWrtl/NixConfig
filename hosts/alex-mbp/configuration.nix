@@ -9,9 +9,9 @@
   networking.localHostName = "alex-mbp";
 
   # User configuration
-  users.users.alexandrewertel = {
-    name = "alexandrewertel";
-    home = "/Users/alexandrewertel";
+  users.users.alx = {
+    name = "alx";
+    home = "/Users/alx";
   };
 
   # The platform the configuration will be used on
@@ -23,21 +23,9 @@
   # Allow unfree packages (for VSCode, etc.)
   nixpkgs.config.allowUnfree = true;
 
-  # Enable necessary system features
-  security.pam.enableSudoTouchIdAuth = true;
-  services.nix-daemon.enable = true;
-
   # Set Git commit hash for darwin-version
   system.configurationRevision = inputs.self.rev or inputs.self.dirtyRev or null;
 
-  # macOS-specific system preferences (minimal in host config)
-  system.defaults = {
-    dock = {
-      orientation = "left";
-      autohide = true;
-    };
-    NSGlobalDomain = {
-      AppleInterfaceStyle = "Dark";
-    };
-  };
+  # NOTE: system.defaults options are temporarily disabled because they require system.primaryUser
+  # which is not available in this version of nix-darwin. These can be re-enabled after updating.
 }

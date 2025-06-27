@@ -4,45 +4,25 @@
   # Core system configuration
 
   # Nix configuration
+  # FIXED: Re-enable nix-darwin's module management while preserving Determinate installer settings
   nix = {
+    # Allow nix-darwin to manage services and integrations (like Homebrew)
+    enable = true;
+
+    # Basic settings that work with Determinate installer
     settings = {
-      # Enable flakes and new nix command
       experimental-features = [ "nix-command" "flakes" ];
-
-      # Build users optimization
-      build-users-group = "nixbld";
-      max-jobs = "auto";
-
-      # Trusted users
-      trusted-users = [ "root" "alexandrewertel" ];
-
-      # Keep outputs and derivations for better development experience
-      keep-outputs = true;
-      keep-derivations = true;
-
-      # Auto-optimize store
-      auto-optimise-store = true;
-
-      # Binary caches
-      substituters = [
-        "https://cache.nixos.org/"
-        "https://nix-community.cachix.org"
-      ];
-      trusted-public-keys = [
-        "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-        "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-      ];
     };
 
-    # Enable garbage collection
+    # Store optimization
+    optimise.automatic = true;
+
+    # Weekly garbage collection
     gc = {
       automatic = true;
-      interval.Day = 7;
+      interval = { Weekday = 7; }; # Sunday
       options = "--delete-older-than 7d";
     };
-
-    # Nix package
-    package = pkgs.nix;
   };
 
   # nixpkgs configuration
@@ -57,6 +37,29 @@
     EDITOR = "nvim";
     VISUAL = "nvim";
     PAGER = "less";
-    LESS = "-R";
+  };
+
+  # System user configuration - required for homebrew and other user-specific options
+  system.primaryUser = "alx";
+
+  # === SECURITY CONFIGURATION ===
+  # Enable TouchID for sudo authentication (updated syntax)
+  security.pam.services.sudo_local.touchIdAuth = true;
+
+  # === SYSTEM DEFAULTS ===
+  # Configure trackpad and input settings
+  system.defaults = {
+    # Trackpad settings
+    trackpad = {
+      TrackpadRightClick = true; # Enable two-finger right-click
+      Clicking = true; # Enable tap to click
+      TrackpadThreeFingerDrag = true; # Enable three finger drag
+    };
+
+    # Global system settings
+    NSGlobalDomain = {
+      # Optional: Natural scrolling (uncomment if you want it)
+      # "com.apple.swipescrolldirection" = true;
+    };
   };
 }

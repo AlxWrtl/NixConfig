@@ -43,6 +43,9 @@
     jq                  # JSON processor
     yq                  # YAML processor
 
+    # === AI & MACHINE LEARNING ===
+    ollama              # AI model server and CLI
+
   ];
 
     # === DEVELOPMENT-SPECIFIC ENVIRONMENT VARIABLES ===

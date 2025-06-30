@@ -21,6 +21,7 @@
       "jordanbaird-ice"             # Menu bar organizer (modern Hidden Bar alternative)
       "logi-options+"               # Logitech Options+ (macOS-specific)
       "lunar"                       # Lunar (macOS-specific)
+      "keka"                        # File archiver (macOS-specific)
 
       # === Development Tools ===
       "docker-desktop"              # Docker Desktop (better macOS integration)

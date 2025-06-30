@@ -22,9 +22,7 @@
       persistent-apps = [
         { spacer = { small = true; }; }
         "/Applications/Arc.app"
-        { spacer = { small = true; }; }
         "/Applications/Ghostty.app"
-        { spacer = { small = true; }; }
         "/Applications/Cursor.app"
         { spacer = { small = true; }; }
       ];

@@ -65,6 +65,10 @@
       # Appearance
       AppleInterfaceStyle = "Dark";            # Dark mode
 
+      # Animation and performance optimizations
+      NSAutomaticWindowAnimationsEnabled = false;     # Disable window animations
+      NSWindowResizeTime = 0.001;                     # Instant window resize
+
       # Text and input (should be safe)
       NSAutomaticCapitalizationEnabled = false;        # Disable automatic capitalization
       NSAutomaticDashSubstitutionEnabled = false;      # Disable smart dashes
@@ -117,6 +121,13 @@
             };
           };
         };
+      };
+
+      # Dock animation optimizations
+      "com.apple.dock" = {
+        launchanim = false;              # Disable dock launch animations
+        autohide-delay = 0.0;            # No delay for dock autohide
+        autohide-time-modifier = 0.3;    # Faster dock autohide animation
       };
     };
 

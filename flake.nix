@@ -28,6 +28,7 @@
         ./modules/system.nix        # System-wide settings and preferences
         ./modules/packages.nix      # Core system packages and utilities
         ./modules/shell.nix         # Shell configuration and environment
+        ./modules/starship.nix      # Starship prompt configuration
         ./modules/fonts.nix         # Font management and typography
         ./modules/ui.nix            # User interface and desktop settings
 

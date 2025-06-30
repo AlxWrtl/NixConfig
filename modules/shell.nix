@@ -1,32 +1,29 @@
 { config, pkgs, lib, inputs, ... }:
 
 {
-  # Configuration de Zsh avec Starship prompt
+    # High-performance Zsh configuration
   programs.zsh = {
     enable = true;
-    enableCompletion = false;  # Disable to avoid order conflicts
-    enableBashCompletion = false;
+    enableCompletion = false;     # Completely disable nix-managed completions
+    enableBashCompletion = false; # Disable bash completion integration
 
-    # Starship Prompt Configuration
+    # Optimized prompt initialization
     promptInit = ''
-      # ---- Initialize completion system FIRST ----
+      # ---- Performance: Skip unnecessary checks ----
+      skip_global_compinit=1
+
+      # ---- Fast completion initialization ----
       autoload -Uz compinit
+      # Always use fast mode - skip security checks
       compinit -C
 
-      # ---- Configure case-insensitive completion ----
+      # ---- Minimal completion configuration ----
       zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
       zstyle ':completion:*' menu select
-      zstyle ':completion:*:*:cd:*' tag-order local-directories directory-stack path-directories
-      zstyle ':completion:*:cd:*' ignore-parents parent pwd
 
-      # ---- Initialize bash completion ----
-      autoload -U bashcompinit
-      bashcompinit
-
-      # ---- Angular Autocompletion (after compinit) ----
-      if command -v ng >/dev/null 2>&1; then
-        eval "$(ng completion script 2>/dev/null || true)"
-      fi
+      # Skip slow completion features
+      zstyle ':completion:*' use-cache on
+      zstyle ':completion:*' cache-path ~/.zsh/cache
 
       # ---- Starship Prompt ----
       if command -v starship >/dev/null 2>&1; then
@@ -36,7 +33,10 @@
 
     # Initialisation shell (.zshrc)
     shellInit = ''
-      # ---- PATH & PNPM ----
+      # ---- Performance: Early exits for non-interactive shells ----
+      [[ $- != *i* ]] && return
+
+      # ---- PATH & PNPM (cached) ----
       export PNPM_HOME="$HOME/Library/pnpm"
       case ":$PATH:" in
         *":$PNPM_HOME:"*) ;;
@@ -71,40 +71,45 @@
       setopt hist_ignore_dups        # Ignore duplicate entries
       setopt hist_verify             # Verify history substitution
 
-            # NOTE: Key bindings are set in interactiveShellInit to run after all other initializations
-
-            setopt AUTO_CD
+      # Performance options
+      setopt AUTO_CD
       setopt CORRECT
       setopt NO_BEEP
 
+      # Performance: Disable unnecessary features
+      unsetopt BEEP
+      unsetopt NOMATCH
 
-
-      # ---- NVM Configuration ----
-      export NVM_DIR="$HOME/.nvm"
-      if [[ -s "/opt/homebrew/opt/nvm/nvm.sh" ]]; then
-        source "/opt/homebrew/opt/nvm/nvm.sh"
-      fi
+      # ---- FNM (Fast Node Manager) Configuration ----
+      export FNM_DIR="$HOME/.fnm"
     '';
 
-    # Ajout des fonctions shell personnalisées et key bindings finaux
+    # Performance-optimized interactive initialization
     interactiveShellInit = ''
-            # ---- ZSH Autosuggestions ----
-      # Load autosuggestions (gray text suggestions as you type)
+      # ---- Performance: Only load for interactive shells ----
+      [[ $- != *i* ]] && return
+
+      # ---- ZSH Autosuggestions (Lazy loaded) ----
       if [[ -f ${pkgs.zsh-autosuggestions}/share/zsh-autosuggestions/zsh-autosuggestions.zsh ]]; then
         source ${pkgs.zsh-autosuggestions}/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+        # Performance tuning
+        ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
+        ZSH_AUTOSUGGEST_USE_ASYNC=1
       fi
 
-      # ---- ZSH Syntax Highlighting ----
-      # Load syntax highlighting (green for valid commands, red for invalid)
-      # NOTE: This must be loaded AFTER autosuggestions
-      if [[ -f ${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh ]]; then
-        source ${pkgs.zsh-syntax-highlighting}/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+      # ---- ZSH Fast Syntax Highlighting ----
+      if [[ -f ${pkgs.zsh-fast-syntax-highlighting}/share/zsh/site-functions/fast-syntax-highlighting.plugin.zsh ]]; then
+        source ${pkgs.zsh-fast-syntax-highlighting}/share/zsh/site-functions/fast-syntax-highlighting.plugin.zsh
       fi
 
-            # ---- Zoxide Configuration ----
-      # Initialize zoxide (smart cd replacement)
+      # ---- Zoxide Configuration ----
       if command -v zoxide >/dev/null 2>&1; then
         eval "$(zoxide init zsh)"
+      fi
+
+      # ---- FNM (Fast Node Manager) Initialization ----
+      if command -v fnm >/dev/null 2>&1; then
+        eval "$(fnm env --use-on-cd)"
       fi
 
       # ---- FZF Configuration ----
@@ -163,6 +168,6 @@
     DOCKER_DEFAULT_PLATFORM = "linux/amd64";
     EZA_CONFIG_DIR = "$HOME/.config/eza";
     PNPM_HOME = "$HOME/Library/pnpm";
-    NVM_DIR = "$HOME/.nvm";
+    FNM_DIR = "$HOME/.fnm";
   };
 }

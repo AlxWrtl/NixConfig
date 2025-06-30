@@ -11,7 +11,7 @@
     zsh                 # Z shell
     starship            # Modern shell prompt
     zsh-autosuggestions # Command autosuggestions
-    zsh-syntax-highlighting # Syntax highlighting
+    zsh-fast-syntax-highlighting # Fast syntax highlighting (optimized)
 
     # Navigation & file management (modern alternatives)
     zoxide              # Smart directory jumper (cd replacement)
@@ -21,6 +21,7 @@
     tree                # Directory tree viewer
     fd                  # Find alternative (faster)
     ripgrep             # Grep alternative (faster)
+    fnm                 # Fast Node Manager (faster NVM alternative)
 
     # File operations
     rsync               # File synchronization

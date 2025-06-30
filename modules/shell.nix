@@ -12,10 +12,41 @@
       # ---- Performance: Skip unnecessary checks ----
       skip_global_compinit=1
 
-      # ---- Fast completion initialization ----
-      autoload -Uz compinit
-      # Always use fast mode - skip security checks
-      compinit -C
+            # ---- Production-grade completion optimization ----
+      () {
+        setopt local_options extendedglob
+        autoload -Uz compinit
+        local zcompdump="''${ZDOTDIR:-$HOME}/.zcompdump"
+        local lockfile="''${zcompdump}.lock"
+        local lock_timeout=1
+
+        # Handle concurrent shell startups
+        if [[ -f "$lockfile" ]]; then
+          if [[ -f $lockfile(#qN.mm+$lock_timeout) ]]; then
+            echo "Warning: compinit lockfile timeout" >&2
+          fi
+          compinit -C -d "$zcompdump"
+          return
+        fi
+
+        # Create lock and ensure cleanup
+        echo $$ > "$lockfile"
+        trap "rm -f '$lockfile'" EXIT
+
+        # Time-based cache + compilation
+        if [[ -n $zcompdump(#qN.mh+24) ]]; then
+          compinit -d "$zcompdump"
+        else
+          compinit -C -d "$zcompdump"
+        fi
+
+        # Background bytecode compilation
+        {
+          if [[ -s "$zcompdump" && (! -s "''${zcompdump}.zwc" || "$zcompdump" -nt "''${zcompdump}.zwc") ]]; then
+            zcompile "$zcompdump"
+          fi
+        } &!
+      }
 
       # ---- Minimal completion configuration ----
       zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'

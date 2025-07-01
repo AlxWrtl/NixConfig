@@ -169,8 +169,8 @@
           esac
         }
 
-        # Cache FZF initialization for faster startup
-        _eval_cache fzf 'fzf --zsh'
+        # Direct FZF initialization (like in working .zshrc.backup)
+        eval "$(fzf --zsh)"
       fi
 
       # ---- ZSH Autosuggestions Performance Tuning ----
@@ -191,11 +191,9 @@
       # Press ESC twice to toggle sudo
       bindkey "\e\e" sudo-command-line
 
-      # Force history search bindings (runs after all other initializations)
+      # Enable history search with arrow keys (matching .zshrc.backup)
       bindkey '^[[A' history-search-backward  # Up arrow
       bindkey '^[[B' history-search-forward   # Down arrow
-      bindkey '^[OA' history-search-backward  # Alternative up arrow
-      bindkey '^[OB' history-search-forward   # Alternative down arrow
     '';
   };
 

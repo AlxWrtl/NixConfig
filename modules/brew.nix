@@ -22,6 +22,7 @@
       "logi-options+"               # Logitech Options+ (macOS-specific)
       "lunar"                       # Lunar (macOS-specific)
       "keka"                        # File archiver (macOS-specific)
+      "android-studio"              # Android Studio (macOS-specific)
 
       # === Development Tools ===
       "docker-desktop"              # Docker Desktop (better macOS integration)

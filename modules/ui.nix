@@ -56,6 +56,7 @@
       # Advanced options
       _FXShowPosixPathInTitle = false;         # Don't show full POSIX path in title
       _FXSortFoldersFirst = true;              # Sort folders first
+      _FXSortFoldersFirstOnDesktop = true;     # Sort folders first on desktop
     };
 
     # === Global Preferences (minimal set) ===
@@ -81,6 +82,8 @@
       # Keyboard repeat speed
       KeyRepeat = 8;                                   # Fastest possible key repeat (1 = maximum speed)
       InitialKeyRepeat = 10;                           # Minimal delay before repeat (10 = very fast start)
+
+
     };
 
     # === Security & Privacy (should be safe) ===
@@ -119,6 +122,13 @@
             };
           };
         };
+      };
+
+      # Finder sorting preferences - FIXED to not interfere with grouping
+      "com.apple.finder" = {
+        _FXSortFoldersFirst = true;              # Sort folders first
+        FXEnableExtensionChangeWarning = false; # Don't warn when changing extensions
+        # Removed conflicting grouping settings that prevented proper file type recognition
       };
 
       # Dock animation optimizations

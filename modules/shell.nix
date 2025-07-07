@@ -207,7 +207,7 @@
     FZF_DEFAULT_COMMAND = "fd --type f --hidden --follow --exclude .git";
 
     BAT_THEME = "TwoDark";
-    LESS = "-R --use-color -Dd+r -Du+b";
+    LESS = "-R --use-color";
     EDITOR = "nvim";
     VISUAL = "nvim";
     DOCKER_DEFAULT_PLATFORM = "linux/amd64";

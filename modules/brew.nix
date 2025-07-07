@@ -27,6 +27,7 @@
       # === Development Tools ===
       "docker-desktop"              # Docker Desktop (better macOS integration)
       "visual-studio-code"          # Visual Studio Code (moved from Nix - better macOS integration)
+      "ollama"                      # Ollama (macOS-specific)
 
       # === Terminal & Development ===
       "ghostty"                     # GPU-accelerated terminal (native features)
@@ -59,6 +60,9 @@
       # === Browsers ===
       "arc"                         # Modern browser
       "google-chrome"               # Chrome browser
+
+      # === Productivity ===
+      "notion"                      # Notion (better integration via Homebrew)
     ];
 
     # === Mac App Store Applications ===

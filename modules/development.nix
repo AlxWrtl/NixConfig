@@ -44,7 +44,7 @@
     yq                  # YAML processor
 
     # === AI & MACHINE LEARNING ===
-    ollama              # AI model server and CLI
+    #ollama              # AI model server and CLI
 
   ];
 

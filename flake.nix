@@ -31,6 +31,7 @@
         ./modules/starship.nix      # Starship prompt configuration
         ./modules/fonts.nix         # Font management and typography
         ./modules/ui.nix            # User interface and desktop settings
+        ./modules/claude-code.nix   # Claude Code
 
         # === SPECIALIZED MODULES ===
         ./modules/development.nix   # Development tools and programming environments

@@ -27,7 +27,7 @@
       # === Development Tools ===
       "docker-desktop"              # Docker Desktop (better macOS integration)
       "visual-studio-code"          # Visual Studio Code (moved from Nix - better macOS integration)
-      "ollama"                      # Ollama (macOS-specific)
+      "ollama-app"                  # Ollama GUI application
 
       # === Terminal & Development ===
       "ghostty"                     # GPU-accelerated terminal (native features)
@@ -61,8 +61,6 @@
       "arc"                         # Modern browser
       "google-chrome"               # Chrome browser
 
-      # === Productivity ===
-      "notion"                      # Notion (better integration via Homebrew)
     ];
 
     # === Mac App Store Applications ===
@@ -96,8 +94,8 @@
     # === IMPROVED: Homebrew Management Settings ===
     onActivation = {
       cleanup = "uninstall";          # Remove unlisted packages
-      autoUpdate = true;              # Auto-update Homebrew
-      upgrade = true;                 # Auto-upgrade packages
+      autoUpdate = true;              # Update Homebrew itself
+      upgrade = true;                 # Upgrade outdated packages on rebuild
     };
 
     # === Homebrew Global Settings ===

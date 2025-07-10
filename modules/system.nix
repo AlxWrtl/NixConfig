@@ -61,5 +61,15 @@
       # Optional: Natural scrolling (uncomment if you want it)
       # "com.apple.swipescrolldirection" = true;
     };
+
+    # Disable Gatekeeper warnings for downloaded apps
+    SoftwareUpdate = {
+      AutomaticallyInstallMacOSUpdates = false;
+    };
+    
+    # Disable quarantine for downloaded applications
+    LaunchServices = {
+      LSQuarantine = false;
+    };
   };
 }

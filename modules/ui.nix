@@ -31,7 +31,7 @@
     # === Finder Configuration (should be safe) ===
     finder = {
       # View options
-      FXPreferredViewStyle = "Nlsv";           # List view by default (required for grouping)
+      FXPreferredViewStyle = "clmv";           # List view by default (required for grouping)
       FXDefaultSearchScope = "SCcf";           # Search current folder by default
 
       # Desktop options
@@ -99,6 +99,15 @@
     # === Spotlight Configuration ===
     spaces = {
       spans-displays = false;                 # Don't span Spaces across displays
+    };
+
+    # === Stage Manager Configuration ===
+    WindowManager = {
+      EnableStandardClickToShowDesktop = false; # Disable Stage Manager
+      StandardHideDesktopIcons = false;         # Keep desktop icons visible
+      StandardHideWidgets = true;               # Hide widgets
+      StageManagerHideWidgets = true;           # Hide widgets in Stage Manager
+      GloballyEnabled = false;                  # Disable Stage Manager globally
     };
 
     # Disable Spotlight search hotkey and hide menubar icon

@@ -102,25 +102,22 @@
     # Custom Python environment module
     custom = {
       python_env = {
+        disabled = false;
         command = ''
-          # Only show if we're in a directory with .venv AND python points to it
-          if [ -f ".venv/bin/python" ]; then
-              current_python=$(which python 2>/dev/null)
-              local_python="$(pwd)/.venv/bin/python"
-              if [ "$current_python" = "$local_python" ]; then
-                  version=$(.venv/bin/python --version 2>&1 | cut -d' ' -f2)
-                  echo "v$version"
+          # Fast Python version detection with caching
+          if [ -n "$VIRTUAL_ENV" ] || [ -n "$CONDA_DEFAULT_ENV" ]; then
+              # Use cached version if available and recent (within 5 minutes)
+              cache_file="/tmp/starship_python_version_$$"
+              if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || echo 0))) -lt 300 ]; then
+                  cat "$cache_file"
+              else
+                  # Get version quickly and cache it
+                  version=$(python --version 2>&1 | cut -d' ' -f2)
+                  echo "v$version" | tee "$cache_file"
               fi
-          elif [ -n "$VIRTUAL_ENV" ] && [ "$(basename "$VIRTUAL_ENV")" != ".venv" ]; then
-              # Show for named virtual environments (not local .venv)
-              version=$(python --version 2>&1 | cut -d' ' -f2)
-              echo "v$version"
-          elif [ -n "$CONDA_DEFAULT_ENV" ]; then
-              version=$(python --version 2>&1 | cut -d' ' -f2)
-              echo "v$version"
           fi
         '';
-        when = ''[ -f ".venv/bin/python" ] && [ "$(which python 2>/dev/null)" = "$(pwd)/.venv/bin/python" ] || ([ -n "$VIRTUAL_ENV" ] && [ "$(basename "$VIRTUAL_ENV")" != ".venv" ]) || [ -n "$CONDA_DEFAULT_ENV" ]'';
+        when = ''[ -n "$VIRTUAL_ENV" ] || [ -n "$CONDA_DEFAULT_ENV" ]'';
         format = "[ $output]($style)";
         style = "#00afaf";
       };

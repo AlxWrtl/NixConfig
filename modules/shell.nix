@@ -45,7 +45,7 @@
       }
 
       # ---- Completion Configuration ----
-      zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'
+      zstyle ':completion:*' matcher-list 'm:{a-zA-Z}={A-Za-z}' 'r:|[._-]=* r:|=*' 'l:|=* r:|=*'
       zstyle ':completion:*' menu select
       zstyle ':completion:*' use-cache on
       zstyle ':completion:*' cache-path ~/.zsh/cache
@@ -163,7 +163,7 @@
           shift
           case "$command" in
             cd)           fzf --preview 'eza --tree --color=always {} | head -200' "$@" ;;
-            export|unset) fzf --preview "eval 'echo $'{}" "$@" ;;
+            export|unset) fzf --preview "eval 'echo {}'" "$@" ;;
             ssh)          fzf --preview 'dig {}' "$@" ;;
             *)            fzf --preview "bat -n --color=always --line-range :500 {}" "$@" ;;
           esac
@@ -202,9 +202,11 @@
 
   # Variables d'environnement générales
   environment.variables = {
+    FZF_CTRL_R_OPTS = "--no-preview";
     FZF_CTRL_T_OPTS = "--preview 'bat -n --color=always --line-range :500 {}'";
     FZF_ALT_C_OPTS = "--preview 'eza --tree --color=always {} | head -200'";
     FZF_DEFAULT_COMMAND = "fd --type f --hidden --follow --exclude .git";
+    FZF_DEFAULT_OPTS = "--height 40% --layout=reverse --border --ansi";
 
     BAT_THEME = "TwoDark";
     LESS = "-R --use-color";

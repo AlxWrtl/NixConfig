@@ -3,8 +3,8 @@
 {
   environment.etc."starship.toml".source = (pkgs.formats.toml {}).generate "starship-config" {
     add_newline = true;
-    command_timeout = 3000;  # Match original timeout
-    scan_timeout = 30;
+    command_timeout = 1000;  # Reduced from 3000ms for faster response
+    scan_timeout = 10;       # Reduced from 30ms for faster directory scanning
 
     # Main format (left side)
     format = "$directory$git_branch$git_status$git_state$line_break$character";
@@ -82,11 +82,11 @@
       map_symbol = true;
     };
 
-    # Command execution time
+    # Command execution time - optimized threshold
     cmd_duration = {
       format = "[$duration]($style)";
       style = "#d75f5f";
-      min_time = 3000;
+      min_time = 5000;  # Increased from 3000ms to reduce noise
       show_milliseconds = false;
     };
 
@@ -104,15 +104,15 @@
       python_env = {
         disabled = false;
         command = ''
-          # Fast Python version detection with caching
+          # Ultra-fast Python version detection with longer caching
           if [ -n "$VIRTUAL_ENV" ] || [ -n "$CONDA_DEFAULT_ENV" ]; then
-              # Use cached version if available and recent (within 5 minutes)
+              # Use cached version if available and recent (within 30 minutes)
               cache_file="/tmp/starship_python_version_$$"
-              if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || echo 0))) -lt 300 ]; then
+              if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || echo 0))) -lt 1800 ]; then
                   cat "$cache_file"
               else
-                  # Get version quickly and cache it
-                  version=$(python --version 2>&1 | cut -d' ' -f2)
+                  # Get version quickly with timeout and cache it
+                  version=$(timeout 0.5 python --version 2>&1 | cut -d' ' -f2 || echo "?")
                   echo "v$version" | tee "$cache_file"
               fi
           fi

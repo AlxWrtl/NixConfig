@@ -28,7 +28,7 @@
       ];
     };
 
-    # === Finder Configuration (should be safe) ===
+    # === Finder Configuration ===
     finder = {
       # View options
       FXPreferredViewStyle = "clmv";           # List view by default (required for grouping)
@@ -132,15 +132,14 @@
         };
       };
 
-      # Finder sorting preferences - FIXED to not interfere with grouping
+      # Finder sorting preferences
       "com.apple.finder" = {
         _FXSortFoldersFirst = true;              # Sort folders first
         FXEnableExtensionChangeWarning = false; # Don't warn when changing extensions
         NSWindowTabbingEnabled = true;           # Enable Finder tabs
-        # Removed conflicting grouping settings that prevented proper file type recognition
       };
 
-      # Spotlight search categories - Enable for proper file grouping
+      # Spotlight search categories
       "com.apple.Spotlight" = {
         orderedItems = [
           { enabled = 1; name = "APPLICATIONS"; }
@@ -172,27 +171,16 @@
       };
     };
 
-    # === Screen Saver (should be safe) ===
+    # === Screen Saver ===
     screensaver = {
       askForPassword = true;                  # Require password after screensaver
       askForPasswordDelay = 0;                # Require password immediately
     };
   };
 
-  # === DISABLED: Keyboard configuration for testing ===
-  system.keyboard = {
-    enableKeyMapping = true;
-    remapCapsLockToEscape = false;
-  };
-
   # === Power Management ===
-  # Configure sleep and display settings to match your preferences
   power.sleep = {
-    # Turn display off on battery when inactive - For 5 minutes
-    # Turn display off on power adapter when inactive - For 5 minutes
     display = 5;                           # Display sleeps after 5 minutes
-
-    # Start Screen Saver when inactive - For 10 minutes
     computer = 10;                         # Computer sleeps after 10 minutes
 
     # Hard disk sleep can be left default or configured

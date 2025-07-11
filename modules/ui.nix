@@ -83,7 +83,6 @@
       KeyRepeat = 8;                                   # Fastest possible key repeat (1 = maximum speed)
       InitialKeyRepeat = 10;                           # Minimal delay before repeat (10 = very fast start)
 
-
     };
 
     # === Security & Privacy (should be safe) ===
@@ -137,6 +136,7 @@
       "com.apple.finder" = {
         _FXSortFoldersFirst = true;              # Sort folders first
         FXEnableExtensionChangeWarning = false; # Don't warn when changing extensions
+        NSWindowTabbingEnabled = true;           # Enable Finder tabs
         # Removed conflicting grouping settings that prevented proper file type recognition
       };
 

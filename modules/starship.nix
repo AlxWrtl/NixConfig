@@ -3,14 +3,14 @@
 {
   environment.etc."starship.toml".source = (pkgs.formats.toml {}).generate "starship-config" {
     add_newline = true;
-    command_timeout = 500;   # Further reduced for faster response
-    scan_timeout = 5;        # Further reduced for faster directory scanning
+    command_timeout = 100;   # Aggressive timeout for Raycast compatibility
+    scan_timeout = 1;        # Minimal scanning for fastest startup
 
     # Main format (left side)
     format = "$directory$git_branch$git_status$git_state$line_break$character";
 
-    # Right prompt with environment indicators (like original)
-    right_format = "$status$cmd_duration$jobs\${custom.python_env}$nodejs$java$nix_shell";
+    # Right prompt with environment indicators (using custom python module)
+    right_format = "$status$cmd_duration$jobs\${custom.python_smart}$nodejs$java$nix_shell";
 
     directory = {
       style = "#88ccc5";  # User's preferred color
@@ -99,35 +99,6 @@
       symbol_threshold = 1;
     };
 
-    # Custom Python environment module
-    custom = {
-      python_env = {
-        disabled = false;
-        command = ''
-          # Fast Python version detection with environment-specific caching
-          if [ -n "$VIRTUAL_ENV" ] || [ -n "$CONDA_DEFAULT_ENV" ]; then
-              # Use environment-specific cache (30 minutes)
-              env_name=$(basename "''${VIRTUAL_ENV:-$CONDA_DEFAULT_ENV}")
-              cache_file="/tmp/starship_python_''${env_name}"
-              if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || echo 0))) -lt 1800 ]; then
-                  cat "$cache_file"
-              else
-                  # Fast version detection without timeout
-                  if command -v python >/dev/null 2>&1; then
-                      version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "?")
-                      echo "v$version" | tee "$cache_file" 2>/dev/null
-                  else
-                      echo "v?" | tee "$cache_file" 2>/dev/null
-                  fi
-              fi
-          fi
-        '';
-        when = ''[ -n "$VIRTUAL_ENV" ] || [ -n "$CONDA_DEFAULT_ENV" ]'';
-        format = "[ $output]($style)";
-        style = "#00afaf";
-      };
-    };
-
     # Node.js - only show when actively working with JS/TS files
     nodejs = {
       format = "[$symbol$version]($style)";
@@ -157,9 +128,36 @@
       unknown_msg = "[unknown]";
     };
 
-    # Python - disabled in favor of custom UV module
+    # Python - disable built-in to use custom module
     python = {
       disabled = true;
+    };
+
+    # Custom Python module - only shows when in Python project or venv root
+    custom = {
+      python_smart = {
+        disabled = false;
+        command = ''
+          # Only show if in Python project directory or virtualenv root
+          if [ -n "$VIRTUAL_ENV" ] && ([ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f ".python-version" ] || [ -d ".venv" ] || [ -d "venv" ] || find . -maxdepth 1 -name "*.py" -type f | head -1 | grep -q .); then
+              if command -v python >/dev/null 2>&1; then
+                  version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "?")
+                  env_name=$(basename "$VIRTUAL_ENV")
+                  echo " $version"
+              fi
+          elif [ -n "$VIRTUAL_ENV" ] && [ "$(dirname "$VIRTUAL_ENV")" = "$(pwd)" ]; then
+              # Show when in the parent directory of the virtualenv
+              if command -v python >/dev/null 2>&1; then
+                  version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "?")
+                  env_name=$(basename "$VIRTUAL_ENV")
+                  echo " $version"
+              fi
+          fi
+        '';
+        when = ''[ -n "$VIRTUAL_ENV" ]'';
+        format = "[ $output]($style)";
+        style = "#00afaf";
+      };
     };
 
     # Disable unnecessary modules

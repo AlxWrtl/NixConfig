@@ -33,6 +33,10 @@
       # View options
       FXPreferredViewStyle = "clmv";           # List view by default (required for grouping)
       FXDefaultSearchScope = "SCcf";           # Search current folder by default
+      
+      # New window behavior
+      NewWindowTarget = "Other";               # Open new windows to specific location
+      NewWindowTargetPath = "file:///Users/alx/Downloads/"; # Downloads folder
 
       # Desktop options
       ShowExternalHardDrivesOnDesktop = true;  # Show external drives on desktop

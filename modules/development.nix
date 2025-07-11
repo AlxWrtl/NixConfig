@@ -8,16 +8,15 @@
 
     # === VERSION CONTROL & COLLABORATION ===
     git                 # Git version control
-    git-lfs            # Git Large File Storage
-    gh                 # GitHub CLI
-    lazygit            # Git terminal UI
+    git-lfs             # Git Large File Storage
+    gh                  # GitHub CLI
 
     # === NIX DEVELOPMENT ===
     nixd                # Nix language server (primary)
     nil                 # Alternative Nix LSP
-    nixfmt-rfc-style   # Nix code formatter
-    nix-tree           # Nix dependency tree viewer
-    nix-index          # Nix package search
+    nixfmt-rfc-style    # Nix code formatter
+    nix-tree            # Nix dependency tree viewer
+    nix-index           # Nix package search
 
     # === PYTHON DEVELOPMENT ===
     python3             # Latest Python 3
@@ -25,12 +24,14 @@
     ruff                # Python linter and formatter
 
     # === JAVASCRIPT/NODE DEVELOPMENT ===
-    nodejs              # Node.js runtime
-    pnpm                # Fast package manager
+    nodejs                # Node.js runtime
+    pnpm                  # Fast package manager
+    bun                   # Fast package manager
     nodePackages."@angular/cli" # Angular CLI
     nodePackages.typescript     # TypeScript compiler
-    nodePackages.eslint        # JavaScript linter
-    nodePackages.prettier      # Code formatter
+    nodePackages.eslint         # JavaScript linter
+    nodePackages.prettier       # Code formatter
+    bun                         # Fast package manager
 
     # === DATABASE TOOLS ===
     sqlite              # Lightweight database
@@ -42,9 +43,6 @@
     httpie              # Human-friendly HTTP client
     jq                  # JSON processor
     yq                  # YAML processor
-
-    # === AI & MACHINE LEARNING ===
-    #ollama              # AI model server and CLI
 
   ];
 

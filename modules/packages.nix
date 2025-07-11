@@ -21,7 +21,7 @@
     tree                # Directory tree viewer
     fd                  # Find alternative (faster)
     ripgrep             # Grep alternative (faster)
-    fnm                 # Fast Node Manager (faster NVM alternative)
+    volta                # Fast Node Manager (faster NVM alternative)
 
     # File operations
     rsync               # File synchronization
@@ -31,7 +31,7 @@
 
     # === NETWORK & SYSTEM TOOLS ===
     btop                # Modern system monitor
-    neofetch            # System information
+    fastfetch           # System information (modern neofetch replacement)
   ];
 
     # === NIX PACKAGE MANAGER OPTIMIZATIONS ===

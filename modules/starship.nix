@@ -3,8 +3,8 @@
 {
   environment.etc."starship.toml".source = (pkgs.formats.toml {}).generate "starship-config" {
     add_newline = true;
-    command_timeout = 1000;  # Reduced from 3000ms for faster response
-    scan_timeout = 10;       # Reduced from 30ms for faster directory scanning
+    command_timeout = 500;   # Further reduced for faster response
+    scan_timeout = 5;        # Further reduced for faster directory scanning
 
     # Main format (left side)
     format = "$directory$git_branch$git_status$git_state$line_break$character";
@@ -104,16 +104,21 @@
       python_env = {
         disabled = false;
         command = ''
-          # Ultra-fast Python version detection with longer caching
+          # Fast Python version detection with environment-specific caching
           if [ -n "$VIRTUAL_ENV" ] || [ -n "$CONDA_DEFAULT_ENV" ]; then
-              # Use cached version if available and recent (within 30 minutes)
-              cache_file="/tmp/starship_python_version_$$"
+              # Use environment-specific cache (30 minutes)
+              env_name=$(basename "''${VIRTUAL_ENV:-$CONDA_DEFAULT_ENV}")
+              cache_file="/tmp/starship_python_''${env_name}"
               if [ -f "$cache_file" ] && [ $(($(date +%s) - $(stat -f %m "$cache_file" 2>/dev/null || echo 0))) -lt 1800 ]; then
                   cat "$cache_file"
               else
-                  # Get version quickly with timeout and cache it
-                  version=$(timeout 0.5 python --version 2>&1 | cut -d' ' -f2 || echo "?")
-                  echo "v$version" | tee "$cache_file"
+                  # Fast version detection without timeout
+                  if command -v python >/dev/null 2>&1; then
+                      version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "?")
+                      echo "v$version" | tee "$cache_file" 2>/dev/null
+                  else
+                      echo "v?" | tee "$cache_file" 2>/dev/null
+                  fi
               fi
           fi
         '';

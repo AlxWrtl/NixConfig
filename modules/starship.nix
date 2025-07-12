@@ -239,33 +239,4 @@
     STARSHIP_CONFIG = "/etc/starship.toml";   # Point to system-wide config
   };
 
-  # ============================================================================
-  # STARSHIP CONFIGURATION NOTES
-  # ============================================================================
-  #
-  # Performance Optimizations:
-  # - Aggressive command timeout (100ms) for responsive prompts
-  # - Minimal scan timeout (1ms) for fast directory detection
-  # - Disabled unnecessary modules to reduce computation
-  # - Context-aware language detection to minimize false positives
-  #
-  # Custom Python Detection:
-  # - Only activates in Python project directories or virtual environment roots
-  # - Avoids showing Python version in non-Python contexts
-  # - Caches version information for better performance
-  #
-  # Git Integration:
-  # - Comprehensive status symbols for all git states
-  # - Branch and remote tracking information
-  # - Visual indicators for merge conflicts and repository state
-  #
-  # Color Scheme:
-  # - Consistent color coding across related elements
-  # - High contrast for readability in various terminal themes
-  # - Error states use red for immediate visual feedback
-  #
-  # Maintenance:
-  # - Monitor command_timeout if prompts feel sluggish
-  # - Add new language modules only if actively used
-  # - Regularly review disabled modules for relevance
 }

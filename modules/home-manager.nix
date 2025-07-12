@@ -54,7 +54,7 @@
       services = {
         # === Example User Services ===
         # Uncomment and configure as needed:
-        
+
         # gpg-agent = {
         #   enable = true;
         #   enableSshSupport = true;
@@ -85,13 +85,13 @@
           enable = true;
           userName = "Alexandre";                         # Set your actual name
           userEmail = "your-email@example.com";          # Set your actual email
-          
+
           extraConfig = {
             # === Git Behavior ===
             init.defaultBranch = "main";                  # Use 'main' as default branch
             push.autoSetupRemote = true;                  # Auto-setup remote tracking
             pull.rebase = true;                           # Rebase instead of merge on pull
-            
+
             # === Git Security ===
             # url."https://github.com/".insteadOf = "git@github.com:"; # Force HTTPS
           };
@@ -100,7 +100,7 @@
         # === Shell Configuration ===
         # Note: Main shell config is in modules/shell.nix
         # This section is for user-specific shell customizations
-        
+
         # === Additional Program Configurations ===
         # Add more program configurations as needed:
         # - VS Code settings
@@ -128,12 +128,12 @@
 
       xdg = {
         enable = true;                                    # Enable XDG directory management
-        
+
         # === XDG User Directories ===
         userDirs = {
           enable = true;                                  # Manage user directories
           createDirectories = true;                       # Automatically create directories
-          
+
           # === Directory Configuration ===
           desktop = "$HOME/Desktop";
           documents = "$HOME/Documents";
@@ -141,7 +141,7 @@
           music = "$HOME/Music";
           pictures = "$HOME/Pictures";
           videos = "$HOME/Videos";
-          
+
           # === Development Directories ===
           # publicShare = "$HOME/Public";
           # templates = "$HOME/Templates";
@@ -149,31 +149,4 @@
       };
     };
   };
-
-  # ============================================================================
-  # HOME MANAGER NOTES
-  # ============================================================================
-  #
-  # This module provides the foundation for user-level configuration management.
-  # 
-  # Key Benefits:
-  # - Declarative dotfile management
-  # - User-specific service management
-  # - Application configuration as code
-  # - Consistent user environment across machines
-  # - Backup and restoration of existing configurations
-  #
-  # Usage Examples:
-  # 1. Add user packages to home.packages
-  # 2. Configure applications in programs.*
-  # 3. Manage dotfiles with home.file
-  # 4. Set up user services in services.*
-  # 5. Define personal environment variables
-  #
-  # Integration with nix-darwin:
-  # - System-wide packages: modules/packages.nix, modules/development.nix
-  # - User-specific packages: this file (home.packages)
-  # - System settings: modules/ui.nix, modules/system.nix
-  # - User configurations: this file (programs, services, home.file)
-  #
 }

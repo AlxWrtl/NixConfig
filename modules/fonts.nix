@@ -8,7 +8,7 @@
   # ============================================================================
   # FONT PACKAGES
   # ============================================================================
-  
+
   fonts = {
     packages = with pkgs; [
 
@@ -44,7 +44,7 @@
   # ============================================================================
   # FONT ENVIRONMENT CONFIGURATION
   # ============================================================================
-  
+
   environment.variables = {
     # === Fontconfig System Integration ===
     FONTCONFIG_FILE = "${pkgs.fontconfig.out}/etc/fonts/fonts.conf";
@@ -58,34 +58,4 @@
     # MONOSPACE_FONT = "Hack Nerd Font";      # Alternative monospace font
     # UI_FONT = "Inter";                      # Modern UI font (if available)
   };
-
-  # ============================================================================
-  # FONT CONFIGURATION NOTES
-  # ============================================================================
-  # 
-  # Font Selection Strategy:
-  # - Programming fonts with Nerd Font patches for terminal/editor use
-  # - International fonts for global content support
-  # - System fonts for native macOS integration
-  #
-  # Nerd Fonts Benefits:
-  # - Powerline symbols for enhanced shell prompts
-  # - Developer icons for file managers and status bars
-  # - Extended Unicode coverage for technical symbols
-  #
-  # Font Management:
-  # - System fonts are automatically available to all applications
-  # - Use `fc-list` to view available fonts
-  # - Run `fc-cache -f -v` to refresh font cache if needed
-  # - Font preferences can be overridden in application settings
-  #
-  # Performance Considerations:
-  # - Nerd Fonts are larger due to additional glyphs
-  # - Consider system performance when adding many font families
-  # - International fonts (CJK) significantly increase font cache size
-  #
-  # Application Integration:
-  # - Terminal applications: Use TERMINAL_FONT variable
-  # - Code editors: Use EDITOR_FONT variable or app-specific settings
-  # - System UI: macOS uses San Francisco font by default
 }

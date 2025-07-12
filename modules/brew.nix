@@ -8,7 +8,7 @@
   # ============================================================================
   # HOMEBREW CORE CONFIGURATION
   # ============================================================================
-  
+
   homebrew = {
     enable = true;
 
@@ -38,11 +38,11 @@
     # ============================================================================
     # COMMAND LINE TOOLS (BREWS)
     # ============================================================================
-    
+
     brews = [
       # === macOS-Specific CLI Tools ===
       "mas"                                   # Mac App Store command-line interface
-      
+
       # Note: Most CLI tools are managed through Nix for reproducibility
       # Only add tools here that are problematic in Nix or require macOS integration
     ];
@@ -50,7 +50,7 @@
     # ============================================================================
     # GUI APPLICATIONS (CASKS)
     # ============================================================================
-    
+
     casks = [
       # === System Administration & Utilities ===
       "1password"                             # Password manager with Keychain integration
@@ -97,7 +97,7 @@
     # ============================================================================
     # MAC APP STORE APPLICATIONS
     # ============================================================================
-    
+
     masApps = {
       # === Apple Productivity Suite ===
       "Pages" = 409201541;                    # Apple's word processor
@@ -115,7 +115,7 @@
   # ============================================================================
   # HOMEBREW ENVIRONMENT CONFIGURATION
   # ============================================================================
-  
+
   environment.variables = {
     # === Homebrew Core Settings ===
     HOMEBREW_NO_ANALYTICS = "1";             # Disable usage analytics
@@ -128,31 +128,8 @@
   };
 
   # === System PATH Integration ===
-  environment.systemPath = [ 
+  environment.systemPath = [
     "/opt/homebrew/bin"                       # Homebrew binaries
     "/usr/local/bin"                          # Legacy Homebrew path for compatibility
   ];
-
-  # ============================================================================
-  # PACKAGE MANAGEMENT STRATEGY NOTES
-  # ============================================================================
-  # 
-  # Package Distribution Guidelines:
-  # - GUI applications → Homebrew casks (this file)
-  # - macOS-specific tools → Homebrew casks or brews
-  # - Proprietary/commercial software → Homebrew casks
-  # - CLI development tools → Nix packages (development.nix)
-  # - System utilities → Nix packages (packages.nix)
-  # - Language libraries → Native package managers (npm, pip, etc.)
-  #
-  # Advantages of Homebrew for GUI apps:
-  # - Better macOS integration and native features
-  # - Automatic updates and security patches
-  # - App Store distribution for licensed software
-  # - Superior notarization and Gatekeeper compatibility
-  #
-  # Maintenance:
-  # - Automatic cleanup removes orphaned packages
-  # - Regular updates ensure security patches
-  # - Use `brew cleanup --prune=all` for manual cleanup
 }

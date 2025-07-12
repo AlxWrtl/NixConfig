@@ -4,21 +4,72 @@
   # macOS UI/UX system defaults configuration
 
   system.defaults = {
+
+    # ============================================================================
+    # INTERFACE & APPEARANCE
+    # ============================================================================
+
+    NSGlobalDomain = {
+      # === Visual Appearance ===
+      AppleInterfaceStyle = "Dark";                    # Dark mode interface
+      AppleFontSmoothing = 1;                          # Better font rendering on external monitors
+      AppleShowScrollBars = "WhenScrolling";           # Auto-hide scroll bars
+
+      # === Performance & Animations ===
+      NSAutomaticWindowAnimationsEnabled = false;     # Disable window animations for speed
+      NSWindowResizeTime = 0.001;                     # Instant window resize
+
+      # === Input & Text Editing ===
+      NSAutomaticCapitalizationEnabled = false;       # Disable automatic capitalization
+      NSAutomaticDashSubstitutionEnabled = false;     # Disable smart dashes
+      NSAutomaticPeriodSubstitutionEnabled = false;   # Disable automatic period substitution
+      NSAutomaticQuoteSubstitutionEnabled = false;    # Disable smart quotes
+      NSAutomaticSpellingCorrectionEnabled = false;   # Disable automatic spelling correction
+      ApplePressAndHoldEnabled = true;                # Enable press-and-hold for accent characters
+
+      # === Keyboard Settings ===
+      "com.apple.keyboard.fnState" = true;            # Use F1, F2, etc. as standard function keys
+      KeyRepeat = 8;                                  # Fastest possible key repeat
+      InitialKeyRepeat = 10;                          # Minimal delay before repeat starts
+
+      # === Mouse & Trackpad Navigation ===
+      AppleEnableMouseSwipeNavigateWithScrolls = true; # Two-finger swipe navigation
+
+      # === Regional Settings ===
+      AppleICUForce24HourTime = true;                 # 24-hour time format
+      AppleMeasurementUnits = "Centimeters";          # Metric measurements
+    };
+
+    # ============================================================================
+    # DOCK & DESKTOP MANAGEMENT
+    # ============================================================================
+
     dock = {
-      autohide = true;                    # Auto-hide the dock
-      orientation = "left";               # Dock on the left side
-      tilesize = 25;                      # Icon size
-      largesize = 48;                     # Magnified icon size
-      magnification = true;               # Enable magnification
-      show-recents = false;               # Don't show recent applications
-      minimize-to-application = true;     # Minimize windows into the application icon
-      wvous-br-corner = 1;               # Bottom-right hot corner: disabled
-      wvous-bl-corner = 1;               # Bottom-left hot corner: disabled
-      wvous-tr-corner = 1;               # Top-right hot corner: disabled
-      wvous-tl-corner = 1;               # Top-left hot corner: disabled
-      expose-animation-duration = 0.1;    # Faster Mission Control animations
-      expose-group-apps = false;         # Don't group windows by application in Mission Control
-      mru-spaces = false;                # Don't automatically rearrange Spaces
+      # === Layout & Position ===
+      orientation = "left";                           # Dock on the left side
+      autohide = true;                               # Auto-hide the dock
+
+      # === Icon Appearance ===
+      tilesize = 25;                                 # Standard icon size
+      largesize = 48;                                # Magnified icon size
+      magnification = true;                          # Enable magnification on hover
+
+      # === Behavior ===
+      show-recents = false;                          # Don't show recent applications
+      minimize-to-application = true;                # Minimize windows into app icon
+      mru-spaces = false;                            # Don't auto-rearrange Spaces by usage
+
+      # === Hot Corners (all disabled) ===
+      wvous-tl-corner = 1;                          # Top-left: disabled
+      wvous-tr-corner = 1;                          # Top-right: disabled
+      wvous-bl-corner = 1;                          # Bottom-left: disabled
+      wvous-br-corner = 1;                          # Bottom-right: disabled
+
+      # === Mission Control ===
+      expose-animation-duration = 0.1;               # Faster Mission Control animations
+      expose-group-apps = false;                     # Don't group windows by application
+
+      # === Persistent Applications ===
       persistent-apps = [
         { spacer = { small = true; }; }
         "/Applications/Arc.app"
@@ -28,96 +79,106 @@
       ];
     };
 
-    # === Finder Configuration ===
+    # ============================================================================
+    # FILE MANAGEMENT & FINDER
+    # ============================================================================
+
     finder = {
-      # View options
-      FXPreferredViewStyle = "clmv";           # List view by default (required for grouping)
-      FXDefaultSearchScope = "SCcf";           # Search current folder by default
-      
-      # New window behavior
-      NewWindowTarget = "Other";               # Open new windows to specific location
-      NewWindowTargetPath = "file:///Users/alx/Downloads/"; # Downloads folder
+      # === Default View & Search ===
+      FXPreferredViewStyle = "clmv";                 # Column view by default
+      FXDefaultSearchScope = "SCcf";                 # Search current folder by default
 
-      # Desktop options
-      ShowExternalHardDrivesOnDesktop = true;  # Show external drives on desktop
-      ShowHardDrivesOnDesktop = false;         # Hide internal drives on desktop
-      ShowMountedServersOnDesktop = true;      # Show mounted servers on desktop
-      ShowRemovableMediaOnDesktop = true;      # Show removable media on desktop
+      # === New Window Behavior ===
+      NewWindowTarget = "Other";                     # Open new windows to custom location
+      NewWindowTargetPath = "file:///Users/alx/Downloads/"; # Default to Downloads folder
 
-      # File handling
-      AppleShowAllExtensions = true;           # Show all file extensions
-      AppleShowAllFiles = false;               # Don't show hidden files by default
-      FXEnableExtensionChangeWarning = false;  # Don't warn when changing file extensions
-      CreateDesktop = true;                    # Show Desktop folder
+      # === Desktop Items Display ===
+      ShowExternalHardDrivesOnDesktop = true;        # Show external drives
+      ShowHardDrivesOnDesktop = false;               # Hide internal drives
+      ShowMountedServersOnDesktop = true;            # Show network drives
+      ShowRemovableMediaOnDesktop = true;            # Show USB drives, etc.
+      CreateDesktop = true;                          # Show Desktop folder
 
-      # Path and status bar
-      ShowPathbar = true;                      # Show path bar
-      ShowStatusBar = true;                    # Show status bar
+      # === File Visibility & Extensions ===
+      AppleShowAllExtensions = true;                 # Always show file extensions
+      AppleShowAllFiles = false;                     # Hide hidden files by default
+      FXEnableExtensionChangeWarning = false;        # Don't warn when changing extensions
 
-      # Window behavior
-      QuitMenuItem = true;                     # Allow quitting Finder with Cmd+Q
+      # === Interface Elements ===
+      ShowPathbar = true;                           # Show path bar at bottom
+      ShowStatusBar = true;                         # Show status bar at bottom
+      QuitMenuItem = true;                          # Allow quitting Finder with Cmd+Q
 
-      # Advanced options
-      _FXShowPosixPathInTitle = false;         # Don't show full POSIX path in title
-      _FXSortFoldersFirst = true;              # Sort folders first
-      _FXSortFoldersFirstOnDesktop = true;     # Sort folders first on desktop
+      # === Advanced Sorting ===
+      _FXShowPosixPathInTitle = false;              # Don't show full POSIX path in title
+      _FXSortFoldersFirst = true;                   # Sort folders before files
+      _FXSortFoldersFirstOnDesktop = true;          # Apply folder-first sorting to desktop
     };
 
-    # === Global Preferences (minimal set) ===
-    NSGlobalDomain = {
-      # Appearance
-      AppleInterfaceStyle = "Dark";            # Dark mode
+    # ============================================================================
+    # WORKSPACE & WINDOW MANAGEMENT
+    # ============================================================================
 
-      # Animation and performance optimizations
-      NSAutomaticWindowAnimationsEnabled = false;     # Disable window animations
-      NSWindowResizeTime = 0.001;                     # Instant window resize
-
-      # Text and input (should be safe)
-      NSAutomaticCapitalizationEnabled = false;        # Disable automatic capitalization
-      NSAutomaticDashSubstitutionEnabled = false;      # Disable smart dashes
-      NSAutomaticPeriodSubstitutionEnabled = false;    # Disable automatic period substitution
-      NSAutomaticQuoteSubstitutionEnabled = false;     # Disable smart quotes
-      NSAutomaticSpellingCorrectionEnabled = false;    # Disable automatic spelling correction
-      ApplePressAndHoldEnabled = true;                 # Enable press-and-hold for accent characters
-
-      # Function keys
-      "com.apple.keyboard.fnState" = true;            # Use F1, F2, etc. as standard function keys
-
-      # Keyboard repeat speed
-      KeyRepeat = 8;                                   # Fastest possible key repeat (1 = maximum speed)
-      InitialKeyRepeat = 10;                           # Minimal delay before repeat (10 = very fast start)
-
-    };
-
-    # === Security & Privacy (should be safe) ===
-    LaunchServices = {
-      LSQuarantine = false;                   # Disable quarantine for downloaded applications
-    };
-
-    # === Additional Security Preferences ===
-    SoftwareUpdate = {
-      AutomaticallyInstallMacOSUpdates = false;  # Don't auto-install macOS updates
-    };
-
-    # === Spotlight Configuration ===
     spaces = {
-      spans-displays = false;                 # Don't span Spaces across displays
+      spans-displays = false;                        # Each display has separate spaces
     };
 
-    # === Stage Manager Configuration ===
     WindowManager = {
-      EnableStandardClickToShowDesktop = false; # Disable Stage Manager
-      StandardHideDesktopIcons = false;         # Keep desktop icons visible
-      StandardHideWidgets = true;               # Hide widgets
-      StageManagerHideWidgets = true;           # Hide widgets in Stage Manager
-      GloballyEnabled = false;                  # Disable Stage Manager globally
+      # === Stage Manager (Disabled) ===
+      GloballyEnabled = false;                      # Disable Stage Manager globally
+      EnableStandardClickToShowDesktop = false;    # Disable Stage Manager click-to-desktop
+
+      # === Desktop & Widget Visibility ===
+      StandardHideDesktopIcons = false;            # Keep desktop icons visible
+      StandardHideWidgets = true;                   # Hide widgets in normal mode
+      StageManagerHideWidgets = true;               # Hide widgets in Stage Manager
     };
 
-    # Disable Spotlight search hotkey and hide menubar icon
+    # ============================================================================
+    # SECURITY & SYSTEM BEHAVIOR
+    # ============================================================================
+
+    screensaver = {
+      askForPassword = true;                        # Require password after screensaver
+      askForPasswordDelay = 0;                      # Require password immediately
+    };
+
+    LaunchServices = {
+      LSQuarantine = false;                         # Disable quarantine for downloaded apps
+    };
+
+    SoftwareUpdate = {
+      AutomaticallyInstallMacOSUpdates = false;     # Manual macOS updates only
+    };
+
+    # === Input Device Configuration ===
+    trackpad = {
+      TrackpadRightClick = true;                    # Enable two-finger right-click
+      Clicking = true;                              # Enable tap-to-click
+      TrackpadThreeFingerDrag = true;               # Enable three-finger drag for window management
+    };
+
+    # === Login Window Configuration ===
+    loginwindow = {
+      GuestEnabled = false;                         # Disable guest account for security
+      SHOWFULLNAME = false;                         # Show user list instead of name/password fields
+      DisableConsoleAccess = true;                  # Disable console access from login window
+    };
+
+    # ============================================================================
+    # ADVANCED SYSTEM PREFERENCES
+    # ============================================================================
+
+    ".GlobalPreferences" = {
+      # === Mouse Configuration ===
+      "com.apple.mouse.scaling" = 3.0;             # Mouse sensitivity adjustment
+    };
+
     CustomUserPreferences = {
+      # === Keyboard Shortcuts & Hotkeys ===
       "com.apple.symbolichotkeys" = {
         AppleSymbolicHotKeys = {
-          # Disable Spotlight search (⌘Space)
+          # Disable Spotlight search (⌘Space) - using Raycast instead
           "64" = {
             enabled = false;
             value = {
@@ -136,16 +197,17 @@
         };
       };
 
-      # Finder sorting preferences
+      # === Finder Advanced Settings ===
       "com.apple.finder" = {
-        _FXSortFoldersFirst = true;              # Sort folders first
-        FXEnableExtensionChangeWarning = false; # Don't warn when changing extensions
-        NSWindowTabbingEnabled = true;           # Enable Finder tabs
+        _FXSortFoldersFirst = true;                 # Ensure folders sort first
+        FXEnableExtensionChangeWarning = false;    # No warning for extension changes
+        NSWindowTabbingEnabled = true;              # Enable Finder window tabs
       };
 
-      # Spotlight search categories
+      # === Spotlight Search Categories ===
       "com.apple.Spotlight" = {
         orderedItems = [
+          # Enabled categories
           { enabled = 1; name = "APPLICATIONS"; }
           { enabled = 1; name = "DOCUMENTS"; }
           { enabled = 1; name = "DIRECTORIES"; }
@@ -155,6 +217,8 @@
           { enabled = 1; name = "PDF"; }
           { enabled = 1; name = "PRESENTATIONS"; }
           { enabled = 1; name = "SPREADSHEETS"; }
+
+          # Disabled categories (reduce noise)
           { enabled = 0; name = "MENU_EXPRESSION"; }
           { enabled = 0; name = "CONTACT"; }
           { enabled = 0; name = "MENU_CONVERSION"; }
@@ -167,27 +231,35 @@
         ];
       };
 
-      # Dock animation optimizations
+      # === Dock Performance Optimizations ===
       "com.apple.dock" = {
-        launchanim = false;              # Disable dock launch animations
-        autohide-delay = 0.0;            # No delay for dock autohide
-        autohide-time-modifier = 0.3;    # Faster dock autohide animation
+        launchanim = false;                         # Disable dock launch animations
+        autohide-delay = 0.0;                       # No delay for dock autohide
+        autohide-time-modifier = 0.3;               # Faster dock autohide animation
       };
-    };
 
-    # === Screen Saver ===
-    screensaver = {
-      askForPassword = true;                  # Require password after screensaver
-      askForPasswordDelay = 0;                # Require password immediately
+      # === Trackpad Configuration ===
+      "com.apple.driver.AppleBluetoothMultitouch.trackpad" = {
+        Clicking = true;                            # Enable tap to click
+        DragLock = false;                           # Disable drag lock
+        TrackpadThreeFingerDrag = true;             # Enable three-finger drag
+      };
+
+      # === Universal Clipboard & Handoff ===
+      "com.apple.coreservices.useractivityd" = {
+        ActivityAdvertisingAllowed = true;          # Allow this Mac to advertise activities
+        ActivityReceivingAllowed = true;            # Allow this Mac to receive activities
+      };
     };
   };
 
-  # === Power Management ===
-  power.sleep = {
-    display = 5;                           # Display sleeps after 5 minutes
-    computer = 10;                         # Computer sleeps after 10 minutes
+  # ============================================================================
+  # POWER MANAGEMENT
+  # ============================================================================
 
-    # Hard disk sleep can be left default or configured
-    harddisk = 10;                         # Hard disk sleeps after 10 minutes
+  power.sleep = {
+    display = 5;                                    # Display sleeps after 5 minutes
+    computer = 10;                                  # Computer sleeps after 10 minutes
+    harddisk = 10;                                  # Hard disk sleeps after 10 minutes
   };
 }

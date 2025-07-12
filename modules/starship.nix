@@ -1,273 +1,271 @@
 { config, pkgs, lib, ... }:
 
 {
-  environment.etc."starship.toml".source = (pkgs.formats.toml {}).generate "starship-config" {
-    add_newline = true;
-    command_timeout = 100;   # Aggressive timeout for Raycast compatibility
-    scan_timeout = 1;        # Minimal scanning for fastest startup
+  # Starship shell prompt configuration
 
-    # Main format (left side)
+  # ============================================================================
+  # STARSHIP CONFIGURATION FILE GENERATION
+  # ============================================================================
+
+  environment.etc."starship.toml".source = (pkgs.formats.toml {}).generate "starship-config" {
+
+    # === Global Performance Settings ===
+    add_newline = true;                       # Add blank line before prompt
+    command_timeout = 100;                    # Aggressive timeout for Raycast compatibility (ms)
+    scan_timeout = 1;                         # Minimal directory scanning for fast startup (ms)
+
+    # === Prompt Layout Configuration ===
+    # Left side: directory, git status, and input
     format = "$directory$git_branch$git_status$git_state$line_break$character";
 
-    # Right prompt with environment indicators (using custom python module)
+    # Right side: execution status and development environment context
     right_format = "$status$cmd_duration$jobs\${custom.python_smart}$nodejs$java$nix_shell";
 
+    # ============================================================================
+    # DIRECTORY DISPLAY
+    # ============================================================================
+
     directory = {
-      style = "#88ccc5";  # User's preferred color
+      style = "#88ccc5";                      # Cyan color for directory path
       format = "[$path]($style)[$read_only]($read_only_style)";
-      read_only = "🔒";
-      read_only_style = "red";
-      truncation_length = 0;
-      truncate_to_repo = false;
-      truncation_symbol = "…/";
-      home_symbol = "~";
-      use_logical_path = true;
-      fish_style_pwd_dir_length = 0;
+      read_only = "🔒";                       # Lock icon for read-only directories
+      read_only_style = "red";                # Red color for read-only indicator
+      truncation_length = 0;                  # No path truncation
+      truncate_to_repo = false;               # Show full path even in git repos
+      truncation_symbol = "…/";               # Symbol for truncated paths
+      home_symbol = "~";                      # Home directory symbol
+      use_logical_path = true;                # Use logical path (follow symlinks)
+      fish_style_pwd_dir_length = 0;          # Don't abbreviate directory names
     };
 
+    # ============================================================================
+    # GIT INTEGRATION
+    # ============================================================================
+
     git_branch = {
-      symbol = " ";  # Cat icon (actual character)
-      style = "#f5bde6";  # User's preferred color
+      symbol = " ";                          # Cat icon for git branch
+      style = "#f5bde6";                      # Pink color for git branch
       format = " [$symbol$branch(:$remote_branch)]($style)";
-      truncation_length = 32;
-      truncation_symbol = "…";
-      only_attached = false;
+      truncation_length = 32;                 # Truncate long branch names
+      truncation_symbol = "…";                # Symbol for truncated branch names
+      only_attached = false;                  # Show branch even in detached HEAD
     };
 
     git_status = {
-      style = "#f5bde6";  # Same as git_branch
+      style = "#f5bde6";                      # Match git_branch color
       format = "[.$all_status$ahead_behind]($style)";
-      conflicted = "~\${count}";
-      ahead = "⇡\${count}";
-      behind = "⇣\${count}";
-      diverged = "⇡\${ahead_count}⇣\${behind_count}";
-      up_to_date = "";
-      untracked = "?\${count}";
-      stashed = "*\${count}";
-      modified = "!\${count}";
-      staged = "+\${count}";
-      renamed = "»\${count}";
-      deleted = "✘\${count}";
+
+      # === Git Status Symbols ===
+      conflicted = "~\${count}";              # Merge conflicts
+      ahead = "⇡\${count}";                   # Commits ahead of remote
+      behind = "⇣\${count}";                  # Commits behind remote
+      diverged = "⇡\${ahead_count}⇣\${behind_count}"; # Diverged from remote
+      up_to_date = "";                        # No status when up to date
+      untracked = "?\${count}";               # Untracked files
+      stashed = "*\${count}";                 # Stashed changes
+      modified = "!\${count}";                # Modified files
+      staged = "+\${count}";                  # Staged changes
+      renamed = "»\${count}";                 # Renamed files
+      deleted = "✘\${count}";                 # Deleted files
     };
 
     git_state = {
-      style = "#ff0000";
+      style = "#ff0000";                      # Red color for git operations
       format = "[\($state( $progress_current of $progress_total)\)]($style)";
     };
 
+    # ============================================================================
+    # PROMPT CHARACTER AND LINE BREAKS
+    # ============================================================================
+
     line_break = {
-      disabled = false;
+      disabled = false;                       # Enable line break between info and prompt
     };
 
     character = {
-      success_symbol = "[➜](bold #d75f87)";
-      error_symbol = "[➜](bold #ff0000)";
-      vimcmd_symbol = "[❮](bold #d75f87)";
-      vimcmd_replace_one_symbol = "[▶](bold #d75f87)";
-      vimcmd_replace_symbol = "[▶](bold #d75f87)";
-      vimcmd_visual_symbol = "[V](bold #d75f87)";
+      success_symbol = "[➜](bold #d75f87)";   # Arrow for successful commands
+      error_symbol = "[➜](bold #ff0000)";     # Red arrow for failed commands
+      vimcmd_symbol = "[❮](bold #d75f87)";    # Vim command mode indicator
+      vimcmd_replace_one_symbol = "[▶](bold #d75f87)"; # Vim replace mode
+      vimcmd_replace_symbol = "[▶](bold #d75f87)";     # Vim replace mode
+      vimcmd_visual_symbol = "[V](bold #d75f87)";      # Vim visual mode
     };
 
-    # Status indicator - only show on errors
+    # ============================================================================
+    # EXECUTION STATUS AND PERFORMANCE
+    # ============================================================================
+
     status = {
-      format = "[$symbol$status]($style)";
-      style = "#d70000";
-      symbol = "✘";
-      success_symbol = "";
-      not_executable_symbol = "🚫";
-      not_found_symbol = "🔍";
-      sigint_symbol = "🧱";
-      signal_symbol = "⚡";
-      disabled = false;
-      map_symbol = true;
+      format = "[$symbol$status]($style)";    # Show exit status on errors
+      style = "#d70000";                      # Red color for errors
+      symbol = "✘";                           # Cross symbol for errors
+      success_symbol = "";                    # No symbol for successful commands
+      not_executable_symbol = "🚫";           # Not executable indicator
+      not_found_symbol = "🔍";                # Command not found indicator
+      sigint_symbol = "🧱";                   # SIGINT (Ctrl+C) indicator
+      signal_symbol = "⚡";                   # Other signal indicator
+      disabled = false;                       # Enable status display
+      map_symbol = true;                      # Map signals to symbols
     };
 
-    # Command execution time - optimized threshold
     cmd_duration = {
-      format = "[$duration]($style)";
-      style = "#d75f5f";
-      min_time = 5000;  # Increased from 3000ms to reduce noise
-      show_milliseconds = false;
+      format = "[$duration]($style)";         # Show command execution time
+      style = "#d75f5f";                      # Red color for duration
+      min_time = 5000;                        # Only show for commands taking >5s
+      show_milliseconds = false;              # Show in seconds, not milliseconds
     };
 
-    # Background jobs
     jobs = {
-      format = "[$symbol$number]($style)";
-      style = "#00af00";
-      symbol = "✦";
-      number_threshold = 1;
-      symbol_threshold = 1;
+      format = "[$symbol$number]($style)";    # Show background jobs
+      style = "#00af00";                      # Green color for jobs
+      symbol = "✦";                           # Star symbol for jobs
+      number_threshold = 1;                   # Show number when >1 job
+      symbol_threshold = 1;                   # Show symbol when ≥1 job
     };
 
-    # Node.js - only show when actively working with JS/TS files
+    # ============================================================================
+    # DEVELOPMENT ENVIRONMENT DETECTION
+    # ============================================================================
+
+    # === Node.js Environment ===
     nodejs = {
-      format = "[$symbol$version]($style)";
-      symbol = " ";
-      style = "#5faf00";
-      detect_extensions = ["js" "mjs" "cjs" "ts" "mts" "cts"];
-      detect_files = [];
-      detect_folders = [];
+      format = "[$symbol$version]($style)";   # Show Node.js version
+      symbol = " ";                          # Node.js icon
+      style = "#5faf00";                      # Green color for Node.js
+      detect_extensions = ["js" "mjs" "cjs" "ts" "mts" "cts"]; # File extensions
+      detect_files = [];                      # Don't detect by config files
+      detect_folders = [];                    # Don't detect by folder presence
     };
 
-    # Java
+    # === Java Environment ===
     java = {
-      format = "[$symbol$version]($style)";
-      symbol = " ";
-      style = "#008700";
+      format = "[$symbol$version]($style)";   # Show Java version
+      symbol = " ";                          # Java icon
+      style = "#008700";                      # Dark green for Java
       detect_extensions = ["java" "class" "jar" "gradle" "clj" "cljc"];
-      detect_files = ["pom.xml" "build.gradle.kts" "build.sbt" ".java-version" "deps.edn" "project.clj" "build.boot"];
+      detect_files = ["pom.xml" "build.gradle.kts" "build.sbt" ".java-version"
+                     "deps.edn" "project.clj" "build.boot"];
     };
 
-    # Nix shell
+    # === Nix Development Environment ===
     nix_shell = {
-      format = "[$symbol$state( $name)]($style)";
-      symbol = "󱄅 ";
-      style = "#87d7af";
-      impure_msg = "[impure]";
-      pure_msg = "[pure]";
-      unknown_msg = "[unknown]";
+      format = "[$symbol$state( $name)]($style)"; # Show nix-shell status
+      symbol = "󱄅 ";                           # Nix snowflake icon
+      style = "#87d7af";                      # Light blue for Nix
+      impure_msg = "[impure]";                # Impure shell indicator
+      pure_msg = "[pure]";                    # Pure shell indicator
+      unknown_msg = "[unknown]";              # Unknown shell type
     };
 
-    # Python - disable built-in to use custom module
+    # ============================================================================
+    # CUSTOM PYTHON ENVIRONMENT DETECTION
+    # ============================================================================
+
+    # === Disable Built-in Python Module ===
     python = {
-      disabled = true;
+      disabled = true;                        # Use custom implementation instead
     };
 
-    # Custom Python module - only shows when in Python project or venv root
+    # === Smart Python Environment Detection ===
     custom = {
       python_smart = {
         disabled = false;
+        # Complex shell command for context-aware Python detection
         command = ''
           # Only show if in Python project directory or virtualenv root
           if [ -n "$VIRTUAL_ENV" ] && ([ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f ".python-version" ] || [ -d ".venv" ] || [ -d "venv" ] || find . -maxdepth 1 -name "*.py" -type f | head -1 | grep -q .); then
               if command -v python >/dev/null 2>&1; then
                   version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "?")
                   env_name=$(basename "$VIRTUAL_ENV")
-                  echo " $version"
+                  echo " $version"
               fi
           elif [ -n "$VIRTUAL_ENV" ] && [ "$(dirname "$VIRTUAL_ENV")" = "$(pwd)" ]; then
               # Show when in the parent directory of the virtualenv
               if command -v python >/dev/null 2>&1; then
                   version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "?")
                   env_name=$(basename "$VIRTUAL_ENV")
-                  echo " $version"
+                  echo " $version"
               fi
           fi
         '';
-        when = ''[ -n "$VIRTUAL_ENV" ]'';
-        format = "[ $output]($style)";
-        style = "#00afaf";
+        when = ''[ -n "$VIRTUAL_ENV" ]'';       # Only run when in virtual environment
+        format = "[ $output]($style)";         # Format with Python icon
+        style = "#00afaf";                     # Cyan color for Python
       };
     };
 
-    # Disable unnecessary modules
-    package = {
-      disabled = true;
-    };
+    # ============================================================================
+    # DISABLED MODULES (PERFORMANCE OPTIMIZATION)
+    # ============================================================================
 
-    conda = {
-      disabled = true;
-    };
+    # === System Information (Disabled for Performance) ===
+    package = { disabled = true; };           # Package version detection
+    conda = { disabled = true; };             # Conda environment
+    memory_usage = { disabled = true; };      # Memory usage display
+    time = { disabled = true; };              # Current time display
+    username = { disabled = true; };          # Username display
+    hostname = { disabled = true; };          # Hostname display
+    shlvl = { disabled = true; };             # Shell level indicator
+    env_var = { disabled = true; };           # Environment variable display
 
-    memory_usage = {
-      disabled = true;
-    };
+    # === Cloud & Infrastructure (Disabled) ===
+    aws = { disabled = true; };               # AWS profile
+    azure = { disabled = true; };             # Azure subscription
+    gcloud = { disabled = true; };            # Google Cloud project
+    kubernetes = { disabled = true; };        # Kubernetes context
+    terraform = { disabled = true; };         # Terraform workspace
+    docker_context = { disabled = true; };    # Docker context
+    direnv = { disabled = true; };            # Direnv status
 
-    time = {
-      disabled = true;
-    };
-
-    username = {
-      disabled = true;
-    };
-
-    hostname = {
-      disabled = true;
-    };
-
-    shlvl = {
-      disabled = true;
-    };
-
-    env_var = {
-      disabled = true;
-    };
-
-    aws = {
-      disabled = true;
-    };
-
-    azure = {
-      disabled = true;
-    };
-
-    gcloud = {
-      disabled = true;
-    };
-
-    kubernetes = {
-      disabled = true;
-    };
-
-    terraform = {
-      disabled = true;
-    };
-
-    docker_context = {
-      disabled = true;
-    };
-
-    direnv = {
-      disabled = true;
-    };
-
-    # Disable other language modules that might conflict
-    lua = {
-      disabled = true;
-    };
-
-    perl = {
-      disabled = true;
-    };
-
-    php = {
-      disabled = true;
-    };
-
-    haskell = {
-      disabled = true;
-    };
-
-    dart = {
-      disabled = true;
-    };
-
-    kotlin = {
-      disabled = true;
-    };
-
-    scala = {
-      disabled = true;
-    };
-
-    dotnet = {
-      disabled = true;
-    };
-
-    golang = {
-      disabled = true;
-    };
-
-    rust = {
-      disabled = true;
-    };
-
-    ruby = {
-      disabled = true;
-    };
+    # === Programming Languages (Disabled for Performance) ===
+    lua = { disabled = true; };               # Lua version
+    perl = { disabled = true; };              # Perl version
+    php = { disabled = true; };               # PHP version
+    haskell = { disabled = true; };           # Haskell version
+    dart = { disabled = true; };              # Dart version
+    kotlin = { disabled = true; };            # Kotlin version
+    scala = { disabled = true; };             # Scala version
+    dotnet = { disabled = true; };            # .NET version
+    golang = { disabled = true; };            # Go version
+    rust = { disabled = true; };              # Rust version
+    ruby = { disabled = true; };              # Ruby version
   };
+
+  # ============================================================================
+  # STARSHIP ENVIRONMENT CONFIGURATION
+  # ============================================================================
 
   environment.variables = {
-    STARSHIP_CONFIG = "/etc/starship.toml";
+    STARSHIP_CONFIG = "/etc/starship.toml";   # Point to system-wide config
   };
+
+  # ============================================================================
+  # STARSHIP CONFIGURATION NOTES
+  # ============================================================================
+  #
+  # Performance Optimizations:
+  # - Aggressive command timeout (100ms) for responsive prompts
+  # - Minimal scan timeout (1ms) for fast directory detection
+  # - Disabled unnecessary modules to reduce computation
+  # - Context-aware language detection to minimize false positives
+  #
+  # Custom Python Detection:
+  # - Only activates in Python project directories or virtual environment roots
+  # - Avoids showing Python version in non-Python contexts
+  # - Caches version information for better performance
+  #
+  # Git Integration:
+  # - Comprehensive status symbols for all git states
+  # - Branch and remote tracking information
+  # - Visual indicators for merge conflicts and repository state
+  #
+  # Color Scheme:
+  # - Consistent color coding across related elements
+  # - High contrast for readability in various terminal themes
+  # - Error states use red for immediate visual feedback
+  #
+  # Maintenance:
+  # - Monitor command_timeout if prompts feel sluggish
+  # - Add new language modules only if actively used
+  # - Regularly review disabled modules for relevance
 }

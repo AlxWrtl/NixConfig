@@ -1,123 +1,158 @@
 { config, pkgs, lib, inputs, ... }:
 
 {
-  # Restored complete Homebrew configuration with all original apps
+  # Homebrew package management configuration
+  # GUI applications, macOS-specific tools, and proprietary software
+  # CLI tools are managed through Nix in packages.nix and development.nix
 
+  # ============================================================================
+  # HOMEBREW CORE CONFIGURATION
+  # ============================================================================
+  
   homebrew = {
     enable = true;
 
-      # === Homebrew Global Cask Arguments ===
-  # Disable quarantine for all casks to prevent "downloaded from Internet" warnings
-  caskArgs = {
-    no_quarantine = true;              # Disable quarantine for all casks
-  };
-
-  # === Homebrew Casks (GUI Applications) ===
-  # All your original macOS-specific and proprietary apps
-  casks = [
-      # === macOS-Specific System Tools ===
-      "1password"                   # Password manager (macOS Keychain integration)
-      "onyx"                        # System maintenance (macOS-specific)
-      "jordanbaird-ice"             # Menu bar organizer (modern Hidden Bar alternative)
-      "logi-options+"               # Logitech Options+ (macOS-specific)
-      "lunar"                       # Lunar (macOS-specific)
-      "keka"                        # File archiver (macOS-specific)
-      "android-studio"              # Android Studio (macOS-specific)
-
-      # === Development Tools ===
-      "docker-desktop"              # Docker Desktop (better macOS integration)
-      "visual-studio-code"          # Visual Studio Code (moved from Nix - better macOS integration)
-      "ollama-app"                  # Ollama GUI application
-
-      # === Terminal & Development ===
-      "ghostty"                     # GPU-accelerated terminal (native features)
-      "cursor"                      # AI-powered code editor (macOS-optimized)
-
-      # === Productivity & Workflow ===
-      "raycast"                     # Spotlight replacement (macOS-optimized)
-      "notion"                      # All-in-one workspace (native features)
-
-      # === Communication & Social ===
-      "discord"                     # Communication (better notifications)
-      "spotify"                     # Music streaming (native features)
-
-      # === Media & Entertainment ===
-      "vlc"                         # Media player (not available for Apple Silicon via Nix)
-
-      # === Design & Creative Tools ===
-      "figma"                       # Design tool (latest features, auto-updates)
-
-      # === Proprietary/Commercial Software ===
-      "microsoft-teams"             # Microsoft Teams (corporate features)
-      "whatsapp"                    # WhatsApp messaging
-
-      # === Media Servers ===
-      "plex-media-server"           # Media server (better integration via Homebrew)
-
-      # === Communication ===
-      "readdle-spark"               # Email client (Mac-specific features)
-
-      # === Browsers ===
-      "arc"                         # Modern browser
-      "google-chrome"               # Chrome browser
-
-    ];
-
-    # === Mac App Store Applications ===
-    # Apple ecosystem apps and those requiring App Store licensing
-    masApps = {
-      # === Apple Productivity Suite ===
-      "Pages" = 409201541;           # Apple's word processor
-      "Numbers" = 409203825;         # Apple's spreadsheet app
-      "Keynote" = 409183694;         # Apple's presentation app
-
-      # === Productivity ===
-      "Trello" = 1278508951;         # Project management
-
-      # === System Utilities (App Store exclusive) ===
-      "DaisyDisk" = 411643860;       # Disk usage analyzer
+    # === Global Cask Configuration ===
+    caskArgs = {
+      no_quarantine = true;                    # Disable quarantine warnings for all casks
     };
 
-    # === Homebrew Taps ===
-    # Essential taps for specific tools
+    # === Automatic Package Management ===
+    onActivation = {
+      cleanup = "uninstall";                  # Remove packages not listed in configuration
+      autoUpdate = true;                      # Update Homebrew itself during rebuild
+      upgrade = true;                         # Upgrade outdated packages during rebuild
+    };
+
+    # === Global Homebrew Settings ===
+    global = {
+      brewfile = true;                        # Generate Brewfile for compatibility
+    };
+
+    # === Repository Taps ===
     taps = [
-      # No additional taps needed - using built-in functionality
+      # Using default taps - add custom taps here if needed
+      # Example: "homebrew/cask-fonts"
     ];
 
-    # === Command Line Tools (Brews) ===
-    # macOS-specific or problematic tools in Nix
+    # ============================================================================
+    # COMMAND LINE TOOLS (BREWS)
+    # ============================================================================
+    
     brews = [
       # === macOS-Specific CLI Tools ===
-      "mas"                          # Mac App Store CLI (macOS-exclusive)
+      "mas"                                   # Mac App Store command-line interface
+      
+      # Note: Most CLI tools are managed through Nix for reproducibility
+      # Only add tools here that are problematic in Nix or require macOS integration
     ];
 
-    # === IMPROVED: Homebrew Management Settings ===
-    onActivation = {
-      cleanup = "uninstall";          # Remove unlisted packages
-      autoUpdate = true;              # Update Homebrew itself
-      upgrade = true;                 # Upgrade outdated packages on rebuild
-    };
+    # ============================================================================
+    # GUI APPLICATIONS (CASKS)
+    # ============================================================================
+    
+    casks = [
+      # === System Administration & Utilities ===
+      "1password"                             # Password manager with Keychain integration
+      "onyx"                                  # macOS system maintenance and optimization
+      "jordanbaird-ice"                       # Menu bar organizer (modern Hidden Bar alternative)
+      "logi-options+"                         # Logitech device configuration
+      "lunar"                                 # External display brightness control
+      "keka"                                  # File archiver with modern interface
+      "daisydisk"                             # Visual disk usage analyzer
 
-    # === Homebrew Global Settings ===
-    global = {
-      brewfile = true;               # Generate Brewfile
+      # === Development & Programming ===
+      "docker-desktop"                        # Docker containerization platform
+      "visual-studio-code"                    # Microsoft's code editor with extensions
+      "cursor"                                # AI-powered code editor
+      "android-studio"                        # Android development environment
+      "ollama-app"                            # Local LLM management interface
+
+      # === Terminal & Command Line ===
+      "ghostty"                               # GPU-accelerated terminal emulator
+
+      # === Productivity & Workflow ===
+      "raycast"                               # Spotlight replacement with plugins
+      "notion"                                # All-in-one workspace and note-taking
+
+      # === Design & Creative Tools ===
+      "figma"                                 # Collaborative design and prototyping
+
+      # === Communication & Collaboration ===
+      "discord"                               # Gaming and community communication
+      "microsoft-teams"                       # Business communication and meetings
+      "whatsapp"                              # Cross-platform messaging
+      "readdle-spark"                         # Email client with smart features
+
+      # === Web Browsers ===
+      "arc"                                   # Modern browser with unique features
+      "google-chrome"                         # Google's web browser
+
+      # === Media & Entertainment ===
+      "vlc"                                   # Universal media player
+      "spotify"                               # Music streaming service
+      "plex-media-server"                     # Personal media server
+    ];
+
+    # ============================================================================
+    # MAC APP STORE APPLICATIONS
+    # ============================================================================
+    
+    masApps = {
+      # === Apple Productivity Suite ===
+      "Pages" = 409201541;                    # Apple's word processor
+      "Numbers" = 409203825;                  # Apple's spreadsheet application
+      "Keynote" = 409183694;                  # Apple's presentation software
+
+      # === Project Management ===
+      "Trello" = 1278508951;                  # Visual project management boards
+
+      # === System Utilities ===
+      "DaisyDisk" = 411643860;                # Disk usage visualization (if not using cask)
     };
   };
 
-  # === Environment Variables for Homebrew ===
+  # ============================================================================
+  # HOMEBREW ENVIRONMENT CONFIGURATION
+  # ============================================================================
+  
   environment.variables = {
-    # Homebrew configuration
-    HOMEBREW_NO_ANALYTICS = "1";     # Disable analytics
-    HOMEBREW_NO_INSECURE_REDIRECT = "1";  # Disable insecure redirects
-    HOMEBREW_CASK_OPTS_NO_BINARIES = "1"; # Don't link binaries for casks
+    # === Homebrew Core Settings ===
+    HOMEBREW_NO_ANALYTICS = "1";             # Disable usage analytics
+    HOMEBREW_NO_INSECURE_REDIRECT = "1";     # Prevent insecure redirects
+    HOMEBREW_CASK_OPTS_NO_BINARIES = "1";    # Don't symlink cask binaries
+    HOMEBREW_PREFIX = "/opt/homebrew";        # Homebrew installation prefix
 
-    # Add Homebrew to PATH explicitly
-    HOMEBREW_PREFIX = "/opt/homebrew";
-
-    # === ADDED: mas CLI environment improvements ===
-    MAS_NO_PROMPT = "1";             # Prevent mas from prompting during automation
+    # === Mac App Store CLI Configuration ===
+    MAS_NO_PROMPT = "1";                      # Prevent interactive prompts during automation
   };
 
-  # === Ensure Homebrew is in system PATH ===
-  environment.systemPath = [ "/opt/homebrew/bin" "/usr/local/bin" ];
+  # === System PATH Integration ===
+  environment.systemPath = [ 
+    "/opt/homebrew/bin"                       # Homebrew binaries
+    "/usr/local/bin"                          # Legacy Homebrew path for compatibility
+  ];
+
+  # ============================================================================
+  # PACKAGE MANAGEMENT STRATEGY NOTES
+  # ============================================================================
+  # 
+  # Package Distribution Guidelines:
+  # - GUI applications → Homebrew casks (this file)
+  # - macOS-specific tools → Homebrew casks or brews
+  # - Proprietary/commercial software → Homebrew casks
+  # - CLI development tools → Nix packages (development.nix)
+  # - System utilities → Nix packages (packages.nix)
+  # - Language libraries → Native package managers (npm, pip, etc.)
+  #
+  # Advantages of Homebrew for GUI apps:
+  # - Better macOS integration and native features
+  # - Automatic updates and security patches
+  # - App Store distribution for licensed software
+  # - Superior notarization and Gatekeeper compatibility
+  #
+  # Maintenance:
+  # - Automatic cleanup removes orphaned packages
+  # - Regular updates ensure security patches
+  # - Use `brew cleanup --prune=all` for manual cleanup
 }

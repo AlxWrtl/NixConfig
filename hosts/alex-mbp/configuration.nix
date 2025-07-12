@@ -51,29 +51,4 @@
 
   # === Package Permissions (Host Override) ===
   nixpkgs.config.allowUnfree = true;                    # Enable proprietary packages (VSCode, Slack, etc.)
-
-  # ============================================================================
-  # HOST-SPECIFIC NOTES
-  # ============================================================================
-  #
-  # This configuration file contains only host-specific settings:
-  # - Network identification and hostname
-  # - Hardware platform specification  
-  # - User account definitions
-  # - System versioning and compatibility
-  #
-  # All other system configuration is handled by modules:
-  # - Core system settings → modules/system.nix
-  # - UI/UX preferences → modules/ui.nix
-  # - Development tools → modules/development.nix
-  # - Shell configuration → modules/shell.nix
-  # - Package management → modules/packages.nix & modules/brew.nix
-  # - Fonts → modules/fonts.nix
-  #
-  # Benefits of this modular approach:
-  # - Easy to add new hosts by copying this file
-  # - Shared configuration across multiple machines
-  # - Clear separation of concerns
-  # - Simplified maintenance and updates
-  #
 }

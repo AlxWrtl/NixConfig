@@ -2,8 +2,6 @@
   # ============================================================================
   # NIX-DARWIN SYSTEM FLAKE
   # ============================================================================
-  # Alexandre's modern modular nix-darwin system configuration
-  # Provides reproducible macOS system configuration using Nix flakes
 
   description = "Alexandre's modern modular nix-darwin system flake";
 
@@ -37,13 +35,13 @@
     # === DARWIN SYSTEM CONFIGURATIONS ===
     # Build and switch to configuration using:
     # $ darwin-rebuild switch --flake .#alex-mbp
-    
+
     darwinConfigurations = {
       # === Alexandre's MacBook Pro Configuration ===
       "alex-mbp" = nix-darwin.lib.darwinSystem {
         system = "aarch64-darwin";                          # Apple Silicon architecture
         specialArgs = { inherit inputs; };                  # Pass inputs to all modules
-        
+
         modules = [
           # === HOST-SPECIFIC CONFIGURATION ===
           ./hosts/alex-mbp                                  # Host module (networking, users, platform)
@@ -67,7 +65,7 @@
     # ============================================================================
     # ADDITIONAL FLAKE OUTPUTS (Future Extensions)
     # ============================================================================
-    
+
     # === Development Shells (Future) ===
     # devShells.aarch64-darwin = {
     #   default = nixpkgs.legacyPackages.aarch64-darwin.mkShell {

@@ -63,5 +63,3 @@ brew cleanup --prune=all
 - **Nix**: CLI tools, development environments, fonts
 - **Homebrew**: GUI applications, macOS-specific tools
 - **Language managers**: npm/pnpm, pip/uv for libraries
-
-See `CLAUDE.md` for detailed documentation.

@@ -1,7 +1,22 @@
 { config, pkgs, lib, inputs, ... }:
 
 {
-  # macOS UI/UX system defaults configuration
+  # ============================================================================
+  # macOS UI/UX AND SECURITY CONFIGURATION
+  # ============================================================================
+
+  # ============================================================================
+  # NETWORK SECURITY CONFIGURATION
+  # ============================================================================
+
+  # === Application Layer Firewall ===
+  networking.applicationFirewall = {
+    enable = true;                                    # Enable firewall protection
+    blockAllIncoming = false;                         # Allow essential incoming connections
+    allowSigned = true;                               # Allow signed applications to receive connections
+    allowSignedApp = true;                            # Allow downloaded signed applications
+    enableStealthMode = true;                         # Enable stealth mode (invisible to port scans)
+  };
 
   system.defaults = {
 
@@ -119,16 +134,13 @@
     # WORKSPACE & WINDOW MANAGEMENT
     # ============================================================================
 
-    spaces = {
-      spans-displays = false;                        # Each display has separate spaces
-    };
+    # === Multi-Display Configuration ===
+    spaces.spans-displays = false;                   # Each display has separate spaces
 
+    # === Stage Manager ===
     WindowManager = {
-      # === Stage Manager (Disabled) ===
       GloballyEnabled = false;                      # Disable Stage Manager globally
       EnableStandardClickToShowDesktop = false;    # Disable Stage Manager click-to-desktop
-
-      # === Desktop & Widget Visibility ===
       StandardHideDesktopIcons = false;            # Keep desktop icons visible
       StandardHideWidgets = true;                   # Hide widgets in normal mode
       StageManagerHideWidgets = true;               # Hide widgets in Stage Manager
@@ -138,18 +150,15 @@
     # SECURITY & SYSTEM BEHAVIOR
     # ============================================================================
 
+    # === Screen Security ===
     screensaver = {
       askForPassword = true;                        # Require password after screensaver
       askForPasswordDelay = 0;                      # Require password immediately
     };
 
-    LaunchServices = {
-      LSQuarantine = false;                         # Disable quarantine for downloaded apps
-    };
-
-    SoftwareUpdate = {
-      AutomaticallyInstallMacOSUpdates = false;     # Manual macOS updates only
-    };
+    # === Application Security ===
+    LaunchServices.LSQuarantine = false;             # Disable quarantine for downloaded apps
+    SoftwareUpdate.AutomaticallyInstallMacOSUpdates = false; # Manual macOS updates only
 
     # === Input Device Configuration ===
     trackpad = {
@@ -165,36 +174,42 @@
       DisableConsoleAccess = true;                  # Disable console access from login window
     };
 
+    # === Mouse Configuration ===
+    ".GlobalPreferences"."com.apple.mouse.scaling" = 3.0; # Mouse sensitivity adjustment
+
     # ============================================================================
     # ADVANCED SYSTEM PREFERENCES
     # ============================================================================
 
-    ".GlobalPreferences" = {
-      # === Mouse Configuration ===
-      "com.apple.mouse.scaling" = 3.0;             # Mouse sensitivity adjustment
-    };
-
     CustomUserPreferences = {
+      # === Security & Privacy Hardening ===
+      "com.apple.AdLib".allowApplePersonalizedAdvertising = false; # Disable personalized advertising
+
+      "com.apple.appstore" = {
+        ShowDebugMenu = false;                       # Hide debug options
+        AutoUpdateApps = true;                       # Enable automatic security updates
+      };
+
+      "com.apple.commerce".AutoUpdate = true;         # Auto-update system and security patches
+
+      "com.apple.SoftwareUpdate" = {
+        AutomaticCheckEnabled = true;                # Check for updates automatically
+        AutomaticDownload = true;                    # Download updates automatically
+        CriticalUpdateInstall = true;                # Install critical security updates
+        ConfigDataInstall = true;                    # Install system data files and security updates
+      };
+
+      "com.apple.screensaver" = {
+        askForPassword = 1;                          # Require password after screensaver (1=true)
+        askForPasswordDelay = 0;                     # Immediate password requirement
+      };
+
       # === Keyboard Shortcuts & Hotkeys ===
-      "com.apple.symbolichotkeys" = {
-        AppleSymbolicHotKeys = {
-          # Disable Spotlight search (⌘Space) - using Raycast instead
-          "64" = {
-            enabled = false;
-            value = {
-              parameters = [ 32 49 1048576 ];
-              type = "standard";
-            };
-          };
-          # Disable Spotlight window (⌘Option+Space)
-          "65" = {
-            enabled = false;
-            value = {
-              parameters = [ 32 49 1572864 ];
-              type = "standard";
-            };
-          };
-        };
+      "com.apple.symbolichotkeys".AppleSymbolicHotKeys = {
+        # Disable Spotlight search (⌘Space) - using Raycast instead
+        "64".enabled = false;
+        # Disable Spotlight window (⌘Option+Space)
+        "65".enabled = false;
       };
 
       # === Finder Advanced Settings ===
@@ -205,31 +220,29 @@
       };
 
       # === Spotlight Search Categories ===
-      "com.apple.Spotlight" = {
-        orderedItems = [
-          # Enabled categories
-          { enabled = 1; name = "APPLICATIONS"; }
-          { enabled = 1; name = "DOCUMENTS"; }
-          { enabled = 1; name = "DIRECTORIES"; }
-          { enabled = 1; name = "IMAGES"; }
-          { enabled = 1; name = "MOVIES"; }
-          { enabled = 1; name = "MUSIC"; }
-          { enabled = 1; name = "PDF"; }
-          { enabled = 1; name = "PRESENTATIONS"; }
-          { enabled = 1; name = "SPREADSHEETS"; }
+      "com.apple.Spotlight".orderedItems = [
+        # Enabled categories
+        { enabled = 1; name = "APPLICATIONS"; }
+        { enabled = 1; name = "DOCUMENTS"; }
+        { enabled = 1; name = "DIRECTORIES"; }
+        { enabled = 1; name = "IMAGES"; }
+        { enabled = 1; name = "MOVIES"; }
+        { enabled = 1; name = "MUSIC"; }
+        { enabled = 1; name = "PDF"; }
+        { enabled = 1; name = "PRESENTATIONS"; }
+        { enabled = 1; name = "SPREADSHEETS"; }
 
-          # Disabled categories (reduce noise)
-          { enabled = 0; name = "MENU_EXPRESSION"; }
-          { enabled = 0; name = "CONTACT"; }
-          { enabled = 0; name = "MENU_CONVERSION"; }
-          { enabled = 0; name = "MENU_DEFINITION"; }
-          { enabled = 0; name = "EVENT_TODO"; }
-          { enabled = 0; name = "FONTS"; }
-          { enabled = 0; name = "MESSAGES"; }
-          { enabled = 0; name = "MENU_OTHER"; }
-          { enabled = 0; name = "SYSTEM_PREFS"; }
-        ];
-      };
+        # Disabled categories (reduce noise)
+        { enabled = 0; name = "MENU_EXPRESSION"; }
+        { enabled = 0; name = "CONTACT"; }
+        { enabled = 0; name = "MENU_CONVERSION"; }
+        { enabled = 0; name = "MENU_DEFINITION"; }
+        { enabled = 0; name = "EVENT_TODO"; }
+        { enabled = 0; name = "FONTS"; }
+        { enabled = 0; name = "MESSAGES"; }
+        { enabled = 0; name = "MENU_OTHER"; }
+        { enabled = 0; name = "SYSTEM_PREFS"; }
+      ];
 
       # === Dock Performance Optimizations ===
       "com.apple.dock" = {

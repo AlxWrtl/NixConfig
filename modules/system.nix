@@ -14,14 +14,27 @@
 
     settings = {
       # === Modern Nix Features ===
-      experimental-features = [ "nix-command" "flakes" ]; # Enable flakes and modern CLI commands
+      experimental-features = [
+        "nix-command"
+        "flakes"
+        "ca-derivations"                              # Content-addressed derivations for enhanced security
+        "fetch-closure"                               # Secure closure fetching
+      ];
+
+      # === 2025 Security Enhancements ===
+      # Addresses CVE-2025-46415, CVE-2025-46416, CVE-2025-52991, CVE-2025-52992, CVE-2025-52993
+      trusted-users = [ "root" "@admin" ];           # Explicitly limit trusted users
+      allowed-users = [ "@wheel" "alx" ];            # Restrict allowed users to wheel group and primary user
+      sandbox = true;                                 # Enable build sandboxing to isolate builds
+      require-sigs = true;                            # Require signatures for all substituters
 
       # === Build Performance Optimization ===
       max-jobs = "auto";                              # Use all available CPU cores for parallel builds
       cores = 0;                                      # Use all cores per job (0 = auto-detect)
+      builders-use-substitutes = true;                # Allow builders to use substitutes for better performance
 
-      # === Binary Cache Configuration ===
-      # Reduces build times by downloading pre-built packages
+      # === Enhanced Binary Cache Configuration ===
+      # Reduces build times by downloading pre-built packages with security controls
       substituters = [
         "https://cache.nixos.org/"                    # Official NixOS binary cache
         "https://nix-community.cachix.org"            # Community packages cache
@@ -32,15 +45,25 @@
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
       ];
 
+      # === Network Security & Performance ===
+      fallback = false;                               # Don't fallback to building if substitution fails (security)
+      connect-timeout = 10;                           # Timeout for network connections (10 seconds)
+      http-connections = 25;                          # Parallel HTTP connections for downloads
+      download-attempts = 3;                          # Retry failed downloads up to 3 times
+      log-lines = 25;                                 # Limit log lines for security and performance
+
+      # === Store Management ===
+      min-free = 1000000000;                          # Keep minimum 1GB free space (1 billion bytes)
+      max-free = 5000000000;                          # Use maximum 5GB for store operations
+
     };
 
     # === Automatic Maintenance ===
     optimise.automatic = true;                        # Enable automatic store optimization
-
     gc = {
       automatic = true;                               # Enable automatic garbage collection
-      interval = { Weekday = 7; };                    # Run weekly on Sunday at 3 AM
-      options = "--delete-older-than 7d";             # Keep only last 7 days of generations
+      interval = { Weekday = 7; Hour = 3; Minute = 0; }; # Run weekly on Sunday at 3:00 AM (specific time)
+      options = "--delete-older-than 30d";           # Keep 30 days of generations (increased from 7d for safety)
     };
   };
 

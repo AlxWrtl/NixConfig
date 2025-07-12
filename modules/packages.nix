@@ -41,29 +41,7 @@
     volta                                  # Fast Node.js version manager (nvm replacement)
   ];
 
-  # ============================================================================
-  # NIX CONFIGURATION & OPTIMIZATION
-  # ============================================================================
-  
-  nix.settings = {
-    # === Modern Nix Features ===
-    experimental-features = [ "nix-command" "flakes" ];
-    
-    # === Build Performance ===
-    max-jobs = "auto";                     # Use all available CPU cores for builds
-    cores = 0;                             # Use all cores per job (0 = auto-detect)
-    
-    # === Binary Cache Configuration ===
-    substituters = [
-      "https://cache.nixos.org/"           # Official NixOS cache
-      "https://nix-community.cachix.org"   # Community packages cache
-    ];
-    
-    trusted-public-keys = [
-      "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-      "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
-    ];
-  };
+  # Note: Nix configuration is handled comprehensively in modules/system.nix
 
   # ============================================================================
   # PACKAGE CONFIGURATION

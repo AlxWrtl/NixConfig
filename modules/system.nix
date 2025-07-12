@@ -15,8 +15,8 @@
 
     # === Nix Package Version Management ===
     # Options: pkgs.nixVersions.stable (2.28.4) | pkgs.nixVersions.latest (2.29.1) | pkgs.nixVersions.nix_2_30
-    package = pkgs.nixVersions.stable;               # Use stable Nix version (currently 2.28.4 - secure)
-    # package = pkgs.nixVersions.latest;             # Uncomment for bleeding edge (2.29.1)
+    package = pkgs.nixVersions.latest;               # Use latest Nix version (2.29+ has security fixes)
+    # package = pkgs.nixVersions.stable;             # Fallback to stable if needed
 
     settings = {
       # === Modern Nix Features ===
@@ -33,6 +33,7 @@
       allowed-users = [ "@wheel" "alx" ];            # Restrict allowed users to wheel group and primary user
       sandbox = true;                                 # Enable build sandboxing to isolate builds from system
       require-sigs = true;                            # Require signatures for all substituters (security)
+      # restrict-eval = true;                         # TODO: Enable after initial setup (causes flake fetch issues)
 
       # === Build Performance Optimization ===
       max-jobs = "auto";                              # Use all available CPU cores for parallel builds
@@ -45,6 +46,9 @@
         "https://cache.nixos.org/"                    # Official NixOS binary cache (primary)
         "https://nix-community.cachix.org"            # Community packages cache (secondary)
       ];
+      
+      # Security: limit extra trusted substituters
+      extra-trusted-substituters = [];               # Empty by default for security
 
       trusted-public-keys = [
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="     # Official NixOS cache key
@@ -61,6 +65,7 @@
       # === Store Management ===
       min-free = 1000000000;                          # Keep minimum 1GB free space (1 billion bytes)
       max-free = 5000000000;                          # Use maximum 5GB for store operations
+      tarball-ttl = 3600 * 24 * 7;                   # Cache tarballs for 7 days
     };
 
     # === Automatic Maintenance ===
@@ -68,7 +73,7 @@
     gc = {
       automatic = true;                               # Enable automatic garbage collection
       interval = { Weekday = 7; Hour = 3; Minute = 0; }; # Run weekly on Sunday at 3:00 AM (specific time)
-      options = "--delete-older-than 30d";           # Keep 30 days of generations (increased from 7d for safety)
+      options = "--delete-older-than 21d --max-freed 10G"; # Keep 21 days, max 10GB freed per run
     };
   };
 

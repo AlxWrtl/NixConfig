@@ -58,35 +58,61 @@
           ./modules/development.nix                         # Development environments & tools
           ./modules/brew.nix                                # Homebrew for GUI applications
           ./modules/claude-code.nix                         # Claude Code CLI integration
+          ./modules/security.nix                            # Security hardening & vulnerability scanning
+
+          # === HOME MANAGER INTEGRATION ===
+          home-manager.darwinModules.home-manager {
+            home-manager.useGlobalPkgs = true;
+            home-manager.useUserPackages = true;
+            home-manager.backupFileExtension = "backup";
+            home-manager.users.alx = import ./home;
+            home-manager.extraSpecialArgs = { inherit inputs; };
+          }
         ];
       };
     };
 
     # ============================================================================
-    # ADDITIONAL FLAKE OUTPUTS (Future Extensions)
+    # ADDITIONAL FLAKE OUTPUTS
     # ============================================================================
 
-    # === Development Shells (Future) ===
-    # devShells.aarch64-darwin = {
-    #   default = nixpkgs.legacyPackages.aarch64-darwin.mkShell {
-    #     buildInputs = [ /* development tools */ ];
-    #   };
-    # };
+    # === Development Shells ===
+    devShells.aarch64-darwin.default = nixpkgs.legacyPackages.aarch64-darwin.mkShell {
+      buildInputs = with nixpkgs.legacyPackages.aarch64-darwin; [
+        vulnix                    # Security scanning
+        nix-tree                  # Dependency visualization
+        nixfmt-rfc-style         # Code formatting
+        nil                       # Language server
+      ];
+      
+      shellHook = ''
+        echo "🔧 nix-darwin development environment"
+        echo "Available commands:"
+        echo "  vulnix --system /var/run/current-system  # Security scan"
+        echo "  nix-tree                                 # Visualize dependencies"
+        echo "  nixfmt **/*.nix                          # Format Nix files"
+      '';
+    };
 
-    # === Custom Packages (Future) ===
-    # packages.aarch64-darwin = {
-    #   custom-package = /* custom package definition */;
-    # };
+    # === Configuration Validation Checks ===
+    checks.aarch64-darwin = {
+      # Format check
+      format-check = nixpkgs.legacyPackages.aarch64-darwin.runCommand "format-check" {
+        buildInputs = [ nixpkgs.legacyPackages.aarch64-darwin.nixfmt-rfc-style ];
+      } ''
+        echo "Checking Nix file formatting..."
+        cd ${./.}
+        find . -name "*.nix" -exec nixfmt --check {} \;
+        touch $out
+      '';
+      
+      # Build system configuration
+      build-config = self.darwinConfigurations."alex-mbp".system;
+    };
 
-    # === Deployment Configurations (Future) ===
-    # deploy.nodes = {
-    #   alex-mbp = {
-    #     hostname = "alex-mbp.local";
-    #     profiles.system = {
-    #       path = self.darwinConfigurations."alex-mbp".system;
-    #     };
-    #   };
-    # };
+    # === Templates ===
+    # Note: Templates removed to avoid broken references
+    # To add templates: create templates/basic/ directory with flake.nix
   };
 
   # ============================================================================

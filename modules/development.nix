@@ -22,6 +22,7 @@
     nixfmt-rfc-style                       # Official Nix code formatter
     nix-tree                               # Visualize Nix dependency trees
     nix-index                              # Search Nix packages efficiently
+    vulnix                                 # CVE vulnerability scanner for Nix packages
 
     # === PYTHON DEVELOPMENT STACK ===
     python3                                # Latest Python 3 interpreter
@@ -30,6 +31,7 @@
 
     # === JAVASCRIPT/NODE.JS DEVELOPMENT ===
     nodejs                                 # Node.js JavaScript runtime
+    corepack                               # Official Node.js package manager manager
     pnpm                                   # Fast, disk space efficient package manager
     bun                                    # Ultra-fast JavaScript runtime and package manager
 
@@ -49,6 +51,10 @@
     httpie                                 # Human-friendly HTTP client
     jq                                     # Command-line JSON processor
     yq                                     # Command-line YAML processor
+
+    # === SECURITY TOOLS ===
+    age                                    # Modern file encryption tool
+    sops                                   # Secrets management for Git repos
   ];
 
   # ============================================================================

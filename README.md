@@ -1,73 +1,67 @@
-# Modern Nix-Darwin Configuration
+# Nix-Darwin Configuration
 
-A modular nix-darwin configuration for macOS using a hybrid package management strategy with Nix for reproducible CLI tools and development environments, and Homebrew for GUI applications.
+A modular nix-darwin configuration for macOS using flakes. Combines Nix for CLI tools and Homebrew for GUI applications.
 
-## Architecture
+## Structure
 
 ```
-├── flake.nix              # Main flake with inputs & module orchestration
-├── hosts/alex-mbp/        # Host-specific configuration
-│   ├── default.nix        # Host module entry point
-│   └── configuration.nix  # Core host settings
-└── modules/               # Modular system configuration
-    ├── system.nix         # Core Nix settings, TouchID, trackpad
-    ├── packages.nix       # System utilities & CLI tools
-    ├── development.nix    # Development environments & tools
-    ├── shell.nix          # Zsh, Starship, aliases, functions
-    ├── starship.nix       # Starship prompt configuration
-    ├── fonts.nix          # Programming fonts & typography
-    ├── ui.nix             # macOS UI/UX & system defaults
-    ├── brew.nix           # Homebrew for GUI applications
-    └── claude-code.nix    # Claude Code CLI integration
+flake.nix              # Main flake configuration
+hosts/alex-mbp/        # Host-specific settings
+modules/               # Modular system configuration
+├── system.nix         # Core system settings
+├── packages.nix       # CLI tools & utilities
+├── development.nix    # Development environments
+├── shell.nix          # Zsh & shell configuration
+├── ui.nix             # macOS interface settings
+├── brew.nix           # Homebrew GUI applications
+└── ...
 ```
 
-## Main Commands
+## Key Commands
 
 ### System Management
 ```bash
 # Apply configuration changes
 sudo darwin-rebuild switch --flake .#alex-mbp
 
-# Preview changes without applying
+# Preview changes
 darwin-rebuild build --flake .#alex-mbp
 nix store diff-closures /var/run/current-system ./result
 
 # Update dependencies
 nix flake update
-nix flake lock --update-input nixpkgs
 
-# Rollback to previous generation
+# Rollback
 darwin-rebuild rollback
 ```
 
-### Development Workflow
+### Development
 ```bash
-# Quick rebuild alias (defined in development.nix)
+# Quick rebuild (alias)
 rebuild
 
-# Git shortcuts (defined in development.nix)
-g, gs, ga, gc, gp, gl, gd, gco, gb
+# Git shortcuts
+g, gs, ga, gc, gp, gl, gd
 
-# Modern tool replacements
+# Modern tools
 lt        # eza --tree
-cat       # bat (syntax highlighted)
-find      # fd (faster find)
+cat       # bat (syntax highlighting)
+find      # fd
 grep      # rg (ripgrep)
 ```
 
 ### Maintenance
 ```bash
-# Cleanup (automatic weekly GC configured)
+# Cleanup
 nix-collect-garbage -d
 sudo nix-collect-garbage -d
-nix-store --optimise
-
-# Homebrew cleanup (automatic on rebuild)
 brew cleanup --prune=all
 ```
 
-## Package Management Strategy
+## Package Strategy
 
-- **Nix**: CLI tools, development environments, fonts, system utilities
-- **Homebrew**: GUI applications, macOS-specific tools, casks
-- **Language Package Managers**: npm/pnpm, pip/uv for libraries
+- **Nix**: CLI tools, development environments, fonts
+- **Homebrew**: GUI applications, macOS-specific tools
+- **Language managers**: npm/pnpm, pip/uv for libraries
+
+See `CLAUDE.md` for detailed documentation.

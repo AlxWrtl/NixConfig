@@ -46,7 +46,7 @@
         "https://cache.nixos.org/"                    # Official NixOS binary cache (primary)
         "https://nix-community.cachix.org"            # Community packages cache (secondary)
       ];
-      
+
       # Security: limit extra trusted substituters
       extra-trusted-substituters = [];               # Empty by default for security
 
@@ -285,20 +285,8 @@
   };
 
   # ============================================================================
-  # SYSTEM INTEGRATION & COMPATIBILITY
+  # SYSTEM STATE VERSION
   # ============================================================================
-
-  # === Module Integration Notes ===
-  # This configuration integrates with other modules:
-  # - ui.nix: All macOS interface and system defaults (dock, finder, trackpad, etc.)
-  # - development.nix: Development tools and programming environments
-  # - shell.nix: Shell configuration, aliases, and command-line tools
-  # - packages.nix: System packages and CLI utilities
-  # - brew.nix: GUI applications managed via Homebrew
-  # - fonts.nix: Font management and typography settings
-
-  # === Homebrew Integration ===
-  # Primary user setting enables Homebrew integration in brew.nix
 
   # === System State Version ===
   system.stateVersion = 5;                           # nix-darwin state version (don't change after initial setup)

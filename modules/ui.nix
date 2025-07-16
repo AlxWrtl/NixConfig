@@ -156,6 +156,11 @@
       askForPasswordDelay = 0;                      # Require password immediately
     };
 
+    # === Login Window ===
+    loginwindow = {
+      SHOWFULLNAME = false;                         # Show user avatars instead of username field
+    };
+
     # === Application Security ===
     LaunchServices.LSQuarantine = false;             # Disable quarantine for downloaded apps
     SoftwareUpdate.AutomaticallyInstallMacOSUpdates = false; # Manual macOS updates only
@@ -165,13 +170,6 @@
       TrackpadRightClick = true;                    # Enable two-finger right-click
       Clicking = true;                              # Enable tap-to-click
       TrackpadThreeFingerDrag = true;               # Enable three-finger drag for window management
-    };
-
-    # === Login Window Configuration ===
-    loginwindow = {
-      GuestEnabled = false;                         # Disable guest account for security
-      SHOWFULLNAME = false;                         # Show user list instead of name/password fields
-      DisableConsoleAccess = true;                  # Disable console access from login window
     };
 
     # === Mouse Configuration ===
@@ -197,11 +195,6 @@
         AutomaticDownload = true;                    # Download updates automatically
         CriticalUpdateInstall = true;                # Install critical security updates
         ConfigDataInstall = true;                    # Install system data files and security updates
-      };
-
-      "com.apple.screensaver" = {
-        askForPassword = 1;                          # Require password after screensaver (1=true)
-        askForPasswordDelay = 0;                     # Immediate password requirement
       };
 
       # === Keyboard Shortcuts & Hotkeys ===
@@ -271,8 +264,8 @@
   # ============================================================================
 
   power.sleep = {
-    display = 5;                                    # Display sleeps after 5 minutes
-    computer = 10;                                  # Computer sleeps after 10 minutes
+    display = 15;                                   # Display sleeps after 15 minutes
+    computer = 30;                                  # Computer sleeps after 30 minutes
     harddisk = 10;                                  # Hard disk sleeps after 10 minutes
   };
 }

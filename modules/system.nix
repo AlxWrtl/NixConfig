@@ -162,7 +162,7 @@
           # Advanced power management configuration
           /usr/bin/pmset -a powernap 0                    # Disable Power Nap globally (saves battery)
           /usr/bin/pmset -a ttyskeepawake 0               # Allow sleep with SSH sessions active
-          /usr/bin/pmset -a displaysleep 10               # Display sleep after 10 minutes
+          /usr/bin/pmset -a displaysleep 15               # Display sleep after 15 minutes
           /usr/bin/pmset -a sleep 30                      # System sleep after 30 minutes
           /usr/bin/pmset -a hibernatemode 25              # Hybrid sleep mode (RAM + disk)
           /usr/bin/pmset -a autopoweroff 1                # Enable auto power off after extended sleep

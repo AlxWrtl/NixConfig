@@ -60,6 +60,7 @@
       "lunar"                                 # External display brightness control
       "keka"                                  # File archiver with modern interface
       "daisydisk"                             # Visual disk usage analyzer
+      "fliqlo"                                # Flickering-free screen saver
 
       # === Development & Programming ===
       "docker-desktop"                        # Docker containerization platform

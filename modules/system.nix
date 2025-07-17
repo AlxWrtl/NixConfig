@@ -194,19 +194,25 @@
         "/bin/sh"
         "-c"
         ''
-          # Network performance tuning
-          /usr/sbin/sysctl -w net.inet.tcp.delayed_ack=2           # Optimize TCP acknowledgments
-          /usr/sbin/sysctl -w net.inet.tcp.sendspace=131072       # Increase TCP send buffer to 128KB
-          /usr/sbin/sysctl -w net.inet.tcp.recvspace=131072       # Increase TCP receive buffer to 128KB
-          /usr/sbin/sysctl -w net.inet.tcp.slowstart_flightsize=20    # Optimize TCP slow start algorithm
-          /usr/sbin/sysctl -w net.inet.tcp.local_slowstart_flightsize=20  # Optimize local TCP connections
-          /usr/sbin/sysctl -w kern.maxfiles=65536                 # Increase maximum open files limit
-          /usr/sbin/sysctl -w kern.maxfilesperproc=32768          # Increase max files per process
-          /usr/sbin/sysctl -w kern.ipc.somaxconn=1024             # Increase socket connection queue size
+          # === Network performance tuning ===
+
+          ## -- TCP Optimizations --
+          /usr/sbin/sysctl -w net.inet.tcp.delayed_ack=2                  # Smart TCP ACK (moins de paquets inutiles)
+          /usr/sbin/sysctl -w net.inet.tcp.sendspace=131072              # Buffer d'envoi TCP : 128KB
+          /usr/sbin/sysctl -w net.inet.tcp.recvspace=131072              # Buffer de réception TCP : 128KB
+          /usr/sbin/sysctl -w net.inet.tcp.slowstart_flightsize=16       # Slow start + agressif (bon réseau)
+          /usr/sbin/sysctl -w net.inet.tcp.local_slowstart_flightsize=16 # Pareil pour connexions locales
+
+          ## -- Sockets & Filesystem --
+          /usr/sbin/sysctl -w kern.maxfiles=65536                        # Fichiers ouverts max global
+          /usr/sbin/sysctl -w kern.maxfilesperproc=32768                # Par processus
+          /usr/sbin/sysctl -w kern.ipc.somaxconn=1024                   # Connexions TCP entrantes en attente
+
+          ## -- Logging --
           echo "Network optimization applied: $(date)" >> /var/log/network-optimization.log
         ''
       ];
-      RunAtLoad = true;                               # Apply settings immediately on system boot
+      RunAtLoad = true;
       StandardOutPath = "/var/log/network-optimization.log";
       StandardErrorPath = "/var/log/network-optimization-error.log";
     };
@@ -220,18 +226,27 @@
         "/bin/sh"
         "-c"
         ''
-          # Clear system caches and temporary files
-          /usr/bin/purge                                                    && \
-          /bin/rm -rf /private/var/folders/*/0/safarihistory*              && \
-          /bin/rm -rf /private/var/folders/*/C/com.apple.Safari/CloudTabs  && \
-          /usr/bin/find /private/var/log -name "*.log" -mtime +30 -delete  && \
-          /usr/bin/find /private/tmp -mtime +7 -delete 2>/dev/null         && \
-          /usr/sbin/periodic daily weekly monthly                          && \
-          echo "System cleanup completed: $(date)" >> /var/log/system-cleanup.log
-        ''
+          # Clear system RAM cache
+        /usr/bin/purge && \
+
+        # Clear logs older than 30 days
+        /usr/bin/find /private/var/log -name "*.log" -mtime +30 -delete && \
+
+        # Clear temporary files older than 7 days
+        /usr/bin/find /private/tmp -mtime +7 -delete 2>/dev/null && \
+
+        # Clear user cache
+        /bin/rm -rf ~/Library/Caches/* && \
+
+        # Run macOS maintenance scripts
+        /usr/sbin/periodic daily weekly monthly && \
+
+        # Log the cleanup
+        echo "System cleanup completed: $(date)" >> /var/log/system-cleanup.log
+      ''
       ];
       StartCalendarInterval = [
-        { Weekday = 0; Hour = 4; Minute = 0; }           # Weekly on Sunday at 4:00 AM
+        { Weekday = 1; Hour = 10; Minute = 0; }           # Weekly on Monday at 10:00 AM
       ];
       StandardOutPath = "/var/log/system-cleanup.log";
       StandardErrorPath = "/var/log/system-cleanup-error.log";

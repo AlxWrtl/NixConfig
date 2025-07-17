@@ -154,31 +154,37 @@
   # === Advanced Power Management ===
   # Configure optimal power settings for battery life and performance
   launchd.daemons.power-optimization = {
-    serviceConfig = {
-      ProgramArguments = [
-        "/bin/sh"
-        "-c"
-        ''
-          # Advanced power management configuration
-          /usr/bin/pmset -a powernap 0                    # Disable Power Nap globally (saves battery)
-          /usr/bin/pmset -a ttyskeepawake 0               # Allow sleep with SSH sessions active
-          /usr/bin/pmset -a displaysleep 15               # Display sleep after 15 minutes
-          /usr/bin/pmset -a sleep 30                      # System sleep after 30 minutes
-          /usr/bin/pmset -a hibernatemode 25              # Hybrid sleep mode (RAM + disk)
-          /usr/bin/pmset -a autopoweroff 1                # Enable auto power off after extended sleep
-          /usr/bin/pmset -a autopoweroffdelay 28800       # Auto power off after 8 hours (28800 seconds)
-          /usr/bin/pmset -a standbydelay 86400            # Standby mode after 24 hours (86400 seconds)
-          /usr/bin/pmset -a standby 1                     # Enable standby mode for better battery life
-          /usr/bin/pmset -a reducebright 1                # Reduce brightness before sleep
-          /usr/bin/pmset -a halfdim 1                     # Dim display before sleep
-          echo "Power optimization applied: $(date)" >> /var/log/power-optimization.log
-        ''
-      ];
-      RunAtLoad = true;                               # Apply settings immediately on system boot
-      StandardOutPath = "/var/log/power-optimization.log";
-      StandardErrorPath = "/var/log/power-optimization-error.log";
-    };
+  serviceConfig = {
+    ProgramArguments = [
+      "/bin/sh"
+      "-c"
+      ''
+        # -- Sleep Timings --
+        /usr/bin/pmset -a displaysleep 25               # Display sleep after 25 minutes
+        /usr/bin/pmset -a sleep 45                      # System sleep after 45 minutes
+
+        # -- Hibernate & Standby --
+        /usr/bin/pmset -a hibernatemode 60              # Hybrid sleep (RAM + disk)
+        /usr/bin/pmset -a standby 1                     # Enable standby mode
+        /usr/bin/pmset -a standbydelay 1800             # Enter standby after 30 minutes
+        /usr/bin/pmset -a autopoweroff 1                # Enable auto power off
+        /usr/bin/pmset -a autopoweroffdelay 14400       # Auto power off after 4 hours
+
+        # -- Power Saving Options --
+        /usr/bin/pmset -a powernap 0                    # Disable Power Nap (saves battery)
+        /usr/bin/pmset -a ttyskeepawake 0               # Allow sleep even with SSH sessions
+        /usr/bin/pmset -a reducebright 1                # Reduce brightness before sleep
+        /usr/bin/pmset -a halfdim 1                     # Dim screen before sleep
+
+        # -- Logging --
+        echo "Power optimization applied: $(date)" >> /var/log/power-optimization.log
+      ''
+    ];
+    RunAtLoad = true;  # Apply settings at system startup
+    StandardOutPath = "/var/log/power-optimization.log";
+    StandardErrorPath = "/var/log/power-optimization-error.log";
   };
+};
 
   # === Network Performance Tuning ===
   # Optimize TCP/IP stack for better network performance and throughput

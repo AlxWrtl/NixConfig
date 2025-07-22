@@ -11,7 +11,7 @@
 
     # === Global Performance Settings ===
     add_newline = true;                       # Add blank line before prompt
-    command_timeout = 100;                    # Aggressive timeout for Raycast compatibility (ms)
+    command_timeout = 100;                   # Increased timeout to prevent warnings (ms)
     scan_timeout = 1;                         # Minimal directory scanning for fast startup (ms)
 
     # === Prompt Layout Configuration ===
@@ -170,25 +170,18 @@
     custom = {
       python_smart = {
         disabled = false;
-        # Complex shell command for context-aware Python detection
+        # Show venv only when in project directory or subdirectories
         command = ''
-          # Only show if in Python project directory or virtualenv root
-          if [ -n "$VIRTUAL_ENV" ] && ([ -f "requirements.txt" ] || [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f ".python-version" ] || [ -d ".venv" ] || [ -d "venv" ] || find . -maxdepth 1 -name "*.py" -type f | head -1 | grep -q .); then
-              if command -v python >/dev/null 2>&1; then
-                  version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "?")
-                  env_name=$(basename "$VIRTUAL_ENV")
-                  echo " $version"
-              fi
-          elif [ -n "$VIRTUAL_ENV" ] && [ "$(dirname "$VIRTUAL_ENV")" = "$(pwd)" ]; then
-              # Show when in the parent directory of the virtualenv
-              if command -v python >/dev/null 2>&1; then
-                  version=$(python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>/dev/null || echo "?")
-                  env_name=$(basename "$VIRTUAL_ENV")
-                  echo " $version"
-              fi
+          if [ -n "$VIRTUAL_ENV" ]; then
+              project_dir=$(dirname "$VIRTUAL_ENV")
+              current_dir=$(pwd)
+              # Check if current directory is the project directory or a subdirectory
+              case "$current_dir" in
+                  "$project_dir"*) python --version | cut -d' ' -f2 ;;
+              esac
           fi
         '';
-        when = ''[ -n "$VIRTUAL_ENV" ]'';       # Only run when in virtual environment
+        when = "test -n \"$VIRTUAL_ENV\"";
         format = "[ $output]($style)";         # Format with Python icon
         style = "#00afaf";                     # Cyan color for Python
       };

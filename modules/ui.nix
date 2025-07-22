@@ -142,7 +142,7 @@
       GloballyEnabled = false;                      # Disable Stage Manager globally
       EnableStandardClickToShowDesktop = false;    # Disable Stage Manager click-to-desktop
       StandardHideDesktopIcons = false;            # Keep desktop icons visible
-      StandardHideWidgets = true;                   # Hide widgets in normal mode
+      StandardHideWidgets = false;                  # Show widgets in normal mode
       StageManagerHideWidgets = true;               # Hide widgets in Stage Manager
     };
 

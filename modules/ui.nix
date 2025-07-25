@@ -210,6 +210,7 @@
         _FXSortFoldersFirst = true;                 # Ensure folders sort first
         FXEnableExtensionChangeWarning = false;    # No warning for extension changes
         NSWindowTabbingEnabled = true;              # Enable Finder window tabs
+        FinderSpawnTab = false;                     # Cmd+N opens new window, Cmd+T opens new tab
       };
 
       # === Spotlight Search Categories ===

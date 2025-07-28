@@ -53,47 +53,47 @@
 
     casks = [
       # === System Administration & Utilities ===
-      "1password"                             # Password manager with Keychain integration
-      "onyx"                                  # macOS system maintenance and optimization
-      "jordanbaird-ice"                       # Menu bar organizer (modern Hidden Bar alternative)
-      "logi-options+"                         # Logitech device configuration
-      "lunar"                                 # External display brightness control
-      "keka"                                  # File archiver with modern interface
-      "daisydisk"                             # Visual disk usage analyzer
-      "fliqlo"                                # Flickering-free screen saver
+      { name = "1password"; greedy = true; }                             # Password manager with Keychain integration
+      { name = "onyx"; greedy = true; }                                  # macOS system maintenance and optimization
+      { name = "jordanbaird-ice"; greedy = true; }                       # Menu bar organizer (modern Hidden Bar alternative)
+      { name = "logi-options+"; greedy = true; }                         # Logitech device configuration
+      { name = "lunar"; greedy = true; }                                 # External display brightness control
+      { name = "keka"; greedy = true; }                                  # File archiver with modern interface
+      { name = "daisydisk"; greedy = true; }                             # Visual disk usage analyzer
+      { name = "fliqlo"; greedy = true; }                                # Flickering-free screen saver
 
       # === Development & Programming ===
-      "docker-desktop"                        # Docker containerization platform
-      "visual-studio-code"                    # Microsoft's code editor with extensions
-      "cursor"                                # AI-powered code editor
-      "android-studio"                        # Android development environment
-      "ollama-app"                            # Local LLM management interface
-      "chatgpt"                               # OpenAI's chatbot
+      { name = "docker-desktop"; greedy = true; }                        # Docker containerization platform
+      { name = "visual-studio-code"; greedy = true; }                    # Microsoft's code editor with extensions
+      { name = "cursor"; greedy = true; }                                # AI-powered code editor
+      { name = "android-studio"; greedy = true; }                        # Android development environment
+      { name = "ollama-app"; greedy = true; }                            # Local LLM management interface
+      { name = "chatgpt"; greedy = true; }                               # OpenAI's chatbot
 
       # === Terminal & Command Line ===
-      "ghostty"                               # GPU-accelerated terminal emulator
+      { name = "ghostty"; greedy = true; }                               # GPU-accelerated terminal emulator
 
       # === Productivity & Workflow ===
-      "raycast"                               # Spotlight replacement with plugins
-      "notion"                                # All-in-one workspace and note-taking
+      { name = "raycast"; greedy = true; }                               # Spotlight replacement with plugins
+      { name = "notion"; greedy = true; }                                # All-in-one workspace and note-taking
 
       # === Design & Creative Tools ===
-      "figma"                                 # Collaborative design and prototyping
+      { name = "figma"; greedy = true; }                                 # Collaborative design and prototyping
 
       # === Communication & Collaboration ===
-      "discord"                               # Gaming and community communication
-      "microsoft-teams"                       # Business communication and meetings
-      "whatsapp"                              # Cross-platform messaging
-      "readdle-spark"                         # Email client with smart features
+      { name = "discord"; greedy = true; }                               # Gaming and community communication
+      { name = "microsoft-teams"; greedy = true; }                       # Business communication and meetings
+      { name = "whatsapp"; greedy = true; }                              # Cross-platform messaging
+      { name = "readdle-spark"; greedy = true; }                         # Email client with smart features
 
       # === Web Browsers ===
-      "arc"                                   # Modern browser with unique features
-      "google-chrome"                         # Google's web browser
+      { name = "arc"; greedy = true; }                                   # Modern browser with unique features
+      { name = "google-chrome"; greedy = true; }                         # Google's web browser
 
       # === Media & Entertainment ===
-      "vlc"                                   # Universal media player
-      "spotify"                               # Music streaming service
-      "plex-media-server"                     # Personal media server
+      { name = "vlc"; greedy = true; }                                   # Universal media player
+      { name = "spotify"; greedy = true; }                               # Music streaming service
+      { name = "plex-media-server"; greedy = true; }                     # Personal media server
     ];
 
     # ============================================================================

@@ -19,7 +19,7 @@
 
     # === Automatic Package Management ===
     onActivation = {
-      cleanup = "uninstall";                  # Remove packages not listed in configuration
+      cleanup = "zap";                        # Remove packages and associated data not listed in configuration
       autoUpdate = true;                      # Update Homebrew itself during rebuild
       upgrade = true;                         # Upgrade outdated packages during rebuild
     };
@@ -42,6 +42,7 @@
     brews = [
       # === macOS-Specific CLI Tools ===
       "mas"                                   # Mac App Store command-line interface
+      "trash"                                 # macOS-native trash utility for cleanup scripts
 
       # Note: Most CLI tools are managed through Nix for reproducibility
       # Only add tools here that are problematic in Nix or require macOS integration
@@ -61,12 +62,12 @@
       { name = "keka"; greedy = true; }                                  # File archiver with modern interface
       { name = "daisydisk"; greedy = true; }                             # Visual disk usage analyzer
       { name = "fliqlo"; greedy = true; }                                # Flickering-free screen saver
+      { name = "openvpn-connect"; greedy = true; }                       # OpenVPN client
 
       # === Development & Programming ===
       { name = "docker-desktop"; greedy = true; }                        # Docker containerization platform
       { name = "visual-studio-code"; greedy = true; }                    # Microsoft's code editor with extensions
       { name = "cursor"; greedy = true; }                                # AI-powered code editor
-      { name = "android-studio"; greedy = true; }                        # Android development environment
       { name = "ollama-app"; greedy = true; }                            # Local LLM management interface
       { name = "chatgpt"; greedy = true; }                               # OpenAI's chatbot
 

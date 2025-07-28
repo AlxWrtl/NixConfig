@@ -68,6 +68,7 @@
       "cursor"                                # AI-powered code editor
       "android-studio"                        # Android development environment
       "ollama-app"                            # Local LLM management interface
+      "chatgpt"                               # OpenAI's chatbot
 
       # === Terminal & Command Line ===
       "ghostty"                               # GPU-accelerated terminal emulator

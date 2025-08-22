@@ -51,6 +51,7 @@
     httpie                                 # Human-friendly HTTP client
     jq                                     # Command-line JSON processor
     yq                                     # Command-line YAML processor
+    redis                                  # In-memory data structure store
 
     # === SECURITY TOOLS ===
     age                                    # Modern file encryption tool

@@ -58,17 +58,15 @@
       { name = "onyx"; greedy = true; }                                  # macOS system maintenance and optimization
       { name = "jordanbaird-ice"; greedy = true; }                       # Menu bar organizer (modern Hidden Bar alternative)
       { name = "logi-options+"; greedy = true; }                         # Logitech device configuration
-      { name = "lunar"; greedy = true; }                                 # External display brightness control
+      # { name = "lunar"; greedy = true; }                                 # External display brightness control
       { name = "keka"; greedy = true; }                                  # File archiver with modern interface
       { name = "daisydisk"; greedy = true; }                             # Visual disk usage analyzer
       { name = "fliqlo"; greedy = true; }                                # Flickering-free screen saver
-      { name = "openvpn-connect"; greedy = true; }                       # OpenVPN client
 
       # === Development & Programming ===
       { name = "docker-desktop"; greedy = true; }                        # Docker containerization platform
       { name = "visual-studio-code"; greedy = true; }                    # Microsoft's code editor with extensions
       { name = "cursor"; greedy = true; }                                # AI-powered code editor
-      { name = "ollama-app"; greedy = true; }                            # Local LLM management interface
       { name = "chatgpt"; greedy = true; }                               # OpenAI's chatbot
 
       # === Terminal & Command Line ===
@@ -93,7 +91,7 @@
 
       # === Media & Entertainment ===
       { name = "vlc"; greedy = true; }                                   # Universal media player
-      { name = "spotify"; greedy = true; }                               # Music streaming service
+      # { name = "spotify"; greedy = true; }                               # Music streaming service
       { name = "plex-media-server"; greedy = true; }                     # Personal media server
     ];
 

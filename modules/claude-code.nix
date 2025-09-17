@@ -2,224 +2,297 @@
 
 let
   # ============================================================================
-  # CLAUDE CODE CLI WRAPPER CONFIGURATION
+  # CLAUDE CODE COMPLETE CONFIGURATION
   # ============================================================================
+  # Approche déclarative complète basée sur les meilleures pratiques 2025
+  # Contourne la limitation des symlinks de Claude Code via activation scripts
+  # Configuration reproductible pour clean installs
 
-  # === Dynamic Path Resolution ===
-  # Resolve PNPM home directory from environment or use default
-  pnpmHome = config.environment.variables.PNPM_HOME or "$HOME/Library/pnpm";
+  # === Configuration JSON principale ===
+  claudeConfigJson = {
+    # Modèle par défaut 2025
+    defaultModel = "claude-sonnet-4-20250514";
 
-  # === CLI Path Construction ===
-  # Standard pnpm global package structure for Claude Code CLI
-  cliPath = "${pnpmHome}/global/5/node_modules/@anthropic-ai/claude-code/cli.js";
+    # Outils autorisés optimisés
+    allowedTools = [
+      "bash" "edit" "read" "write" "glob" "grep"
+      "task" "webfetch" "websearch" "multiedit" "notebookedit"
+    ];
 
-  # === System Wrapper Script ===
-  # Creates a system-wide wrapper that validates installation and executes CLI
-  claudeCodeWrapper = pkgs.writeShellScriptBin "claude-code" ''
-    # Validate Claude Code CLI installation
-    if [ ! -f "${cliPath}" ]; then
-      echo "❌ Claude Code CLI not found. Please install with: pnpm install -g @anthropic-ai/claude-code" >&2
-      echo "📍 Expected location: ${cliPath}" >&2
-      echo "🔧 Current PNPM_HOME: ${pnpmHome}" >&2
-      exit 1
-    fi
+    # Paramètres d'optimisation
+    autoSave = true;
+    skipPermissions = false;  # Sécurité
 
-    # Execute Claude Code CLI with all arguments
-    exec node "${cliPath}" "$@"
+    # Interface utilisateur 2025
+    ui = {
+      theme = "dark";
+      compactMode = false;
+      showTokens = true;
+      showCost = true;
+      animations = true;
+    };
+
+    # Notifications système
+    notifications = {
+      enabled = true;
+      channel = "terminal_bell";
+      showProgress = true;
+    };
+
+    # Status line configuration
+    statusline = {
+      enabled = true;
+      showModel = true;
+      showTokens = true;
+      showCost = true;
+      showGitBranch = true;
+      showTime = true;
+      format = "simple";
+    };
+
+    # Hooks système
+    hooks = {
+      preEdit = [];
+      postEdit = [];
+    };
+
+    # Performance 2025
+    performance = {
+      parallelTools = true;
+      cacheEnabled = true;
+      compactHistory = true;
+    };
+  };
+
+  # === Settings JSON pour Claude Code ===
+  settingsJson = {
+    statusLine = {
+      type = "command";
+      command = "pnpm dlx ccstatusline@latest";
+      padding = 0;
+    };
+    env = {
+      npm_config_prefer_pnpm = "true";
+      npm_config_user_agent = "pnpm";
+      BASH_DEFAULT_TIMEOUT_MS = "300000";
+      BASH_MAX_TIMEOUT_MS = "600000";
+    };
+  };
+
+
+  # === Commandes personnalisées TDD ===
+  tddCommand = ''
+    ---
+    allowed-tools: ["bash", "edit", "read", "write", "grep", "glob", "multiedit"]
+    description: "Test-Driven Development workflow avec tests automatisés"
+    argument-hint: "<feature-description>"
+    ---
+
+    # Test-Driven Development Command
+
+    Développement guidé par les tests pour: $ARGUMENTS
+
+    ## Processus TDD 2025
+    1. 🔍 **Analyse**: Comprendre les exigences et patterns de test existants
+    2. ❌ **Red**: Écrire le test qui échoue d'abord
+    3. ✅ **Green**: Code minimal pour faire passer le test
+    4. 🔄 **Refactor**: Améliorer en gardant les tests verts
+    5. 🧪 **Validation**: Lancer la suite complète de tests
+    6. 📝 **Documentation**: Mettre à jour la doc si nécessaire
+
+    Toujours lancer les tests après chaque étape et maintenir 100% de couverture.
   '';
 
-  # === Claude Code Configuration Files ===
-  # All configurations managed within nix-darwin structure
+  optimizeCommand = ''
+    ---
+    allowed-tools: ["bash", "edit", "read", "grep", "glob", "webfetch"]
+    description: "Optimisation de performance avec pratiques 2025"
+    argument-hint: "<optimization-target>"
+    ---
 
-  # Default Claude configuration
-  claudeConfig = pkgs.writeTextFile {
-    name = "claude-config.json";
-    text = builtins.toJSON {
-      defaultModel = "claude-sonnet-4-20250514";
-      allowedTools = ["bash" "edit" "read" "write" "glob" "grep" "task"];
-      autoSave = true;
-      notifications = {
-        enabled = true;
-        channel = "terminal_bell";
-      };
-      hooks = {
-        preEdit = [];
-        postEdit = ["prettier" "eslint"];
-      };
-      mcp = {
-        enabled = true;
-        servers = {};
-      };
-    };
-  };
+    # Performance Optimization Command
 
-  # Sample TDD command
-  tddCommand = pkgs.writeTextFile {
-    name = "tdd.md";
-    text = ''
-      # Test-Driven Development Command
+    Optimiser: $ARGUMENTS
 
-      Guide development using TDD principles:
-      1. Write failing test first
-      2. Write minimal code to pass
-      3. Refactor while keeping tests green
-      4. Repeat cycle
+    ## Zones d'optimisation 2025
+    - 🚀 **Bundle size**: Code splitting, tree shaking
+    - ⚡ **Runtime**: Optimisation algorithmique, mise en cache
+    - 🖼️ **Assets**: Optimisation d'images, lazy loading
+    - 📡 **Network**: CDN, compression, HTTP/3
+    - 💾 **Memory**: Garbage collection, fuites mémoire
+    - 🔄 **Rendering**: Virtual DOM, Web Workers
 
-      Always run tests after each step.
-    '';
-  };
+    ## Processus
+    1. Profiler les performances actuelles
+    2. Identifier les goulots d'étranglement
+    3. Appliquer des optimisations ciblées
+    4. Mesurer les améliorations
+    5. Documenter les changements
+  '';
 
-  # Context-prime command for comprehensive project understanding
-  contextPrimeCommand = pkgs.writeTextFile {
-    name = "context-prime.md";
-    text = ''
-      # Context Prime Command
+  contextPrimeCommand = ''
+    # Context Prime Command
 
-      Load comprehensive project understanding:
-      1. Read CLAUDE.md and project documentation
-      2. Analyze directory structure and key files
-      3. Understand tech stack and dependencies
-      4. Review recent git history and changes
-      5. Identify testing patterns and build processes
+    Charger une compréhension complète du projet:
+    1. Lire CLAUDE.md et la documentation du projet
+    2. Analyser la structure des répertoires et fichiers clés
+    3. Comprendre la stack technologique et dépendances
+    4. Examiner l'historique git et changements récents
+    5. Identifier les patterns de test et processus de build
 
-      Provides deep context for informed code assistance.
-    '';
-  };
+    Fournit un contexte approfondi pour une assistance code informée.
+  '';
 
-  # MCP servers configuration
-  mcpServersConfig = pkgs.writeTextFile {
-    name = "mcp-servers.json";
-    text = builtins.toJSON {
-      mcpServers = {
-        filesystem = {
-          command = "npx";
-          args = ["-y" "@modelcontextprotocol/server-filesystem" "/path/to/allowed/files"];
-        };
-        git = {
-          command = "npx";
-          args = ["-y" "@modelcontextprotocol/server-git" "--repository" "."];
-        };
-      };
-    };
-  };
+  # === Wrapper Claude Code ===
+  claudeCodeWrapper = pkgs.writeShellScriptBin "claude-code" ''
+    # Wrapper Claude Code avec validation et installation automatique
+    CLAUDE_DIR="$HOME/.claude"
+    CLI_PATH="$CLAUDE_DIR/local/node_modules/@anthropic-ai/claude-code/cli.js"
 
-  # Configuration setup script
-  claudeConfigSetup = pkgs.writeShellScriptBin "claude-setup" ''
-    # Create Claude configuration directories within nix-darwin structure
-    CLAUDE_DIR="$HOME/.config/nix-darwin/claude"
-    mkdir -p "$CLAUDE_DIR/commands"
-    mkdir -p "$CLAUDE_DIR/hooks"
-    mkdir -p "$CLAUDE_DIR/mcp"
+    # Vérification et installation automatique si nécessaire
+    if [ ! -f "$CLI_PATH" ]; then
+        echo "🚀 Installation de Claude Code CLI..."
+        mkdir -p "$CLAUDE_DIR/local"
+        cd "$CLAUDE_DIR/local"
 
-    # Link configuration files from nix store
-    ln -sf "${claudeConfig}" "$CLAUDE_DIR/config.json"
-    ln -sf "${tddCommand}" "$CLAUDE_DIR/commands/tdd.md"
-    ln -sf "${contextPrimeCommand}" "$CLAUDE_DIR/commands/context-prime.md"
-    ln -sf "${mcpServersConfig}" "$CLAUDE_DIR/mcp/servers.json"
+        # Installation via pnpm (recommandé 2025)
+        if command -v ${pkgs.pnpm}/bin/pnpm >/dev/null 2>&1; then
+            ${pkgs.pnpm}/bin/pnpm add @anthropic-ai/claude-code
+        elif command -v npm >/dev/null 2>&1; then
+            npm install @anthropic-ai/claude-code
+        else
+            echo "❌ npm ou pnpm requis pour installer Claude Code CLI" >&2
+            exit 1
+        fi
 
-    echo "✅ Claude configuration linked to nix-darwin structure"
-    echo "📁 Configuration directory: $CLAUDE_DIR"
-    echo "🎉 Run 'claude-code doctor' to verify setup"
+        if [ ! -f "$CLI_PATH" ]; then
+            echo "❌ Échec de l'installation de Claude Code CLI" >&2
+            exit 1
+        fi
+
+        echo "✅ Claude Code CLI installé avec succès"
+    fi
+
+    # Exécution avec Node.js et tous les arguments
+    exec ${pkgs.nodejs}/bin/node "$CLI_PATH" "$@"
   '';
 
 in {
-  # Claude Code CLI integration with 2025 optimizations
-  # Provides system-wide access to Anthropic's Claude Code CLI tool
-  # Includes advanced configuration, MCP support, and productivity aliases
-  # Requires global installation via pnpm for automatic updates
-
   # ============================================================================
-  # SYSTEM PACKAGE INSTALLATION
+  # ACTIVATION SCRIPTS - SOLUTION RECOMMANDÉE 2025
   # ============================================================================
+  # Contourne la limitation des symlinks de Claude Code
+  # Copie les fichiers dans ~/.claude lors de l'activation système
 
-  environment.systemPackages = [
-    claudeCodeWrapper                       # Install Claude Code wrapper globally
-    claudeConfigSetup                       # Claude Code configuration setup utility
-  ];
-
-  # ============================================================================
-  # CLAUDE CODE ACTIVATION HOOKS
-  # ============================================================================
-
-  # Run Claude setup on system activation
-  system.activationScripts.claudeSetup = {
+  system.activationScripts.claudeCodeSetup = {
     text = ''
-      # Ensure Claude configuration directory exists for all users
-      echo "Setting up Claude Code configuration..."
+      echo "🤖 Configuration Claude Code (approche déclarative)..."
 
-      # Create Claude configuration within nix-darwin structure
-      CLAUDE_DIR="$HOME/.config/nix-darwin/claude"
-      mkdir -p "$CLAUDE_DIR/commands"
-      mkdir -p "$CLAUDE_DIR/hooks"
-      mkdir -p "$CLAUDE_DIR/mcp"
+      # Répertoire Claude
+      CLAUDE_DIR="$HOME/.claude"
 
-      # Link configuration files if they don't exist
-      [ ! -L "$CLAUDE_DIR/config.json" ] && ln -sf "${claudeConfig}" "$CLAUDE_DIR/config.json"
-      [ ! -L "$CLAUDE_DIR/commands/tdd.md" ] && ln -sf "${tddCommand}" "$CLAUDE_DIR/commands/tdd.md"
-      [ ! -L "$CLAUDE_DIR/commands/context-prime.md" ] && ln -sf "${contextPrimeCommand}" "$CLAUDE_DIR/commands/context-prime.md"
-      [ ! -L "$CLAUDE_DIR/mcp/servers.json" ] && ln -sf "${mcpServersConfig}" "$CLAUDE_DIR/mcp/servers.json"
+      # Création de la structure complète
+      mkdir -p "$CLAUDE_DIR"/{hooks,commands,mcp,projects,local}
 
-      echo "Claude Code system configuration complete."
+      # Configuration principale (settings.json)
+      cat > "$CLAUDE_DIR/settings.json" << 'EOF'
+${builtins.toJSON settingsJson}
+EOF
+
+      # Configuration Claude (.claude.json)
+      cat > "$CLAUDE_DIR/.claude.json" << 'EOF'
+${builtins.toJSON claudeConfigJson}
+EOF
+
+
+      # Commandes personnalisées
+      cat > "$CLAUDE_DIR/commands/tdd.md" << 'EOF'
+${tddCommand}
+EOF
+
+      cat > "$CLAUDE_DIR/commands/optimize.md" << 'EOF'
+${optimizeCommand}
+EOF
+
+      cat > "$CLAUDE_DIR/commands/context-prime.md" << 'EOF'
+${contextPrimeCommand}
+EOF
+
+      # Configuration MCP de base
+      cat > "$CLAUDE_DIR/mcp/servers.json" << 'EOF'
+{
+  "mcpServers": {}
+}
+EOF
+
+      # Permissions correctes
+      chmod -R 755 "$CLAUDE_DIR"
+      chmod 644 "$CLAUDE_DIR"/{settings.json,.claude.json}
+      chmod 644 "$CLAUDE_DIR/commands"/*.md
+
+      echo "✅ Configuration Claude Code installée dans $CLAUDE_DIR"
     '';
   };
 
   # ============================================================================
-  # CLAUDE CODE ENVIRONMENT CONFIGURATION
+  # PACKAGES ET ENVIRONNEMENT
   # ============================================================================
 
+  environment.systemPackages = [
+    claudeCodeWrapper
+  ];
+
   environment.variables = {
-    # === Claude Code CLI Settings ===
-    # CLAUDE_API_KEY = "";                  # Set in shell profile or .env files
-    CLAUDE_MODEL = "claude-sonnet-4-20250514";  # Latest Claude 4 Sonnet (2025)
-    CLAUDE_MAX_TOKENS = "8192";            # Increased token limit for better context
-    CLAUDE_CONFIG_DIR = "$HOME/.config/nix-darwin/claude"; # Configuration directory in nix folder
+    # Claude Code 2025
+    CLAUDE_MODEL = "claude-sonnet-4-20250514";
+    CLAUDE_MAX_TOKENS = "8192";
+    CLAUDE_CONFIG_DIR = "$HOME/.claude";
+    CLAUDE_NOTIFY_CHANNEL = "terminal_bell";
+    CLAUDE_ENABLE_MCP = "true";
+    CLAUDE_SESSION_AUTOSAVE = "true";
+    CLAUDE_HOOKS_ENABLED = "true";
+    CLAUDE_PARALLEL_TOOLS = "true";
+    CLAUDE_CACHE_ENABLED = "true";
+    CLAUDE_PLAN_MODE_DEFAULT = "false";
 
-    # === 2025 Enhanced Features ===
-    CLAUDE_NOTIFY_CHANNEL = "terminal_bell"; # Enable terminal notifications
-    CLAUDE_ENABLE_MCP = "true";             # Enable Model Context Protocol
-    CLAUDE_SESSION_AUTOSAVE = "true";       # Auto-save sessions for --resume
-    CLAUDE_HOOKS_ENABLED = "true";          # Enable pre/post-edit hooks
-
-    # === Performance Optimizations ===
-    CLAUDE_PARALLEL_TOOLS = "true";         # Enable parallel tool execution
-    CLAUDE_CACHE_ENABLED = "true";          # Enable local caching
-    CLAUDE_PLAN_MODE_DEFAULT = "false";     # Start in execution mode (Shift+Tab for plan)
-
-    # === Integration Settings ===
-    # EDITOR = "code";                      # Preferred editor for Claude Code (set in system.nix)
-    # PAGER = "less";                       # Pager for long outputs (set in system.nix)
+    # Package managers
+    npm_config_prefer_pnpm = "true";
+    npm_config_user_agent = "pnpm";
   };
 
   # ============================================================================
-  # SHELL INTEGRATION
+  # ALIASES OPTIMISÉS 2025
   # ============================================================================
 
   environment.shellAliases = {
-    # === Claude Code Shortcuts ===
-    cc = "claude-code";                     # Quick access alias
-    claude = "claude-code";                 # Alternative alias
+    # Raccourcis essentiels
+    cc = "claude-code";
+    claude = "claude-code";
 
-    # === Essential Operations ===
-    cc-init = "claude-code /init";          # Initialize project with CLAUDE.md
-    cc-help = "claude-code --help";         # Show help information
-    cc-doctor = "claude-code doctor";       # Verify installation and config
-    cc-version = "claude-code --version";   # Show version information
+    # Opérations de base
+    cc-init = "claude-code /init";
+    cc-help = "claude-code --help";
+    cc-doctor = "claude-code doctor";
+    cc-version = "claude-code --version";
 
-    # === Advanced Workflows ===
-    cc-resume = "claude-code --resume";     # Resume last session
-    cc-continue = "claude-code --continue"; # Continue previous conversation
-    cc-plan = "claude-code --plan-mode";    # Start in plan mode
+    # Workflows avancés
+    cc-resume = "claude-code --resume";
+    cc-continue = "claude-code --continue";
+    cc-plan = "claude-code --plan-mode";
 
-    # === Model Selection ===
-    cc-opus = "claude-code --model claude-opus-4";    # Use Opus for complex tasks
-    cc-sonnet = "claude-code --model claude-sonnet-4"; # Use Sonnet (default)
-    cc-haiku = "claude-code --model claude-haiku";     # Use Haiku for simple tasks
+    # Sélection de modèles
+    cc-opus = "claude-code --model claude-opus-4";
+    cc-sonnet = "claude-code --model claude-sonnet-4";
+    cc-haiku = "claude-code --model claude-haiku";
 
-    # === Multi-Directory Support ===
-    cc-add = "claude-code --add-dir";       # Add directory to current session
+    # Commandes spécialisées 2025
+    cc-tdd = "claude-code /tdd";
+    cc-optimize = "claude-code /optimize";
+    cc-context = "claude-code /context-prime";
+    cc-safe = "claude-code --plan-mode --read-only";
 
-    # === Debugging & Analysis ===
-    cc-trace = "claude-code --trace";       # Enable detailed logging
-    cc-safe = "claude-code --plan-mode --read-only"; # Safe research mode
+    # Gestion des sessions
+    cc-clear = "claude-code /clear";
+    cc-compact = "claude-code /compact";
   };
 }

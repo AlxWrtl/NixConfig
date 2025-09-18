@@ -108,6 +108,11 @@
         greedy = true;
       } # OpenAI's chatbot
 
+      {
+        name = "ollama-app";
+        greedy = true;
+      } # Local LLM management interface
+
       # === Terminal & Command Line ===
       {
         name = "ghostty";

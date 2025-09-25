@@ -49,6 +49,7 @@
       # === macOS-Specific CLI Tools ===
       "mas" # Mac App Store command-line interface
       "trash" # macOS-native trash utility for cleanup scripts
+      "libomp" # OpenMP runtime library for parallel computing support
 
       # Note: Most CLI tools are managed through Nix for reproducibility
       # Only add tools here that are problematic in Nix or require macOS integration

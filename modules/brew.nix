@@ -178,7 +178,10 @@
         name = "chatgpt-atlas";
         greedy = true;
       } # AI-powered media companion
-
+      {
+        name = "coteditor";
+        greedy = true;
+      } # Lightweight text editor for macOS
     ];
 
     # ============================================================================

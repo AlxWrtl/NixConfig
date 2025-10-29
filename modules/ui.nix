@@ -183,6 +183,11 @@
       # === Security & Privacy Hardening ===
       "com.apple.AdLib".allowApplePersonalizedAdvertising = false; # Disable personalized advertising
 
+      # === Gatekeeper & Quarantine Configuration ===
+      "com.apple.security" = {
+        GKAutoRearm = false;                         # Prevent Gatekeeper from re-arming quarantine warnings
+      };
+
       "com.apple.appstore" = {
         ShowDebugMenu = false;                       # Hide debug options
         AutoUpdateApps = true;                       # Enable automatic security updates
@@ -269,4 +274,20 @@
     computer = 30;                                  # Computer sleeps after 30 minutes
     harddisk = 10;                                  # Hard disk sleeps after 10 minutes
   };
+
+  # ============================================================================
+  # GATEKEEPER QUARANTINE DISABLE
+  # ============================================================================
+
+  # Disable Gatekeeper quarantine warnings permanently
+  system.activationScripts.postActivation.text = ''
+    # Disable GKAutoRearm to prevent Gatekeeper from re-arming
+    /usr/bin/defaults write /Library/Preferences/com.apple.security GKAutoRearm -bool false 2>/dev/null || true
+
+    # Optionally disable Gatekeeper assessment system globally (reduces security)
+    # Uncomment the line below if you still get warnings after rebuild
+    # /usr/sbin/spctl --global-disable 2>/dev/null || true
+
+    echo "Gatekeeper quarantine warnings disabled"
+  '';
 }

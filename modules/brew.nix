@@ -174,6 +174,11 @@
         name = "plex-media-server";
         greedy = true;
       } # Personal media server
+      {
+        name = "chatgpt-atlas";
+        greedy = true;
+      } # AI-powered media companion
+
     ];
 
     # ============================================================================

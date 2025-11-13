@@ -11,8 +11,8 @@
 
     # === Global Performance Settings ===
     add_newline = true;                       # Add blank line before prompt
-    command_timeout = 100;                   # Increased timeout to prevent warnings (ms)
-    scan_timeout = 1;                         # Minimal directory scanning for fast startup (ms)
+    command_timeout = 500;                    # Timeout for command execution (ms)
+    scan_timeout = 30;                        # Directory scanning timeout (ms)
 
     # === Prompt Layout Configuration ===
     # Left side: directory, git status, and input
@@ -182,6 +182,7 @@
           fi
         '';
         when = "test -n \"$VIRTUAL_ENV\"";
+        ignore_timeout = true;                # Allow longer execution for shell checks
         format = "[ $output]($style)";         # Format with Python icon
         style = "#00afaf";                     # Cyan color for Python
       };

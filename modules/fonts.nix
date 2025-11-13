@@ -29,7 +29,7 @@
       # Comprehensive Unicode support for international content
       noto-fonts                             # Google Noto - universal font family
       noto-fonts-cjk-sans                    # CJK (Chinese, Japanese, Korean) language support
-      noto-fonts-emoji                       # Modern emoji support with latest Unicode standards
+      noto-fonts-color-emoji                 # Modern emoji support with latest Unicode standards
 
       # === Additional Font Families ===
       # Uncomment and add more fonts as needed:

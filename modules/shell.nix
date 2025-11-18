@@ -197,9 +197,7 @@
       alias vim='nvim'                              # Use Neovim instead of Vim
       alias top='htop'                              # Use htop instead of top
 
-      # ---- Claude Code ----
-      alias claude='~/.claude/local/claude'         # Claude Code CLI
-
+      # Note: Claude Code aliases are defined in claude-code.nix
       # Note: Development-specific aliases (git, docker, python) are defined in development.nix
     '';
   };

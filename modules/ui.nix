@@ -284,10 +284,9 @@
     # Disable GKAutoRearm to prevent Gatekeeper from re-arming
     /usr/bin/defaults write /Library/Preferences/com.apple.security GKAutoRearm -bool false 2>/dev/null || true
 
-    # Optionally disable Gatekeeper assessment system globally (reduces security)
-    # Uncomment the line below if you still get warnings after rebuild
-    # /usr/sbin/spctl --global-disable 2>/dev/null || true
+    # Disable Gatekeeper assessment system globally (reduces security but eliminates warnings)
+    /usr/sbin/spctl --global-disable 2>/dev/null || true
 
-    echo "Gatekeeper quarantine warnings disabled"
+    echo "Gatekeeper completely disabled"
   '';
 }

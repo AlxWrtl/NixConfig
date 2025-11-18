@@ -182,6 +182,11 @@
         name = "coteditor";
         greedy = true;
       } # Lightweight text editor for macOS
+      {
+        name = "claude";
+        greedy = true;
+      } # AI assistant application
+
     ];
 
     # ============================================================================

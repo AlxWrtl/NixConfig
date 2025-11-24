@@ -187,6 +187,11 @@
         greedy = true;
       } # AI assistant application
 
+      {
+        name = "clickup";
+        greedy = true;
+      } # Productivity and task management tool
+
     ];
 
     # ============================================================================

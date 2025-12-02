@@ -34,6 +34,7 @@
     corepack                               # Official Node.js package manager manager
     pnpm                                   # Fast, disk space efficient package manager
     bun                                    # Ultra-fast JavaScript runtime and package manager
+    fnm                                    # Node.js version manager
 
     # Node.js global tools
     nodePackages."@angular/cli"            # Angular framework CLI

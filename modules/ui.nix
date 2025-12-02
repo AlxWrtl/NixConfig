@@ -89,7 +89,7 @@
         { spacer = { small = true; }; }
         "/Applications/Arc.app"
         "/Applications/Ghostty.app"
-        "/Applications/Cursor.app"
+        "/Applications/Visual Studio Code.app"
         { spacer = { small = true; }; }
       ];
     };

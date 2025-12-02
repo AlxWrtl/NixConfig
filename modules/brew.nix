@@ -100,10 +100,7 @@
         name = "visual-studio-code";
         greedy = true;
       } # Microsoft's code editor with extensions
-      {
-        name = "cursor";
-        greedy = true;
-      } # AI-powered code editor
+
       {
         name = "chatgpt";
         greedy = true;

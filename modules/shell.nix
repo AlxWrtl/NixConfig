@@ -137,8 +137,9 @@
         _eval_cache zoxide 'zoxide init zsh'       # Smart directory jumping
       fi
 
+      # ---- FNM Initialization (direct eval for reliability) ----
       if command -v fnm >/dev/null 2>&1; then
-        _eval_cache fnm 'fnm env --use-on-cd'      # Fast Node.js version manager
+        eval "$(fnm env --use-on-cd)"              # Fast Node.js version manager
       fi
 
       # ---- FZF Integration with Enhanced Previews ----

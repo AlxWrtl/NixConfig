@@ -189,6 +189,11 @@
         greedy = true;
       } # Productivity and task management tool
 
+      {
+        name = "zen";
+        greedy = true;
+      } # Browser for focused work and reading
+
     ];
 
     # ============================================================================

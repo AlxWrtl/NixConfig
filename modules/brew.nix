@@ -194,6 +194,11 @@
         greedy = true;
       } # Browser for focused work and reading
 
+      {
+        name = "codex";
+        greedy = true;
+      } # AI code generation and assistance tool
+
     ];
 
     # ============================================================================

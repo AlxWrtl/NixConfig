@@ -30,7 +30,6 @@
     ruff                                   # Fast Python linter and formatter
 
     # === JAVASCRIPT/NODE.JS DEVELOPMENT ===
-    nodejs                                 # Node.js JavaScript runtime
     corepack                               # Official Node.js package manager manager
     pnpm                                   # Fast, disk space efficient package manager
     bun                                    # Ultra-fast JavaScript runtime and package manager

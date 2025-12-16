@@ -1,8 +1,13 @@
-{ config, pkgs, lib, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  ...
+}:
 
 {
   imports = [
-  #  ./claude-code.nix
+    ./claude-code.nix
   ];
 
   # ============================================================================
@@ -16,6 +21,10 @@
   home.homeDirectory = "/Users/alx";
   home.stateVersion = "24.11";
 
+  home.sessionVariables = {
+    CLAUDE_CONFIG_DIR = "$HOME/.claude";
+  };
+
   # === Allow Home Manager to manage itself ===
   programs.home-manager.enable = true;
 
@@ -25,11 +34,10 @@
 
   programs.zsh = {
     enable = true;
-    enableCompletion = true;
+    enableCompletion = false;
     autosuggestion.enable = true;
     syntaxHighlighting.enable = true;
 
-    # Enhanced history configuration
     history = {
       size = 50000;
       save = 50000;
@@ -38,28 +46,27 @@
       ignoreSpace = true;
     };
 
-    # User-specific aliases (supplement system aliases)
     shellAliases = {
-      # === Security tools ===
+      # Security tools
       vulnscan = "vulnix --system /var/run/current-system";
       secrets = "sops";
       encrypt = "age";
 
-      # === Home Manager shortcuts ===
+      # Home Manager
       hm = "home-manager";
       hms = "home-manager switch";
       hmb = "home-manager build";
     };
 
-    # User-specific environment variables
     sessionVariables = {
-      # Development environment
       HOMEBREW_NO_ANALYTICS = "1";
       HOMEBREW_NO_INSECURE_REDIRECT = "1";
 
-      # Security
       GNUPGHOME = "$XDG_CONFIG_HOME/gnupg";
       AGE_DIR = "$XDG_CONFIG_HOME/age";
+
+      # (optionnel, si tu veux le forcer côté HM aussi)
+      CLAUDE_CONFIG_DIR = "$HOME/.claude";
     };
   };
 
@@ -99,14 +106,14 @@
   # User-specific packages (development tools, utilities)
   home.packages = with pkgs; [
     # Development utilities that should be user-scoped
-    gh-dash                # GitHub dashboard
-    gitleaks               # Git secrets scanner
-    pre-commit             # Git pre-commit hooks
+    gh-dash # GitHub dashboard
+    gitleaks # Git secrets scanner
+    pre-commit # Git pre-commit hooks
 
     # Personal productivity tools
-    tree                   # Directory tree viewer
-    watch                  # Execute programs periodically
-    tldr                   # Simplified man pages
+    tree # Directory tree viewer
+    watch # Execute programs periodically
+    tldr # Simplified man pages
   ];
 
   # ============================================================================
@@ -125,7 +132,11 @@
         "/Users/alx/.cache/vulnix-scan.json"
       ];
       StartCalendarInterval = [
-        { Weekday = 1; Hour = 10; Minute = 0; }  # Monday 10 AM
+        {
+          Weekday = 1;
+          Hour = 10;
+          Minute = 0;
+        } # Monday 10 AM
       ];
       StandardOutPath = "/Users/alx/.cache/vulnix-scan.log";
       StandardErrorPath = "/Users/alx/.cache/vulnix-scan-error.log";

@@ -133,13 +133,13 @@
       }
 
       # ---- Cached Tool Initializations ----
-      if command -v zoxide >/dev/null 2>&1; then
-        _eval_cache zoxide 'zoxide init zsh'       # Smart directory jumping
+      if command -v fnm >/dev/null 2>&1 && [[ -z "''${FNM_MULTISHELL_PATH:-}" ]]; then
+        eval "$(fnm env --use-on-cd)"
       fi
 
-      # ---- FNM Initialization (direct eval for reliability) ----
-      if command -v fnm >/dev/null 2>&1; then
-        eval "$(fnm env --use-on-cd)"              # Fast Node.js version manager
+      # ---- FNM Initialization (only once) ----
+      if command -v fnm >/dev/null 2>&1 && [[ -z "''${FNM_MULTISHELL_PATH:-}" ]]; then
+        eval "$(fnm env --use-on-cd)"
       fi
 
       # ---- FZF Integration with Enhanced Previews ----
@@ -201,7 +201,7 @@
       # ---- Miscellaneous Shortcuts ----
       alias cc="claude"
 
-      
+
       # Note: Development-specific aliases (git, docker, python) are defined in development.nix
     '';
   };

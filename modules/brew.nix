@@ -179,7 +179,8 @@
         name = "coteditor";
         greedy = true;
       } # Lightweight text editor for macOS
-      { name = "claude-code";
+      {
+        name = "claude-code";
         greedy = true;
       } # Claude AI code assistant
       {
@@ -194,7 +195,6 @@
         name = "codex";
         greedy = true;
       } # AI code generation and assistance tool
-
     ];
 
     # ============================================================================

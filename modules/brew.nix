@@ -179,21 +179,17 @@
         name = "coteditor";
         greedy = true;
       } # Lightweight text editor for macOS
+      { name = "claude-code";
+        greedy = true;
+      } # Claude AI code assistant
       {
         name = "claude";
         greedy = true;
       } # AI assistant application
-
-      {
-        name = "clickup";
-        greedy = true;
-      } # Productivity and task management tool
-
       {
         name = "zen";
         greedy = true;
       } # Browser for focused work and reading
-
       {
         name = "codex";
         greedy = true;

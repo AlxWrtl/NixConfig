@@ -2,7 +2,7 @@
 
 {
   imports = [
-    ./claude-code.nix
+  #  ./claude-code.nix
   ];
 
   # ============================================================================
@@ -28,7 +28,7 @@
     enableCompletion = true;
     autosuggestion.enable = true;
     syntaxHighlighting.enable = true;
-    
+
     # Enhanced history configuration
     history = {
       size = 50000;
@@ -44,7 +44,7 @@
       vulnscan = "vulnix --system /var/run/current-system";
       secrets = "sops";
       encrypt = "age";
-      
+
       # === Home Manager shortcuts ===
       hm = "home-manager";
       hms = "home-manager switch";
@@ -56,7 +56,7 @@
       # Development environment
       HOMEBREW_NO_ANALYTICS = "1";
       HOMEBREW_NO_INSECURE_REDIRECT = "1";
-      
+
       # Security
       GNUPGHOME = "$XDG_CONFIG_HOME/gnupg";
       AGE_DIR = "$XDG_CONFIG_HOME/age";
@@ -102,7 +102,7 @@
     gh-dash                # GitHub dashboard
     gitleaks               # Git secrets scanner
     pre-commit             # Git pre-commit hooks
-    
+
     # Personal productivity tools
     tree                   # Directory tree viewer
     watch                  # Execute programs periodically
@@ -144,7 +144,7 @@
   # ============================================================================
   # USER FONTS
   # ============================================================================
-  
+
   fonts.fontconfig.enable = true;
 
 }

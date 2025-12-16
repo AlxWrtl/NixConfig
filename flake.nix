@@ -57,7 +57,6 @@
           # === SPECIALIZED MODULES ===
           ./modules/development.nix                         # Development environments & tools
           ./modules/brew.nix                                # Homebrew for GUI applications
-          ./modules/claude-code.nix                         # Claude Code CLI integration
           ./modules/security.nix                            # Security hardening & vulnerability scanning
 
           # === HOME MANAGER INTEGRATION ===
@@ -84,7 +83,7 @@
         nixfmt-rfc-style         # Code formatting
         nil                       # Language server
       ];
-      
+
       shellHook = ''
         echo "🔧 nix-darwin development environment"
         echo "Available commands:"
@@ -105,7 +104,7 @@
         find . -name "*.nix" -exec nixfmt --check {} \;
         touch $out
       '';
-      
+
       # Build system configuration
       build-config = self.darwinConfigurations."alex-mbp".system;
     };

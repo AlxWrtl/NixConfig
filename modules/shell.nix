@@ -198,7 +198,10 @@
       alias vim='nvim'                              # Use Neovim instead of Vim
       alias top='htop'                              # Use htop instead of top
 
-      # Note: Claude Code aliases are defined in claude-code.nix
+      # ---- Miscellaneous Shortcuts ----
+      alias cc="claude"
+
+      
       # Note: Development-specific aliases (git, docker, python) are defined in development.nix
     '';
   };

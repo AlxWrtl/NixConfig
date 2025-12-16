@@ -182,7 +182,7 @@ let
     frontend-expert = ''
       ---
       name: frontend-expert
-      model: claude-3-5-sonnet-20241022
+      model: claude-sonnet-4-5-20250929
       max_tokens: 4000
       context_limit: 12000
       description: "PROACTIVELY handle all frontend tasks - React, Vue, Angular, TypeScript, CSS, UI/UX components - AUTO-DELEGATE for client-side development"
@@ -228,7 +228,7 @@ let
     backend-expert = ''
       ---
       name: backend-expert
-      model: claude-3-5-sonnet-20241022
+      model: claude-sonnet-4-5-20250929
       max_tokens: 4000
       context_limit: 12000
       description: "AUTOMATICALLY handle backend/API development - Node.js, Python, databases, microservices - MUST BE USED for server-side logic"
@@ -282,7 +282,7 @@ let
     database-expert = ''
       ---
       name: database-expert
-      model: claude-3-5-haiku-20241022
+      model: claude-haiku-4-5-20251001
       max_tokens: 3000
       context_limit: 8000
       description: "PROACTIVELY optimize databases - SQL queries, schema design, performance tuning - AUTO-ROUTE for database operations"
@@ -342,7 +342,7 @@ let
     devops-expert = ''
       ---
       name: devops-expert
-      model: claude-3-5-sonnet-20241022
+      model: claude-sonnet-4-5-20250929
       max_tokens: 4000
       context_limit: 10000
       description: "AUTOMATICALLY handle DevOps, CI/CD, Docker, Kubernetes, cloud infrastructure - MUST BE USED for deployment and infrastructure tasks"
@@ -405,7 +405,7 @@ let
     ai-ml-expert = ''
       ---
       name: ai-ml-expert
-      model: claude-3-5-sonnet-20241022
+      model: claude-sonnet-4-5-20250929
       max_tokens: 5000
       context_limit: 15000
       description: "PROACTIVELY handle AI/ML development - models, training, inference, MLOps - AUTO-DELEGATE for machine learning tasks"
@@ -475,7 +475,7 @@ let
     architecture-expert = ''
       ---
       name: architecture-expert
-      model: claude-3-5-sonnet-20241022
+      model: claude-sonnet-4-5-20250929
       max_tokens: 6000
       context_limit: 20000
       description: "AUTOMATICALLY analyze and design large-scale system architecture - microservices, scalability, patterns - MUST BE USED for architectural decisions"
@@ -546,7 +546,7 @@ let
     performance-expert = ''
       ---
       name: performance-expert
-      model: claude-3-5-haiku-20241022
+      model: claude-haiku-4-5-20251001
       max_tokens: 3000
       context_limit: 8000
       description: "PROACTIVELY optimize performance issues - profiling, bottlenecks, memory leaks - AUTO-ROUTE for performance problems"
@@ -617,7 +617,7 @@ let
     codebase-navigator = ''
       ---
       name: codebase-navigator
-      model: claude-3-5-haiku-20241022
+      model: claude-haiku-4-5-20251001
       max_tokens: 2000
       context_limit: 6000
       description: "AUTOMATICALLY explore and understand large codebases - file structure, dependencies, patterns - PROACTIVELY used for code exploration"
@@ -686,7 +686,7 @@ let
     code-reviewer = ''
       ---
       name: code-reviewer
-      model: claude-3-5-haiku-20241022
+      model: claude-haiku-4-5-20251001
       max_tokens: 2000
       context_limit: 5000
       description: "PROACTIVELY review code when bugs, security issues, or code quality analysis is needed - USE AUTOMATICALLY for all code modifications"
@@ -728,7 +728,7 @@ let
     quick-fix = ''
       ---
       name: quick-fix
-      model: claude-3-5-haiku-20241022
+      model: claude-haiku-4-5-20251001
       max_tokens: 1000
       context_limit: 3000
       description: "PROACTIVELY handle simple fixes - AUTO-ROUTE for typos, syntax errors, quick modifications under 5 lines"
@@ -762,7 +762,7 @@ let
     nix-expert = ''
       ---
       name: nix-expert
-      model: claude-3-5-haiku-20241022
+      model: claude-haiku-4-5-20251001
       max_tokens: 1500
       context_limit: 4000
       description: "MUST BE USED for all nix-darwin, flake.nix, or system configuration tasks - AUTO-DELEGATE when nix keywords detected"
@@ -812,18 +812,27 @@ let
   '';
 in
 {
-  home.packages = [
-    (pkgs.writeShellScriptBin "claude-code" ''
-      CLI="$HOME/.claude/local/claude"
-      if [ ! -x "$CLI" ]; then
-        echo "Claude CLI not found at $CLI. Install it (e.g., pnpm add @anthropic-ai/claude-code --global-dir=$HOME/.claude/local) or place the binary there." >&2
-        exit 1
-      fi
-      exec "$CLI" "$@"
-    '')
-  ];
+home.packages = [
+  (pkgs.writeShellScriptBin "claude" ''
+    CLI="$HOME/.claude/local/claude"
+    if [ ! -x "$CLI" ]; then
+      echo "Claude CLI not found at $CLI. Install it (e.g., pnpm add @anthropic-ai/claude-code --global-dir=$HOME/.claude/local) or place the binary there." >&2
+      exit 1
+    fi
+    exec "$CLI" "$@"
+  '')
 
-  programs.zsh.shellAliases = {
+  (pkgs.writeShellScriptBin "claude-code" ''
+    CLI="$HOME/.claude/local/claude"
+    if [ ! -x "$CLI" ]; then
+      echo "Claude CLI not found at $CLI. Install it (e.g., pnpm add @anthropic-ai/claude-code --global-dir=$HOME/.claude/local) or place the binary there." >&2
+      exit 1
+    fi
+    exec "$CLI" "$@"
+  '')
+];
+
+  /*programs.zsh.shellAliases = {
     cc = "claude-code";
     claude = "claude-code";
     cc-init = "claude-code /init";
@@ -857,7 +866,7 @@ in
     CLAUDE_PLAN_MODE_DEFAULT = "false";
     npm_config_prefer_pnpm = "true";
     npm_config_user_agent = "pnpm";
-  };
+  };*/
 
   home.activation.claudeCode = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
         set -e
@@ -923,6 +932,7 @@ in
     EOF
         cat > "$CLAUDE_DIR/agents/quick-fix.md" <<'EOF'
     ${agentsConfig.quick-fix}
+    EOF
         cat > "$CLAUDE_DIR/agents/nix-expert.md" <<'EOF'
     ${agentsConfig.nix-expert}
     EOF

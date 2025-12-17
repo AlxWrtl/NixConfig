@@ -142,21 +142,6 @@ let
 
     model = "sonnet";
 
-    # Keep your tool surface explicit
-    allowedTools = [
-      "bash"
-      "read"
-      "write"
-      "edit"
-      "multiedit"
-      "glob"
-      "grep"
-      "task"
-      "websearch"
-      "webfetch"
-      "notebookedit"
-    ];
-
     autoSave = true;
     skipPermissions = false;
 
@@ -192,6 +177,7 @@ let
     alwaysThinkingEnabled = true;
 
     permissions = {
+      defaultMode = "acceptEdits";
       deny = [
         "websearch"
         "WebSearch"
@@ -201,7 +187,7 @@ let
     hooks = {
       PreToolUse = [
         {
-          matcher = "WebFetch|WebSearch|webfetch|websearch";
+          matcher = "^(WebFetch|WebSearch)$";
           hooks = [
             {
               type = "command";
@@ -219,7 +205,7 @@ let
   # -------------------------
   cmdTdd = ''
     ---
-    allowed-tools: ["bash","read","edit","write","grep","glob","multiedit"]
+    allowed-tools: Bash, Read, Edit, Write, Grep, Glob, MultiEdit
     description: "TDD loop: write failing test, minimal fix, refactor, verify."
     argument-hint: "<feature>"
     ---
@@ -236,7 +222,7 @@ let
 
   cmdOptimize = ''
     ---
-    allowed-tools: ["bash","read","edit","grep","glob","webfetch","websearch"]
+    allowed-tools: Bash, Read, Edit, Grep, Glob, WebFetch
     description: "Profile first, then apply targeted performance fixes."
     argument-hint: "<target>"
     ---
@@ -252,7 +238,7 @@ let
 
   cmdContextPrime = ''
     ---
-    allowed-tools: ["read","grep","glob"]
+    allowed-tools: Read, Grep, Glob
     description: "Quickly map the project: entrypoints, structure, build, tests."
     argument-hint: ""
     ---
@@ -271,11 +257,11 @@ let
   agentFrontend = ''
     ---
     name: frontend-expert
-    model: claude-sonnet-4-5-20250929
+    model: sonnet
     max_tokens: 3000
     context_limit: 12000
     description: "Frontend work (React/Vue/Angular/TS/CSS). Small diffs, modern patterns."
-    tools: ["Read","Write","Edit","Grep","Glob","Bash","WebSearch","WebFetch"]
+    tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     ---
 
     # Frontend Expert
@@ -297,11 +283,11 @@ let
   agentBackend = ''
     ---
     name: backend-expert
-    model: claude-sonnet-4-5-20250929
+    model: sonnet
     max_tokens: 3500
     context_limit: 12000
     description: "Backend/API work (Node/Python). Safe changes, security-first."
-    tools: ["Read","Write","Edit","Grep","Glob","Bash","WebSearch","WebFetch"]
+    tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     ---
 
     # Backend Expert
@@ -323,11 +309,11 @@ let
   agentDatabase = ''
     ---
     name: database-expert
-    model: claude-haiku-4-5-20251001
+    model: haiku
     max_tokens: 2200
     context_limit: 8000
     description: "DB tuning, schema, indexes, queries. Prefer explain/analyze-driven fixes."
-    tools: ["Read","Write","Edit","Grep","Bash","WebSearch","WebFetch"]
+    tools: Read, Write, Edit, Grep, Bash, WebFetch
     ---
 
     # Database Expert
@@ -348,11 +334,11 @@ let
   agentDevops = ''
     ---
     name: devops-expert
-    model: claude-sonnet-4-5-20250929
+    model: sonnet
     max_tokens: 3500
     context_limit: 10000
     description: "CI/CD, Docker, infra changes. Secure + reproducible."
-    tools: ["Read","Write","Edit","Grep","Bash","WebSearch","WebFetch"]
+    tools: Read, Write, Edit, Grep, Bash, WebFetch
     ---
 
     # DevOps Expert
@@ -374,11 +360,11 @@ let
   agentAiMl = ''
     ---
     name: ai-ml-expert
-    model: claude-sonnet-4-5-20250929
+    model: sonnet
     max_tokens: 4000
     context_limit: 15000
     description: "ML/AI work: training, inference, eval, MLOps. Evidence-driven."
-    tools: ["Read","Write","Edit","Grep","Bash","WebSearch","WebFetch"]
+    tools: Read, Write, Edit, Grep, Bash, WebFetch
     ---
 
     # AI/ML Expert
@@ -399,11 +385,11 @@ let
   agentArch = ''
     ---
     name: architecture-expert
-    model: claude-sonnet-4-5-20250929
+    model: sonnet
     max_tokens: 4500
     context_limit: 20000
     description: "System design & architecture. Focus on tradeoffs + small steps."
-    tools: ["Read","Grep","Glob"]
+    tools: Read, Grep, Glob, WebFetch
     ---
 
     # Architecture Expert
@@ -423,11 +409,11 @@ let
   agentPerf = ''
     ---
     name: performance-expert
-    model: claude-haiku-4-5-20251001
+    model: haiku
     max_tokens: 2200
     context_limit: 8000
     description: "Performance debugging: measure → fix → measure."
-    tools: ["Read","Edit","Grep","Bash","WebSearch","WebFetch"]
+    tools: Read, Edit, Grep, Bash, WebFetch
     ---
 
     # Performance Expert
@@ -447,11 +433,11 @@ let
   agentNavigator = ''
     ---
     name: codebase-navigator
-    model: claude-haiku-4-5-20251001
+    model: haiku
     max_tokens: 1600
     context_limit: 6000
     description: "Locate files, patterns, and entrypoints quickly."
-    tools: ["Grep","Glob","Read","WebSearch","WebFetch"]
+    tools: Grep, Glob, Read, WebFetch
     ---
 
     # Codebase Navigator
@@ -470,11 +456,11 @@ let
   agentReviewer = ''
     ---
     name: code-reviewer
-    model: claude-haiku-4-5-20251001
+    model: haiku
     max_tokens: 1800
     context_limit: 5000
     description: "Code review: bugs, quality, security, minimal actionable feedback."
-    tools: ["Read","Grep","WebSearch","WebFetch"]
+    tools: Read, Grep, WebFetch, Write, Edit
     ---
 
     # Code Reviewer
@@ -495,11 +481,11 @@ let
   agentQuickFix = ''
     ---
     name: quick-fix
-    model: claude-haiku-4-5-20251001
+    model: haiku
     max_tokens: 900
     context_limit: 3000
     description: "Tiny changes only (< ~5 lines): typos, small edits, quick fixes."
-    tools: ["Read","Edit","Grep","Bash"]
+    tools: Read, Edit, Grep, Bash
     ---
 
     # Quick Fix
@@ -519,11 +505,11 @@ let
   agentNix = ''
     ---
     name: nix-expert
-    model: claude-haiku-4-5-20251001
+    model: haiku
     max_tokens: 1500
     context_limit: 4000
     description: "Handle nix-darwin / flakes / *.nix. Small diffs, safe rebuild."
-    tools: ["Read","Edit","Bash"]
+    tools: Read, Edit, Bash, WebFetch
     ---
 
     # Nix Expert

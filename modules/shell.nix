@@ -142,6 +142,9 @@
         eval "$(fnm env --use-on-cd)"
       fi
 
+      # ---- Zoxide (z command) ----
+      _eval_cache zoxide 'zoxide init zsh'
+
       # ---- FZF Integration with Enhanced Previews ----
       if command -v fzf >/dev/null 2>&1; then
         # Custom preview function for different command contexts

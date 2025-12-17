@@ -24,6 +24,12 @@ let
     - Keep diffs minimal. Prefer small, reversible changes.
     - Prefer targeted tests; run full suite only when requested or clearly required.
 
+    ## Official docs + senior standards (GLOBAL)
+    - Source of truth: repo docs OR official vendor docs only.
+    - If version/spec unclear: STOP + ask me.
+    - No WebSearch. WebFetch only if allowed by allowlist.
+    - Every code change: Doc ref + Code ref + Verify step.
+
     ## Style (FR)
     - Réponses courtes et actionnables.
     - Si tu hésites : 2–3 hypothèses max, puis la plus probable.
@@ -40,6 +46,90 @@ let
     - Prefer quick-fix / code-reviewer for small changes.
     - Prefer nix-expert for any *.nix / darwin-rebuild / flakes.
     - If unsure: use codebase-navigator first, then delegate.
+  '';
+
+  webGuardScript = ''
+    #!/usr/bin/env python3
+    import json, sys
+    from urllib.parse import urlparse
+    from pathlib import Path
+
+    REPO_ALLOWLIST = Path.cwd() / ".claude" / "official-sources.txt"
+    GLOBAL_ALLOWLIST = Path.home() / ".claude" / "official-sources.txt"
+
+    def load_rules():
+      path = REPO_ALLOWLIST if REPO_ALLOWLIST.exists() else GLOBAL_ALLOWLIST
+      if not path.exists():
+        return set(), set(), set(), str(path)
+
+      domains, gh_repos, npm_pkgs = set(), set(), set()
+      for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+          continue
+        line = line.lower()
+
+        if line.startswith("github:"):
+          gh_repos.add(line.split("github:", 1)[1].strip("/"))
+          continue
+        if line.startswith("npm:"):
+          npm_pkgs.add(line.split("npm:", 1)[1].strip("/"))
+          continue
+
+        # default: domain
+        domains.add(line.strip("/"))
+      return domains, gh_repos, npm_pkgs, str(path)
+
+    def emit(decision, reason):
+      print(json.dumps({
+        "hookSpecificOutput": {
+          "hookEventName": "PreToolUse",
+          "permissionDecision": decision,
+          "permissionDecisionReason": reason,
+        }
+      }))
+      sys.exit(0)
+
+    data = json.load(sys.stdin)
+    tool = data.get("tool_name", "")
+    tool_input = data.get("tool_input", {}) or {}
+
+    if tool == "WebSearch":
+      emit("deny", "WebSearch disabled. Use WebFetch with an explicit official-doc URL.")
+
+    if tool != "WebFetch":
+      sys.exit(0)
+
+    domains, gh_repos, npm_pkgs, allow_path = load_rules()
+
+    url = tool_input.get("url") or tool_input.get("href") or ""
+    p = urlparse(url)
+    host = (p.hostname or "").lower()
+    path = (p.path or "").strip("/")
+
+    if not host:
+      emit("deny", "WebFetch blocked: missing/invalid URL.")
+
+    # 1) Plain domain allowlist (incl. subdomains)
+    if any(host == d or host.endswith("." + d) for d in domains):
+      emit("allow", f"WebFetch allowed: {host} (from {allow_path})")
+
+    # 2) GitHub strict allow (only specific repos)
+    if host == "github.com":
+      parts = path.split("/")
+      if len(parts) >= 2 and f"{parts[0]}/{parts[1]}".lower() in gh_repos:
+        emit("allow", f"WebFetch allowed: github.com/{parts[0]}/{parts[1]} (from {allow_path})")
+      emit("deny", f"WebFetch blocked: github.com/{path} not allowlisted (edit {allow_path})")
+
+    # 3) NPM strict allow (only specific packages)
+    if host in ("www.npmjs.com", "npmjs.com"):
+      parts = path.split("/")
+      # /package/<name>
+      if len(parts) >= 2 and parts[0] == "package" and parts[1].lower() in npm_pkgs:
+        emit("allow", f"WebFetch allowed: npm:{parts[1]} (from {allow_path})")
+      emit("deny", f"WebFetch blocked: npm path not allowlisted (edit {allow_path})")
+
+    emit("deny", f"WebFetch blocked: {host} not in allowlist (edit {allow_path})")
   '';
 
   settingsJson = builtins.toJSON {
@@ -100,6 +190,28 @@ let
     };
 
     alwaysThinkingEnabled = true;
+
+    permissions = {
+      deny = [
+        "websearch"
+        "WebSearch"
+      ];
+    };
+
+    hooks = {
+      PreToolUse = [
+        {
+          matcher = "WebFetch|WebSearch|webfetch|websearch";
+          hooks = [
+            {
+              type = "command";
+              command = "python3 $HOME/.claude/hooks/web_guard.py";
+              timeout = 10;
+            }
+          ];
+        }
+      ];
+    };
   };
 
   # -------------------------
@@ -509,18 +621,32 @@ in
     "${claudeDir}/agents/nix-expert.md" = {
       text = agentNix;
     };
+    "${claudeDir}/hooks/web_guard.py" = {
+      text = webGuardScript;
+      executable = true;
+    };
+
+    "${claudeDir}/official-sources.txt" = {
+      text = ''
+        # Fallback global allowlist (keep small)
+        react.dev
+        typescriptlang.org
+        nodejs.org
+        developers.cloudflare.com
+      '';
+    };
   };
 
   # -------------------------
   # Ensure ~/.claude is private (dir perms)
   # -------------------------
-  home.activation.claudeCode = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
+  home.activation.claudeCodeDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     set -euo pipefail
+    mkdir -p "$HOME/.claude" "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks"
+  '';
 
-    mkdir -p "$HOME/.claude" "$HOME/.claude/agents" "$HOME/.claude/commands"
-    chmod 700 "$HOME/.claude" "$HOME/.claude/agents" "$HOME/.claude/commands"
-
-    # Optional: keep noisy runtime dirs out of your mental model (don’t delete anything)
-    # mkdir -p "$HOME/.claude/.runtime"
+  home.activation.claudeCodePerms = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    set -euo pipefail
+    chmod 700 "$HOME/.claude" "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks"
   '';
 }

@@ -165,6 +165,13 @@ let
       compactHistory = true;
     };
 
+    attribution = {
+      commit = "";
+      pr = "";
+    };
+
+    includeCoAuthoredBy = false;
+
     statusLine = {
       type = "command";
       command = "pnpm dlx ccusage@latest statusline --mode both";
@@ -528,6 +535,52 @@ let
     - If risk exists, propose a rollback step.
   '';
 
+  agentGitShip = ''
+    ---
+    name: git-ship
+    model: haiku
+    max_tokens: 500
+    context_limit: 2000
+    description: "Commit+push. English msgs. Minimal tokens, explicit changes."
+    tools: Bash, Read
+    ---
+
+    # Git Ship
+
+    EN only. Ultra concise. Explicit WHAT changed.
+    NEVER mention the assistant or authorship.
+
+    Banned in commit msg:
+    - "I", "we", "my", "our"
+    - "Claude", "AI", "assistant", "ChatGPT"
+    - "commit by", "generated", "as requested"
+
+    Style:
+    - Impersonal changelog tone.
+    - Prefer verbs: Add/Fix/Refactor/Update/Remove.
+    - No self-reference, no attribution.
+
+    Format:
+    - Title: <type>: <what changed> (<=72)
+    - Body: 2-5 bullets, start with "-"
+
+    Steps:
+    1) Run:
+      - git status --porcelain
+      - git diff --stat
+      - git diff --cached --stat
+      - git diff --name-only
+    2) If no changes: say "No changes."
+    3) If unstaged exists: ask "Stage all (git add -A)? yes/no"
+    4) Propose commit msg (type: feat|fix|chore|refactor|perf|test|docs|ci|build).
+      - Before finalizing: ensure no banned words; rewrite if needed.
+    5) Only if user says "commit": git commit -m "<title>" -m "<bullets>"
+    6) Only if user says "push":
+      - if no upstream: git push -u origin HEAD
+      - else: git push
+    7) End: short SHA + branch.
+  '';
+
 in
 {
   # -------------------------
@@ -610,6 +663,9 @@ in
     "${claudeDir}/hooks/web_guard.py" = {
       text = webGuardScript;
       executable = true;
+    };
+    "${claudeDir}/agents/git-ship.md" = {
+      text = agentGitShip;
     };
 
     "${claudeDir}/official-sources.txt" = {

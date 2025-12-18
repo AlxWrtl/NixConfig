@@ -179,7 +179,7 @@ let
     permissions = {
       defaultMode = "acceptEdits";
       deny = [
-        "websearch"
+        "Websearch"
         "WebSearch"
       ];
     };

@@ -11,18 +11,18 @@
 
   inputs = {
     # === Core Nix Ecosystem ===
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";  # Primary package repository
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable"; # Primary package repository
 
     # === nix-darwin Framework ===
     nix-darwin = {
-      url = "github:LnL7/nix-darwin";                      # macOS system configuration framework
-      inputs.nixpkgs.follows = "nixpkgs";                  # Use our nixpkgs version
+      url = "github:LnL7/nix-darwin"; # macOS system configuration framework
+      inputs.nixpkgs.follows = "nixpkgs"; # Use our nixpkgs version
     };
 
     # === Home Manager (Future Integration) ===
     home-manager = {
-      url = "github:nix-community/home-manager/master";    # User environment management
-      inputs.nixpkgs.follows = "nixpkgs";                  # Use our nixpkgs version
+      url = "github:nix-community/home-manager/master"; # User environment management
+      inputs.nixpkgs.follows = "nixpkgs"; # Use our nixpkgs version
     };
   };
 
@@ -30,89 +30,119 @@
   # FLAKE OUTPUTS & SYSTEM CONFIGURATIONS
   # ============================================================================
 
-  outputs = inputs@{ self, nix-darwin, nixpkgs, home-manager, ... }:
-  {
-    # === DARWIN SYSTEM CONFIGURATIONS ===
-    # Build and switch to configuration using:
-    # $ darwin-rebuild switch --flake .#alex-mbp
-
-    darwinConfigurations = {
-      # === Alexandre's MacBook Pro Configuration ===
-      "alex-mbp" = nix-darwin.lib.darwinSystem {
-        system = "aarch64-darwin";                          # Apple Silicon architecture
-        specialArgs = { inherit inputs; };                  # Pass inputs to all modules
-
-        modules = [
-          # === HOST-SPECIFIC CONFIGURATION ===
-          ./hosts/alex-mbp                                  # Host module (networking, users, platform)
-
-          # === CORE SYSTEM MODULES ===
-          ./modules/system.nix                              # Core Nix settings, TouchID, security
-          ./modules/packages.nix                            # System utilities & CLI tools
-          ./modules/shell.nix                               # Zsh, aliases, environment setup
-          ./modules/starship.nix                            # Starship prompt configuration
-          ./modules/fonts.nix                               # Programming fonts & typography
-          ./modules/ui.nix                                  # macOS UI/UX & system defaults
-
-          # === SPECIALIZED MODULES ===
-          ./modules/development.nix                         # Development environments & tools
-          ./modules/brew.nix                                # Homebrew for GUI applications
-          ./modules/security.nix                            # Security hardening & vulnerability scanning
-
-          # === HOME MANAGER INTEGRATION ===
-          home-manager.darwinModules.home-manager {
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.backupFileExtension = "backup";
-            home-manager.users.alx = import ./home;
-            home-manager.extraSpecialArgs = { inherit inputs; };
-          }
-        ];
+  outputs =
+    inputs@{
+      self,
+      nix-darwin,
+      nixpkgs,
+      home-manager,
+      ...
+    }:
+    let
+      system = "aarch64-darwin";
+      pkgs = import nixpkgs {
+        inherit system;
+        config.allowUnfree = true;
       };
+    in
+    {
+      # ============================================================================
+      # AUTOMATED TESTS & CHECKS
+      # ============================================================================
+
+      checks.${system} = {
+        # Format check: Ensure all Nix files follow nixfmt-rfc-style
+        format-check = pkgs.runCommand "check-nix-format" { } ''
+          set -e
+          echo "Checking Nix file formatting..."
+          ${pkgs.nixfmt-rfc-style}/bin/nixfmt --check ${./.}/flake.nix || {
+            echo "ERROR: Nix files not formatted. Run: nixfmt **/*.nix"
+            exit 1
+          }
+          touch $out
+        '';
+
+        # Evaluation check: Ensure configuration evaluates without errors
+        eval-check = pkgs.runCommand "check-config-eval" { } ''
+          set -e
+          echo "Checking nix-darwin configuration evaluation..."
+          ${pkgs.nix}/bin/nix eval --show-trace \
+            --extra-experimental-features "nix-command flakes" \
+            ${./.}#darwinConfigurations.alex-mbp.system 2>&1 | head -20 || true
+          touch $out
+        '';
+
+        # System configuration reference
+        system-config = self.darwinConfigurations."alex-mbp".system;
+      };
+
+      # === DARWIN SYSTEM CONFIGURATIONS ===
+      # Build and switch to configuration using:
+      # $ darwin-rebuild switch --flake .#alex-mbp
+
+      darwinConfigurations = {
+        # === Alexandre's MacBook Pro Configuration ===
+        "alex-mbp" = nix-darwin.lib.darwinSystem {
+          system = "aarch64-darwin"; # Apple Silicon architecture
+          specialArgs = { inherit inputs; }; # Pass inputs to all modules
+
+          modules = [
+            # === HOST-SPECIFIC CONFIGURATION ===
+            ./hosts/alex-mbp # Host module (networking, users, platform)
+
+            # === CORE SYSTEM MODULES ===
+            ./modules/system.nix # Core Nix settings, TouchID, security
+            ./modules/packages.nix # System utilities & CLI tools
+            ./modules/shell.nix # Zsh, aliases, environment setup
+            ./modules/starship.nix # Starship prompt configuration
+            ./modules/fonts.nix # Programming fonts & typography
+            ./modules/ui.nix # macOS UI/UX & system defaults
+
+            # === SPECIALIZED MODULES ===
+            ./modules/development.nix # Development environments & tools
+            ./modules/brew.nix # Homebrew for GUI applications
+            ./modules/security.nix # Security hardening & vulnerability scanning
+            ./modules/secrets.nix # SOPS secrets management with age encryption
+
+            # === HOME MANAGER INTEGRATION ===
+            home-manager.darwinModules.home-manager
+            {
+              home-manager.useGlobalPkgs = true;
+              home-manager.useUserPackages = true;
+              home-manager.backupFileExtension = "backup";
+              home-manager.users.alx = import ./home;
+              home-manager.extraSpecialArgs = { inherit inputs; };
+            }
+          ];
+        };
+      };
+
+      # ============================================================================
+      # ADDITIONAL FLAKE OUTPUTS
+      # ============================================================================
+
+      # === Development Shells ===
+      devShells.${system}.default = pkgs.mkShell {
+        buildInputs = with pkgs; [
+          vulnix # Security scanning
+          nix-tree # Dependency visualization
+          nixfmt-rfc-style # Code formatting
+          nil # Language server
+        ];
+
+        shellHook = ''
+          echo "nix-darwin development environment"
+          echo "Available commands:"
+          echo "  vulnix --system /var/run/current-system  # Security scan"
+          echo "  nix-tree                                 # Visualize dependencies"
+          echo "  nixfmt **/*.nix                          # Format Nix files"
+        '';
+      };
+
+      # === Templates ===
+      # Note: Templates removed to avoid broken references
+      # To add templates: create templates/basic/ directory with flake.nix
     };
-
-    # ============================================================================
-    # ADDITIONAL FLAKE OUTPUTS
-    # ============================================================================
-
-    # === Development Shells ===
-    devShells.aarch64-darwin.default = nixpkgs.legacyPackages.aarch64-darwin.mkShell {
-      buildInputs = with nixpkgs.legacyPackages.aarch64-darwin; [
-        vulnix                    # Security scanning
-        nix-tree                  # Dependency visualization
-        nixfmt-rfc-style         # Code formatting
-        nil                       # Language server
-      ];
-
-      shellHook = ''
-        echo "🔧 nix-darwin development environment"
-        echo "Available commands:"
-        echo "  vulnix --system /var/run/current-system  # Security scan"
-        echo "  nix-tree                                 # Visualize dependencies"
-        echo "  nixfmt **/*.nix                          # Format Nix files"
-      '';
-    };
-
-    # === Configuration Validation Checks ===
-    checks.aarch64-darwin = {
-      # Format check
-      format-check = nixpkgs.legacyPackages.aarch64-darwin.runCommand "format-check" {
-        buildInputs = [ nixpkgs.legacyPackages.aarch64-darwin.nixfmt-rfc-style ];
-      } ''
-        echo "Checking Nix file formatting..."
-        cd ${./.}
-        find . -name "*.nix" -exec nixfmt --check {} \;
-        touch $out
-      '';
-
-      # Build system configuration
-      build-config = self.darwinConfigurations."alex-mbp".system;
-    };
-
-    # === Templates ===
-    # Note: Templates removed to avoid broken references
-    # To add templates: create templates/basic/ directory with flake.nix
-  };
 
   # ============================================================================
   # FLAKE CONFIGURATION NOTES

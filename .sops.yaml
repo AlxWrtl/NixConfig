@@ -1,0 +1,13 @@
+# SOPS configuration for age encryption
+# Documentation: https://github.com/Mic92/sops-nix
+
+keys:
+  # Add your age public key here after running: age-keygen
+  # Example: &alx age1xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+  - &alx PLACEHOLDER_ADD_YOUR_AGE_PUBLIC_KEY_HERE
+
+creation_rules:
+  - path_regex: secrets/.*\.yaml$
+    key_groups:
+      - age:
+          - *alx

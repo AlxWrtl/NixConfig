@@ -6,6 +6,10 @@
   ...
 }:
 
+let
+  systemConstants = import ./constants.nix;
+in
+
 {
   # ============================================================================
   # macOS UI/UX AND SECURITY CONFIGURATION
@@ -38,7 +42,7 @@
 
       # === Performance & Animations ===
       NSAutomaticWindowAnimationsEnabled = false; # Disable window animations for speed
-      NSWindowResizeTime = 0.001; # Instant window resize
+      NSWindowResizeTime = systemConstants.windowResizeTime; # Instant window resize
 
       # === Input & Text Editing ===
       NSAutomaticCapitalizationEnabled = false; # Disable automatic capitalization
@@ -50,8 +54,8 @@
 
       # === Keyboard Settings ===
       "com.apple.keyboard.fnState" = true; # Use F1, F2, etc. as standard function keys
-      KeyRepeat = 8; # Fastest possible key repeat
-      InitialKeyRepeat = 10; # Minimal delay before repeat starts
+      KeyRepeat = systemConstants.keyRepeat;
+      InitialKeyRepeat = systemConstants.initialKeyRepeat;
 
       # === Mouse & Trackpad Navigation ===
       AppleEnableMouseSwipeNavigateWithScrolls = true; # Two-finger swipe navigation
@@ -71,8 +75,8 @@
       autohide = true; # Auto-hide the dock
 
       # === Icon Appearance ===
-      tilesize = 25; # Standard icon size
-      largesize = 48; # Magnified icon size
+      tilesize = systemConstants.dockTileSize;
+      largesize = systemConstants.dockLargeSize;
       magnification = true; # Enable magnification on hover
 
       # === Behavior ===
@@ -87,7 +91,7 @@
       wvous-br-corner = 1; # Bottom-right: disabled
 
       # === Mission Control ===
-      expose-animation-duration = 0.1; # Faster Mission Control animations
+      expose-animation-duration = systemConstants.exposeAnimationDuration;
       expose-group-apps = false; # Don't group windows by application
 
       # === Persistent Applications ===

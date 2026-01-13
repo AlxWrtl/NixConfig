@@ -6,6 +6,12 @@
   ...
 }:
 
+let
+  # Import constants & helpers
+  systemConstants = import ./constants.nix;
+  mkMaintenanceDaemon = import ./launchd-helpers.nix;
+in
+
 {
   # ============================================================================
   # CORE NIX-DARWIN SYSTEM CONFIGURATION
@@ -90,7 +96,7 @@
         Hour = 3;
         Minute = 0;
       }; # Run weekly on Sunday at 3:00 AM (specific time)
-      options = "--delete-older-than 60d --max-freed 10G"; # Keep 60 days, max 10GB freed per run
+      options = "--delete-older-than ${toString systemConstants.gcRetentionDays}d --max-freed ${systemConstants.gcMaxFreed}";
     };
   };
 
@@ -174,167 +180,177 @@
 
   # === Advanced Power Management ===
   # Configure optimal power settings for battery life and performance
-  launchd.daemons.power-optimization = {
-    serviceConfig = {
-      ProgramArguments = [
-        "/bin/sh"
-        "-c"
-        ''
-          # -- Sleep Timings --
-          /usr/bin/pmset -a displaysleep 25               # Turn off display after 25 minutes
-          /usr/bin/pmset -a sleep 45                      # Put system to sleep after 45 minutes
+  launchd.daemons.power-optimization = mkMaintenanceDaemon {
+    name = "power-optimization";
+    runAtLoad = true;
+    script = ''
+      # -- Sleep Timings --
+      /usr/bin/pmset -a displaysleep ${toString systemConstants.displaySleepMinutes}
+      /usr/bin/pmset -a sleep ${toString systemConstants.systemSleepMinutes}
 
-          # -- Sleep Behavior (no deep sleep) --
-          /usr/bin/pmset -a hibernatemode 3               # Normal sleep (RAM powered + safe disk copy)
-          /usr/bin/pmset -a standby 0                     # Disable standby (prevents deep sleep)
-          /usr/bin/pmset -a autopoweroff 0                # Disable auto power off (prevents deep sleep)
-          /usr/bin/pmset -a standbydelay 0                # No standby delay
-          /usr/bin/pmset -a autopoweroffdelay 0           # No auto power off delay
-          /usr/bin/pmset -a destroyfvkeyonstandby 0       # Keep FileVault key in RAM (avoid forced hibernate)
+      # -- Sleep Behavior (no deep sleep) --
+      /usr/bin/pmset -a hibernatemode 3               # Normal sleep (RAM powered + safe disk copy)
+      /usr/bin/pmset -a standby 0                     # Disable standby (prevents deep sleep)
+      /usr/bin/pmset -a autopoweroff 0                # Disable auto power off (prevents deep sleep)
+      /usr/bin/pmset -a standbydelay 0                # No standby delay
+      /usr/bin/pmset -a autopoweroffdelay 0           # No auto power off delay
+      /usr/bin/pmset -a destroyfvkeyonstandby 0       # Keep FileVault key in RAM (avoid forced hibernate)
 
-          # -- Power Saving Options --
-          /usr/bin/pmset -a powernap 0                    # Disable Power Nap (saves battery)
-          /usr/bin/pmset -a ttyskeepawake 0               # Allow sleep even with SSH sessions
-          /usr/bin/pmset -a reducebright 1                # Reduce brightness before sleep
-          /usr/bin/pmset -a halfdim 1                     # Dim screen before sleep
+      # -- Power Saving Options --
+      /usr/bin/pmset -a powernap 0                    # Disable Power Nap (saves battery)
+      /usr/bin/pmset -a ttyskeepawake 0               # Allow sleep even with SSH sessions
+      /usr/bin/pmset -a reducebright 1                # Reduce brightness before sleep
+      /usr/bin/pmset -a halfdim 1                     # Dim screen before sleep
 
-          # -- Logging --
-          echo "Power optimization applied: $(date)" >> /var/log/power-optimization.log
-        ''
-      ];
-      RunAtLoad = true; # Apply settings at system startup
-      StandardOutPath = "/var/log/power-optimization.log";
-      StandardErrorPath = "/var/log/power-optimization-error.log";
-    };
+      # -- Logging --
+      echo "Power optimization applied: $(date)" >> /var/log/power-optimization.log
+    '';
   };
 
   # === Network Performance Tuning ===
   # Optimize TCP/IP stack for better network performance and throughput
-  launchd.daemons.network-optimization = {
-    serviceConfig = {
-      ProgramArguments = [
-        "/bin/sh"
-        "-c"
-        ''
-          # === Network performance tuning ===
+  launchd.daemons.network-optimization = mkMaintenanceDaemon {
+    name = "network-optimization";
+    runAtLoad = true;
+    script = ''
+      # === Network performance tuning ===
 
-          ## -- TCP Optimizations --
-          /usr/sbin/sysctl -w net.inet.tcp.delayed_ack=2                  # Smart TCP ACK (moins de paquets inutiles)
-          /usr/sbin/sysctl -w net.inet.tcp.sendspace=131072              # Buffer d'envoi TCP : 128KB
-          /usr/sbin/sysctl -w net.inet.tcp.recvspace=131072              # Buffer de réception TCP : 128KB
-          /usr/sbin/sysctl -w net.inet.tcp.slowstart_flightsize=16       # Slow start + agressif (bon réseau)
-          /usr/sbin/sysctl -w net.inet.tcp.local_slowstart_flightsize=16 # Pareil pour connexions locales
+      ## -- TCP Optimizations --
+      /usr/sbin/sysctl -w net.inet.tcp.delayed_ack=2                  # Smart TCP ACK (moins de paquets inutiles)
+      /usr/sbin/sysctl -w net.inet.tcp.sendspace=131072              # Buffer d'envoi TCP : 128KB
+      /usr/sbin/sysctl -w net.inet.tcp.recvspace=131072              # Buffer de réception TCP : 128KB
+      /usr/sbin/sysctl -w net.inet.tcp.slowstart_flightsize=${toString systemConstants.tcpSlowStartFlightSize}
+      /usr/sbin/sysctl -w net.inet.tcp.local_slowstart_flightsize=${toString systemConstants.tcpSlowStartFlightSize}
 
-          ## -- Sockets & Filesystem --
-          /usr/sbin/sysctl -w kern.maxfiles=65536                        # Fichiers ouverts max global
-          /usr/sbin/sysctl -w kern.maxfilesperproc=32768                # Par processus
-          /usr/sbin/sysctl -w kern.ipc.somaxconn=1024                   # Connexions TCP entrantes en attente
+      ## -- Sockets & Filesystem --
+      /usr/sbin/sysctl -w kern.maxfiles=${toString systemConstants.maxOpenFiles}
+      /usr/sbin/sysctl -w kern.maxfilesperproc=${toString systemConstants.maxFilesPerProc}
+      /usr/sbin/sysctl -w kern.ipc.somaxconn=1024                   # Connexions TCP entrantes en attente
 
-          ## -- Logging --
-          echo "Network optimization applied: $(date)" >> /var/log/network-optimization.log
-        ''
-      ];
-      RunAtLoad = true;
-      StandardOutPath = "/var/log/network-optimization.log";
-      StandardErrorPath = "/var/log/network-optimization-error.log";
-    };
+      ## -- Logging --
+      echo "Network optimization applied: $(date)" >> /var/log/network-optimization.log
+    '';
   };
 
   # === Storage Optimization & Cleanup ===
   # Regular cleanup of system caches and temporary files
-  launchd.daemons.system-cleanup = {
-    serviceConfig = {
-      ProgramArguments = [
-        "/bin/sh"
-        "-c"
-        ''
-            # Clear logs older than 30 days
-          /usr/bin/find /private/var/log -name "*.log" -mtime +30 -delete && \
+  launchd.daemons.system-cleanup = mkMaintenanceDaemon {
+    name = "system-cleanup";
+    schedule = [
+      {
+        Weekday = 1;
+        Hour = 10;
+        Minute = 0;
+      } # Weekly on Monday at 10:00 AM
+    ];
+    script = ''
+      # Clear logs older than ${toString systemConstants.logRetentionDays} days
+      /usr/bin/find /private/var/log -name "*.log" -mtime +${toString systemConstants.logRetentionDays} -delete && \
 
-          # Clear temporary files older than 7 days
-          /usr/bin/find /private/tmp -mtime +7 -delete 2>/dev/null && \
+      # Clear temporary files older than ${toString systemConstants.tempFileRetentionDays} days
+      /usr/bin/find /private/tmp -mtime +${toString systemConstants.tempFileRetentionDays} -delete 2>/dev/null && \
 
-          # Clear user cache (preserve critical app data)
-          /usr/bin/find ~/Library/Caches -type f -mtime +7 -delete 2>/dev/null && \
+      # Clear user cache (preserve critical app data)
+      /usr/bin/find ~/Library/Caches -type f -mtime +${toString systemConstants.cacheFileRetentionDays} -delete 2>/dev/null && \
 
-          # Run macOS maintenance scripts
-          /usr/sbin/periodic daily weekly monthly && \
+      # Run macOS maintenance scripts
+      /usr/sbin/periodic daily weekly monthly && \
 
-          # Log the cleanup
-          echo "System cleanup completed: $(date)" >> /var/log/system-cleanup.log
-        ''
-      ];
-      StartCalendarInterval = [
-        {
-          Weekday = 1;
-          Hour = 10;
-          Minute = 0;
-        } # Weekly on Monday at 10:00 AM
-      ];
-      StandardOutPath = "/var/log/system-cleanup.log";
-      StandardErrorPath = "/var/log/system-cleanup-error.log";
-      RunAtLoad = false; # Don't run on system boot
-    };
+      # Log the cleanup
+      echo "System cleanup completed: $(date)" >> /var/log/system-cleanup.log
+    '';
   };
 
   # === Spotlight Indexing Optimization ===
   # Only reindex if Spotlight is corrupted (check first)
-  launchd.daemons.spotlight-optimize = {
-    serviceConfig = {
-      ProgramArguments = [
-        "/bin/sh"
-        "-c"
-        ''
-          if /usr/bin/mdutil -s / | grep -q "disabled\\|Error"; then
-            /usr/bin/mdutil -a -i off && \
-            /bin/sleep 10 && \
-            /usr/bin/mdutil -a -i on && \
-            echo "Spotlight reindexed due to corruption: $(date)" >> /var/log/spotlight-optimize.log
-          else
-            echo "Spotlight healthy, skipping reindex: $(date)" >> /var/log/spotlight-optimize.log
-          fi
-        ''
-      ];
-      StartCalendarInterval = [
-        {
-          Weekday = 6;
-          Hour = 3;
-          Minute = 0;
-        } # Weekly on Saturday at 3:00 AM
-      ];
-      StandardOutPath = "/var/log/spotlight-optimize.log";
-      StandardErrorPath = "/var/log/spotlight-optimize-error.log";
-      RunAtLoad = false; # Don't run on system boot
-    };
+  launchd.daemons.spotlight-optimize = mkMaintenanceDaemon {
+    name = "spotlight-optimize";
+    schedule = [
+      {
+        Weekday = 6;
+        Hour = 3;
+        Minute = 0;
+      } # Weekly on Saturday at 3:00 AM
+    ];
+    script = ''
+      if /usr/bin/mdutil -s / | grep -q "disabled\\|Error"; then
+        /usr/bin/mdutil -a -i off && \
+        /bin/sleep 10 && \
+        /usr/bin/mdutil -a -i on && \
+        echo "Spotlight reindexed due to corruption: $(date)" >> /var/log/spotlight-optimize.log
+      else
+        echo "Spotlight healthy, skipping reindex: $(date)" >> /var/log/spotlight-optimize.log
+      fi
+    '';
   };
 
   # === Disk Space Management ===
   # Automated disk cleanup and optimization tasks
-  launchd.daemons.disk-cleanup = {
-    serviceConfig = {
-      ProgramArguments = [
-        "/bin/sh"
-        "-c"
-        ''
-          # Automated disk cleanup and optimization
-          /usr/bin/du -sh /private/var/folders/*/T/* 2>/dev/null | /usr/bin/sort -hr | /usr/bin/head -10 && \
-          /usr/bin/find /private/var/folders/*/T -name "*" -mtime +3 -delete 2>/dev/null && \
-          /usr/sbin/diskutil verifyVolume /                                 && \
-          /usr/bin/tmutil thinlocalsnapshots / 10000000000 4               && \
-          echo "Disk cleanup completed: $(date)" >> /var/log/disk-cleanup.log
-        ''
-      ];
-      StartCalendarInterval = [
-        {
-          Weekday = 2;
-          Hour = 3;
-          Minute = 0;
-        } # Weekly on Tuesday at 3:00 AM
-      ];
-      StandardOutPath = "/var/log/disk-cleanup.log";
-      StandardErrorPath = "/var/log/disk-cleanup-error.log";
-      RunAtLoad = false; # Don't run on system boot
-    };
+  launchd.daemons.disk-cleanup = mkMaintenanceDaemon {
+    name = "disk-cleanup";
+    schedule = [
+      {
+        Weekday = 2;
+        Hour = 3;
+        Minute = 0;
+      } # Weekly on Tuesday at 3:00 AM
+    ];
+    script = ''
+      # Automated disk cleanup and optimization
+      /usr/bin/du -sh /private/var/folders/*/T/* 2>/dev/null | /usr/bin/sort -hr | /usr/bin/head -10 && \
+      /usr/bin/find /private/var/folders/*/T -name "*" -mtime +3 -delete 2>/dev/null && \
+      /usr/sbin/diskutil verifyVolume /                                 && \
+      /usr/bin/tmutil thinlocalsnapshots / 10000000000 4               && \
+      echo "Disk cleanup completed: $(date)" >> /var/log/disk-cleanup.log
+    '';
+  };
+
+  # === Pre-GC Rollback Safety Check ===
+  # Verify system can boot to previous generation before garbage collection
+  launchd.daemons.pre-gc-rollback-test = mkMaintenanceDaemon {
+    name = "pre-gc-rollback-test";
+    schedule = [
+      {
+        Weekday = 7;
+        Hour = 2;
+        Minute = 30;
+      } # Sunday 2:30 AM (30min before GC)
+    ];
+    script = ''
+      # Check if we have at least 2 generations to rollback to
+      gen_count=$(${pkgs.nix}/bin/nix-env --list-generations --profile /nix/var/nix/profiles/system | wc -l)
+
+      if [ "$gen_count" -lt 2 ]; then
+        echo "$(date): WARNING - Only $gen_count generation(s) available. Skipping rollback test." >> /var/log/pre-gc-rollback-test.log
+        exit 0
+      fi
+
+      # Get current generation number
+      current_gen=$(${pkgs.nix}/bin/nix-env --list-generations --profile /nix/var/nix/profiles/system | grep '(current)' | awk '{print $1}')
+
+      # Get previous generation number
+      prev_gen=$((current_gen - 1))
+
+      # Resolve previous generation path via profile symlink
+      prev_path=$(readlink "/nix/var/nix/profiles/system-$prev_gen-link" 2>/dev/null)
+
+      if [ -z "$prev_path" ] || [ ! -e "$prev_path" ]; then
+        echo "$(date): ERROR - Previous generation $prev_gen path not found or invalid" >> /var/log/pre-gc-rollback-test.log
+        exit 1
+      fi
+
+      # Test that previous generation has required boot files
+      if [ ! -f "$prev_path/activate" ]; then
+        echo "$(date): ERROR - Previous generation $prev_gen missing activate script" >> /var/log/pre-gc-rollback-test.log
+        exit 1
+      fi
+
+      # Log success
+      echo "$(date): SUCCESS - Rollback test passed. Current: gen $current_gen, Rollback: gen $prev_gen at $prev_path" >> /var/log/pre-gc-rollback-test.log
+
+      # Notify user of successful pre-GC safety check
+      /usr/bin/osascript -e "display notification \"Rollback safety verified. GC scheduled in 30min.\" with title \"✅ Pre-GC Check\" sound name \"Glass\"" 2>/dev/null || true
+    '';
   };
 
   # ============================================================================

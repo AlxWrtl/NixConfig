@@ -191,7 +191,12 @@ in
           Weekday = 1;
           Hour = 9;
           Minute = 15;
-        } # Weekly on Monday at 9:15 AM (after flake update)
+        } # Monday at 9:15 AM
+        {
+          Weekday = 4;
+          Hour = 9;
+          Minute = 15;
+        } # Thursday at 9:15 AM
       ];
       StandardOutPath = "/Users/alx/.cache/homebrew-update.log";
       StandardErrorPath = "/Users/alx/.cache/homebrew-update-error.log";

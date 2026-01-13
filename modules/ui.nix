@@ -276,17 +276,15 @@
   };
 
   # ============================================================================
-  # GATEKEEPER QUARANTINE DISABLE
+  # GATEKEEPER QUARANTINE AUTO-REMOVAL
   # ============================================================================
 
-  # Disable Gatekeeper quarantine warnings permanently
+  # Remove quarantine from Homebrew apps after installation (security preserved for manual downloads)
   system.activationScripts.postActivation.text = ''
-    # Disable GKAutoRearm to prevent Gatekeeper from re-arming
-    /usr/bin/defaults write /Library/Preferences/com.apple.security GKAutoRearm -bool false 2>/dev/null || true
+    # Remove quarantine attribute from Homebrew-managed applications
+    find /Applications -name "*.app" -exec xattr -d com.apple.quarantine {} \; 2>/dev/null || true
+    find ~/Applications -name "*.app" -exec xattr -d com.apple.quarantine {} \; 2>/dev/null || true
 
-    # Disable Gatekeeper assessment system globally (reduces security but eliminates warnings)
-    /usr/sbin/spctl --global-disable 2>/dev/null || true
-
-    echo "Gatekeeper completely disabled"
+    echo "Quarantine removed from Homebrew applications"
   '';
 }

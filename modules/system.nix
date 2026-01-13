@@ -33,7 +33,8 @@
       allowed-users = [ "@wheel" "alx" ];            # Restrict allowed users to wheel group and primary user
       sandbox = true;                                 # Enable build sandboxing to isolate builds from system
       require-sigs = true;                            # Require signatures for all substituters (security)
-      # restrict-eval = true;                         # TODO: Enable after initial setup (causes flake fetch issues)
+      # restrict-eval = false;                        # INCOMPATIBLE with flakes (blocks dynamic GitHub API calls, redirects, NAR fetching)
+                                                      # Security provided by: sandbox, require-sigs, trusted-users, allowed-users
 
       # === Build Performance Optimization ===
       max-jobs = "auto";                              # Use all available CPU cores for parallel builds
@@ -73,7 +74,7 @@
     gc = {
       automatic = true;                               # Enable automatic garbage collection
       interval = { Weekday = 7; Hour = 3; Minute = 0; }; # Run weekly on Sunday at 3:00 AM (specific time)
-      options = "--delete-older-than 21d --max-freed 10G"; # Keep 21 days, max 10GB freed per run
+      options = "--delete-older-than 60d --max-freed 10G"; # Keep 60 days, max 10GB freed per run
     };
   };
 
@@ -227,17 +228,14 @@
         "/bin/sh"
         "-c"
         ''
-          # Clear system RAM cache
-        /usr/bin/purge && \
-
-        # Clear logs older than 30 days
+          # Clear logs older than 30 days
         /usr/bin/find /private/var/log -name "*.log" -mtime +30 -delete && \
 
         # Clear temporary files older than 7 days
         /usr/bin/find /private/tmp -mtime +7 -delete 2>/dev/null && \
 
-        # Clear user cache
-        /bin/rm -rf ~/Library/Caches/* && \
+        # Clear user cache (preserve critical app data)
+        /usr/bin/find ~/Library/Caches -type f -mtime +7 -delete 2>/dev/null && \
 
         # Run macOS maintenance scripts
         /usr/sbin/periodic daily weekly monthly && \
@@ -256,19 +254,21 @@
   };
 
   # === Spotlight Indexing Optimization ===
-  # Periodic Spotlight reindexing for optimal search performance
+  # Only reindex if Spotlight is corrupted (check first)
   launchd.daemons.spotlight-optimize = {
     serviceConfig = {
       ProgramArguments = [
         "/bin/sh"
         "-c"
         ''
-          # Reindex Spotlight for optimal performance
-          /usr/bin/mdutil -a -i off                                        && \
-          /bin/sleep 60                                                     && \
-          /usr/bin/mdutil -a -i on                                         && \
-          /usr/bin/mdutil -a -E                                            && \
-          echo "Spotlight optimization completed: $(date)" >> /var/log/spotlight-optimize.log
+          if /usr/bin/mdutil -s / | grep -q "disabled\\|Error"; then
+            /usr/bin/mdutil -a -i off && \
+            /bin/sleep 10 && \
+            /usr/bin/mdutil -a -i on && \
+            echo "Spotlight reindexed due to corruption: $(date)" >> /var/log/spotlight-optimize.log
+          else
+            echo "Spotlight healthy, skipping reindex: $(date)" >> /var/log/spotlight-optimize.log
+          fi
         ''
       ];
       StartCalendarInterval = [
@@ -291,7 +291,6 @@
           # Automated disk cleanup and optimization
           /usr/bin/du -sh /private/var/folders/*/T/* 2>/dev/null | /usr/bin/sort -hr | /usr/bin/head -10 && \
           /usr/bin/find /private/var/folders/*/T -name "*" -mtime +3 -delete 2>/dev/null && \
-          /usr/sbin/diskutil repairPermissions /                           && \
           /usr/sbin/diskutil verifyVolume /                                 && \
           /usr/bin/tmutil thinlocalsnapshots / 10000000000 4               && \
           echo "Disk cleanup completed: $(date)" >> /var/log/disk-cleanup.log

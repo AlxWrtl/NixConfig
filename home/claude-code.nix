@@ -675,6 +675,10 @@ in
         typescriptlang.org
         nodejs.org
         developers.cloudflare.com
+        nixos.org
+        nix.dev
+        zero-to-nix.com
+        discourse.nixos.org
       '';
     };
   };

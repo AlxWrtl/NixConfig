@@ -19,7 +19,7 @@
     # === NIX ECOSYSTEM DEVELOPMENT ===
     nixd                                   # Primary Nix language server (recommended)
     nil                                    # Alternative Nix language server
-    nixfmt-rfc-style                       # Official Nix code formatter
+    nixfmt                                 # Official Nix code formatter (RFC style)
     nix-tree                               # Visualize Nix dependency trees
     nix-index                              # Search Nix packages efficiently
     vulnix                                 # CVE vulnerability scanner for Nix packages
@@ -30,9 +30,7 @@
     ruff                                   # Fast Python linter and formatter
 
     # === JAVASCRIPT/NODE.JS DEVELOPMENT ===
-    corepack                               # Official Node.js package manager manager
     pnpm                                   # Fast, disk space efficient package manager
-    bun                                    # Ultra-fast JavaScript runtime and package manager
     fnm                                    # Node.js version manager
 
     # Node.js global tools

@@ -36,9 +36,6 @@
     # === SYSTEM MONITORING & INFO ===
     btop                                   # Modern system monitor (htop replacement)
     fastfetch                              # System information display (neofetch replacement)
-    
-    # === VERSION MANAGEMENT ===
-    volta                                  # Fast Node.js version manager (nvm replacement)
   ];
 
   # Note: Nix configuration is handled comprehensively in modules/system.nix

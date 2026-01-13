@@ -26,8 +26,8 @@
     # === Automatic Package Management ===
     onActivation = {
       cleanup = "zap"; # Remove packages and associated data not listed in configuration
-      autoUpdate = true; # Update Homebrew itself during rebuild
-      upgrade = true; # Upgrade outdated packages during rebuild
+      autoUpdate = false; # Disable auto-update during rebuild (saves 47MB download each time)
+      upgrade = true; # Upgrade outdated packages during rebuild (uses cached metadata)
     };
 
     # === Global Homebrew Settings ===

@@ -174,6 +174,31 @@ in
     };
   };
 
+  # === Automatic Homebrew Updates ===
+  # Update Homebrew metadata weekly (saves 47MB on each rebuild)
+  launchd.user.agents.homebrew-update = {
+    serviceConfig = {
+      ProgramArguments = [
+        "/bin/sh"
+        "-c"
+        ''
+          /opt/homebrew/bin/brew update && \
+          echo "Homebrew updated automatically: $(date)" >> ~/.cache/homebrew-update.log
+        ''
+      ];
+      StartCalendarInterval = [
+        {
+          Weekday = 1;
+          Hour = 9;
+          Minute = 15;
+        } # Weekly on Monday at 9:15 AM (after flake update)
+      ];
+      StandardOutPath = "/Users/alx/.cache/homebrew-update.log";
+      StandardErrorPath = "/Users/alx/.cache/homebrew-update-error.log";
+      RunAtLoad = false;
+    };
+  };
+
   # ============================================================================
   # SYSTEM PERFORMANCE OPTIMIZATION
   # ============================================================================

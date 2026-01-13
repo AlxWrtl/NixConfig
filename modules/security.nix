@@ -24,25 +24,55 @@
         "/bin/sh"
         "-c"
         ''
-          # Run vulnix scan and save results (warnings to stderr, JSON to file)
-          ${pkgs.vulnix}/bin/vulnix --system /var/run/current-system --json 2>/var/log/security/vulnix-scan-error.log > /var/log/security/vulnix-scan.json || true
+          # Check last scan time (catch-up if Mac was off)
+          last_scan_file="/var/log/security/vulnix-last-scan"
+          current_time=$(date +%s)
 
-          # Parse results and notify if CVEs found
-          if [ -f /var/log/security/vulnix-scan.json ]; then
-            # Count packages with CVEs (grep "affected_by" occurrences)
-            cve_count=$(/usr/bin/grep -c '"affected_by"' /var/log/security/vulnix-scan.json 2>/dev/null || echo "0")
+          # Ensure log directory exists
+          mkdir -p /var/log/security
 
-            if [ "$cve_count" -gt 0 ]; then
-              # Send macOS notification
-              /usr/bin/osascript -e "display notification \"Found $cve_count package(s) with CVEs. Check /var/log/security/vulnix-scan.json\" with title \"🔒 Security Alert\" sound name \"Basso\"" || true
+          # If no last scan file, create it and run scan
+          if [ ! -f "$last_scan_file" ]; then
+            run_scan=true
+          else
+            # Check if last scan was more than 4 days ago (catch-up threshold)
+            last_scan=$(cat "$last_scan_file" 2>/dev/null || echo "0")
+            time_diff=$((current_time - last_scan))
+            four_days=$((4 * 24 * 60 * 60))
 
-              # Log critical finding with details
-              echo "$(date): ALERT - $cve_count package(s) affected by CVEs" >> /var/log/security/vulnix-alerts.log
-
-              # Extract top 5 critical CVEs (CVSS >= 7.0)
-              ${pkgs.jq}/bin/jq -r '.[] | select(.cvssv3_basescore | to_entries | any(.value >= 7.0)) | .name + " - " + (.affected_by | join(", "))' /var/log/security/vulnix-scan.json 2>/dev/null | head -5 >> /var/log/security/vulnix-alerts.log || true
+            if [ "$time_diff" -gt "$four_days" ]; then
+              run_scan=true
             else
-              echo "$(date): No CVEs detected" >> /var/log/security/vulnix-scan.log
+              run_scan=false
+              echo "$(date): CVE scan skipped (last scan $((time_diff / 86400)) days ago)" >> /var/log/security/vulnix-scan.log
+            fi
+          fi
+
+          # Run scan if needed
+          if [ "$run_scan" = "true" ]; then
+            # Run vulnix scan and save results (warnings to stderr, JSON to file)
+            ${pkgs.vulnix}/bin/vulnix --system /var/run/current-system --json 2>/var/log/security/vulnix-scan-error.log > /var/log/security/vulnix-scan.json || true
+
+            # Update last scan timestamp
+            echo "$current_time" > "$last_scan_file"
+
+            # Parse results and notify if CVEs found
+            if [ -f /var/log/security/vulnix-scan.json ]; then
+              # Count packages with CVEs (grep "affected_by" occurrences)
+              cve_count=$(/usr/bin/grep -c '"affected_by"' /var/log/security/vulnix-scan.json 2>/dev/null || echo "0")
+
+              if [ "$cve_count" -gt 0 ]; then
+                # Send macOS notification
+                /usr/bin/osascript -e "display notification \"Found $cve_count package(s) with CVEs. Check /var/log/security/vulnix-scan.json\" with title \"🔒 Security Alert\" sound name \"Basso\"" || true
+
+                # Log critical finding with details
+                echo "$(date): ALERT - $cve_count package(s) affected by CVEs" >> /var/log/security/vulnix-alerts.log
+
+                # Extract top 5 critical CVEs (CVSS >= 7.0)
+                ${pkgs.jq}/bin/jq -r '.[] | select(.cvssv3_basescore | to_entries | any(.value >= 7.0)) | .name + " - " + (.affected_by | join(", "))' /var/log/security/vulnix-scan.json 2>/dev/null | head -5 >> /var/log/security/vulnix-alerts.log || true
+              else
+                echo "$(date): No CVEs detected" >> /var/log/security/vulnix-scan.log
+              fi
             fi
           fi
         ''
@@ -61,7 +91,7 @@
       ];
       StandardOutPath = "/var/log/security/vulnix-scan.log";
       StandardErrorPath = "/var/log/security/vulnix-scan-error.log";
-      RunAtLoad = false;
+      RunAtLoad = true; # Run on boot to catch-up missed scans
     };
   };
 

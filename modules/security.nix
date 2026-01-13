@@ -24,19 +24,23 @@
         "/bin/sh"
         "-c"
         ''
-          # Run vulnix scan and save results
-          ${pkgs.vulnix}/bin/vulnix --system /var/run/current-system --json > /var/log/security/vulnix-scan.json 2>&1 || true
+          # Run vulnix scan and save results (warnings to stderr, JSON to file)
+          ${pkgs.vulnix}/bin/vulnix --system /var/run/current-system --json 2>/var/log/security/vulnix-scan-error.log > /var/log/security/vulnix-scan.json || true
 
           # Parse results and notify if CVEs found
           if [ -f /var/log/security/vulnix-scan.json ]; then
-            cve_count=$(${pkgs.jq}/bin/jq '. | length' /var/log/security/vulnix-scan.json 2>/dev/null || echo "0")
+            # Count packages with CVEs (grep "affected_by" occurrences)
+            cve_count=$(/usr/bin/grep -c '"affected_by"' /var/log/security/vulnix-scan.json 2>/dev/null || echo "0")
 
             if [ "$cve_count" -gt 0 ]; then
               # Send macOS notification
-              /usr/bin/osascript -e "display notification \"Found $cve_count CVE(s) in system packages. Check /var/log/security/vulnix-scan.json\" with title \"Security Alert\" sound name \"Basso\"" || true
+              /usr/bin/osascript -e "display notification \"Found $cve_count package(s) with CVEs. Check /var/log/security/vulnix-scan.json\" with title \"🔒 Security Alert\" sound name \"Basso\"" || true
 
-              # Log critical finding
-              echo "$(date): ALERT - $cve_count CVE(s) detected" >> /var/log/security/vulnix-alerts.log
+              # Log critical finding with details
+              echo "$(date): ALERT - $cve_count package(s) affected by CVEs" >> /var/log/security/vulnix-alerts.log
+
+              # Extract top 5 critical CVEs (CVSS >= 7.0)
+              ${pkgs.jq}/bin/jq -r '.[] | select(.cvssv3_basescore | to_entries | any(.value >= 7.0)) | .name + " - " + (.affected_by | join(", "))' /var/log/security/vulnix-scan.json 2>/dev/null | head -5 >> /var/log/security/vulnix-alerts.log || true
             else
               echo "$(date): No CVEs detected" >> /var/log/security/vulnix-scan.log
             fi

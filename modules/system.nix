@@ -93,9 +93,9 @@ in
       automatic = true; # Enable automatic garbage collection
       interval = {
         Weekday = 7;
-        Hour = 3;
+        Hour = 10;
         Minute = 0;
-      }; # Run weekly on Sunday at 3:00 AM (specific time)
+      }; # Run weekly on Sunday at 10:00 AM (daytime, after rollback test)
       options = "--delete-older-than ${toString systemConstants.gcRetentionDays}d --max-freed ${systemConstants.gcMaxFreed}";
     };
   };
@@ -320,9 +320,9 @@ in
     schedule = [
       {
         Weekday = 6;
-        Hour = 3;
+        Hour = 14;
         Minute = 0;
-      } # Weekly on Saturday at 3:00 AM
+      } # Weekly on Saturday at 2:00 PM (daytime)
     ];
     script = ''
       if /usr/bin/mdutil -s / | grep -q "disabled\\|Error"; then
@@ -343,9 +343,9 @@ in
     schedule = [
       {
         Weekday = 2;
-        Hour = 3;
+        Hour = 20;
         Minute = 0;
-      } # Weekly on Tuesday at 3:00 AM
+      } # Weekly on Tuesday at 8:00 PM (evening)
     ];
     script = ''
       # Automated disk cleanup and optimization
@@ -364,9 +364,9 @@ in
     schedule = [
       {
         Weekday = 7;
-        Hour = 2;
+        Hour = 9;
         Minute = 30;
-      } # Sunday 2:30 AM (30min before GC)
+      } # Sunday 9:30 AM (30min before GC at 10:00 AM)
     ];
     script = ''
       # Check if we have at least 2 generations to rollback to

@@ -225,10 +225,16 @@ See `docs/ROADMAP-S-TIER.md` for the path to 100/100 (S Tier):
 
 ## 📚 Documentation
 
+### System Configuration
 - **[AUDIT-SUMMARY.md](docs/AUDIT-SUMMARY.md)** - Complete audit breakdown (B+ → A++)
 - **[ROADMAP-S-TIER.md](docs/ROADMAP-S-TIER.md)** - Path to perfect score
-- **[CLAUDE.md](CLAUDE.md)** - Claude Code assistant instructions
 - **[Nix-Darwin Manual](https://daiderd.com/nix-darwin/manual/)** - Official documentation
+
+### Claude Code Optimization (Ultra-optimized v2.1.9)
+- **[00-START-HERE.md](docs/00-START-HERE.md)** - Guide principal (-70% cost reduction)
+- **[README.md](docs/README.md)** - Documentation complète
+- **[verification-report.md](docs/verification-report.md)** - Audit vs docs officielles 2025
+- **[CLAUDE.md](CLAUDE.md)** - Prompt instructions (1K tokens optimized)
 
 ## 🆘 Troubleshooting
 

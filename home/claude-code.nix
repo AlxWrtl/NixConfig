@@ -40,12 +40,34 @@ let
   '';
 
   autoRoutingText = ''
-    # Auto-Routing (Minimal)
+    # Auto-Routing + Model Selection
 
-    - Use the most specialized agent for the task.
-    - Prefer quick-fix / code-reviewer for small changes.
-    - Prefer nix-expert for any *.nix / darwin-rebuild / flakes.
-    - If unsure: use codebase-navigator first, then delegate.
+    ## Agent Selection
+    - Use most specialized agent for task
+    - quick-fix / code-reviewer for small changes
+    - nix-expert for *.nix / darwin-rebuild / flakes
+    - If unsure: codebase-navigator first, then delegate
+
+    ## Model Selection (Cost Optimization - Claude 4.5)
+    ### Haiku 4.5 ($1/$5) - Fast + Cheap
+    - Model: claude-haiku-4-5-20251001
+    - Agents: quick-fix, code-reviewer, database-expert, performance-expert, codebase-navigator, nix-expert, git-ship
+    - Use for: Simple tasks, typos, quick reviews, navigation
+    - Extended thinking: Disable (cache efficiency)
+
+    ### Sonnet 4.5 ($3/$15) - Production Quality [DEFAULT]
+    - Model: claude-sonnet-4-5-20250929
+    - Agents: frontend-expert, backend-expert, devops-expert, ai-ml-expert, architecture-expert
+    - Use for: Complex features, refactoring, architecture
+    - Extended thinking: Enable for coding/complex tasks
+
+    ### Opus 4.5 ($5/$25) - High Intelligence, More Accessible
+    - Model: claude-opus-4-5-20251101
+    - Use for: Maximum capability tasks, effort parameter support
+    - Reserved for: Explicit requests, critical decisions only
+
+    **Cost savings: 60-70% via intelligent routing**
+    **Note**: MCP auto mode enabled by default (v2.1.7+)
   '';
 
   webGuardScript = ''
@@ -163,6 +185,7 @@ let
       parallelTools = true;
       cacheEnabled = true;
       compactHistory = true;
+      compactFrequency = 30;
     };
 
     attribution = {
@@ -182,6 +205,11 @@ let
     };
 
     alwaysThinkingEnabled = true;
+
+    betaHeaders = {
+      "context-management-2025-06-27" = true;
+      "advanced-tool-use-2025-11-20" = true;
+    };
 
     permissions = {
       defaultMode = "acceptEdits";
@@ -212,7 +240,7 @@ let
   # -------------------------
   cmdTdd = ''
     ---
-    allowed-tools: Bash, Read, Edit, Write, Grep, Glob, MultiEdit
+    tools: Bash, Read, Edit, Write, Grep, Glob, MultiEdit
     description: "TDD loop: write failing test, minimal fix, refactor, verify."
     argument-hint: "<feature>"
     ---
@@ -229,7 +257,7 @@ let
 
   cmdOptimize = ''
     ---
-    allowed-tools: Bash, Read, Edit, Grep, Glob, WebFetch
+    tools: Bash, Read, Edit, Grep, Glob, WebFetch
     description: "Profile first, then apply targeted performance fixes."
     argument-hint: "<target>"
     ---
@@ -245,7 +273,7 @@ let
 
   cmdContextPrime = ''
     ---
-    allowed-tools: Read, Grep, Glob
+    tools: Read, Grep, Glob
     description: "Quickly map the project: entrypoints, structure, build, tests."
     argument-hint: ""
     ---
@@ -265,10 +293,9 @@ let
     ---
     name: frontend-expert
     model: sonnet
-    max_tokens: 3000
-    context_limit: 12000
     description: "Frontend work (React/Vue/Angular/TS/CSS). Small diffs, modern patterns."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
+    permissionMode: default
     ---
 
     # Frontend Expert
@@ -285,16 +312,16 @@ let
     ## Guardrails
     - No big refactors unless requested.
     - Follow repo conventions (lint, formatting, structure).
+    - Extended thinking enabled for complex component logic.
   '';
 
   agentBackend = ''
     ---
     name: backend-expert
     model: sonnet
-    max_tokens: 3500
-    context_limit: 12000
     description: "Backend/API work (Node/Python). Safe changes, security-first."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
+    permissionMode: default
     ---
 
     # Backend Expert
@@ -311,16 +338,16 @@ let
     ## Guardrails
     - No auth/security shortcuts.
     - No schema refactors unless requested.
+    - Extended thinking enabled for complex logic/security.
   '';
 
   agentDatabase = ''
     ---
     name: database-expert
     model: haiku
-    max_tokens: 2200
-    context_limit: 8000
     description: "DB tuning, schema, indexes, queries. Prefer explain/analyze-driven fixes."
     tools: Read, Write, Edit, Grep, Bash, WebFetch
+    permissionMode: default
     ---
 
     # Database Expert
@@ -342,10 +369,9 @@ let
     ---
     name: devops-expert
     model: sonnet
-    max_tokens: 3500
-    context_limit: 10000
     description: "CI/CD, Docker, infra changes. Secure + reproducible."
     tools: Read, Write, Edit, Grep, Bash, WebFetch
+    permissionMode: default
     ---
 
     # DevOps Expert
@@ -368,10 +394,9 @@ let
     ---
     name: ai-ml-expert
     model: sonnet
-    max_tokens: 4000
-    context_limit: 15000
     description: "ML/AI work: training, inference, eval, MLOps. Evidence-driven."
     tools: Read, Write, Edit, Grep, Bash, WebFetch
+    permissionMode: default
     ---
 
     # AI/ML Expert
@@ -393,10 +418,9 @@ let
     ---
     name: architecture-expert
     model: sonnet
-    max_tokens: 4500
-    context_limit: 20000
     description: "System design & architecture. Focus on tradeoffs + small steps."
     tools: Read, Grep, Glob, WebFetch
+    permissionMode: default
     ---
 
     # Architecture Expert
@@ -417,10 +441,9 @@ let
     ---
     name: performance-expert
     model: haiku
-    max_tokens: 2200
-    context_limit: 8000
     description: "Performance debugging: measure → fix → measure."
     tools: Read, Edit, Grep, Bash, WebFetch
+    permissionMode: default
     ---
 
     # Performance Expert
@@ -441,10 +464,9 @@ let
     ---
     name: codebase-navigator
     model: haiku
-    max_tokens: 1600
-    context_limit: 6000
     description: "Locate files, patterns, and entrypoints quickly."
     tools: Grep, Glob, Read, WebFetch
+    permissionMode: default
     ---
 
     # Codebase Navigator
@@ -464,10 +486,9 @@ let
     ---
     name: code-reviewer
     model: haiku
-    max_tokens: 1800
-    context_limit: 5000
     description: "Code review: bugs, quality, security, minimal actionable feedback."
     tools: Read, Grep, WebFetch, Write, Edit
+    permissionMode: acceptEdits
     ---
 
     # Code Reviewer
@@ -483,16 +504,16 @@ let
 
     ## Guardrails
     - No architecture redesign unless requested.
+    - Extended thinking disabled for fast reviews.
   '';
 
   agentQuickFix = ''
     ---
     name: quick-fix
     model: haiku
-    max_tokens: 900
-    context_limit: 3000
     description: "Tiny changes only (< ~5 lines): typos, small edits, quick fixes."
     tools: Read, Edit, Grep, Bash
+    permissionMode: acceptEdits
     ---
 
     # Quick Fix
@@ -506,17 +527,17 @@ let
     - Minimal explanation unless asked.
 
     ## Guardrails
-    - Don’t expand scope.
+    - Don't expand scope.
+    - Extended thinking disabled for speed + cache efficiency.
   '';
 
   agentNix = ''
     ---
     name: nix-expert
     model: haiku
-    max_tokens: 1500
-    context_limit: 4000
     description: "Handle nix-darwin / flakes / *.nix. Small diffs, safe rebuild."
     tools: Read, Edit, Bash, WebFetch
+    permissionMode: acceptEdits
     ---
 
     # Nix Expert
@@ -539,16 +560,16 @@ let
     ---
     name: git-ship
     model: haiku
-    max_tokens: 500
-    context_limit: 2000
     description: "Commit+push. English msgs. Minimal tokens, explicit changes."
     tools: Bash, Read
+    permissionMode: default
     ---
 
     # Git Ship
 
     EN only. Ultra concise. Explicit WHAT changed.
     NEVER mention the assistant or authorship.
+    Extended thinking disabled for speed.
 
     Banned in commit msg:
     - "I", "we", "my", "our"
@@ -679,6 +700,14 @@ in
         nix.dev
         zero-to-nix.com
         discourse.nixos.org
+        platform.claude.com
+        code.claude.com
+        www.anthropic.com
+        anthropic.com
+        github:anthropics/claude-code
+        github:anthropics/anthropic-sdk-python
+        github:anthropics/anthropic-sdk-typescript
+        github:modelcontextprotocol/servers
       '';
     };
   };

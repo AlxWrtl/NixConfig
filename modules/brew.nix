@@ -26,7 +26,7 @@
     # === Automatic Package Management ===
     onActivation = {
       cleanup = "zap"; # Remove packages and associated data not listed in configuration
-      autoUpdate = false; # Disable auto-update during rebuild (saves 47MB download each time)
+      autoUpdate = true; # Update metadata before rebuild to ensure latest versions
       upgrade = true; # Upgrade outdated packages during rebuild (uses cached metadata)
     };
 

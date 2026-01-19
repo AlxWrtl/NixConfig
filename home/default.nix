@@ -317,27 +317,28 @@
   # ============================================================================
 
   # Personal security scanning service
-  launchd.agents.personal-security-scan = {
-    enable = true;
-    config = {
-      ProgramArguments = [
-        "${pkgs.vulnix}/bin/vulnix"
-        "--system"
-        "/var/run/current-system"
-        "--json"
-        "/Users/alx/.cache/vulnix-scan.json"
-      ];
-      StartCalendarInterval = [
-        {
-          Weekday = 1;
-          Hour = 10;
-          Minute = 0;
-        } # Monday 10 AM
-      ];
-      StandardOutPath = "/Users/alx/.cache/vulnix-scan.log";
-      StandardErrorPath = "/Users/alx/.cache/vulnix-scan-error.log";
-    };
-  };
+  # DISABLED: Redundant with system security-vulnerability-scan
+  # launchd.agents.personal-security-scan = {
+  #   enable = true;
+  #   config = {
+  #     ProgramArguments = [
+  #       "${pkgs.vulnix}/bin/vulnix"
+  #       "--system"
+  #       "/var/run/current-system"
+  #       "--json"
+  #       "/Users/alx/.cache/vulnix-scan.json"
+  #     ];
+  #     StartCalendarInterval = [
+  #       {
+  #         Weekday = 1;
+  #         Hour = 10;
+  #         Minute = 0;
+  #       } # Monday 10 AM
+  #     ];
+  #     StandardOutPath = "/Users/alx/.cache/vulnix-scan.log";
+  #     StandardErrorPath = "/Users/alx/.cache/vulnix-scan-error.log";
+  #   };
+  # };
 
   # ============================================================================
   # XDG DIRECTORIES

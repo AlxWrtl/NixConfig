@@ -111,11 +111,7 @@ let
 
     includeCoAuthoredBy = false;
 
-    statusLine = {
-      type = "command";
-      command = "pnpm dlx ccusage@latest statusline --mode both";
-      padding = 0;
-    };
+
 
     enabledPlugins = {
     };

@@ -83,10 +83,6 @@
         greedy = true;
       } # File archiver with modern interface
       {
-        name = "daisydisk";
-        greedy = true;
-      } # Visual disk usage analyzer
-      {
         name = "fliqlo";
         greedy = true;
       } # Flickering-free screen saver
@@ -195,6 +191,10 @@
         name = "codex";
         greedy = true;
       } # AI code generation and assistance tool
+      {
+        name = "appcleaner";
+        greedy = true;
+      } # Application uninstaller and cleaner
     ];
 
     # ============================================================================
@@ -211,7 +211,8 @@
       "Trello" = 1278508951; # Visual project management boards
 
       # === System Utilities ===
-      "DaisyDisk" = 411643860; # Disk usage visualization (if not using cask)
+      "DaisyDisk" = 411643860; # Disk usage visualization
+
     };
   };
 

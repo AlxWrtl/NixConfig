@@ -120,7 +120,6 @@
 
       # ---- Tool-Specific Environment ----
       export EZA_CONFIG_DIR="$HOME/.config/eza"
-      export FNM_DIR="$HOME/.fnm"
 
       # ============================================================================
       # PLUGIN LOADING & EXTENSIONS
@@ -159,9 +158,6 @@
       }
 
       # ---- Cached Tool Initializations ----
-      if command -v fnm >/dev/null 2>&1 && [[ -z "''${FNM_MULTISHELL_PATH:-}" ]]; then
-        eval "$(fnm env --use-on-cd)"
-      fi
 
       # ---- Zoxide (z command) ----
       _eval_cache zoxide 'zoxide init zsh'
@@ -262,7 +258,6 @@
       # Tool Configuration Directories
       EZA_CONFIG_DIR = "$HOME/.config/eza";
       PNPM_HOME = "$HOME/Library/pnpm";
-      FNM_DIR = "$HOME/.fnm";
     };
   };
 

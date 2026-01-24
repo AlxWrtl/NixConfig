@@ -36,8 +36,8 @@
     ruff # Fast Python linter and formatter
 
     # === JAVASCRIPT/NODE.JS DEVELOPMENT ===
+    nodejs_20 # Node.js LTS runtime (includes npm/npx)
     pnpm # Fast, disk space efficient package manager
-    fnm # Node.js version manager
 
     # Node.js global tools
     nodePackages."@angular/cli" # Angular framework CLI

@@ -41,7 +41,6 @@
     # ---- Tool Configuration Directories ----
     EZA_CONFIG_DIR = "$HOME/.config/eza"; # Eza configuration location
     PNPM_HOME = "$HOME/Library/pnpm"; # PNPM installation directory
-    FNM_DIR = "$HOME/.fnm"; # Fast Node Manager directory
   };
 
   # Note: EDITOR, VISUAL, PAGER are configured in system.nix to avoid duplication

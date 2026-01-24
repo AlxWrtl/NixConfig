@@ -111,7 +111,12 @@ let
 
     includeCoAuthoredBy = false;
 
-
+    # Statusline: ccstatusline (TypeScript, feature-rich, ~80ms)
+    # Alternatives: GSD statusline, CCometixLine (Rust), or null
+    statusLine = {
+      type = "command";
+      command = "npx ccstatusline@latest";
+    };
 
     enabledPlugins = {
     };
@@ -521,7 +526,8 @@ in
   # Write ~/.claude content declaratively
   # -------------------------
   home.file = {
-    "${claudeDir}/settings.json" = {
+    # Settings base (read-only reference)
+    "${claudeDir}/settings-base.json" = {
       text = settingsJson;
     };
 
@@ -594,5 +600,51 @@ in
   home.activation.claudeCodePerms = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
     set -euo pipefail
     chmod 700 "$HOME/.claude" "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks"
+  '';
+
+  # -------------------------
+  # Merge settings.json (intelligent merge)
+  # -------------------------
+  home.activation.claudeCodeSettingsMerge = lib.hm.dag.entryAfter [ "claudeCodePerms" ] ''
+    set -euo pipefail
+    BASE="$HOME/.claude/settings-base.json"
+    TARGET="$HOME/.claude/settings.json"
+
+    # If jq not available, fallback to copy
+    if ! command -v jq >/dev/null 2>&1; then
+      if [ ! -f "$TARGET" ]; then
+        cp "$BASE" "$TARGET"
+        chmod 600 "$TARGET"
+      fi
+      exit 0
+    fi
+
+    # Intelligent merge: base provides defaults, existing preserves user changes
+    # Exception: statusLine from base always wins (managed by nix)
+    if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
+      # Merge: base * existing, then override statusLine from base
+      TMP=$(mktemp)
+      BASE_STATUSLINE=$(jq -c '.statusLine' "$BASE")
+      jq -s '.[0] * .[1]' "$BASE" "$TARGET" | jq --argjson sl "$BASE_STATUSLINE" '.statusLine = $sl' > "$TMP" && mv "$TMP" "$TARGET"
+      chmod 600 "$TARGET"
+    else
+      # First install: copy base
+      rm -f "$TARGET"
+      cp "$BASE" "$TARGET"
+      chmod 600 "$TARGET"
+    fi
+  '';
+
+  # -------------------------
+  # Install GSD (Get Shit Done) - only if not already installed
+  # -------------------------
+  home.activation.claudeCodeGsd = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    if [ ! -f "$HOME/.claude/get-shit-done/VERSION" ]; then
+      echo "Installing GSD (Get Shit Done)..."
+      export PATH="${pkgs.nodejs_20}/bin:$PATH"
+      npx --yes get-shit-done-cc@latest --claude --global 2>&1 || echo "GSD install failed, continuing..."
+    else
+      echo "GSD already installed ($(cat "$HOME/.claude/get-shit-done/VERSION" 2>/dev/null || echo 'unknown'))"
+    fi
   '';
 }

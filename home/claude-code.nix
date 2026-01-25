@@ -110,9 +110,7 @@ let
     };
 
     includeCoAuthoredBy = false;
-
-    # Statusline: ccstatusline (TypeScript, feature-rich, ~80ms)
-    # Alternatives: GSD statusline, CCometixLine (Rust), or null
+    
     statusLine = {
       type = "command";
       command = "npx ccstatusline@latest";
@@ -130,6 +128,10 @@ let
 
     permissions = {
       defaultMode = "acceptEdits";
+      allow = [
+        "Read(~/.claude/**)"
+        "Read(~/.config/**)"
+      ];
       deny = [
         "Websearch"
         "WebSearch"
@@ -636,15 +638,11 @@ in
   '';
 
   # -------------------------
-  # Install GSD (Get Shit Done) - only if not already installed
+  # Install GSD (Get Shit Done) - auto-update on every rebuild
   # -------------------------
   home.activation.claudeCodeGsd = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
-    if [ ! -f "$HOME/.claude/get-shit-done/VERSION" ]; then
-      echo "Installing GSD (Get Shit Done)..."
-      export PATH="${pkgs.nodejs_20}/bin:$PATH"
-      npx --yes get-shit-done-cc@latest --claude --global 2>&1 || echo "GSD install failed, continuing..."
-    else
-      echo "GSD already installed ($(cat "$HOME/.claude/get-shit-done/VERSION" 2>/dev/null || echo 'unknown'))"
-    fi
+    echo "Updating GSD (Get Shit Done)..."
+    export PATH="${pkgs.nodejs_20}/bin:$PATH"
+    npx --yes get-shit-done-cc@latest --claude --global 2>&1 || echo "GSD update failed, continuing..."
   '';
 }

@@ -131,6 +131,7 @@ let
       allow = [
         "Read(~/.claude/**)"
         "Read(~/.config/**)"
+        "Read(.**)"
       ];
       deny = [
         "Websearch"

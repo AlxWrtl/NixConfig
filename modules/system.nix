@@ -85,6 +85,7 @@ in
       min-free = 1000000000; # Keep minimum 1GB free space (1 billion bytes)
       max-free = 5000000000; # Use maximum 5GB for store operations
       tarball-ttl = 3600 * 24 * 7; # Cache tarballs for 7 days
+      eval-cache = true; # Cache evaluation results for faster rebuilds
     };
 
     # === Automatic Maintenance ===

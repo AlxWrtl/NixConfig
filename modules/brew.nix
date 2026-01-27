@@ -221,11 +221,7 @@
   # ============================================================================
 
   environment.variables = {
-    # === Homebrew Core Settings ===
-    HOMEBREW_NO_ANALYTICS = "1"; # Disable usage analytics
-    HOMEBREW_NO_INSECURE_REDIRECT = "1"; # Prevent insecure redirects
     HOMEBREW_CASK_OPTS_NO_BINARIES = "1"; # Don't symlink cask binaries
-    HOMEBREW_PREFIX = "/opt/homebrew"; # Homebrew installation prefix
 
     # === Mac App Store CLI Configuration ===
     MAS_NO_PROMPT = "1"; # Prevent interactive prompts during automation

@@ -251,6 +251,61 @@ let
     - Output: short map + next suggested actions.
   '';
 
+  cmdAuto = ''
+    ---
+    tools: Skill, Task
+    description: "Intelligent workflow routing based on task analysis"
+    argument-hint: "<task description>"
+    ---
+
+    # Auto: $ARGUMENTS
+
+    ## Decision Logic
+
+    Analyze request and route to best workflow/agent:
+
+    **APEX** (create|add|implement|build|new|feature):
+    - Route: `/apex -a -s -t "$ARGUMENTS"`
+    - Reason: "Detected feature implementation"
+
+    **DEBUG** (fix|bug|error|broken|failing|crash|why):
+    - Route: `/debug -a "$ARGUMENTS"`
+    - Reason: "Detected debugging task"
+
+    **RALPH** (refactor all|update every|migrate|batch|standardize):
+    - Route: `/ralph-loop "$ARGUMENTS" --max-iterations 20 --completion-promise "DONE"`
+    - Reason: "Detected batch operation"
+
+    **AGENT** (where|how does|explain|quick|review):
+    - Route: `Task(subagent_type=codebase-navigator)` or specialized agent
+    - Reason: "Detected exploration/navigation task"
+
+    ## Steps
+
+    1) Parse $ARGUMENTS for keywords
+    2) Match decision matrix (priority: RALPH > DEBUG > APEX > AGENT)
+    3) Output: "Routed to [workflow] because [reason]"
+    4) Execute with optimal flags
+
+    ## Examples
+
+    Input: "create health check"
+    → Routed to /apex because detected "create" keyword
+    → Execute: /apex -a -s -t "create health check"
+
+    Input: "fix database timeout"
+    → Routed to /debug because detected "fix" keyword
+    → Execute: /debug -a "fix database timeout"
+
+    Input: "refactor all imports"
+    → Routed to /ralph-loop because detected "refactor all" pattern
+    → Execute: /ralph-loop "refactor all imports" --max-iterations 20
+
+    Input: "where is auth logic"
+    → Routed to codebase-navigator because detected "where" keyword
+    → Execute: Task with codebase-navigator agent
+  '';
+
   # -------------------------
   # APEX Skill
   # -------------------------
@@ -861,6 +916,9 @@ in
     };
     "${claudeDir}/commands/context-prime.md" = {
       text = cmdContextPrime;
+    };
+    "${claudeDir}/commands/auto.md" = {
+      text = cmdAuto;
     };
     "${claudeDir}/commands/init-memory-bank.md" = {
       text = cmdInitMemoryBank;

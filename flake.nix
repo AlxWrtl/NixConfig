@@ -62,17 +62,7 @@
           touch $out
         '';
 
-        # Evaluation check: Ensure configuration evaluates without errors
-        eval-check = pkgs.runCommand "check-config-eval" { } ''
-          set -e
-          echo "Checking nix-darwin configuration evaluation..."
-          ${pkgs.nix}/bin/nix eval --show-trace \
-            --extra-experimental-features "nix-command flakes" \
-            ${./.}#darwinConfigurations.alex-mbp.system 2>&1 | head -20 || true
-          touch $out
-        '';
-
-        # System configuration reference
+        # System configuration reference (implicitly validates evaluation)
         system-config = self.darwinConfigurations."alex-mbp".system;
       };
 
@@ -92,6 +82,7 @@
 
             # === CORE SYSTEM MODULES ===
             ./modules/system.nix # Core Nix settings, TouchID, security
+            ./modules/config.nix # Shared environment variables & aliases
             ./modules/packages.nix # System utilities & CLI tools
             ./modules/shell.nix # Zsh, aliases, environment setup
             ./modules/direnv.nix # Direnv per-directory environment loader

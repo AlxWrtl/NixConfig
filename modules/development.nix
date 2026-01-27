@@ -30,11 +30,6 @@
     nix-index # Search Nix packages efficiently
     vulnix # CVE vulnerability scanner for Nix packages
 
-    # === PYTHON DEVELOPMENT STACK ===
-    python3 # Latest Python 3 interpreter
-    uv # Modern Python package installer (pip replacement)
-    ruff # Fast Python linter and formatter
-
     # === JAVASCRIPT/NODE.JS DEVELOPMENT ===
     nodejs_20 # Node.js LTS runtime (includes npm/npx)
     pnpm # Fast, disk space efficient package manager
@@ -60,6 +55,12 @@
     # === SECURITY TOOLS ===
     age # Modern file encryption tool
     sops # Secrets management for Git repos
+  ]
+  # === PYTHON DEVELOPMENT STACK (Optional) ===
+  ++ lib.optionals config.nix-darwin.enablePython [
+    python3 # Latest Python 3 interpreter
+    uv # Modern Python package installer (pip replacement)
+    ruff # Fast Python linter and formatter
   ];
 
   # ============================================================================
@@ -82,22 +83,6 @@
   # ============================================================================
 
   environment.shellAliases = {
-    # === Git Workflow Shortcuts ===
-    g = "git"; # Quick git access
-    gs = "git status"; # Check repository status
-    ga = "git add"; # Stage changes
-    gc = "git commit"; # Commit changes
-    gp = "git push"; # Push to remote
-    gl = "git pull"; # Pull from remote
-    gd = "git diff"; # Show differences
-    gco = "git checkout"; # Switch branches/restore files
-    gb = "git branch"; # List/manage branches
-
-    # === Enhanced CLI Tools ===
-    lt = "eza --tree"; # Tree view with modern formatting
-    cat = "bat"; # Cat with syntax highlighting
-    find = "fd"; # Faster and more intuitive find
-    grep = "rg"; # Faster grep with better defaults
 
     # === Development Utilities ===
     serve = "python3 -m http.server"; # Quick local HTTP server

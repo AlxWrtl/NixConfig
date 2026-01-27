@@ -123,7 +123,7 @@ in
 
       # === New Window Behavior ===
       NewWindowTarget = "Other"; # Open new windows to custom location
-      NewWindowTargetPath = "file:///Users/alx/Downloads/"; # Default to Downloads folder
+      NewWindowTargetPath = "file://${config.users.users.${config.system.primaryUser}.home}/Downloads/"; # Default to Downloads folder
 
       # === Desktop Items Display ===
       ShowExternalHardDrivesOnDesktop = true; # Show external drives
@@ -180,7 +180,7 @@ in
     };
 
     # === Application Security ===
-    LaunchServices.LSQuarantine = false; # Disable quarantine for downloaded apps
+    LaunchServices.LSQuarantine = true; # Enable quarantine for downloaded apps
     SoftwareUpdate.AutomaticallyInstallMacOSUpdates = false; # Manual macOS updates only
 
     # === Input Device Configuration ===
@@ -203,7 +203,7 @@ in
 
       # === Gatekeeper & Quarantine Configuration ===
       "com.apple.security" = {
-        GKAutoRearm = false; # Prevent Gatekeeper from re-arming quarantine warnings
+        GKAutoRearm = true; # Allow Gatekeeper to re-arm quarantine warnings
       };
 
       "com.apple.appstore" = {
@@ -347,16 +347,4 @@ in
     harddisk = 10; # Hard disk sleeps after 10 minutes
   };
 
-  # ============================================================================
-  # GATEKEEPER QUARANTINE AUTO-REMOVAL
-  # ============================================================================
-
-  # Remove quarantine from Homebrew apps after installation (security preserved for manual downloads)
-  system.activationScripts.postActivation.text = ''
-    # Remove quarantine attribute from Homebrew-managed applications
-    find /Applications -name "*.app" -exec xattr -d com.apple.quarantine {} \; 2>/dev/null || true
-    find ~/Applications -name "*.app" -exec xattr -d com.apple.quarantine {} \; 2>/dev/null || true
-
-    echo "Quarantine removed from Homebrew applications"
-  '';
 }

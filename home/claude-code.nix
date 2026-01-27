@@ -138,6 +138,66 @@ let
         "WebSearch"
       ];
     };
+
+    continuousLearningV2 = {
+      enabled = true;
+      extraction = {
+        enabled = true;
+        minChangesBeforeExtraction = 3;
+        confidenceThreshold = 0.7;
+      };
+      promotion = {
+        enabled = true;
+        usageThresholdForSkill = 5;
+        autoGenerateSkills = true;
+      };
+      application = {
+        autoSuggest = true;
+        relevanceThreshold = 0.8;
+        maxSuggestions = 3;
+      };
+    };
+
+    apex = {
+      defaultFlags = {
+        auto = false;
+        save = true;
+        examine = false;
+        test = false;
+      };
+      outputDir = ".claude/output/apex";
+    };
+
+    ralphWiggum = {
+      defaultMaxIterations = 20;
+      sandbox = true;
+      autoSave = true;
+    };
+
+    hooks = {
+      PreToolUse = [
+        {
+          matcher = "Edit|Write";
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/protect-main.js";
+            }
+          ];
+        }
+      ];
+      PostToolUse = [
+        {
+          matcher = "Edit|Write.*\\.tsx?$";
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/format-typescript.js";
+            }
+          ];
+        }
+      ];
+    };
   };
 
   # -------------------------
@@ -189,6 +249,256 @@ let
     - Identify entrypoints, build, test commands.
     - Map key folders and ownership (src/, app/, packages/).
     - Output: short map + next suggested actions.
+  '';
+
+  # -------------------------
+  # APEX Skill
+  # -------------------------
+  skillApex = ''
+    ---
+    name: apex
+    description: "Systematic implementation using APEX methodology"
+    ---
+
+    # APEX: Systematic Implementation
+
+    Flags: -a (auto), -s (save), -e (examine), -t (test), -h (help)
+
+    Steps: 00-init → 01-analyze → 02-plan → 03-prepare → 04-execute → 05-test → 06-examine → 07-polish → 08-document → 09-finish
+
+    Load step files from ~/.claude/skills/apex/steps/
+  '';
+
+  apexStep00 = ''
+    # APEX Step 0: Initialize
+    Set up task context, check git status, create output dir.
+  '';
+
+  apexStep01 = ''
+    # APEX Step 1: Analyze
+    Read files, identify patterns, document requirements.
+  '';
+
+  apexStep02 = ''
+    # APEX Step 2: Plan
+    Propose approaches, break down tasks, identify risks.
+  '';
+
+  apexStep03 = ''
+    # APEX Step 3: Prepare
+    Create branch, install deps, create stubs.
+  '';
+
+  apexStep04 = ''
+    # APEX Step 4: Execute
+    Implement solution following plan.
+  '';
+
+  apexStep05 = ''
+    # APEX Step 5: Test
+    Run tests, verify implementation.
+  '';
+
+  apexStep06 = ''
+    # APEX Step 6: Examine
+    Deep review: security, performance, maintainability.
+  '';
+
+  apexStep07 = ''
+    # APEX Step 7: Polish
+    Clean up code, refine, improve naming.
+  '';
+
+  apexStep08 = ''
+    # APEX Step 8: Document
+    Update docs, README, CHANGELOG.
+  '';
+
+  apexStep09 = ''
+    # APEX Step 9: Finish
+    Final verification, commit, summarize.
+  '';
+
+  # -------------------------
+  # Debug Skill
+  # -------------------------
+  skillDebug = ''
+    ---
+    name: debug
+    description: "Systematic debugging workflow"
+    ---
+
+    # Debug: Systematic Problem Solving
+
+    Flags: -a (auto), -s (save), -h (help)
+
+    Steps: 01-reproduce → 02-isolate → 03-diagnose → 04-fix → 05-verify
+
+    Load step files from ~/.claude/skills/debug/steps/
+  '';
+
+  debugStep01 = ''
+    # Debug Step 1: Reproduce
+    Confirm problem, document errors, capture logs.
+  '';
+
+  debugStep02 = ''
+    # Debug Step 2: Isolate
+    Narrow down root cause, check recent changes.
+  '';
+
+  debugStep03 = ''
+    # Debug Step 3: Diagnose
+    Add logging, trace execution, identify root cause.
+  '';
+
+  debugStep04 = ''
+    # Debug Step 4: Fix
+    Apply minimal fix, handle edge cases.
+  '';
+
+  debugStep05 = ''
+    # Debug Step 5: Verify
+    Run reproduction, test edge cases, run regression.
+  '';
+
+  # -------------------------
+  # Continuous Learning V2
+  # -------------------------
+  skillContinuousLearning = ''
+    ---
+    name: continuous-learning-v2
+    description: "Extract and promote patterns to skills automatically"
+    enabled: true
+    ---
+
+    # Continuous Learning V2
+
+    Auto-extract patterns from interactions.
+
+    Extraction: min 3 changes, 0.7 confidence
+    Promotion: usage threshold 5, auto-generate
+    Application: auto-suggest, relevance 0.8, max 3
+
+    Generated skills → ~/.claude/skills/generated/
+  '';
+
+  # -------------------------
+  # Ralph Wiggum Commands (Modified for direct paths)
+  # -------------------------
+  cmdRalphLoop = ''
+    ---
+    description: "Start Ralph Wiggum loop in current session"
+    argument-hint: "PROMPT [--max-iterations N] [--completion-promise TEXT]"
+    allowed-tools: ["Bash(~/.claude/scripts/setup-ralph-loop.sh:*)"]
+    hide-from-slash-command-tool: "true"
+    ---
+
+    # Ralph Loop Command
+
+    Execute the setup script to initialize the Ralph loop:
+
+    ```!
+    ~/.claude/scripts/setup-ralph-loop.sh $ARGUMENTS
+    ```
+
+    Please work on the task. When you try to exit, the Ralph loop will feed the SAME PROMPT back to you for the next iteration. You'll see your previous work in files and git history, allowing you to iterate and improve.
+
+    CRITICAL RULE: If a completion promise is set, you may ONLY output it when the statement is completely and unequivocally TRUE. Do not output false promises to escape the loop, even if you think you're stuck or should exit for other reasons. The loop is designed to continue until genuine completion.
+  '';
+
+  cmdCancelRalph = ''
+    ---
+    description: "Cancel active Ralph loop"
+    ---
+
+    # Cancel Ralph Loop
+
+    Removes the Ralph loop state file:
+
+    ```!
+    rm -f .claude/ralph-loop.local.md && echo "✓ Ralph loop cancelled"
+    ```
+  '';
+
+  # -------------------------
+  # Memory Bank Command
+  # -------------------------
+  cmdInitMemoryBank = ''
+    ---
+    tools: Write, Bash
+    description: "Initialize Memory Bank structure in current project"
+    argument-hint: ""
+    ---
+
+    # Init Memory Bank
+
+    Create .claude/memory structure:
+
+    1) mkdir -p .claude/memory
+    2) Create files:
+       - project-info.md
+       - coding-standards.md
+       - team-conventions.md
+       - architecture-decisions.md
+       - common-commands.md
+       - dependencies.md
+       - recent-changes.md
+
+    3) Create .claude/CLAUDE.md with quick reference
+
+    Progressive disclosure: load files when needed.
+  '';
+
+  # -------------------------
+  # Hooks
+  # -------------------------
+  hookProtectMain = ''
+    #!/usr/bin/env node
+
+    module.exports = async (context) => {
+      const { exec } = require('child_process');
+      const util = require('util');
+      const execPromise = util.promisify(exec);
+
+      try {
+        const { stdout } = await execPromise('git branch --show-current');
+        const currentBranch = stdout.trim();
+
+        if (currentBranch === 'main' || currentBranch === 'master') {
+          return {
+            block: true,
+            message: "Cannot edit on main/master. Create feature branch first."
+          };
+        }
+      } catch (error) {
+        return {};
+      }
+
+      return {};
+    };
+  '';
+
+  hookFormatTypescript = ''
+    #!/usr/bin/env node
+
+    module.exports = async (context) => {
+      const { file } = context;
+      const { execSync } = require('child_process');
+      const path = require('path');
+
+      if (file && (file.endsWith('.ts') || file.endsWith('.tsx'))) {
+        try {
+          execSync('which prettier', { stdio: 'pipe' });
+          execSync('prettier --write ' + file, { stdio: 'inherit' });
+          console.log('✓ Formatted ' + path.basename(file));
+        } catch (error) {
+          // Prettier not available, skip
+        }
+      }
+
+      return {};
+    };
   '';
 
   # -------------------------
@@ -552,6 +862,15 @@ in
     "${claudeDir}/commands/context-prime.md" = {
       text = cmdContextPrime;
     };
+    "${claudeDir}/commands/init-memory-bank.md" = {
+      text = cmdInitMemoryBank;
+    };
+    "${claudeDir}/commands/ralph-loop.md" = {
+      text = cmdRalphLoop;
+    };
+    "${claudeDir}/commands/cancel-ralph.md" = {
+      text = cmdCancelRalph;
+    };
 
     # Agents
     "${claudeDir}/agents/frontend-expert.md" = {
@@ -590,6 +909,76 @@ in
     "${claudeDir}/agents/git-ship.md" = {
       text = agentGitShip;
     };
+
+    # APEX Skill
+    "${claudeDir}/skills/apex/SKILL.md" = {
+      text = skillApex;
+    };
+    "${claudeDir}/skills/apex/steps/00-init.md" = {
+      text = apexStep00;
+    };
+    "${claudeDir}/skills/apex/steps/01-analyze.md" = {
+      text = apexStep01;
+    };
+    "${claudeDir}/skills/apex/steps/02-plan.md" = {
+      text = apexStep02;
+    };
+    "${claudeDir}/skills/apex/steps/03-prepare.md" = {
+      text = apexStep03;
+    };
+    "${claudeDir}/skills/apex/steps/04-execute.md" = {
+      text = apexStep04;
+    };
+    "${claudeDir}/skills/apex/steps/05-test.md" = {
+      text = apexStep05;
+    };
+    "${claudeDir}/skills/apex/steps/06-examine.md" = {
+      text = apexStep06;
+    };
+    "${claudeDir}/skills/apex/steps/07-polish.md" = {
+      text = apexStep07;
+    };
+    "${claudeDir}/skills/apex/steps/08-document.md" = {
+      text = apexStep08;
+    };
+    "${claudeDir}/skills/apex/steps/09-finish.md" = {
+      text = apexStep09;
+    };
+
+    # Debug Skill
+    "${claudeDir}/skills/debug/SKILL.md" = {
+      text = skillDebug;
+    };
+    "${claudeDir}/skills/debug/steps/01-reproduce.md" = {
+      text = debugStep01;
+    };
+    "${claudeDir}/skills/debug/steps/02-isolate.md" = {
+      text = debugStep02;
+    };
+    "${claudeDir}/skills/debug/steps/03-diagnose.md" = {
+      text = debugStep03;
+    };
+    "${claudeDir}/skills/debug/steps/04-fix.md" = {
+      text = debugStep04;
+    };
+    "${claudeDir}/skills/debug/steps/05-verify.md" = {
+      text = debugStep05;
+    };
+
+    # Continuous Learning V2
+    "${claudeDir}/skills/continuous-learning-v2/SKILL.md" = {
+      text = skillContinuousLearning;
+    };
+
+    # Hooks
+    "${claudeDir}/hooks/protect-main.js" = {
+      text = hookProtectMain;
+      executable = true;
+    };
+    "${claudeDir}/hooks/format-typescript.js" = {
+      text = hookFormatTypescript;
+      executable = true;
+    };
   };
 
   # -------------------------
@@ -597,12 +986,23 @@ in
   # -------------------------
   home.activation.claudeCodeDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     set -euo pipefail
-    mkdir -p "$HOME/.claude" "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks"
+    mkdir -p "$HOME/.claude"
+    mkdir -p "$HOME/.claude/agents"
+    mkdir -p "$HOME/.claude/commands"
+    mkdir -p "$HOME/.claude/hooks"
+    mkdir -p "$HOME/.claude/plugins"
+    mkdir -p "$HOME/.claude/scripts"
+    mkdir -p "$HOME/.claude/skills/apex/steps"
+    mkdir -p "$HOME/.claude/skills/debug/steps"
+    mkdir -p "$HOME/.claude/skills/continuous-learning-v2"
+    mkdir -p "$HOME/.claude/skills/generated"
   '';
 
   home.activation.claudeCodePerms = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
     set -euo pipefail
-    chmod 700 "$HOME/.claude" "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks"
+    chmod 700 "$HOME/.claude"
+    chmod 700 "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks" "$HOME/.claude/skills"
+    chmod +x "$HOME/.claude/hooks"/*.js 2>/dev/null || true
   '';
 
   # -------------------------
@@ -639,11 +1039,51 @@ in
   '';
 
   # -------------------------
-  # Install GSD (Get Shit Done) - auto-update on every rebuild
+  # Install Ralph Wiggum scripts
   # -------------------------
-  home.activation.claudeCodeGsd = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
-    echo "Updating GSD (Get Shit Done)..."
-    export PATH="${pkgs.nodejs_20}/bin:$PATH"
-    npx --yes get-shit-done-cc@latest --claude --global 2>&1 || echo "GSD update failed, continuing..."
+  home.activation.claudeCodeRalphWiggum = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    RALPH_DIR="$HOME/.claude/plugins/ralph-wiggum"
+    INSTALL_MARKER="$RALPH_DIR/.installed"
+
+    # Skip if already installed (marker exists)
+    if [ -f "$INSTALL_MARKER" ]; then
+      # Update symlinks for scripts only
+      if [ -d "$RALPH_DIR" ]; then
+        mkdir -p "$HOME/.claude/scripts"
+        ln -sf "$RALPH_DIR/scripts/setup-ralph-loop.sh" "$HOME/.claude/scripts/setup-ralph-loop.sh"
+        chmod +x "$HOME/.claude/scripts/setup-ralph-loop.sh"
+      fi
+      exit 0
+    fi
+
+    echo "Installing Ralph Wiggum scripts..."
+    export PATH="${pkgs.curl}/bin:${pkgs.unzip}/bin:$PATH"
+
+    # Download plugin from GitHub
+    mkdir -p "$RALPH_DIR"
+    TMP_DIR=$(mktemp -d)
+
+    cd "$TMP_DIR"
+    curl -sL https://github.com/anthropics/claude-code/archive/refs/heads/main.zip -o repo.zip
+    unzip -q repo.zip
+
+    # Copy ALL files including hidden ones
+    shopt -s dotglob
+    cp -R claude-code-main/plugins/ralph-wiggum/* "$RALPH_DIR/"
+
+    # Create install marker
+    touch "$INSTALL_MARKER"
+
+    # Symlink scripts only (commands managed by nix)
+    mkdir -p "$HOME/.claude/scripts"
+    ln -sf "$RALPH_DIR/scripts/setup-ralph-loop.sh" "$HOME/.claude/scripts/setup-ralph-loop.sh"
+    chmod +x "$HOME/.claude/scripts/setup-ralph-loop.sh"
+
+    # Cleanup
+    cd - > /dev/null
+    rm -rf "$TMP_DIR"
+
+    echo "✓ Ralph Wiggum scripts installed"
   '';
+
 }

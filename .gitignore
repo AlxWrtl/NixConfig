@@ -1,0 +1,6 @@
+# Local Claude Code config and output
+.claude/
+
+# Nix build outputs
+result
+result-*

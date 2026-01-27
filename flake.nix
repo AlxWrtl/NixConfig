@@ -94,6 +94,7 @@
             ./modules/system.nix # Core Nix settings, TouchID, security
             ./modules/packages.nix # System utilities & CLI tools
             ./modules/shell.nix # Zsh, aliases, environment setup
+            ./modules/direnv.nix # Direnv per-directory environment loader
             ./modules/starship.nix # Starship prompt configuration
             ./modules/fonts.nix # Programming fonts & typography
             ./modules/ui.nix # macOS UI/UX & system defaults

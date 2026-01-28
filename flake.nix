@@ -81,7 +81,8 @@
             ./hosts/alex-mbp # Host module (networking, users, platform)
 
             # === CORE SYSTEM MODULES ===
-            ./modules/system.nix # Core Nix settings, TouchID, security
+            ./modules/nix.nix # Nix package manager configuration
+            ./modules/environment.nix # Environment variables & user management
             ./modules/config.nix # Shared environment variables & aliases
             ./modules/packages.nix # System utilities & CLI tools
             ./modules/shell.nix # Zsh, aliases, environment setup
@@ -89,6 +90,11 @@
             ./modules/starship.nix # Starship prompt configuration
             ./modules/fonts.nix # Programming fonts & typography
             ./modules/ui.nix # macOS UI/UX & system defaults
+
+            # === LAUNCHD SERVICES ===
+            ./modules/launchd/flake-update.nix # Automatic flake updates
+            ./modules/launchd/homebrew-update.nix # Automatic Homebrew updates
+            ./modules/launchd/system-optimization.nix # Power & network optimization
 
             # === SPECIALIZED MODULES ===
             ./modules/development.nix # Development environments & tools

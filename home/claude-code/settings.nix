@@ -1,0 +1,201 @@
+# Claude Code settings and statusline script
+{
+  settingsJson = builtins.toJSON {
+    env = {
+      npm_config_prefer_pnpm = "true";
+      npm_config_user_agent = "pnpm";
+      BASH_DEFAULT_TIMEOUT_MS = "300000";
+      BASH_MAX_TIMEOUT_MS = "600000";
+    };
+
+    model = "sonnet";
+
+    autoSave = true;
+    skipPermissions = false;
+
+    ui = {
+      theme = "dark";
+      compactMode = false;
+      showTokens = true;
+      showCost = true;
+      animations = true;
+    };
+
+    notifications = {
+      enabled = true;
+      channel = "terminal_bell";
+      showProgress = true;
+    };
+
+    performance = {
+      parallelTools = true;
+      cacheEnabled = true;
+      compactHistory = true;
+      compactFrequency = 30;
+    };
+
+    attribution = {
+      commit = "";
+      pr = "";
+    };
+
+    includeCoAuthoredBy = false;
+
+    statusLine = {
+      type = "command";
+      command = "$HOME/.claude/statusline.sh";
+    };
+
+    enabledPlugins = {
+    };
+
+    alwaysThinkingEnabled = false;
+
+    betaHeaders = {
+      "context-management-2025-06-27" = true;
+      "advanced-tool-use-2025-11-20" = true;
+    };
+
+    permissions = {
+      defaultMode = "acceptEdits";
+      allow = [
+        "Read(~/.claude/**)"
+        "Read(~/.config/**)"
+        "Read(.**)"
+      ];
+      deny = [
+        "Websearch"
+        "WebSearch"
+      ];
+    };
+
+    continuousLearningV2 = {
+      enabled = true;
+      extraction = {
+        enabled = true;
+        minChangesBeforeExtraction = 3;
+        confidenceThreshold = 0.7;
+      };
+      promotion = {
+        enabled = true;
+        usageThresholdForSkill = 5;
+        autoGenerateSkills = true;
+      };
+      application = {
+        autoSuggest = true;
+        relevanceThreshold = 0.8;
+        maxSuggestions = 3;
+      };
+    };
+
+    apex = {
+      defaultFlags = {
+        auto = false;
+        save = true;
+        examine = false;
+        test = false;
+      };
+      outputDir = ".claude/output/apex";
+    };
+
+    ralphWiggum = {
+      defaultMaxIterations = 20;
+      sandbox = true;
+      autoSave = true;
+    };
+
+    hooks = {
+      PreToolUse = [
+        {
+          matcher = "Edit|Write";
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/protect-main.js";
+              timeout = 10;
+            }
+          ];
+        }
+      ];
+      PostToolUse = [
+        {
+          matcher = "Edit|Write.*\\.tsx?$";
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/format-typescript.js";
+              timeout = 10;
+            }
+          ];
+        }
+      ];
+    };
+  };
+
+  statuslineScript = ''
+    #!/usr/bin/env bash
+    # Statusline with ccusage integration
+
+    INPUT=$(cat)
+
+    if command -v jq >/dev/null 2>&1; then
+      # Parse Claude Code JSON
+      MODEL=$(echo "$INPUT" | jq -r '.model.display_name // "sonnet"')
+      CWD=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."' | xargs basename)
+      TOKENS_IN=$(echo "$INPUT" | jq -r '.context_window.total_input_tokens // 0')
+      TOKENS_OUT=$(echo "$INPUT" | jq -r '.context_window.total_output_tokens // 0')
+      CONTEXT_PCT=$(echo "$INPUT" | jq -r '.context_window.used_percentage // 0')
+      COST_TOTAL=$(echo "$INPUT" | jq -r '.cost.total_cost_usd // 0' | xargs printf "\$%.2f")
+
+      # Calculate session usage percentage (time used in 3h block)
+      DURATION_MS=$(echo "$INPUT" | jq -r '.cost.total_duration_ms // 0')
+      BLOCK_DURATION_MS=$((3 * 60 * 60 * 1000))  # 3h in ms
+      SESSION_PCT=$((DURATION_MS * 100 / BLOCK_DURATION_MS))
+      [ $SESSION_PCT -gt 100 ] && SESSION_PCT=100
+
+      # Get time left from ccusage (pipe INPUT to it)
+      CCUSAGE_OUT=$(echo "$INPUT" | npx -y ccusage@latest statusline 2>/dev/null || echo "")
+      TIME_LEFT_STR=$(echo "$CCUSAGE_OUT" | grep -oE '[0-9]+h [0-9]+m left' | sed 's/ left//' || echo "")
+
+      # Git branch from workspace dir
+      WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."')
+      GIT_BRANCH=$(git -C "$WORKSPACE_DIR" branch --show-current 2>/dev/null || echo "")
+    else
+      MODEL="sonnet"
+      CWD=$(basename "$(pwd)")
+      GIT_BRANCH=$(git branch --show-current 2>/dev/null)
+      TOKENS_IN="0"
+      TOKENS_OUT="0"
+      CONTEXT_PCT="0"
+      COST_TOTAL="\$0.00"
+      SESSION_PCT="0"
+      TIME_LEFT_STR=""
+    fi
+
+    # Rainbow colors
+    RED='\033[91m'
+    ORANGE='\033[38;5;208m'
+    YELLOW='\033[93m'
+    GREEN='\033[92m'
+    CYAN='\033[96m'
+    BLUE='\033[94m'
+    INDIGO='\033[38;5;99m'
+    MAGENTA='\033[95m'
+    RESET='\033[0m'
+
+    # Format numbers with thousands separator
+    TOKENS_IN_FMT=$(printf "%'d" $TOKENS_IN 2>/dev/null || echo $TOKENS_IN)
+    TOKENS_OUT_FMT=$(printf "%'d" $TOKENS_OUT 2>/dev/null || echo $TOKENS_OUT)
+
+    # Output with icons: 🤖 Model | 📁 Dir | ⎇ Branch | 📊 Tokens | 🧠 Context | 💰 Cost | 📈 Session | ⏱ Time
+    OUT="''${RED}🤖 $MODEL''${RESET} | ''${ORANGE}📁 $CWD''${RESET}"
+    [ -n "$GIT_BRANCH" ] && OUT="$OUT | ''${YELLOW}⎇ $GIT_BRANCH''${RESET}"
+    OUT="$OUT | ''${GREEN}📊 $TOKENS_IN_FMT/$TOKENS_OUT_FMT''${RESET}"
+    OUT="$OUT | ''${CYAN}🧠 $CONTEXT_PCT%''${RESET}"
+    OUT="$OUT | ''${BLUE}💰 $COST_TOTAL''${RESET}"
+    OUT="$OUT | ''${INDIGO}📈 $SESSION_PCT%''${RESET}"
+    [ -n "$TIME_LEFT_STR" ] && OUT="$OUT | ''${MAGENTA}⏱ $TIME_LEFT_STR''${RESET}"
+
+    echo -e "$OUT"
+  '';
+}

@@ -33,6 +33,7 @@
     # === JAVASCRIPT/NODE.JS DEVELOPMENT ===
     nodejs_20 # Node.js LTS runtime (includes npm/npx)
     pnpm # Fast, disk space efficient package manager
+    bun # Fast all-in-one JavaScript runtime (includes bunx)
 
     # Node.js global tools
     nodePackages."@angular/cli" # Angular framework CLI

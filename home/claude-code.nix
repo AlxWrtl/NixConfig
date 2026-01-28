@@ -110,10 +110,11 @@ let
     };
 
     includeCoAuthoredBy = false;
-    
+
     statusLine = {
       type = "command";
-      command = "npx ccstatusline@latest";
+      command = "bunx ccstatusline@2.0.16";
+      padding = 0;
     };
 
     enabledPlugins = {
@@ -182,6 +183,7 @@ let
             {
               type = "command";
               command = "node ~/.claude/hooks/protect-main.js";
+              timeout = 10;
             }
           ];
         }
@@ -193,6 +195,7 @@ let
             {
               type = "command";
               command = "node ~/.claude/hooks/format-typescript.js";
+              timeout = 10;
             }
           ];
         }
@@ -510,6 +513,8 @@ let
   # -------------------------
   hookProtectMain = ''
     #!/usr/bin/env node
+    // Auto-exit après 5 secondes pour éviter les freezes
+    setTimeout(() => process.exit(0), 5000);
 
     module.exports = async (context) => {
       const { exec } = require('child_process');
@@ -536,6 +541,8 @@ let
 
   hookFormatTypescript = ''
     #!/usr/bin/env node
+    // Auto-exit après 5 secondes pour éviter les freezes
+    setTimeout(() => process.exit(0), 5000);
 
     module.exports = async (context) => {
       const { file } = context;

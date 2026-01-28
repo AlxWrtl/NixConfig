@@ -134,9 +134,11 @@
 
   statuslineScript = ''
     #!/usr/bin/env bash
-    # Statusline with ccusage integration
+    # Statusline with session and monthly costs (cached)
 
     INPUT=$(cat)
+    CACHE_FILE="/tmp/ccusage-monthly-cache.txt"
+    CACHE_MAX_AGE=300  # 5 minutes
 
     if command -v jq >/dev/null 2>&1; then
       # Parse Claude Code JSON
@@ -147,19 +149,25 @@
       CONTEXT_PCT=$(echo "$INPUT" | jq -r '.context_window.used_percentage // 0')
       COST_TOTAL=$(echo "$INPUT" | jq -r '.cost.total_cost_usd // 0' | xargs printf "\$%.2f")
 
-      # Calculate session usage percentage (time used in 3h block)
-      DURATION_MS=$(echo "$INPUT" | jq -r '.cost.total_duration_ms // 0')
-      BLOCK_DURATION_MS=$((3 * 60 * 60 * 1000))  # 3h in ms
-      SESSION_PCT=$((DURATION_MS * 100 / BLOCK_DURATION_MS))
-      [ $SESSION_PCT -gt 100 ] && SESSION_PCT=100
-
-      # Get time left from ccusage (pipe INPUT to it)
-      CCUSAGE_OUT=$(echo "$INPUT" | npx -y ccusage@latest statusline 2>/dev/null || echo "")
-      TIME_LEFT_STR=$(echo "$CCUSAGE_OUT" | grep -oE '[0-9]+h [0-9]+m left' | sed 's/ left//' || echo "")
-
       # Git branch from workspace dir
       WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."')
       GIT_BRANCH=$(git -C "$WORKSPACE_DIR" branch --show-current 2>/dev/null || echo "")
+
+      # Monthly cost (cached for performance)
+      MONTHLY_COST=""
+      NOW=$(date +%s)
+
+      if [ -f "$CACHE_FILE" ]; then
+        CACHE_AGE=$((NOW - $(stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)))
+        if [ $CACHE_AGE -lt $CACHE_MAX_AGE ]; then
+          MONTHLY_COST=$(cat "$CACHE_FILE")
+        fi
+      fi
+
+      if [ -z "$MONTHLY_COST" ]; then
+        MONTHLY_COST=$(npx -y ccusage@latest monthly --json 2>/dev/null | jq -r '.totals.totalCost // 0' | xargs printf "\$%.2f")
+        echo "$MONTHLY_COST" > "$CACHE_FILE" 2>/dev/null || true
+      fi
     else
       MODEL="sonnet"
       CWD=$(basename "$(pwd)")
@@ -168,18 +176,16 @@
       TOKENS_OUT="0"
       CONTEXT_PCT="0"
       COST_TOTAL="\$0.00"
-      SESSION_PCT="0"
-      TIME_LEFT_STR=""
+      MONTHLY_COST="\$0.00"
     fi
 
-    # Rainbow colors
+    # Colors
     RED='\033[91m'
     ORANGE='\033[38;5;208m'
     YELLOW='\033[93m'
     GREEN='\033[92m'
     CYAN='\033[96m'
     BLUE='\033[94m'
-    INDIGO='\033[38;5;99m'
     MAGENTA='\033[95m'
     RESET='\033[0m'
 
@@ -187,14 +193,13 @@
     TOKENS_IN_FMT=$(printf "%'d" $TOKENS_IN 2>/dev/null || echo $TOKENS_IN)
     TOKENS_OUT_FMT=$(printf "%'d" $TOKENS_OUT 2>/dev/null || echo $TOKENS_OUT)
 
-    # Output with icons: 🤖 Model | 📁 Dir | ⎇ Branch | 📊 Tokens | 🧠 Context | 💰 Cost | 📈 Session | ⏱ Time
+    # Output: 🤖 Model | 📁 Dir | ⎇ Branch | 📊 Tokens | 🧠 Context | 💰 Session | 📅 Month
     OUT="''${RED}🤖 $MODEL''${RESET} | ''${ORANGE}📁 $CWD''${RESET}"
     [ -n "$GIT_BRANCH" ] && OUT="$OUT | ''${YELLOW}⎇ $GIT_BRANCH''${RESET}"
     OUT="$OUT | ''${GREEN}📊 $TOKENS_IN_FMT/$TOKENS_OUT_FMT''${RESET}"
     OUT="$OUT | ''${CYAN}🧠 $CONTEXT_PCT%''${RESET}"
     OUT="$OUT | ''${BLUE}💰 $COST_TOTAL''${RESET}"
-    OUT="$OUT | ''${INDIGO}📈 $SESSION_PCT%''${RESET}"
-    [ -n "$TIME_LEFT_STR" ] && OUT="$OUT | ''${MAGENTA}⏱ $TIME_LEFT_STR''${RESET}"
+    OUT="$OUT | ''${MAGENTA}📅 $MONTHLY_COST''${RESET}"
 
     echo -e "$OUT"
   '';

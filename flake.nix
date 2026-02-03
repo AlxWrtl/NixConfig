@@ -76,42 +76,59 @@
           system = "aarch64-darwin"; # Apple Silicon architecture
           specialArgs = { inherit inputs; }; # Pass inputs to all modules
 
-          modules = [
-            # === HOST-SPECIFIC CONFIGURATION ===
-            ./hosts/alex-mbp # Host module (networking, users, platform)
+          modules =
+            let
+              # Core system configuration
+              coreModules = [
+                ./hosts/alex-mbp # Host module (networking, users, platform)
+                ./modules/options.nix # Module option definitions
+                ./modules/nix.nix # Nix package manager configuration
+                ./modules/environment.nix # Environment variables & user management
+              ];
 
-            # === CORE SYSTEM MODULES ===
-            ./modules/nix.nix # Nix package manager configuration
-            ./modules/environment.nix # Environment variables & user management
-            ./modules/config.nix # Shared environment variables & aliases
-            ./modules/packages.nix # System utilities & CLI tools
-            ./modules/shell.nix # Zsh, aliases, environment setup
-            ./modules/direnv.nix # Direnv per-directory environment loader
-            ./modules/starship.nix # Starship prompt configuration
-            ./modules/fonts.nix # Programming fonts & typography
-            ./modules/ui.nix # macOS UI/UX & system defaults
+              # Shell and CLI environment
+              shellModules = [
+                ./modules/config.nix # Shared environment variables & aliases
+                ./modules/packages.nix # System utilities & CLI tools
+                ./modules/shell.nix # Zsh configuration
+                ./modules/direnv.nix # Direnv per-directory environment loader
+                ./modules/starship.nix # Starship prompt configuration
+              ];
 
-            # === LAUNCHD SERVICES ===
-            ./modules/launchd/flake-update.nix # Automatic flake updates
-            ./modules/launchd/homebrew-update.nix # Automatic Homebrew updates
-            ./modules/launchd/system-optimization.nix # Power & network optimization
+              # System integration
+              systemModules = [
+                ./modules/fonts.nix # Programming fonts & typography
+                ./modules/ui.nix # macOS UI/UX & system defaults
+              ];
 
-            # === SPECIALIZED MODULES ===
-            ./modules/development.nix # Development environments & tools
-            ./modules/brew.nix # Homebrew for GUI applications
-            ./modules/security.nix # Security hardening & vulnerability scanning
-            ./modules/secrets.nix # SOPS secrets management with age encryption
+              # Automation services
+              serviceModules = [
+                ./modules/launchd/flake-update.nix # Automatic flake updates
+                ./modules/launchd/homebrew-update.nix # Automatic Homebrew updates
+                ./modules/launchd/system-optimization.nix # Power & network optimization
+              ];
 
-            # === HOME MANAGER INTEGRATION ===
-            home-manager.darwinModules.home-manager
-            {
-              home-manager.useGlobalPkgs = true;
-              home-manager.useUserPackages = true;
-              home-manager.backupFileExtension = "backup";
-              home-manager.users.alx = import ./home;
-              home-manager.extraSpecialArgs = { inherit inputs; };
-            }
-          ];
+              # Development and security
+              devSecModules = [
+                ./modules/development.nix # Development environments & tools
+                ./modules/brew.nix # Homebrew for GUI applications
+                ./modules/security.nix # Security hardening & vulnerability scanning
+                ./modules/secrets.nix # SOPS secrets management with age encryption
+              ];
+
+              # Home Manager integration
+              homeModules = [
+                home-manager.darwinModules.home-manager
+                {
+                  home-manager.useGlobalPkgs = true;
+                  home-manager.useUserPackages = true;
+                  home-manager.backupFileExtension = "backup";
+                  home-manager.users.alx = import ./home;
+                  home-manager.extraSpecialArgs = { inherit inputs; };
+                }
+              ];
+            in
+            coreModules ++ shellModules ++ systemModules ++ serviceModules ++ devSecModules ++ homeModules;
         };
       };
 

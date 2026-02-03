@@ -83,7 +83,7 @@ in
     };
 
     # === Automatic Maintenance ===
-    optimise.automatic = true; # Enable automatic store optimization and deduplication
+    optimise.automatic = true; # Enable automatic store optimization and deduplication (nix-darwin safe alternative to auto-optimise-store)
     gc = {
       automatic = true; # Enable automatic garbage collection
       interval = {

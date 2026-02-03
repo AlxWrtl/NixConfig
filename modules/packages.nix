@@ -44,36 +44,6 @@
     fastfetch # System information display (neofetch replacement)
   ];
 
-  # Note: Nix configuration is handled comprehensively in modules/system.nix
-
-  # ============================================================================
-  # PACKAGE CONFIGURATION
-  # ============================================================================
-
-  nixpkgs.config = {
-    # === Package Permissions ===
-    allowUnfree = true; # Enable proprietary packages (VS Code, etc.)
-
-    # === Security Exceptions ===
-    permittedInsecurePackages = [
-      # Add specific packages here if needed for compatibility
-      # Example: "package-version"
-    ];
-  };
-
-  # ============================================================================
-  # PACKAGE OVERLAYS
-  # ============================================================================
-  # Custom package modifications and additions
-
-  nixpkgs.overlays = [
-    # Add custom overlays here for package customizations
-    # Example: (self: super: {
-    #   myPackage = super.myPackage.overrideAttrs (oldAttrs: {
-    #     # Custom modifications
-    #   });
-    # })
-  ];
-
-  # Note: Store optimization and garbage collection are configured in system.nix
+  # Note: Nix configuration is handled in modules/nix.nix
+  # Note: Store optimization and garbage collection are configured in modules/nix.nix
 }

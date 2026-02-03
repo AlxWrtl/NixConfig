@@ -7,35 +7,17 @@
 
 {
   # ============================================================================
-  # MODULE OPTIONS
-  # ============================================================================
-
-  options.nix-darwin = {
-    enablePython = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable Python development stack (python3, uv, ruff)";
-    };
-
-    enableOptimizations = lib.mkOption {
-      type = lib.types.bool;
-      default = true;
-      description = "Enable system optimizations (power management, network tuning)";
-    };
-  };
-
-  # ============================================================================
   # SHARED CONFIGURATION
   # ============================================================================
   # Centralized environment variables and aliases to avoid duplication
   # Used by: shell.nix, development.nix, brew.nix, home/default.nix
+  # Options are defined in modules/options.nix
 
-  config = {
-    # ============================================================================
-    # ENVIRONMENT VARIABLES
-    # ============================================================================
+  # ============================================================================
+  # ENVIRONMENT VARIABLES
+  # ============================================================================
 
-    environment.variables = {
+  environment.variables = {
     # === FZF Configuration ===
     FZF_CTRL_R_OPTS = "--no-preview"; # History search: no preview
     FZF_CTRL_T_OPTS = "--preview 'bat -n --color=always --line-range :500 {}'"; # File search: bat preview
@@ -79,6 +61,5 @@
     cat = "bat"; # Cat with syntax highlighting
     find = "fd"; # Faster and more intuitive find
     grep = "rg"; # Faster grep with better defaults
-    };
   };
 }

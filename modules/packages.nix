@@ -28,7 +28,7 @@
         pkgs.gh
         pkgs.nixd
         pkgs.nil
-        pkgs.nixfmt-rfc-style
+        pkgs.nixfmt
         pkgs.nix-tree
         pkgs.nix-index
         pkgs.vulnix

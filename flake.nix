@@ -34,7 +34,7 @@
       # Automated checks
       checks.${system} = {
         format-check = pkgs.runCommand "check-nix-format" { } ''
-          ${pkgs.nixfmt-rfc-style}/bin/nixfmt --check ${./.}/flake.nix
+          ${pkgs.nixfmt}/bin/nixfmt --check ${./.}/flake.nix
           touch $out
         '';
         system-config = self.darwinConfigurations."alex-mbp".system;

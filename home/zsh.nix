@@ -6,12 +6,6 @@
 }:
 
 {
-  # ============================================================================
-  # ZSH SHELL CONFIGURATION
-  # ============================================================================
-  # Centralized zsh configuration (source of truth)
-  # Replaces: modules/shell.nix + home/default.nix zsh sections
-
   programs.zsh = {
     enable = true;
     dotDir = "${config.xdg.configHome}/zsh";
@@ -27,8 +21,7 @@
       ignoreSpace = true;
     };
 
-    # === Initial Shell Setup (runs for all shells) ===
-    initContent = ''
+    initExtra = ''
       # ---- Performance: Skip expensive operations for non-interactive shells ----
       skip_global_compinit=1
 
@@ -216,10 +209,4 @@
       CLAUDE_CONFIG_DIR = "$HOME/.claude";
     };
   };
-
-  # ============================================================================
-  # SYSTEM SHELL INTEGRATION
-  # ============================================================================
-  # Required: Set Zsh as default system shell
-  # (This would be in modules/shell.nix at system level)
 }

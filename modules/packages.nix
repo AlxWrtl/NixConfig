@@ -6,88 +6,58 @@
 }:
 
 {
-  # System and development packages
-  # Consolidated from: packages.nix, development.nix
-
   config = lib.mkMerge [
-    # ============================================================================
-    # BASE PACKAGES (ALWAYS LOADED)
-    # ============================================================================
-
     {
-      environment.systemPackages = with pkgs; [
-        # === SHELL & TERMINAL ===
-        zsh
-        starship
-        zsh-autosuggestions
-        zsh-fast-syntax-highlighting
-
-        # === MODERN CLI TOOLS ===
-        eza # Modern ls
-        bat # Modern cat
-        fd # Modern find
-        ripgrep # Modern grep
-        tree # Directory visualization
-
-        # === NAVIGATION & SEARCH ===
-        zoxide # Smart cd
-        fzf # Fuzzy finder
-        atuin # Enhanced shell history
-
-        # === FILE OPERATIONS ===
-        rsync # File synchronization
-
-        # === SYSTEM MONITORING ===
-        btop # System monitor
-        fastfetch # System info
-
-        # === VERSION CONTROL ===
-        git
-        git-lfs
-        gh # GitHub CLI
-
-        # === NIX DEVELOPMENT ===
-        nixd # Nix language server (primary)
-        nil # Nix language server (alternative)
-        nixfmt-rfc-style # Nix formatter
-        nix-tree # Dependency visualization
-        nix-index # Package search
-        vulnix # CVE scanner
-
-        # === JAVASCRIPT/NODE.JS ===
-        nodejs_20 # Node.js LTS
-        pnpm # Package manager
-        bun # Fast JS runtime
-        nodePackages."@angular/cli"
-        nodePackages.typescript
-        nodePackages.eslint
-        nodePackages.prettier
-
-        # === DATABASES ===
-        sqlite
-        postgresql
-
-        # === API DEVELOPMENT ===
-        curl
-        wget
-        httpie
-        jq # JSON processor
-        yq # YAML processor
-        redis
-
-        # === SECURITY ===
-        age # Encryption
-        sops # Secrets management
+      environment.systemPackages = [
+        pkgs.zsh
+        pkgs.starship
+        pkgs.zsh-autosuggestions
+        pkgs.zsh-fast-syntax-highlighting
+        pkgs.eza
+        pkgs.bat
+        pkgs.fd
+        pkgs.ripgrep
+        pkgs.tree
+        pkgs.zoxide
+        pkgs.fzf
+        pkgs.atuin
+        pkgs.rsync
+        pkgs.btop
+        pkgs.fastfetch
+        pkgs.git
+        pkgs.git-lfs
+        pkgs.gh
+        pkgs.nixd
+        pkgs.nil
+        pkgs.nixfmt-rfc-style
+        pkgs.nix-tree
+        pkgs.nix-index
+        pkgs.vulnix
+        pkgs.nodejs_20
+        pkgs.pnpm
+        pkgs.bun
+        pkgs.nodePackages."@angular/cli"
+        pkgs.nodePackages.typescript
+        pkgs.nodePackages.eslint
+        pkgs.nodePackages.prettier
+        pkgs.sqlite
+        pkgs.postgresql
+        pkgs.curl
+        pkgs.wget
+        pkgs.httpie
+        pkgs.jq
+        pkgs.yq
+        pkgs.redis
+        pkgs.age
+        pkgs.sops
       ];
 
-      # === DEVELOPMENT ENVIRONMENT VARIABLES ===
       environment.variables = {
         PYTHONPATH = "";
         NODE_ENV = "development";
         GIT_EDITOR = "code --wait";
       };
 
-      # === DEVELOPMENT ALIASES ===
       environment.shellAliases = {
         # Python
         serve = "python3 -m http.server";
@@ -104,7 +74,6 @@
         dcd = "docker-compose down";
       };
 
-      # === PYTHON CONFIGURATION ===
       environment.etc."pip.conf".text = ''
         [global]
         break-system-packages = true
@@ -112,15 +81,11 @@
       '';
     }
 
-    # ============================================================================
-    # PYTHON DEVELOPMENT
-    # ============================================================================
-
     {
-      environment.systemPackages = with pkgs; [
-        python3
-        uv # Modern Python package installer
-        ruff # Fast Python linter/formatter
+      environment.systemPackages = [
+        pkgs.python3
+        pkgs.uv
+        pkgs.ruff
       ];
     }
   ];

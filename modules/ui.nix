@@ -6,7 +6,6 @@
 }:
 
 let
-  # Constants inlined (from constants.nix)
   keyRepeat = 8;
   initialKeyRepeat = 10;
   dockTileSize = 25;
@@ -16,34 +15,19 @@ let
 in
 
 {
-  # macOS UI/UX, fonts, and system appearance
-  # Consolidated from: ui.nix, fonts.nix, constants.nix
 
-  # ============================================================================
-  # FONTS
-  # ============================================================================
-
-  fonts.packages = with pkgs; [
-    # Programming fonts with Nerd Font icons
-    nerd-fonts.meslo-lg
-    nerd-fonts.hack
-    nerd-fonts.fira-code
-    nerd-fonts.jetbrains-mono
-    nerd-fonts.sauce-code-pro
-
-    # Additional programming fonts
-    cascadia-code
-    inconsolata
-
-    # System & international typography
-    noto-fonts
-    noto-fonts-cjk-sans
-    noto-fonts-color-emoji
+  fonts.packages = [
+    pkgs.nerd-fonts.meslo-lg
+    pkgs.nerd-fonts.hack
+    pkgs.nerd-fonts.fira-code
+    pkgs.nerd-fonts.jetbrains-mono
+    pkgs.nerd-fonts.sauce-code-pro
+    pkgs.cascadia-code
+    pkgs.inconsolata
+    pkgs.noto-fonts
+    pkgs.noto-fonts-cjk-sans
+    pkgs.noto-fonts-color-emoji
   ];
-
-  # ============================================================================
-  # NETWORK SECURITY
-  # ============================================================================
 
   networking.applicationFirewall = {
     enable = true;
@@ -52,10 +36,6 @@ in
     allowSignedApp = true;
     enableStealthMode = true;
   };
-
-  # ============================================================================
-  # SYSTEM DEFAULTS
-  # ============================================================================
 
   system.defaults = {
     NSGlobalDomain = {
@@ -311,19 +291,11 @@ in
     };
   };
 
-  # ============================================================================
-  # POWER MANAGEMENT
-  # ============================================================================
-
   power.sleep = {
     display = 15;
     computer = 30;
     harddisk = 10;
   };
-
-  # ============================================================================
-  # FONT ENVIRONMENT
-  # ============================================================================
 
   environment.variables = {
     FONTCONFIG_FILE = "${pkgs.fontconfig.out}/etc/fonts/fonts.conf";

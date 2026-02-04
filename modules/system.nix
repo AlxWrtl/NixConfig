@@ -7,12 +7,6 @@
 }:
 
 {
-  # Core system configuration: Nix, environment, security, secrets
-  # Consolidated from: nix.nix, environment.nix, security.nix, secrets.nix
-
-  # ============================================================================
-  # NIX PACKAGE MANAGER
-  # ============================================================================
 
   nix = {
     enable = true;
@@ -84,20 +78,12 @@
     };
   };
 
-  # ============================================================================
-  # NIXPKGS CONFIGURATION
-  # ============================================================================
-
   nixpkgs.config = {
     allowUnfree = lib.mkDefault true;
     allowBroken = false;
     allowInsecure = false;
     permittedInsecurePackages = [ ];
   };
-
-  # ============================================================================
-  # ENVIRONMENT & USER MANAGEMENT
-  # ============================================================================
 
   environment.variables = {
     # Editors
@@ -119,23 +105,16 @@
 
   system.primaryUser = "alx";
 
-  # ============================================================================
-  # SECURITY
-  # ============================================================================
-
-  # Touch ID for sudo
   security.pam.services.sudo_local.touchIdAuth = true;
 
-  # Security packages
-  environment.systemPackages = with pkgs; [
-    vulnix # CVE scanner
-    age # Encryption
-    sops # Secrets management
-    nmap # Network security
-    htop # Process monitoring
+  environment.systemPackages = [
+    pkgs.vulnix
+    pkgs.age
+    pkgs.sops
+    pkgs.nmap
+    pkgs.htop
   ];
 
-  # Security aliases
   environment.shellAliases = {
     vulnscan = "vulnix --system /var/run/current-system";
     vulnscan-json = "vulnix --system /var/run/current-system --json /tmp/vulnix-output.json";
@@ -143,10 +122,6 @@
     check-perms = "ls -la /nix/store | head -20";
     check-security = "cat /var/log/security/vulnix-scan.log | tail -10";
   };
-
-  # ============================================================================
-  # SOPS SECRETS (PLACEHOLDER)
-  # ============================================================================
 
   # Uncomment when secrets are configured:
   # sops = {
@@ -163,10 +138,4 @@
   #   };
   # };
 
-  # ============================================================================
-  # SYSTEM STATE
-  # ============================================================================
-
-  system.stateVersion = 5;
-  system.configurationRevision = inputs.self.rev or inputs.self.dirtyRev or null;
 }

@@ -75,11 +75,11 @@
 
       # Development shell
       devShells.${system}.default = pkgs.mkShell {
-        buildInputs = with pkgs; [
-          vulnix
-          nix-tree
-          nixfmt-rfc-style
-          nil
+        buildInputs = [
+          pkgs.vulnix
+          pkgs.nix-tree
+          pkgs.nixfmt-rfc-style
+          pkgs.nil
         ];
 
         shellHook = ''

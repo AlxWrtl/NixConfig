@@ -6,29 +6,14 @@
 }:
 
 {
-  # Shell environment: Zsh + Starship + Direnv + Aliases
-  # Consolidated from: shell.nix, starship.nix, direnv.nix, config.nix
-
-  # ============================================================================
-  # ZSH CONFIGURATION
-  # ============================================================================
-
   programs.zsh.enable = true;
   environment.shells = [ pkgs.zsh ];
-
-  # ============================================================================
-  # DIRENV - PER-DIRECTORY ENVIRONMENTS
-  # ============================================================================
 
   programs.direnv = {
     enable = true;
     silent = false;
     nix-direnv.enable = true;
   };
-
-  # ============================================================================
-  # STARSHIP PROMPT
-  # ============================================================================
 
   environment.etc."starship.toml".source = (pkgs.formats.toml { }).generate "starship-config" {
     add_newline = true;
@@ -221,10 +206,6 @@
     ruby.disabled = true;
   };
 
-  # ============================================================================
-  # ENVIRONMENT VARIABLES
-  # ============================================================================
-
   environment.variables = {
     # Starship
     STARSHIP_CONFIG = "/etc/starship.toml";
@@ -253,10 +234,6 @@
     HOMEBREW_NO_INSECURE_REDIRECT = "1";
     HOMEBREW_PREFIX = "/opt/homebrew";
   };
-
-  # ============================================================================
-  # SHELL ALIASES
-  # ============================================================================
 
   environment.shellAliases = {
     # Git shortcuts

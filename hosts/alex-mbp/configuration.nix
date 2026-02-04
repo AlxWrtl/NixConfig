@@ -1,67 +1,31 @@
 { config, pkgs, lib, inputs, ... }:
 
 {
-  # ============================================================================
-  # HOST CONFIGURATION: ALEXANDRE'S MACBOOK PRO
-  # ============================================================================
   # Host-specific settings for alex-mbp
-  # Hardware-specific, networking, and unique identification settings
 
-  # ============================================================================
-  # SYSTEM IDENTIFICATION & NETWORKING
-  # ============================================================================
-
-  # === Network Identity ===
   networking = {
-    computerName = "Alexandre's MacBook Pro";             # Display name in System Preferences
-    hostName = "alex-mbp";                               # System hostname for network identification
-    localHostName = "alex-mbp";                          # Bonjour/mDNS local hostname
+    computerName = "Alexandre's MacBook Pro";
+    hostName = "alex-mbp";
+    localHostName = "alex-mbp";
   };
 
-  # ============================================================================
-  # PLATFORM & ARCHITECTURE
-  # ============================================================================
+  nixpkgs.hostPlatform = "aarch64-darwin";
 
-  # === Target Platform ===
-  nixpkgs.hostPlatform = "aarch64-darwin";               # Apple Silicon (M1/M2/M3) macOS target
-
-  # ============================================================================
-  # USER ACCOUNT CONFIGURATION
-  # ============================================================================
-
-  # === Primary User Account ===
   users.users.alx = {
-    name = "alx";                                        # Username for system identification
-    home = "/Users/alx";                                 # User home directory path
+    name = "alx";
+    home = "/Users/alx";
   };
 
-  # ============================================================================
-  # SYSTEM VERSIONING & COMPATIBILITY
-  # ============================================================================
-
-  # === System State Version ===
-  system.stateVersion = 5;                              # nix-darwin compatibility version (don't change)
-
-  # === Configuration Revision Tracking ===
+  system.stateVersion = 5;
   system.configurationRevision = inputs.self.rev or inputs.self.dirtyRev or null;
 
-  # ============================================================================
-  # NIXPKGS CONFIGURATION OVERRIDES
-  # ============================================================================
+  nixpkgs.config.allowUnfree = true;
 
-  # === Package Permissions (Host Override) ===
-  nixpkgs.config.allowUnfree = true;                    # Enable proprietary packages (VSCode, Slack, etc.)
-
-  # ============================================================================
-  # APP CLEANUP AUTOMATION
-  # ============================================================================
-
-  # === Cleanup Tools ===
-  environment.systemPackages = with pkgs; [
+  environment.systemPackages = [
     # Use homebrew for macOS-native trash utility via brew.nix
   ];
 
-  # === Automated App Data Cleanup ===
+  # Automated cleanup of removed app data
   system.activationScripts.cleanupRemovedApps.text = ''
     echo "Cleaning orphaned app data..."
     CURRENT_CASKS="${builtins.concatStringsSep " " (builtins.map (c: c.name or c) config.homebrew.casks)}"

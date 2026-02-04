@@ -7,14 +7,11 @@
 }:
 
 let
-  # Constants inlined
   displaySleepMinutes = 25;
   systemSleepMinutes = 45;
   tcpSlowStartFlightSize = 16;
   maxOpenFiles = 65536;
   maxFilesPerProc = 32768;
-
-  # Helper function inlined from launchd-helpers.nix
   mkMaintenanceDaemon =
     {
       name,
@@ -37,12 +34,6 @@ let
 in
 
 {
-  # Launchd services: flake updates, homebrew updates, system optimization
-  # Consolidated from: launchd/flake-update.nix, launchd/homebrew-update.nix, launchd/system-optimization.nix
-
-  # ============================================================================
-  # AUTOMATIC FLAKE UPDATES
-  # ============================================================================
 
   launchd.user.agents.nix-flake-update = {
     serviceConfig = {
@@ -71,10 +62,6 @@ in
       RunAtLoad = false;
     };
   };
-
-  # ============================================================================
-  # AUTOMATIC HOMEBREW UPDATES
-  # ============================================================================
 
   launchd.user.agents.homebrew-update = {
     serviceConfig = {
@@ -127,10 +114,6 @@ in
     };
   };
 
-  # ============================================================================
-  # POWER OPTIMIZATION
-  # ============================================================================
-
   launchd.daemons.power-optimization = mkMaintenanceDaemon {
         name = "power-optimization";
         runAtLoad = true;
@@ -156,10 +139,6 @@ in
           echo "Power optimization applied: $(date)" >> /var/log/power-optimization.log
         '';
       };
-
-  # ============================================================================
-  # NETWORK OPTIMIZATION
-  # ============================================================================
 
   launchd.daemons.network-optimization = mkMaintenanceDaemon {
         name = "network-optimization";

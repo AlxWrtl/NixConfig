@@ -9,8 +9,6 @@
   config = lib.mkMerge [
     {
       environment.systemPackages = [
-        pkgs.zsh
-        pkgs.starship
         pkgs.zsh-autosuggestions
         pkgs.zsh-fast-syntax-highlighting
         pkgs.eza

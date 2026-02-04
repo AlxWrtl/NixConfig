@@ -176,6 +176,17 @@
     '';
 
     shellAliases = {
+      # Git shortcuts
+      g = "git";
+      gs = "git status";
+      ga = "git add";
+      gc = "git commit";
+      gp = "git push";
+      gl = "git pull";
+      gd = "git diff";
+      gco = "git checkout";
+      gb = "git branch";
+
       # Security tools
       vulnscan = "vulnix --system /var/run/current-system";
       secrets = "sops";

@@ -9,6 +9,8 @@
   imports = [
     ./zsh.nix
     ./git.nix
+    ./starship.nix
+    ./direnv.nix
     ./claude-code.nix
   ];
 

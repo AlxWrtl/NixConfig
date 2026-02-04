@@ -54,8 +54,8 @@
           # Core system modules
           ./modules/system.nix
           ./modules/packages.nix
-          ./modules/ui.nix
           ./modules/services.nix
+          ./modules/ui.nix
           ./modules/brew.nix
 
           # Home Manager

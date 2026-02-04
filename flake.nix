@@ -88,11 +88,8 @@
 
               # Shell and CLI environment
               shellModules = [
-                ./modules/config.nix # Shared environment variables & aliases
+                ./modules/shell.nix # Zsh + Starship + Direnv + Aliases (consolidated)
                 ./modules/packages.nix # System utilities & CLI tools
-                ./modules/shell.nix # Zsh configuration
-                ./modules/direnv.nix # Direnv per-directory environment loader
-                ./modules/starship.nix # Starship prompt configuration
               ];
 
               # System integration

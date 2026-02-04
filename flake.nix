@@ -82,8 +82,7 @@
               coreModules = [
                 ./hosts/alex-mbp # Host module (networking, users, platform)
                 ./modules/options.nix # Module option definitions
-                ./modules/nix.nix # Nix package manager configuration
-                ./modules/environment.nix # Environment variables & user management
+                ./modules/system.nix # Nix, environment, security (consolidated)
               ];
 
               # Shell and CLI environment
@@ -107,8 +106,6 @@
               # Development and security
               devSecModules = [
                 ./modules/brew.nix # Homebrew for GUI applications
-                ./modules/security.nix # Security hardening & vulnerability scanning
-                ./modules/secrets.nix # SOPS secrets management with age encryption
               ];
 
               # Home Manager integration

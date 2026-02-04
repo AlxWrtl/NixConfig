@@ -2,48 +2,126 @@
   config,
   pkgs,
   lib,
-  inputs,
   ...
 }:
 
 {
-  # Core system packages configuration
-  # Essential utilities and modern CLI tools for daily system use
-  # Development-specific packages are in development.nix
+  # System and development packages
+  # Consolidated from: packages.nix, development.nix
 
-  # ============================================================================
-  # SYSTEM PACKAGES
-  # ============================================================================
+  config = lib.mkMerge [
+    # ============================================================================
+    # BASE PACKAGES (ALWAYS LOADED)
+    # ============================================================================
 
-  environment.systemPackages = with pkgs; [
+    {
+      environment.systemPackages = with pkgs; [
+        # === SHELL & TERMINAL ===
+        zsh
+        starship
+        zsh-autosuggestions
+        zsh-fast-syntax-highlighting
 
-    # === SHELL & TERMINAL ENHANCEMENTS ===
-    zsh # Z shell (primary shell)
-    starship # Modern cross-shell prompt
-    zsh-autosuggestions # Fish-like autosuggestions for zsh
-    zsh-fast-syntax-highlighting # Optimized syntax highlighting
+        # === MODERN CLI TOOLS ===
+        eza # Modern ls
+        bat # Modern cat
+        fd # Modern find
+        ripgrep # Modern grep
+        tree # Directory visualization
 
-    # === MODERN CLI REPLACEMENTS ===
-    # Enhanced versions of standard UNIX tools
-    eza # Modern 'ls' with colors and icons
-    bat # 'cat' with syntax highlighting and git integration
-    fd # Modern 'find' - faster and more user-friendly
-    ripgrep # Modern 'grep' - incredibly fast search
-    tree # Directory structure visualization
+        # === NAVIGATION & SEARCH ===
+        zoxide # Smart cd
+        fzf # Fuzzy finder
+        atuin # Enhanced shell history
 
-    # === NAVIGATION & SEARCH ===
-    zoxide # Smart 'cd' - learns your patterns
-    fzf # Fuzzy finder for files, history, processes
-    atuin # Enhanced shell history with sync
+        # === FILE OPERATIONS ===
+        rsync # File synchronization
 
-    # === FILE OPERATIONS ===
-    rsync # Efficient file synchronization
+        # === SYSTEM MONITORING ===
+        btop # System monitor
+        fastfetch # System info
 
-    # === SYSTEM MONITORING & INFO ===
-    btop # Modern system monitor (htop replacement)
-    fastfetch # System information display (neofetch replacement)
+        # === VERSION CONTROL ===
+        git
+        git-lfs
+        gh # GitHub CLI
+
+        # === NIX DEVELOPMENT ===
+        nixd # Nix language server (primary)
+        nil # Nix language server (alternative)
+        nixfmt-rfc-style # Nix formatter
+        nix-tree # Dependency visualization
+        nix-index # Package search
+        vulnix # CVE scanner
+
+        # === JAVASCRIPT/NODE.JS ===
+        nodejs_20 # Node.js LTS
+        pnpm # Package manager
+        bun # Fast JS runtime
+        nodePackages."@angular/cli"
+        nodePackages.typescript
+        nodePackages.eslint
+        nodePackages.prettier
+
+        # === DATABASES ===
+        sqlite
+        postgresql
+
+        # === API DEVELOPMENT ===
+        curl
+        wget
+        httpie
+        jq # JSON processor
+        yq # YAML processor
+        redis
+
+        # === SECURITY ===
+        age # Encryption
+        sops # Secrets management
+      ];
+
+      # === DEVELOPMENT ENVIRONMENT VARIABLES ===
+      environment.variables = {
+        PYTHONPATH = "";
+        NODE_ENV = "development";
+        GIT_EDITOR = "code --wait";
+      };
+
+      # === DEVELOPMENT ALIASES ===
+      environment.shellAliases = {
+        # Python
+        serve = "python3 -m http.server";
+        py = "python3";
+        ipy = "ipython";
+
+        # Nix
+        nix-shell = "nix-shell --run zsh";
+        rebuild = "sudo darwin-rebuild switch --flake .";
+
+        # Docker
+        dc = "docker-compose";
+        dcu = "docker-compose up";
+        dcd = "docker-compose down";
+      };
+
+      # === PYTHON CONFIGURATION ===
+      environment.etc."pip.conf".text = ''
+        [global]
+        break-system-packages = true
+        user = true
+      '';
+    }
+
+    # ============================================================================
+    # PYTHON DEVELOPMENT (CONDITIONAL)
+    # ============================================================================
+
+    (lib.mkIf config.nix-darwin.enablePython {
+      environment.systemPackages = with pkgs; [
+        python3
+        uv # Modern Python package installer
+        ruff # Fast Python linter/formatter
+      ];
+    })
   ];
-
-  # Note: Nix configuration is handled in modules/nix.nix
-  # Note: Store optimization and garbage collection are configured in modules/nix.nix
 }

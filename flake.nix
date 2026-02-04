@@ -107,7 +107,6 @@
 
               # Development and security
               devSecModules = [
-                ./modules/development.nix # Development environments & tools
                 ./modules/brew.nix # Homebrew for GUI applications
                 ./modules/security.nix # Security hardening & vulnerability scanning
                 ./modules/secrets.nix # SOPS secrets management with age encryption

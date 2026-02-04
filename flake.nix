@@ -77,7 +77,7 @@
         buildInputs = [
           pkgs.vulnix
           pkgs.nix-tree
-          pkgs.nixfmt-rfc-style
+          pkgs.nixfmt
           pkgs.nil
         ];
 

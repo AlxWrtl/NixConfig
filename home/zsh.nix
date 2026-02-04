@@ -21,7 +21,7 @@
       ignoreSpace = true;
     };
 
-    initExtra = ''
+    initContent = ''
       # ---- Performance: Skip expensive operations for non-interactive shells ----
       skip_global_compinit=1
 

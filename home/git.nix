@@ -9,10 +9,12 @@
   programs.git = {
     enable = true;
 
-    userName = "Alexandre";
-    userEmail = "indexes-benzine0p@icloud.com";
+    settings = {
+      user = {
+        name = "Alexandre";
+        email = "indexes-benzine0p@icloud.com";
+      };
 
-    extraConfig = {
       init.defaultBranch = "main";
       push.default = "simple";
       pull.rebase = true;

@@ -2,243 +2,222 @@
   config,
   pkgs,
   lib,
-  inputs,
   ...
 }:
 
 let
-  systemConstants = import ./constants.nix;
+  # Constants inlined (from constants.nix)
+  keyRepeat = 8;
+  initialKeyRepeat = 10;
+  dockTileSize = 25;
+  dockLargeSize = 48;
+  windowResizeTime = 0.001;
+  exposeAnimationDuration = 0.1;
 in
 
 {
-  # ============================================================================
-  # macOS UI/UX AND SECURITY CONFIGURATION
-  # ============================================================================
+  # macOS UI/UX, fonts, and system appearance
+  # Consolidated from: ui.nix, fonts.nix, constants.nix
 
   # ============================================================================
-  # NETWORK SECURITY CONFIGURATION
+  # FONTS
   # ============================================================================
 
-  # === Application Layer Firewall ===
+  fonts.packages = with pkgs; [
+    # Programming fonts with Nerd Font icons
+    nerd-fonts.meslo-lg
+    nerd-fonts.hack
+    nerd-fonts.fira-code
+    nerd-fonts.jetbrains-mono
+    nerd-fonts.sauce-code-pro
+
+    # Additional programming fonts
+    cascadia-code
+    inconsolata
+
+    # System & international typography
+    noto-fonts
+    noto-fonts-cjk-sans
+    noto-fonts-color-emoji
+  ];
+
+  # ============================================================================
+  # NETWORK SECURITY
+  # ============================================================================
+
   networking.applicationFirewall = {
-    enable = true; # Enable firewall protection
-    blockAllIncoming = false; # Allow essential incoming connections
-    allowSigned = true; # Allow signed applications to receive connections
-    allowSignedApp = true; # Allow downloaded signed applications
-    enableStealthMode = true; # Enable stealth mode (invisible to port scans)
+    enable = true;
+    blockAllIncoming = false;
+    allowSigned = true;
+    allowSignedApp = true;
+    enableStealthMode = true;
   };
 
+  # ============================================================================
+  # SYSTEM DEFAULTS
+  # ============================================================================
+
   system.defaults = {
-
-    # ============================================================================
-    # INTERFACE & APPEARANCE
-    # ============================================================================
-
     NSGlobalDomain = {
-      # === Visual Appearance ===
-      AppleInterfaceStyle = "Dark"; # Dark mode interface
-      AppleFontSmoothing = 1; # Better font rendering on external monitors
-      AppleShowScrollBars = "WhenScrolling"; # Auto-hide scroll bars
+      # Visual appearance
+      AppleInterfaceStyle = "Dark";
+      AppleFontSmoothing = 1;
+      AppleShowScrollBars = "WhenScrolling";
 
-      # === Performance & Animations ===
-      NSAutomaticWindowAnimationsEnabled = false; # Disable window animations for speed
-      NSWindowResizeTime = systemConstants.windowResizeTime; # Instant window resize
+      # Performance
+      NSAutomaticWindowAnimationsEnabled = false;
+      NSWindowResizeTime = windowResizeTime;
 
-      # === Input & Text Editing ===
-      NSAutomaticCapitalizationEnabled = false; # Disable automatic capitalization
-      NSAutomaticDashSubstitutionEnabled = false; # Disable smart dashes
-      NSAutomaticPeriodSubstitutionEnabled = false; # Disable automatic period substitution
-      NSAutomaticQuoteSubstitutionEnabled = false; # Disable smart quotes
-      NSAutomaticSpellingCorrectionEnabled = false; # Disable automatic spelling correction
-      ApplePressAndHoldEnabled = true; # Enable press-and-hold for accent characters
+      # Input & text
+      NSAutomaticCapitalizationEnabled = false;
+      NSAutomaticDashSubstitutionEnabled = false;
+      NSAutomaticPeriodSubstitutionEnabled = false;
+      NSAutomaticQuoteSubstitutionEnabled = false;
+      NSAutomaticSpellingCorrectionEnabled = false;
+      ApplePressAndHoldEnabled = true;
 
-      # === Keyboard Settings ===
-      "com.apple.keyboard.fnState" = true; # Use F1, F2, etc. as standard function keys
-      KeyRepeat = systemConstants.keyRepeat;
-      InitialKeyRepeat = systemConstants.initialKeyRepeat;
+      # Keyboard
+      "com.apple.keyboard.fnState" = true;
+      KeyRepeat = keyRepeat;
+      InitialKeyRepeat = initialKeyRepeat;
 
-      # === Mouse & Trackpad Navigation ===
-      AppleEnableMouseSwipeNavigateWithScrolls = true; # Two-finger swipe navigation
+      # Mouse & trackpad
+      AppleEnableMouseSwipeNavigateWithScrolls = true;
 
-      # === Regional Settings ===
-      AppleICUForce24HourTime = true; # 24-hour time format
-      AppleMeasurementUnits = "Centimeters"; # Metric measurements
+      # Regional
+      AppleICUForce24HourTime = true;
+      AppleMeasurementUnits = "Centimeters";
     };
 
-    # ============================================================================
-    # DOCK & DESKTOP MANAGEMENT
-    # ============================================================================
-
+    # Dock
     dock = {
-      # === Layout & Position ===
-      orientation = "left"; # Dock on the left side
-      autohide = true; # Auto-hide the dock
+      orientation = "left";
+      autohide = true;
+      tilesize = dockTileSize;
+      largesize = dockLargeSize;
+      magnification = true;
+      show-recents = false;
+      minimize-to-application = true;
+      mru-spaces = false;
 
-      # === Icon Appearance ===
-      tilesize = systemConstants.dockTileSize;
-      largesize = systemConstants.dockLargeSize;
-      magnification = true; # Enable magnification on hover
+      # Hot corners (all disabled)
+      wvous-tl-corner = 1;
+      wvous-tr-corner = 1;
+      wvous-bl-corner = 1;
+      wvous-br-corner = 1;
 
-      # === Behavior ===
-      show-recents = false; # Don't show recent applications
-      minimize-to-application = true; # Minimize windows into app icon
-      mru-spaces = false; # Don't auto-rearrange Spaces by usage
+      # Mission Control
+      expose-animation-duration = exposeAnimationDuration;
+      expose-group-apps = false;
 
-      # === Hot Corners (all disabled) ===
-      wvous-tl-corner = 1; # Top-left: disabled
-      wvous-tr-corner = 1; # Top-right: disabled
-      wvous-bl-corner = 1; # Bottom-left: disabled
-      wvous-br-corner = 1; # Bottom-right: disabled
-
-      # === Mission Control ===
-      expose-animation-duration = systemConstants.exposeAnimationDuration;
-      expose-group-apps = false; # Don't group windows by application
-
-      # === Persistent Applications ===
+      # Persistent apps
       persistent-apps = [
         {
-          spacer = {
-            small = true;
-          };
+          spacer.small = true;
         }
         "/Applications/Arc.app"
         "/Applications/Ghostty.app"
         "/Applications/Visual Studio Code.app"
         {
-          spacer = {
-            small = true;
-          };
+          spacer.small = true;
         }
       ];
     };
 
-    # ============================================================================
-    # FILE MANAGEMENT & FINDER
-    # ============================================================================
-
+    # Finder
     finder = {
-      # === Default View & Search ===
-      FXPreferredViewStyle = "clmv"; # Column view by default
-      FXDefaultSearchScope = "SCcf"; # Search current folder by default
+      FXPreferredViewStyle = "clmv";
+      FXDefaultSearchScope = "SCcf";
+      NewWindowTarget = "Other";
+      NewWindowTargetPath = "file://${config.users.users.${config.system.primaryUser}.home}/Downloads/";
 
-      # === New Window Behavior ===
-      NewWindowTarget = "Other"; # Open new windows to custom location
-      NewWindowTargetPath = "file://${config.users.users.${config.system.primaryUser}.home}/Downloads/"; # Default to Downloads folder
+      # Desktop items
+      ShowExternalHardDrivesOnDesktop = true;
+      ShowHardDrivesOnDesktop = false;
+      ShowMountedServersOnDesktop = true;
+      ShowRemovableMediaOnDesktop = true;
+      CreateDesktop = true;
 
-      # === Desktop Items Display ===
-      ShowExternalHardDrivesOnDesktop = true; # Show external drives
-      ShowHardDrivesOnDesktop = false; # Hide internal drives
-      ShowMountedServersOnDesktop = true; # Show network drives
-      ShowRemovableMediaOnDesktop = true; # Show USB drives, etc.
-      CreateDesktop = true; # Show Desktop folder
+      # File visibility
+      AppleShowAllExtensions = true;
+      AppleShowAllFiles = false;
+      FXEnableExtensionChangeWarning = false;
 
-      # === File Visibility & Extensions ===
-      AppleShowAllExtensions = true; # Always show file extensions
-      AppleShowAllFiles = false; # Hide hidden files by default
-      FXEnableExtensionChangeWarning = false; # Don't warn when changing extensions
+      # Interface
+      ShowPathbar = true;
+      ShowStatusBar = true;
+      QuitMenuItem = true;
 
-      # === Interface Elements ===
-      ShowPathbar = true; # Show path bar at bottom
-      ShowStatusBar = true; # Show status bar at bottom
-      QuitMenuItem = true; # Allow quitting Finder with Cmd+Q
-
-      # === Advanced Sorting ===
-      _FXShowPosixPathInTitle = false; # Don't show full POSIX path in title
-      _FXSortFoldersFirst = true; # Sort folders before files
-      _FXSortFoldersFirstOnDesktop = true; # Apply folder-first sorting to desktop
+      # Sorting
+      _FXShowPosixPathInTitle = false;
+      _FXSortFoldersFirst = true;
+      _FXSortFoldersFirstOnDesktop = true;
     };
 
-    # ============================================================================
-    # WORKSPACE & WINDOW MANAGEMENT
-    # ============================================================================
+    # Workspace
+    spaces.spans-displays = false;
 
-    # === Multi-Display Configuration ===
-    spaces.spans-displays = false; # Each display has separate spaces
-
-    # === Stage Manager ===
     WindowManager = {
-      GloballyEnabled = false; # Disable Stage Manager globally
-      EnableStandardClickToShowDesktop = false; # Disable Stage Manager click-to-desktop
-      StandardHideDesktopIcons = false; # Keep desktop icons visible
-      StandardHideWidgets = false; # Show widgets in normal mode
-      StageManagerHideWidgets = true; # Hide widgets in Stage Manager
+      GloballyEnabled = false;
+      EnableStandardClickToShowDesktop = false;
+      StandardHideDesktopIcons = false;
+      StandardHideWidgets = false;
+      StageManagerHideWidgets = true;
     };
 
-    # ============================================================================
-    # SECURITY & SYSTEM BEHAVIOR
-    # ============================================================================
-
-    # === Screen Security ===
+    # Security
     screensaver = {
-      askForPassword = true; # Require password after screensaver
-      askForPasswordDelay = 0; # Require password immediately
+      askForPassword = true;
+      askForPasswordDelay = 0;
     };
 
-    # === Login Window ===
-    loginwindow = {
-      SHOWFULLNAME = false; # Show user avatars instead of username field
-    };
+    loginwindow.SHOWFULLNAME = false;
+    LaunchServices.LSQuarantine = true;
+    SoftwareUpdate.AutomaticallyInstallMacOSUpdates = false;
 
-    # === Application Security ===
-    LaunchServices.LSQuarantine = true; # Enable quarantine for downloaded apps
-    SoftwareUpdate.AutomaticallyInstallMacOSUpdates = false; # Manual macOS updates only
-
-    # === Input Device Configuration ===
+    # Input devices
     trackpad = {
-      TrackpadRightClick = true; # Enable two-finger right-click
-      Clicking = true; # Enable tap-to-click
-      TrackpadThreeFingerDrag = true; # Enable three-finger drag for window management
+      TrackpadRightClick = true;
+      Clicking = true;
+      TrackpadThreeFingerDrag = true;
     };
 
-    # === Mouse Configuration ===
-    ".GlobalPreferences"."com.apple.mouse.scaling" = 3.0; # Mouse sensitivity adjustment
+    ".GlobalPreferences"."com.apple.mouse.scaling" = 3.0;
 
-    # ============================================================================
-    # ADVANCED SYSTEM PREFERENCES
-    # ============================================================================
-
+    # Advanced preferences
     CustomUserPreferences = {
-      # === Security & Privacy Hardening ===
-      "com.apple.AdLib".allowApplePersonalizedAdvertising = false; # Disable personalized advertising
+      "com.apple.AdLib".allowApplePersonalizedAdvertising = false;
 
-      # === Gatekeeper & Quarantine Configuration ===
-      "com.apple.security" = {
-        GKAutoRearm = true; # Allow Gatekeeper to re-arm quarantine warnings
-      };
+      "com.apple.security".GKAutoRearm = true;
 
       "com.apple.appstore" = {
-        ShowDebugMenu = false; # Hide debug options
-        AutoUpdateApps = true; # Enable automatic security updates
+        ShowDebugMenu = false;
+        AutoUpdateApps = true;
       };
 
-      "com.apple.commerce".AutoUpdate = true; # Auto-update system and security patches
+      "com.apple.commerce".AutoUpdate = true;
 
       "com.apple.SoftwareUpdate" = {
-        AutomaticCheckEnabled = true; # Check for updates automatically
-        AutomaticDownload = true; # Download updates automatically
-        CriticalUpdateInstall = true; # Install critical security updates
-        ConfigDataInstall = true; # Install system data files and security updates
+        AutomaticCheckEnabled = true;
+        AutomaticDownload = true;
+        CriticalUpdateInstall = true;
+        ConfigDataInstall = true;
       };
 
-      # === Keyboard Shortcuts & Hotkeys ===
+      # Disable Spotlight shortcuts (using Raycast)
       "com.apple.symbolichotkeys".AppleSymbolicHotKeys = {
-        # Disable Spotlight search (⌘Space) - using Raycast instead
         "64".enabled = false;
-        # Disable Spotlight window (⌘Option+Space)
         "65".enabled = false;
       };
 
-      # === Finder Advanced Settings ===
       "com.apple.finder" = {
-        _FXSortFoldersFirst = true; # Ensure folders sort first
-        FXEnableExtensionChangeWarning = false; # No warning for extension changes
-        NSWindowTabbingEnabled = true; # Enable Finder window tabs
-        FinderSpawnTab = false; # Cmd+N opens new window, Cmd+T opens new tab
+        _FXSortFoldersFirst = true;
+        FXEnableExtensionChangeWarning = false;
+        NSWindowTabbingEnabled = true;
+        FinderSpawnTab = false;
       };
 
-      # === Spotlight Search Categories ===
       "com.apple.Spotlight".orderedItems = [
-        # Enabled categories
         {
           enabled = 1;
           name = "APPLICATIONS";
@@ -275,8 +254,6 @@ in
           enabled = 1;
           name = "SPREADSHEETS";
         }
-
-        # Disabled categories (reduce noise)
         {
           enabled = 0;
           name = "MENU_EXPRESSION";
@@ -315,24 +292,21 @@ in
         }
       ];
 
-      # === Dock Performance Optimizations ===
       "com.apple.dock" = {
-        launchanim = false; # Disable dock launch animations
-        autohide-delay = 0.0; # No delay for dock autohide
-        autohide-time-modifier = 0.3; # Faster dock autohide animation
+        launchanim = false;
+        autohide-delay = 0.0;
+        autohide-time-modifier = 0.3;
       };
 
-      # === Trackpad Configuration ===
       "com.apple.driver.AppleBluetoothMultitouch.trackpad" = {
-        Clicking = true; # Enable tap to click
-        DragLock = false; # Disable drag lock
-        TrackpadThreeFingerDrag = true; # Enable three-finger drag
+        Clicking = true;
+        DragLock = false;
+        TrackpadThreeFingerDrag = true;
       };
 
-      # === Universal Clipboard & Handoff ===
       "com.apple.coreservices.useractivityd" = {
-        ActivityAdvertisingAllowed = true; # Allow this Mac to advertise activities
-        ActivityReceivingAllowed = true; # Allow this Mac to receive activities
+        ActivityAdvertisingAllowed = true;
+        ActivityReceivingAllowed = true;
       };
     };
   };
@@ -342,9 +316,18 @@ in
   # ============================================================================
 
   power.sleep = {
-    display = 15; # Display sleeps after 15 minutes
-    computer = 30; # Computer sleeps after 30 minutes
-    harddisk = 10; # Hard disk sleeps after 10 minutes
+    display = 15;
+    computer = 30;
+    harddisk = 10;
   };
 
+  # ============================================================================
+  # FONT ENVIRONMENT
+  # ============================================================================
+
+  environment.variables = {
+    FONTCONFIG_FILE = "${pkgs.fontconfig.out}/etc/fonts/fonts.conf";
+    TERMINAL_FONT = "MesloLGS Nerd Font";
+    EDITOR_FONT = "JetBrainsMono Nerd Font";
+  };
 }

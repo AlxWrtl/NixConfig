@@ -94,8 +94,7 @@
 
               # System integration
               systemModules = [
-                ./modules/fonts.nix # Programming fonts & typography
-                ./modules/ui.nix # macOS UI/UX & system defaults
+                ./modules/ui.nix # macOS UI/UX, fonts, system defaults (consolidated)
               ];
 
               # Automation services

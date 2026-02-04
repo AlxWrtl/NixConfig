@@ -49,6 +49,7 @@
         pkgs.redis
         pkgs.age
         pkgs.sops
+        pkgs.libwebp
       ];
 
       environment.variables = {

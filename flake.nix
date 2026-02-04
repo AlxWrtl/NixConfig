@@ -54,7 +54,6 @@
           # Core system modules
           ./modules/system.nix
           ./modules/packages.nix
-          ./modules/shell.nix
           ./modules/ui.nix
           ./modules/services.nix
           ./modules/brew.nix

@@ -113,15 +113,15 @@
     }
 
     # ============================================================================
-    # PYTHON DEVELOPMENT (CONDITIONAL)
+    # PYTHON DEVELOPMENT
     # ============================================================================
 
-    (lib.mkIf config.nix-darwin.enablePython {
+    {
       environment.systemPackages = with pkgs; [
         python3
         uv # Modern Python package installer
         ruff # Fast Python linter/formatter
       ];
-    })
+    }
   ];
 }

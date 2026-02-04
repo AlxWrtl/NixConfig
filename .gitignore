@@ -7,3 +7,4 @@ result
 result-*
 # Documentation (moved to .claude/docs)
 .claude/docs/
+CLAUDE.md

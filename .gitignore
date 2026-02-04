@@ -5,3 +5,5 @@ docs/
 # Nix build outputs
 result
 result-*
+# Documentation (moved to .claude/docs)
+.claude/docs/

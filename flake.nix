@@ -81,7 +81,6 @@
               # Core system configuration
               coreModules = [
                 ./hosts/alex-mbp # Host module (networking, users, platform)
-                ./modules/options.nix # Module option definitions
                 ./modules/system.nix # Nix, environment, security (consolidated)
               ];
 
@@ -98,9 +97,7 @@
 
               # Automation services
               serviceModules = [
-                ./modules/launchd/flake-update.nix # Automatic flake updates
-                ./modules/launchd/homebrew-update.nix # Automatic Homebrew updates
-                ./modules/launchd/system-optimization.nix # Power & network optimization
+                ./modules/services.nix # Flake/Homebrew updates, system optimization (consolidated)
               ];
 
               # Development and security

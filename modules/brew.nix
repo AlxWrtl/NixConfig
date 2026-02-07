@@ -59,6 +59,7 @@
       { name = "zen"; greedy = true; }
       { name = "codex"; greedy = true; }
       { name = "appcleaner"; greedy = true; }
+      { name = "upscayl"; greedy = true; }
     ];
 
     masApps = {

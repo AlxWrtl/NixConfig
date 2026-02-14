@@ -6,9 +6,12 @@
       npm_config_user_agent = "pnpm";
       BASH_DEFAULT_TIMEOUT_MS = "300000";
       BASH_MAX_TIMEOUT_MS = "600000";
+      CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
+      CLAUDE_CODE_EFFORT_LEVEL = "high";
+      CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
     };
 
-    model = "sonnet";
+    model = "opus";
 
     autoSave = true;
     skipPermissions = false;
@@ -46,8 +49,7 @@
       command = "$HOME/.claude/statusline.sh";
     };
 
-    enabledPlugins = {
-    };
+    enabledPlugins = { };
 
     alwaysThinkingEnabled = false;
 
@@ -59,13 +61,70 @@
     permissions = {
       defaultMode = "acceptEdits";
       allow = [
-        "Read(~/.claude/**)"
-        "Read(~/.config/**)"
-        "Read(.**)"
+        # Read access
+        "Read(*)"
+        # Package managers
+        "Bash(pnpm *)"
+        "Bash(npm run *)"
+        "Bash(npx prettier *)"
+        "Bash(npx *)"
+        "Bash(bunx *)"
+        "Bash(node *)"
+        # Git (read-only operations)
+        "Bash(git status *)"
+        "Bash(git diff *)"
+        "Bash(git log *)"
+        "Bash(git branch *)"
+        "Bash(git stash *)"
+        "Bash(git *)"
+        "Bash(gh *)"
+        # Nix
+        "Bash(darwin-rebuild *)"
+        "Bash(nix *)"
+        "Bash(nixfmt *)"
+        "Bash(nix-instantiate *)"
+        # File operations (safe)
+        "Bash(ls *)"
+        "Bash(cat *)"
+        "Bash(find *)"
+        "Bash(grep *)"
+        "Bash(head *)"
+        "Bash(tail *)"
+        "Bash(wc *)"
+        "Bash(echo *)"
+        "Bash(which *)"
+        "Bash(env *)"
+        "Bash(pwd)"
+        "Bash(mkdir *)"
+        "Bash(cp *)"
+        "Bash(mv *)"
+        # Tools
+        "Bash(jq *)"
+        "Bash(fd *)"
+        "Bash(rg *)"
+        "Bash(bat *)"
+        "Bash(eza *)"
+        # WebFetch allowlist
+        "WebFetch(domain:github.com)"
+        "WebFetch(domain:raw.githubusercontent.com)"
+        "WebFetch(domain:nix-darwin.github.io)"
+        "WebFetch(domain:nixos.org)"
+        "WebFetch(domain:search.nixos.org)"
+        "WebFetch(domain:*.npmjs.org)"
+        "WebFetch(domain:docs.anthropic.com)"
+        "WebFetch(domain:code.claude.com)"
       ];
       deny = [
         "Websearch"
         "WebSearch"
+        "Bash(rm -rf /*)"
+        "Bash(sudo rm *)"
+        "Bash(chmod 777 *)"
+        "Read(.env)"
+        "Read(.env.*)"
+        "Read(secrets/**)"
+        "Bash(curl * | sh)"
+        "Bash(wget * | sh)"
       ];
     };
 
@@ -112,19 +171,51 @@
             {
               type = "command";
               command = "node ~/.claude/hooks/protect-main.js";
-              timeout = 10;
+              timeout = 5;
+            }
+          ];
+        }
+        {
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/block-main-bash.js";
+              timeout = 5;
             }
           ];
         }
       ];
       PostToolUse = [
         {
-          matcher = "Edit|Write.*\\.tsx?$";
+          matcher = "Write|Edit";
           hooks = [
             {
               type = "command";
               command = "node ~/.claude/hooks/format-typescript.js";
               timeout = 10;
+            }
+          ];
+        }
+      ];
+      PreCompact = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/pre-compact-backup.sh";
+              timeout = 5;
+            }
+          ];
+        }
+      ];
+      SessionStart = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/session-start.sh";
+              timeout = 5;
             }
           ];
         }
@@ -142,7 +233,7 @@
 
     if command -v jq >/dev/null 2>&1; then
       # Parse Claude Code JSON
-      MODEL=$(echo "$INPUT" | jq -r '.model.display_name // "sonnet"')
+      MODEL=$(echo "$INPUT" | jq -r '.model.display_name // "opus"')
       CWD=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."' | xargs basename)
       TOKENS_IN=$(echo "$INPUT" | jq -r '.context_window.total_input_tokens // 0')
       TOKENS_OUT=$(echo "$INPUT" | jq -r '.context_window.total_output_tokens // 0')
@@ -169,7 +260,7 @@
         echo "$MONTHLY_COST" > "$CACHE_FILE" 2>/dev/null || true
       fi
     else
-      MODEL="sonnet"
+      MODEL="opus"
       CWD=$(basename "$(pwd)")
       GIT_BRANCH=$(git branch --show-current 2>/dev/null)
       TOKENS_IN="0"
@@ -193,7 +284,7 @@
     TOKENS_IN_FMT=$(printf "%'d" $TOKENS_IN 2>/dev/null || echo $TOKENS_IN)
     TOKENS_OUT_FMT=$(printf "%'d" $TOKENS_OUT 2>/dev/null || echo $TOKENS_OUT)
 
-    # Output: 🤖 Model | 📁 Dir | ⎇ Branch | 📊 Tokens | 🧠 Context | 💰 Session | 📅 Month
+    # Output: Model | Dir | Branch | Tokens | Context | Session | Month
     OUT="''${RED}🤖 $MODEL''${RESET} | ''${ORANGE}📁 $CWD''${RESET}"
     [ -n "$GIT_BRANCH" ] && OUT="$OUT | ''${YELLOW}⎇ $GIT_BRANCH''${RESET}"
     OUT="$OUT | ''${GREEN}📊 $TOKENS_IN_FMT/$TOKENS_OUT_FMT''${RESET}"

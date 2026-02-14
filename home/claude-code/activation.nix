@@ -13,6 +13,7 @@
     mkdir -p "$HOME/.claude/skills/debug/steps"
     mkdir -p "$HOME/.claude/skills/continuous-learning-v2"
     mkdir -p "$HOME/.claude/skills/generated"
+    mkdir -p "$HOME/.claude/backups"
   '';
 
   claudeCodePerms = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
@@ -20,6 +21,7 @@
     chmod 700 "$HOME/.claude"
     chmod 700 "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks" "$HOME/.claude/skills"
     chmod +x "$HOME/.claude/hooks"/*.js 2>/dev/null || true
+    chmod +x "$HOME/.claude/hooks"/*.sh 2>/dev/null || true
   '';
 
   # -------------------------
@@ -40,12 +42,17 @@
     fi
 
     # Intelligent merge: base provides defaults, existing preserves user changes
-    # Exception: statusLine from base always wins (managed by nix)
+    # Nix-managed keys always win: statusLine, permissions, hooks, env
     if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
-      # Merge: base * existing, then override statusLine from base
       TMP=$(mktemp)
-      BASE_STATUSLINE=$(jq -c '.statusLine' "$BASE")
-      jq -s '.[0] * .[1]' "$BASE" "$TARGET" | jq --argjson sl "$BASE_STATUSLINE" '.statusLine = $sl' > "$TMP" && mv "$TMP" "$TARGET"
+      BASE_SL=$(jq -c '.statusLine' "$BASE")
+      BASE_PERMS=$(jq -c '.permissions' "$BASE")
+      BASE_HOOKS=$(jq -c '.hooks' "$BASE")
+      BASE_ENV=$(jq -c '.env' "$BASE")
+      jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
+        | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" \
+          '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e' \
+        > "$TMP" && mv "$TMP" "$TARGET"
       chmod 600 "$TARGET"
     else
       # First install: copy base

@@ -154,14 +154,11 @@
       vim = "nvim";
       top = "htop";
 
-      # ---- Miscellaneous Shortcuts ----
-      cc = "claude";
     };
 
     sessionVariables = {
       GNUPGHOME = "$XDG_CONFIG_HOME/gnupg";
       AGE_DIR = "$XDG_CONFIG_HOME/age";
-      CLAUDE_CONFIG_DIR = "$HOME/.claude";
     };
   };
 }

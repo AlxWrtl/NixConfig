@@ -18,8 +18,6 @@
   home.homeDirectory = "/Users/alx";
   home.stateVersion = "24.11";
 
-  home.sessionVariables.CLAUDE_CONFIG_DIR = "$HOME/.claude";
-
   home.packages = [
     pkgs.gh-dash
     pkgs.gitleaks

@@ -66,6 +66,67 @@
   '';
 
   # -------------------------
+  # Feature Workflow Skill (NEW)
+  # -------------------------
+  skillFeatureWorkflow = ''
+    ---
+    description: Feature development methodology — discuss→plan→verify cycle. Referenced by architecture-expert, team-lead, code-reviewer.
+    globs: ["**/.claude/output/feature/**", "**/.claude/output/CONTEXT-*"]
+    ---
+
+    # Feature Development Methodology
+
+    ## When to Use What
+
+    | Complexity | Files | Approach | Command |
+    |-----------|-------|----------|---------|
+    | S (trivial) | < 5 | Single agent directly | quick-fix or specialist agent |
+    | M (medium) | 5-15 | Discuss → agent plan → execute | /discuss → architecture-expert |
+    | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh |
+    | XL (epic) | 30+ | Split into L milestones | Chain per milestone |
+
+    ## The 5-Phase Cycle
+
+    ```
+    DISCUSS → PLAN → REVIEW → EXECUTE → VERIFY
+      (why)   (what)  (check)   (do)     (prove)
+    ```
+
+    1. **DISCUSS** — classify, surface gray areas, capture decisions → CONTEXT.md
+    2. **PLAN** — research patterns, create atomic task XMLs in waves → PLAN.md
+    3. **REVIEW** — two-pass (spec compliance + plan quality) → PLAN-REVIEW.md
+    4. **EXECUTE** — wave-by-wave, atomic commits, integration checks → EXECUTION.md
+    5. **VERIFY** — 6 layers (build, boundaries, spec, security, design, UAT) → VERIFY.md
+
+    ## Task XML Format
+
+    ```xml
+    <task id="T1" wave="1" agent="backend-expert">
+      <n>Short descriptive name</n>
+      <files>path/to/file.ts (CREATE|MODIFY)</files>
+      <depends>none</depends>
+      <action>Precise instructions with SKILL.md refs</action>
+      <verify>pnpm typecheck && pnpm lint --max-warnings 0</verify>
+      <done>Success criteria</done>
+      <rollback>How to undo</rollback>
+    </task>
+    ```
+
+    ## Wave Ordering
+    1. Schema + migrations + shared types
+    2. Server logic (queries, actions, validation)
+    3. UI components + hooks
+    4. Route integration + wiring
+    5. Polish (a11y, mobile, edge cases)
+
+    ## Common Pitfalls
+    1. Skipping DISCUSS for L features → rework when assumptions wrong
+    2. Not reading project SKILL.md → agents repeat known mistakes
+    3. Executing without review → circular deps or missing tasks
+    4. Manual commits during chain → breaks atomic tracking
+  '';
+
+  # -------------------------
   # Debug Skill
   # -------------------------
   skillDebug = ''

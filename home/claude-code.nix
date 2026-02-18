@@ -30,6 +30,9 @@ let
     cmdRalphLoop
     cmdCancelRalph
     cmdInitMemoryBank
+    commandDiscuss
+    commandVerifyFeature
+    featureChainScript
     ;
   inherit (skills)
     skillApex
@@ -50,6 +53,7 @@ let
     debugStep04
     debugStep05
     skillContinuousLearning
+    skillFeatureWorkflow
     ;
   inherit (hooks)
     hookProtectMain
@@ -100,6 +104,19 @@ in
     "${claudeDir}/commands/init-memory-bank.md".text = cmdInitMemoryBank;
     "${claudeDir}/commands/ralph-loop.md".text = cmdRalphLoop;
     "${claudeDir}/commands/cancel-ralph.md".text = cmdCancelRalph;
+
+    # Feature methodology commands
+    "${claudeDir}/commands/discuss.md".text = commandDiscuss;
+    "${claudeDir}/commands/verify-feature.md".text = commandVerifyFeature;
+
+    # Feature workflow skill
+    "${claudeDir}/skills/feature-workflow/SKILL.md".text = skillFeatureWorkflow;
+
+    # Feature chain script
+    "${claudeDir}/feature-chain.sh" = {
+      text = featureChainScript;
+      executable = true;
+    };
 
     # Agents (10)
     "${claudeDir}/agents/frontend-expert.md".text = agentFrontend;

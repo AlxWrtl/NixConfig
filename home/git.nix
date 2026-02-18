@@ -13,6 +13,7 @@
       user = {
         name = "Alexandre";
         email = "indexes-benzine0p@icloud.com";
+        signingKey = "~/.ssh/id_ed25519.pub";
       };
 
       init.defaultBranch = "main";
@@ -26,6 +27,10 @@
 
       feature.manyFiles = true;
       index.version = 4;
+
+      # SSH commit signing (modern, no GPG required)
+      gpg.format = "ssh";
+      commit.gpgSign = true;
     };
   };
 }

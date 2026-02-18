@@ -34,7 +34,11 @@
       # Automated checks
       checks.${system} = {
         format-check = pkgs.runCommand "check-nix-format" { } ''
-          ${pkgs.nixfmt}/bin/nixfmt --check ${./.}/flake.nix
+          cd ${./.}
+          ${pkgs.nixfmt}/bin/nixfmt --check flake.nix
+          ${pkgs.nixfmt}/bin/nixfmt --check modules/*.nix
+          ${pkgs.nixfmt}/bin/nixfmt --check home/*.nix
+          ${pkgs.nixfmt}/bin/nixfmt --check hosts/alex-mbp/*.nix
           touch $out
         '';
         system-config = self.darwinConfigurations."alex-mbp".system;

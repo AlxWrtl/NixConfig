@@ -43,7 +43,8 @@ in
         ''
           cd ${inputs.self} && \
           ${pkgs.nix}/bin/nix flake update && \
-          echo "Flake updated automatically: $(date)" >> ~/.cache/nix-flake-update.log
+          echo "Flake updated (no auto-rebuild): $(date)" >> ~/.cache/nix-flake-update.log && \
+          echo "⚠️  Run 'rebuild' to apply changes"
         ''
       ];
       StartCalendarInterval = [
@@ -63,7 +64,7 @@ in
     };
   };
 
-  launchd.user.agents.homebrew-update = {
+  launchd.user.agents.homebrew-update = lib.mkIf config.homebrew.enable {
     serviceConfig = {
       ProgramArguments = [
         "/bin/sh"
@@ -115,48 +116,48 @@ in
   };
 
   launchd.daemons.power-optimization = mkMaintenanceDaemon {
-        name = "power-optimization";
-        runAtLoad = true;
-        script = ''
-          # Sleep timings
-          /usr/bin/pmset -a displaysleep ${toString displaySleepMinutes}
-          /usr/bin/pmset -a sleep ${toString systemSleepMinutes}
+    name = "power-optimization";
+    runAtLoad = true;
+    script = ''
+      # Sleep timings
+      /usr/bin/pmset -a displaysleep ${toString displaySleepMinutes}
+      /usr/bin/pmset -a sleep ${toString systemSleepMinutes}
 
-          # Sleep behavior (no deep sleep)
-          /usr/bin/pmset -a hibernatemode 3
-          /usr/bin/pmset -a standby 0
-          /usr/bin/pmset -a autopoweroff 0
-          /usr/bin/pmset -a standbydelay 0
-          /usr/bin/pmset -a autopoweroffdelay 0
-          /usr/bin/pmset -a destroyfvkeyonstandby 0
+      # Sleep behavior (no deep sleep)
+      /usr/bin/pmset -a hibernatemode 3
+      /usr/bin/pmset -a standby 0
+      /usr/bin/pmset -a autopoweroff 0
+      /usr/bin/pmset -a standbydelay 0
+      /usr/bin/pmset -a autopoweroffdelay 0
+      /usr/bin/pmset -a destroyfvkeyonstandby 0
 
-          # Power saving
-          /usr/bin/pmset -a powernap 0
-          /usr/bin/pmset -a ttyskeepawake 0
-          /usr/bin/pmset -a reducebright 1
-          /usr/bin/pmset -a halfdim 1
+      # Power saving
+      /usr/bin/pmset -a powernap 0
+      /usr/bin/pmset -a ttyskeepawake 0
+      /usr/bin/pmset -a reducebright 1
+      /usr/bin/pmset -a halfdim 1
 
-          echo "Power optimization applied: $(date)" >> /var/log/power-optimization.log
-        '';
-      };
+      echo "Power optimization applied: $(date)" >> /var/log/power-optimization.log
+    '';
+  };
 
   launchd.daemons.network-optimization = mkMaintenanceDaemon {
-        name = "network-optimization";
-        runAtLoad = true;
-        script = ''
-          # TCP optimizations
-          /usr/sbin/sysctl -w net.inet.tcp.delayed_ack=2
-          /usr/sbin/sysctl -w net.inet.tcp.sendspace=131072
-          /usr/sbin/sysctl -w net.inet.tcp.recvspace=131072
-          /usr/sbin/sysctl -w net.inet.tcp.slowstart_flightsize=${toString tcpSlowStartFlightSize}
-          /usr/sbin/sysctl -w net.inet.tcp.local_slowstart_flightsize=${toString tcpSlowStartFlightSize}
+    name = "network-optimization";
+    runAtLoad = true;
+    script = ''
+      # TCP optimizations
+      /usr/sbin/sysctl -w net.inet.tcp.delayed_ack=2
+      /usr/sbin/sysctl -w net.inet.tcp.sendspace=131072
+      /usr/sbin/sysctl -w net.inet.tcp.recvspace=131072
+      /usr/sbin/sysctl -w net.inet.tcp.slowstart_flightsize=${toString tcpSlowStartFlightSize}
+      /usr/sbin/sysctl -w net.inet.tcp.local_slowstart_flightsize=${toString tcpSlowStartFlightSize}
 
-          # Sockets & filesystem
-          /usr/sbin/sysctl -w kern.maxfiles=${toString maxOpenFiles}
-          /usr/sbin/sysctl -w kern.maxfilesperproc=${toString maxFilesPerProc}
-          /usr/sbin/sysctl -w kern.ipc.somaxconn=1024
+      # Sockets & filesystem
+      /usr/sbin/sysctl -w kern.maxfiles=${toString maxOpenFiles}
+      /usr/sbin/sysctl -w kern.maxfilesperproc=${toString maxFilesPerProc}
+      /usr/sbin/sysctl -w kern.ipc.somaxconn=1024
 
-          echo "Network optimization applied: $(date)" >> /var/log/network-optimization.log
-        '';
-      };
+      echo "Network optimization applied: $(date)" >> /var/log/network-optimization.log
+    '';
+  };
 }

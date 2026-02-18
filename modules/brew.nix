@@ -30,38 +30,126 @@
     ];
 
     casks = [
-      { name = "1password"; greedy = true; }
-      { name = "onyx"; greedy = true; }
-      { name = "jordanbaird-ice"; greedy = true; }
-      { name = "logi-options+"; greedy = true; }
-      { name = "keka"; greedy = true; }
-      { name = "fliqlo"; greedy = true; }
-      { name = "docker-desktop"; greedy = true; }
-      { name = "visual-studio-code"; greedy = true; }
-      { name = "chatgpt"; greedy = true; }
-      { name = "ollama-app"; greedy = true; }
-      { name = "ghostty"; greedy = true; }
-      { name = "raycast"; greedy = true; }
-      { name = "notion"; greedy = true; }
-      { name = "figma"; greedy = true; }
-      { name = "discord"; greedy = true; }
-      { name = "microsoft-teams"; greedy = true; }
-      { name = "whatsapp"; greedy = true; }
-      { name = "readdle-spark"; greedy = true; }
-      { name = "arc"; greedy = true; }
-      { name = "google-chrome"; greedy = true; }
-      { name = "vlc"; greedy = true; }
-      { name = "plex-media-server"; greedy = true; }
-      { name = "chatgpt-atlas"; greedy = true; }
-      { name = "coteditor"; greedy = true; }
-      { name = "claude-code"; greedy = true; }
-      { name = "claude"; greedy = true; }
-      { name = "zen"; greedy = true; }
-      { name = "codex"; greedy = true; }
-      { name = "appcleaner"; greedy = true; }
-      { name = "upscayl"; greedy = true; }
-      { name = "transmission"; greedy = true; }
-
+      {
+        name = "1password";
+        greedy = true;
+      }
+      {
+        name = "jordanbaird-ice";
+        greedy = true;
+      }
+      {
+        name = "logi-options+";
+        greedy = true;
+      }
+      {
+        name = "keka";
+        greedy = true;
+      }
+      {
+        name = "docker-desktop";
+        greedy = true;
+      }
+      {
+        name = "visual-studio-code";
+        greedy = true;
+      }
+      {
+        name = "chatgpt";
+        greedy = true;
+      }
+      {
+        name = "ollama-app";
+        greedy = true;
+      }
+      {
+        name = "ghostty";
+        greedy = true;
+      }
+      {
+        name = "raycast";
+        greedy = true;
+      }
+      {
+        name = "notion";
+        greedy = true;
+      }
+      {
+        name = "figma";
+        greedy = true;
+      }
+      {
+        name = "discord";
+        greedy = true;
+      }
+      {
+        name = "microsoft-teams";
+        greedy = true;
+      }
+      {
+        name = "whatsapp";
+        greedy = true;
+      }
+      {
+        name = "readdle-spark";
+        greedy = true;
+      }
+      {
+        name = "arc";
+        greedy = true;
+      }
+      {
+        name = "google-chrome";
+        greedy = true;
+      }
+      {
+        name = "vlc";
+        greedy = true;
+      }
+      {
+        name = "plex-media-server";
+        greedy = true;
+      }
+      {
+        name = "chatgpt-atlas";
+        greedy = true;
+      }
+      {
+        name = "coteditor";
+        greedy = true;
+      }
+      {
+        name = "claude-code";
+        greedy = true;
+      }
+      {
+        name = "claude";
+        greedy = true;
+      }
+      {
+        name = "codex";
+        greedy = true;
+      }
+      {
+        name = "appcleaner";
+        greedy = true;
+      }
+      {
+        name = "upscayl";
+        greedy = true;
+      }
+      {
+        name = "transmission";
+        greedy = true;
+      }
+      {
+        name = "qgis";
+        greedy = true;
+      }
+      {
+        name = "microsoft-office";
+        greedy = true;
+      }
     ];
 
     masApps = {

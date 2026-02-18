@@ -159,6 +159,7 @@
     sessionVariables = {
       GNUPGHOME = "$XDG_CONFIG_HOME/gnupg";
       AGE_DIR = "$XDG_CONFIG_HOME/age";
+      GIT_EDITOR = if builtins.getEnv "SSH_CONNECTION" != "" then "nano" else "code --wait";
     };
   };
 }

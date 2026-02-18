@@ -191,7 +191,6 @@ in
       };
 
       "com.apple.finder" = {
-        _FXSortFoldersFirst = true;
         FXEnableExtensionChangeWarning = false;
         NSWindowTabbingEnabled = true;
         FinderSpawnTab = false;
@@ -199,15 +198,42 @@ in
 
       # Spotlight: disable only unwanted categories (others enabled by default)
       "com.apple.Spotlight".orderedItems = [
-        { enabled = 0; name = "MENU_EXPRESSION"; }
-        { enabled = 0; name = "CONTACT"; }
-        { enabled = 0; name = "MENU_CONVERSION"; }
-        { enabled = 0; name = "MENU_DEFINITION"; }
-        { enabled = 0; name = "EVENT_TODO"; }
-        { enabled = 0; name = "FONTS"; }
-        { enabled = 0; name = "MESSAGES"; }
-        { enabled = 0; name = "MENU_OTHER"; }
-        { enabled = 0; name = "SYSTEM_PREFS"; }
+        {
+          enabled = 0;
+          name = "MENU_EXPRESSION";
+        }
+        {
+          enabled = 0;
+          name = "CONTACT";
+        }
+        {
+          enabled = 0;
+          name = "MENU_CONVERSION";
+        }
+        {
+          enabled = 0;
+          name = "MENU_DEFINITION";
+        }
+        {
+          enabled = 0;
+          name = "EVENT_TODO";
+        }
+        {
+          enabled = 0;
+          name = "FONTS";
+        }
+        {
+          enabled = 0;
+          name = "MESSAGES";
+        }
+        {
+          enabled = 0;
+          name = "MENU_OTHER";
+        }
+        {
+          enabled = 0;
+          name = "SYSTEM_PREFS";
+        }
       ];
 
       "com.apple.dock" = {

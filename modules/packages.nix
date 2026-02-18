@@ -54,7 +54,6 @@
 
       environment.variables = {
         NODE_ENV = "development";
-        GIT_EDITOR = "code --wait";
       };
 
       environment.shellAliases = {

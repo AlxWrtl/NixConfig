@@ -1,4 +1,10 @@
-{ config, pkgs, lib, inputs, ... }:
+{
+  config,
+  pkgs,
+  lib,
+  inputs,
+  ...
+}:
 
 {
   # ============================================================================
@@ -7,6 +13,6 @@
 
   imports = [
     # === Host-Specific Configuration ===
-    ./configuration.nix                                 # Core host settings (networking, users, platform)
+    ./configuration.nix # Core host settings (networking, users, platform)
   ];
 }

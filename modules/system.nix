@@ -138,10 +138,6 @@
     security-logs = "tail -f /var/log/security/*.log";
     check-perms = "ls -la /nix/store | head -20";
     check-security = "cat /var/log/security/vulnix-scan.log | tail -10";
-    lt = "eza --tree";
-    cat = "bat";
-    find = "fd";
-    grep = "rg";
   };
 
   # Uncomment when secrets are configured:

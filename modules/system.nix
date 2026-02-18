@@ -17,7 +17,6 @@
       experimental-features = [
         "nix-command"
         "flakes"
-        "ca-derivations"
         "fetch-closure"
       ];
 
@@ -79,7 +78,6 @@
   };
 
   nixpkgs.config = {
-    allowUnfree = lib.mkDefault true;
     allowBroken = false;
     allowInsecure = false;
     permittedInsecurePackages = [ ];
@@ -164,4 +162,9 @@
   # Shell configuration
   programs.zsh.enable = true;
   environment.shells = [ pkgs.zsh ];
+
+  system.activationScripts.postActivation.text = ''
+    mkdir -p /usr/local/bin
+    ln -sfn /opt/homebrew/bin/claude /usr/local/bin/claude
+  '';
 }

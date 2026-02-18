@@ -58,8 +58,8 @@
 
       # ---- Command History Configuration ----
       HISTFILE=$HOME/.zhistory
-      SAVEHIST=1000
-      HISTSIZE=999
+      SAVEHIST=10000
+      HISTSIZE=10000
 
       # History behavior options
       setopt share_history                         # Share history between sessions

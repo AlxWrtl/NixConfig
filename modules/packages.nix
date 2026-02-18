@@ -53,7 +53,6 @@
       ];
 
       environment.variables = {
-        PYTHONPATH = "";
         NODE_ENV = "development";
         GIT_EDITOR = "code --wait";
       };
@@ -74,11 +73,6 @@
         dcd = "docker-compose down";
       };
 
-      environment.etc."pip.conf".text = ''
-        [global]
-        break-system-packages = true
-        user = true
-      '';
     }
 
     {

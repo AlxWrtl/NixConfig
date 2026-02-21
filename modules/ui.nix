@@ -152,7 +152,7 @@ in
     };
 
     loginwindow.SHOWFULLNAME = false;
-    LaunchServices.LSQuarantine = true;
+    LaunchServices.LSQuarantine = false;
     SoftwareUpdate.AutomaticallyInstallMacOSUpdates = false;
 
     # Input devices

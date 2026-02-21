@@ -27,6 +27,7 @@
       "mas"
       "trash"
       "libomp"
+      "cloudflared"
     ];
 
     casks = [

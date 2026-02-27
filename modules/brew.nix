@@ -24,10 +24,10 @@
     taps = [ ];
 
     brews = [
+      "cloudflared"
+      "libomp"
       "mas"
       "trash"
-      "libomp"
-      "cloudflared"
     ];
 
     casks = [
@@ -36,63 +36,7 @@
         greedy = true;
       }
       {
-        name = "jordanbaird-ice";
-        greedy = true;
-      }
-      {
-        name = "logi-options+";
-        greedy = true;
-      }
-      {
-        name = "keka";
-        greedy = true;
-      }
-      {
-        name = "docker-desktop";
-        greedy = true;
-      }
-      {
-        name = "visual-studio-code";
-        greedy = true;
-      }
-      {
-        name = "chatgpt";
-        greedy = true;
-      }
-      {
-        name = "ollama-app";
-        greedy = true;
-      }
-      {
-        name = "ghostty";
-        greedy = true;
-      }
-      {
-        name = "raycast";
-        greedy = true;
-      }
-      {
-        name = "notion";
-        greedy = true;
-      }
-      {
-        name = "figma";
-        greedy = true;
-      }
-      {
-        name = "discord";
-        greedy = true;
-      }
-      {
-        name = "microsoft-teams";
-        greedy = true;
-      }
-      {
-        name = "whatsapp";
-        greedy = true;
-      }
-      {
-        name = "readdle-spark";
+        name = "appcleaner";
         greedy = true;
       }
       {
@@ -100,23 +44,7 @@
         greedy = true;
       }
       {
-        name = "google-chrome";
-        greedy = true;
-      }
-      {
-        name = "vlc";
-        greedy = true;
-      }
-      {
-        name = "plex-media-server";
-        greedy = true;
-      }
-      {
-        name = "chatgpt-atlas";
-        greedy = true;
-      }
-      {
-        name = "coteditor";
+        name = "claude";
         greedy = true;
       }
       {
@@ -124,23 +52,59 @@
         greedy = true;
       }
       {
-        name = "claude";
+        name = "coteditor";
         greedy = true;
       }
       {
-        name = "codex";
+        name = "discord";
         greedy = true;
       }
       {
-        name = "appcleaner";
+        name = "docker-desktop";
         greedy = true;
       }
       {
-        name = "upscayl";
+        name = "figma";
         greedy = true;
       }
       {
-        name = "transmission";
+        name = "ghostty";
+        greedy = true;
+      }
+      {
+        name = "google-chrome";
+        greedy = true;
+      }
+      {
+        name = "jordanbaird-ice";
+        greedy = true;
+      }
+      {
+        name = "keka";
+        greedy = true;
+      }
+      {
+        name = "logi-options+";
+        greedy = true;
+      }
+      {
+        name = "microsoft-office";
+        greedy = true;
+      }
+      {
+        name = "microsoft-teams";
+        greedy = true;
+      }
+      {
+        name = "notion";
+        greedy = true;
+      }
+      {
+        name = "ollama-app";
+        greedy = true;
+      }
+      {
+        name = "plex-media-server";
         greedy = true;
       }
       {
@@ -148,17 +112,41 @@
         greedy = true;
       }
       {
-        name = "microsoft-office";
+        name = "raycast";
+        greedy = true;
+      }
+      {
+        name = "readdle-spark";
+        greedy = true;
+      }
+      {
+        name = "transmission";
+        greedy = true;
+      }
+      {
+        name = "upscayl";
+        greedy = true;
+      }
+      {
+        name = "visual-studio-code";
+        greedy = true;
+      }
+      {
+        name = "vlc";
+        greedy = true;
+      }
+      {
+        name = "whatsapp";
         greedy = true;
       }
     ];
 
     masApps = {
-      "Pages" = 409201541;
-      "Numbers" = 409203825;
-      "Keynote" = 409183694;
-      "Trello" = 1278508951;
       "DaisyDisk" = 411643860;
+      "Keynote" = 409183694;
+      "Numbers" = 409203825;
+      "Pages" = 409201541;
+      "Trello" = 1278508951;
     };
   };
 

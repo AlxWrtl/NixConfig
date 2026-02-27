@@ -151,6 +151,7 @@
       treeall = "eza --group-directories-first --color=always --long --tree --icons=always --git --all";
 
       # ---- System Tool Replacements ----
+      clr = "clear";
       vim = "nvim";
       top = "htop";
 

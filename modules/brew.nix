@@ -88,11 +88,19 @@
         greedy = true;
       }
       {
-        name = "microsoft-office";
+        name = "microsoft-excel";
+        greedy = true;
+      }
+      {
+        name = "microsoft-powerpoint";
         greedy = true;
       }
       {
         name = "microsoft-teams";
+        greedy = true;
+      }
+      {
+        name = "microsoft-word";
         greedy = true;
       }
       {
@@ -117,6 +125,10 @@
       }
       {
         name = "readdle-spark";
+        greedy = true;
+      }
+      {
+        name = "tailscale";
         greedy = true;
       }
       {

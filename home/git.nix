@@ -27,6 +27,8 @@
 
       feature.manyFiles = true;
       index.version = 4;
+      core.fsmonitor = true;
+      core.untrackedcache = true;
 
       # SSH commit signing (modern, no GPG required)
       gpg.format = "ssh";

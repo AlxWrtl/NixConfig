@@ -150,6 +150,9 @@
       tree = "eza --group-directories-first --color=always --long --tree --icons=always --git";
       treeall = "eza --group-directories-first --color=always --long --tree --icons=always --git --all";
 
+      # ---- Claude Code ----
+      ccd = "claude --dangerously-skip-permissions";
+
       # ---- System Tool Replacements ----
       clr = "clear";
       vim = "nvim";

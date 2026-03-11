@@ -36,6 +36,10 @@
         greedy = true;
       }
       {
+        name = "alt-tab";
+        greedy = true;
+      }
+      {
         name = "appcleaner";
         greedy = true;
       }

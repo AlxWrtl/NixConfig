@@ -36,10 +36,6 @@
         greedy = true;
       }
       {
-        name = "alt-tab";
-        greedy = true;
-      }
-      {
         name = "appcleaner";
         greedy = true;
       }
@@ -132,7 +128,7 @@
         greedy = true;
       }
       {
-        name = "tailscale";
+        name = "tailscale-app";
         greedy = true;
       }
       {

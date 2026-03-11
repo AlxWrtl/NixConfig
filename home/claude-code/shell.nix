@@ -12,10 +12,5 @@
 
   sessionVars = {
     CLAUDE_CONFIG_DIR = "$HOME/.claude";
-    CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
-    CLAUDE_CODE_EFFORT_LEVEL = "high";
-    CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
-    npm_config_prefer_pnpm = "true";
-    npm_config_user_agent = "pnpm";
   };
 }

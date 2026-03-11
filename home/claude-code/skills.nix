@@ -1,4 +1,4 @@
-# Skill definitions (APEX, Debug, Continuous Learning)
+# Skill definitions
 {
   skillApex = ''
     ---
@@ -10,63 +10,41 @@
 
     Flags: -a (auto), -s (save), -e (examine), -t (test), -h (help)
 
-    Steps: 00-init → 01-analyze → 02-plan → 03-prepare → 04-execute → 05-test → 06-examine → 07-polish → 08-document → 09-finish
+    ## Steps
 
-    Load step files from ~/.claude/skills/apex/steps/
-  '';
-
-  apexStep00 = ''
-    # APEX Step 0: Initialize
+    ### 00 — Initialize
     Set up task context, check git status, create output dir.
-  '';
 
-  apexStep01 = ''
-    # APEX Step 1: Analyze
+    ### 01 — Analyze
     Read files, identify patterns, document requirements.
-  '';
 
-  apexStep02 = ''
-    # APEX Step 2: Plan
+    ### 02 — Plan
     Propose approaches, break down tasks, identify risks.
-  '';
 
-  apexStep03 = ''
-    # APEX Step 3: Prepare
+    ### 03 — Prepare
     Create branch, install deps, create stubs.
-  '';
 
-  apexStep04 = ''
-    # APEX Step 4: Execute
+    ### 04 — Execute
     Implement solution following plan.
-  '';
 
-  apexStep05 = ''
-    # APEX Step 5: Test
+    ### 05 — Test
     Run tests, verify implementation.
-  '';
 
-  apexStep06 = ''
-    # APEX Step 6: Examine
+    ### 06 — Examine
     Deep review: security, performance, maintainability.
-  '';
 
-  apexStep07 = ''
-    # APEX Step 7: Polish
+    ### 07 — Polish
     Clean up code, refine, improve naming.
-  '';
 
-  apexStep08 = ''
-    # APEX Step 8: Document
+    ### 08 — Document
     Update docs, README, CHANGELOG.
-  '';
 
-  apexStep09 = ''
-    # APEX Step 9: Finish
+    ### 09 — Finish
     Final verification, commit, summarize.
   '';
 
   # -------------------------
-  # Feature Workflow Skill (NEW)
+  # Feature Workflow Skill
   # -------------------------
   skillFeatureWorkflow = ''
     ---
@@ -139,33 +117,21 @@
 
     Flags: -a (auto), -s (save), -h (help)
 
-    Steps: 01-reproduce → 02-isolate → 03-diagnose → 04-fix → 05-verify
+    ## Steps
 
-    Load step files from ~/.claude/skills/debug/steps/
-  '';
-
-  debugStep01 = ''
-    # Debug Step 1: Reproduce
+    ### 01 — Reproduce
     Confirm problem, document errors, capture logs.
-  '';
 
-  debugStep02 = ''
-    # Debug Step 2: Isolate
+    ### 02 — Isolate
     Narrow down root cause, check recent changes.
-  '';
 
-  debugStep03 = ''
-    # Debug Step 3: Diagnose
+    ### 03 — Diagnose
     Add logging, trace execution, identify root cause.
-  '';
 
-  debugStep04 = ''
-    # Debug Step 4: Fix
+    ### 04 — Fix
     Apply minimal fix, handle edge cases.
-  '';
 
-  debugStep05 = ''
-    # Debug Step 5: Verify
+    ### 05 — Verify
     Run reproduction, test edge cases, run regression.
   '';
 
@@ -188,5 +154,126 @@
     Application: auto-suggest, relevance 0.8, max 3
 
     Generated skills → ~/.claude/skills/generated/
+  '';
+
+  # -------------------------
+  # nix-darwin Skill
+  # -------------------------
+  skillNixDarwin = ''
+    ---
+    name: nix-darwin
+    description: "nix-darwin + home-manager patterns for macOS. Use when editing *.nix files, or tasks involve module structure, system.defaults, launchd, or declarative macOS setup."
+    globs: ["**/*.nix", "**/flake.lock"]
+    ---
+
+    # nix-darwin Patterns
+
+    ## Module Structure (5 modules)
+    ```
+    flake.nix
+    ├── hosts/alex-mbp/        (host identity)
+    ├── modules/               (5 modules)
+    │   ├── system.nix         Core: Nix + env + security + shell
+    │   ├── packages.nix       CLI tools
+    │   ├── services.nix       Background services (launchd)
+    │   ├── ui.nix             Fonts + Dock + Finder + defaults
+    │   └── brew.nix           GUI apps (Homebrew)
+    └── home/                  (user config via home-manager)
+        ├── default.nix
+        ├── git.nix
+        ├── zsh.nix
+        ├── starship.nix
+        └── direnv.nix
+    ```
+
+    ## Best Practices 2026
+    - No `with pkgs;` — always explicit `pkgs.` prefix
+    - 5-8 modules, single-responsibility
+    - System/user separation: modules/ vs home/
+    - home-manager native features over manual shell code
+    - `nixfmt` formatter (not nixfmt-rfc-style)
+    - Minimal comments, code is self-documenting
+    - `lib.mkIf` / `lib.mkDefault` for conditional config
+    - Always `git add` new files before rebuild (flakes requirement)
+    - No `environment.etc` for user files — use `home.file`
+
+    ## Common Patterns
+
+    ### Adding config
+    - CLI tools → `modules/packages.nix`
+    - GUI apps → `modules/brew.nix` casks
+    - Fonts → `modules/ui.nix` fonts.packages
+    - Services → `modules/services.nix` launchd
+    - User config → `home/*.nix`
+
+    ### macOS defaults
+    - Built-in: `system.defaults.dock.*`, `system.defaults.finder.*`
+    - App-specific: `system.defaults.CustomUserPreferences`
+    - Reference: https://nix-darwin.github.io/nix-darwin/manual/
+
+    ### Verification
+    ```bash
+    nix-instantiate --parse file.nix  # syntax check
+    rebuild                            # full build test
+    darwin-rebuild rollback            # if broken
+    ```
+
+    ## Pitfalls
+    1. Untracked files invisible to flakes → `git add` first
+    2. `environment.etc` wrong for user files → use `home.file`
+    3. Raw plist files → prefer `launchd.daemons`
+    4. `with pkgs;` pollutes scope → use explicit `pkgs.` prefix
+  '';
+
+  # -------------------------
+  # Claude Code Meta Skill
+  # -------------------------
+  skillClaudeCodeMeta = ''
+    ---
+    name: claude-code-meta
+    description: "2026 best practices for Claude Code skill authoring, agent design, and hook patterns. Use when editing agents.nix, skills.nix, hooks.nix, claude-md.nix, or .claude/ config files."
+    globs: ["**/claude-code/*.nix", "**/.claude/**/*.md"]
+    ---
+
+    # Claude Code Meta — Authoring Best Practices
+
+    ## Agent Descriptions
+    Pattern: `[What it does]. Use when [triggers].`
+    - First sentence: capability (verb-first)
+    - Second sentence: activation triggers (file patterns, keywords)
+    - Estimated activation: 70-80% with good triggers
+
+    ## Skill Triggering
+    - `globs:` in frontmatter for file-based activation
+    - `description:` with "Use when..." for keyword activation
+    - Skills auto-load when matching files are in context
+
+    ## Skill Injection via Agents
+    - Global: add `skills: [skill-name]` in agent frontmatter
+    - Project: override agents in `.claude/agents/` per repo
+    - Generic: agents should run `ls .claude/skills/*/SKILL.md` before coding
+
+    ## CLAUDE.md Rules
+    - Global: `~/.claude/CLAUDE.md` (< 200 lines, always loaded)
+    - Project: `.claude/CLAUDE.md` (per-repo, checked in)
+    - Keep concise — every line costs context tokens
+
+    ## Hook Types
+    - `PreToolUse` / `PostToolUse`: gate or react to tool calls
+    - `PreCompact`: backup before context compaction
+    - `SessionStart`: display session info
+    - `SubagentStop`: log agent results for analysis
+    - Hooks: JS (node) or bash, with timeout
+
+    ## File Layout
+    ```
+    ~/.claude/
+    ├── CLAUDE.md              Global instructions
+    ├── settings.json          Settings + hooks + permissions
+    ├── agents/*.md            Agent definitions
+    ├── commands/*.md           Slash commands
+    ├── skills/*/SKILL.md      Skill files
+    └── hooks/*.js|*.sh        Hook scripts
+    ```
   '';
 }

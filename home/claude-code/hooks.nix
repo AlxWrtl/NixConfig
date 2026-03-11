@@ -88,4 +88,35 @@
     MODIFIED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
     echo "branch: $BRANCH | last: $LAST_COMMIT | modified: $MODIFIED files"
   '';
+
+  hookSubagentStop = ''
+    #!/usr/bin/env node
+    setTimeout(() => process.exit(0), 5000);
+
+    const fs = require('fs');
+    const path = require('path');
+
+    module.exports = async (context) => {
+      const logDir = path.join(process.env.HOME, '.claude/output');
+      const logFile = path.join(logDir, 'agent-log.jsonl');
+
+      try {
+        fs.mkdirSync(logDir, { recursive: true });
+        const entry = {
+          ts: new Date().toISOString(),
+          agent: context.agent_name || 'unknown',
+          status: context.status || 'completed',
+          duration_ms: context.duration_ms || 0,
+          task_summary: (context.task_description || "").slice(0, 200)
+        };
+        fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
+      } catch (e) {}
+      return {};
+    };
+  '';
+
+  hookTaskCompleted = ''
+    #!/usr/bin/env bash
+    osascript -e 'display notification "Task completed" with title "Claude Code"' 2>/dev/null || true
+  '';
 }

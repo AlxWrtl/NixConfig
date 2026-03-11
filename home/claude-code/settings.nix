@@ -220,6 +220,28 @@
           ];
         }
       ];
+      SubagentStop = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/subagent-stop.js";
+              timeout = 5;
+            }
+          ];
+        }
+      ];
+      TaskCompleted = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/task-completed.sh";
+              timeout = 3;
+            }
+          ];
+        }
+      ];
     };
   };
 

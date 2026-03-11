@@ -41,11 +41,9 @@
     - Preserve: error patterns encountered and their solutions.
     - Discard: file contents already committed, redundant exploration.
 
-    ## Tools
-    - Format: prettier (auto-runs via hook on .ts/.tsx/.js/.jsx/.css/.json)
-    - Lint: eslint (run manually: pnpm lint)
-    - Types: pnpm tsc --noEmit
-    - Build: pnpm build
+    ## Agents & Skills
+    - Specialist agents in ~/.claude/agents/. Delegate when task matches.
+    - Project skills in .claude/skills/*/SKILL.md. Read matching skills before coding.
 
     ## Style (FR)
     - Réponses courtes et actionnables.

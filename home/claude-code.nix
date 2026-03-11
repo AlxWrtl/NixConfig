@@ -9,7 +9,6 @@ let
   claudeDir = ".claude";
 
   # Import modular definitions
-  docs = import ./claude-code/docs.nix;
   settings = import ./claude-code/settings.nix;
   commands = import ./claude-code/commands.nix;
   skills = import ./claude-code/skills.nix;
@@ -19,7 +18,6 @@ let
   claudeMd = import ./claude-code/claude-md.nix;
   activationScripts = import ./claude-code/activation.nix { inherit pkgs lib; };
 
-  inherit (docs) autoRoutingText;
   inherit (claudeMd) claudeMdGlobal;
   inherit (settings) settingsJson statuslineScript;
   inherit (commands)
@@ -36,24 +34,11 @@ let
     ;
   inherit (skills)
     skillApex
-    apexStep00
-    apexStep01
-    apexStep02
-    apexStep03
-    apexStep04
-    apexStep05
-    apexStep06
-    apexStep07
-    apexStep08
-    apexStep09
     skillDebug
-    debugStep01
-    debugStep02
-    debugStep03
-    debugStep04
-    debugStep05
     skillContinuousLearning
     skillFeatureWorkflow
+    skillNixDarwin
+    skillClaudeCodeMeta
     ;
   inherit (hooks)
     hookProtectMain
@@ -61,6 +46,8 @@ let
     hookBlockMainBash
     hookPreCompactBackup
     hookSessionStart
+    hookSubagentStop
+    hookTaskCompleted
     ;
   inherit (agents)
     agentFrontend
@@ -90,10 +77,6 @@ in
 
     "${claudeDir}/CLAUDE.md" = {
       text = claudeMdGlobal;
-    };
-
-    "${claudeDir}/auto-routing.md" = {
-      text = autoRoutingText;
     };
 
     # Commands
@@ -130,26 +113,11 @@ in
     "${claudeDir}/agents/git-ship.md".text = agentGitShip;
     "${claudeDir}/agents/team-lead.md".text = agentTeamLead;
 
-    # APEX Skill
+    # Skills
     "${claudeDir}/skills/apex/SKILL.md".text = skillApex;
-    "${claudeDir}/skills/apex/steps/00-init.md".text = apexStep00;
-    "${claudeDir}/skills/apex/steps/01-analyze.md".text = apexStep01;
-    "${claudeDir}/skills/apex/steps/02-plan.md".text = apexStep02;
-    "${claudeDir}/skills/apex/steps/03-prepare.md".text = apexStep03;
-    "${claudeDir}/skills/apex/steps/04-execute.md".text = apexStep04;
-    "${claudeDir}/skills/apex/steps/05-test.md".text = apexStep05;
-    "${claudeDir}/skills/apex/steps/06-examine.md".text = apexStep06;
-    "${claudeDir}/skills/apex/steps/07-polish.md".text = apexStep07;
-    "${claudeDir}/skills/apex/steps/08-document.md".text = apexStep08;
-    "${claudeDir}/skills/apex/steps/09-finish.md".text = apexStep09;
-
-    # Debug Skill
     "${claudeDir}/skills/debug/SKILL.md".text = skillDebug;
-    "${claudeDir}/skills/debug/steps/01-reproduce.md".text = debugStep01;
-    "${claudeDir}/skills/debug/steps/02-isolate.md".text = debugStep02;
-    "${claudeDir}/skills/debug/steps/03-diagnose.md".text = debugStep03;
-    "${claudeDir}/skills/debug/steps/04-fix.md".text = debugStep04;
-    "${claudeDir}/skills/debug/steps/05-verify.md".text = debugStep05;
+    "${claudeDir}/skills/nix-darwin/SKILL.md".text = skillNixDarwin;
+    "${claudeDir}/skills/claude-code-meta/SKILL.md".text = skillClaudeCodeMeta;
 
     # Continuous Learning V2
     "${claudeDir}/skills/continuous-learning-v2/SKILL.md".text = skillContinuousLearning;
@@ -173,6 +141,14 @@ in
     };
     "${claudeDir}/hooks/session-start.sh" = {
       text = hookSessionStart;
+      executable = true;
+    };
+    "${claudeDir}/hooks/subagent-stop.js" = {
+      text = hookSubagentStop;
+      executable = true;
+    };
+    "${claudeDir}/hooks/task-completed.sh" = {
+      text = hookTaskCompleted;
       executable = true;
     };
 

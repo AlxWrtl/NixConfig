@@ -29,7 +29,17 @@
     mkdir -p "$HOME/.claude/agents-memory/team-lead"
   '';
 
-  claudeCodePerms = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+  # Fix HM GC root when nix-store --add-root fails under sudo
+  fixHmGcRoot = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    GC_ROOT="$HOME/.local/state/home-manager/gcroots/current-home"
+    CURRENT=$(readlink -f "$GC_ROOT" 2>/dev/null || true)
+    if [ "$CURRENT" != "$newGenPath" ] && [ -n "$newGenPath" ]; then
+      mkdir -p "$(dirname "$GC_ROOT")"
+      ln -sfn "$newGenPath" "$GC_ROOT"
+    fi
+  '';
+
+  claudeCodePerms = lib.hm.dag.entryAfter [ "fixHmGcRoot" ] ''
     set -euo pipefail
     chmod 700 "$HOME/.claude"
     chmod 700 "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks" "$HOME/.claude/skills"

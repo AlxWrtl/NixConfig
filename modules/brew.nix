@@ -116,10 +116,6 @@
         greedy = true;
       }
       {
-        name = "qgis";
-        greedy = true;
-      }
-      {
         name = "raycast";
         greedy = true;
       }

@@ -86,6 +86,26 @@
   '';
 
   # -------------------------
+  # Merge MCP servers into ~/.claude/.claude.json
+  # -------------------------
+  claudeCodeMcpMerge = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    set -euo pipefail
+    MCP_BASE="$HOME/.claude/mcp-servers-base.json"
+    TARGET="$HOME/.claude/.claude.json"
+
+    if ! command -v jq >/dev/null 2>&1; then
+      exit 0
+    fi
+
+    if [ -f "$TARGET" ] && [ -f "$MCP_BASE" ]; then
+      TMP=$(mktemp)
+      jq --argjson mcp "$(cat "$MCP_BASE")" '.mcpServers = $mcp' "$TARGET" > "$TMP" \
+        && mv "$TMP" "$TARGET"
+      chmod 600 "$TARGET"
+    fi
+  '';
+
+  # -------------------------
   # Install Ralph Wiggum scripts
   # -------------------------
   claudeCodeRalphWiggum = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''

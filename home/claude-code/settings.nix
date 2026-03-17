@@ -206,6 +206,7 @@
   };
 
   # MCP servers merged into ~/.claude/.claude.json by activation script
+  # Secrets (API keys) are injected at runtime by claudeCodeMcpMerge, not here
   mcpServersJson = builtins.toJSON {
     gsap-master = {
       type = "stdio";
@@ -218,6 +219,17 @@
       command = "npx";
       args = [ "chrome-devtools-mcp@latest" ];
       env = { };
+    };
+    magic = {
+      type = "stdio";
+      command = "npx";
+      args = [
+        "-y"
+        "@21st-dev/magic@latest"
+      ];
+      env = {
+        API_KEY = "__SECRET_21ST_DEV__";
+      };
     };
   };
 

@@ -19,7 +19,7 @@ let
   activationScripts = import ./claude-code/activation.nix { inherit pkgs lib; };
 
   inherit (claudeMd) claudeMdGlobal;
-  inherit (settings) settingsJson statuslineScript;
+  inherit (settings) settingsJson statuslineScript mcpServersJson;
   inherit (commands)
     cmdTdd
     cmdOptimize
@@ -75,6 +75,11 @@ in
     # Settings base (read-only reference, merged by activation script)
     "${claudeDir}/settings-base.json" = {
       text = settingsJson;
+    };
+
+    # MCP servers base (merged into .claude.json by activation script)
+    "${claudeDir}/mcp-servers-base.json" = {
+      text = mcpServersJson;
     };
 
     "${claudeDir}/CLAUDE.md" = {

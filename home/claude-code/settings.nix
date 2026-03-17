@@ -15,13 +15,6 @@
       CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
     };
 
-    mcpServers = {
-      gsap-master = {
-        command = "npx";
-        args = [ "bruzethegreat-gsap-master-mcp-server@latest" ];
-      };
-    };
-
     model = "opus";
 
     attribution = {
@@ -208,6 +201,22 @@
           ];
         }
       ];
+    };
+  };
+
+  # MCP servers merged into ~/.claude/.claude.json by activation script
+  mcpServersJson = builtins.toJSON {
+    gsap-master = {
+      type = "stdio";
+      command = "npx";
+      args = [ "bruzethegreat-gsap-master-mcp-server@latest" ];
+      env = { };
+    };
+    chrome-devtools = {
+      type = "stdio";
+      command = "npx";
+      args = [ "chrome-devtools-mcp@latest" ];
+      env = { };
     };
   };
 

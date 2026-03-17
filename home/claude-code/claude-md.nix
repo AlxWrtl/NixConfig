@@ -42,59 +42,12 @@
     - Discard: file contents already committed, redundant exploration.
 
     ## Agents & Skills
-    - Specialist agents in ~/.claude/agents/. Delegate when task matches.
+    - Specialist agents in ~/.claude/agents/. Always delegate to matching agent.
     - Project skills in .claude/skills/*/SKILL.md. Read matching skills before coding.
-
-    ## Agent Auto-Routing
-
-    Before starting ANY task, silently assess complexity using this decision tree.
-    Do NOT explain your routing decision unless asked. Just act.
-
-    ### Decision tree
-    ```
-    Task received
-    │
-    ├─ Typo / rename / single-line fix?
-    │   └─ @quick-fix (Haiku)
-    │
-    ├─ Git commit/push only?
-    │   └─ @git-ship (Haiku)
-    │
-    ├─ "Where is X" / "how does Y work" / exploration?
-    │   └─ @codebase-navigator (Haiku) → then specialist if needed
-    │
-    ├─ Nix config change?
-    │   └─ @nix-expert (Sonnet)
-    │
-    ├─ Review / audit / pre-merge?
-    │   └─ @code-reviewer (Opus)
-    │
-    ├─ Slow / latency / bottleneck / bundle size?
-    │   └─ @performance-expert (Haiku)
-    │
-    ├─ Single domain, ≤ 3 files, clear scope?
-    │   ├─ UI/component/style → @frontend-expert (Sonnet)
-    │   └─ API/DB/auth/server → @backend-expert (Sonnet)
-    │
-    ├─ Touches frontend AND backend (e.g. new feature end-to-end)?
-    │   └─ @team-lead (Opus) — delegates to specialists
-    │
-    ├─ > 5 files OR multiple domains OR uncertain scope?
-    │   └─ @team-lead (Opus)
-    │
-    ├─ Same pattern repeated across N files (N ≥ 4)?
-    │   └─ ralph-loop
-    │
-    └─ Architecture decision / major refactor?
-        └─ @architecture-expert (Opus) for design
-           then @team-lead for execution
-    ```
-
-    ### Hard rules
-    - Always run @codebase-navigator BEFORE implementation if scope is unclear.
-    - After implementation: each agent runs its own verification (typecheck + lint).
-    - Never implement directly when @team-lead is the right call.
-    - APEX (/apex) only when team-lead itself needs orchestration (rare, costly).
+    - Before ANY task: silently assess complexity and delegate to the right agent. Just act.
+    - Multi-domain or > 5 files → @team-lead. Repeated pattern (N ≥ 4 files) → ralph-loop.
+    - Scope unclear → @codebase-navigator first, then specialist.
+    - Never implement directly when delegation is the right call.
 
     ## Style (FR)
     - Réponses courtes et actionnables.

@@ -88,6 +88,7 @@
         "WebFetch(domain:code.claude.com)"
       ];
       deny = [
+        "Agent(Explore)"
         "Websearch"
         "WebSearch"
         "Bash(rm -rf /*)"

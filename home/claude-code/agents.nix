@@ -9,7 +9,7 @@
     ---
     name: frontend-expert
     model: sonnet
-    description: "Implements UI components, styles, and client-side logic. Use when editing .tsx/.jsx/.vue/.css files, or tasks mention component, layout, responsive, a11y, styling, or design tokens."
+    description: "Implements UI components, styles, and client-side logic. Use proactively when editing .tsx/.jsx/.vue/.css files, or tasks mention component, layout, responsive, a11y, styling, or design tokens."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
     memory: project
@@ -49,7 +49,7 @@
     ---
     name: backend-expert
     model: sonnet
-    description: "Implements API endpoints, server logic, and data access. Use when editing .server.ts/.py/.sql files, or tasks mention endpoint, api, auth, middleware, query, migration, loader, or action."
+    description: "Implements API endpoints, server logic, and data access. Use proactively when editing .server.ts/.py/.sql files, or tasks mention endpoint, api, auth, middleware, query, migration, loader, or action."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
     memory: project
@@ -93,7 +93,7 @@
     ---
     name: architecture-expert
     model: opus
-    description: "Produces system design docs and implementation plans (no code). Use when tasks say plan, design, architect, refactor strategy, or feature scope, or when complexity is M/L."
+    description: "Produces system design docs and implementation plans (no code). Use proactively when tasks say plan, design, architect, refactor strategy, or feature scope, or when complexity is M/L."
     tools: Read, Write, Grep, Glob, WebFetch
     permissionMode: default
     memory: project
@@ -169,7 +169,7 @@
     ---
     name: performance-expert
     model: haiku
-    description: "Profiles and fixes performance issues with measurement. Use when tasks mention slow, latency, bottleneck, memory leak, timeout, bundle size, or Core Web Vitals."
+    description: "Profiles and fixes performance issues with measurement. Use proactively when tasks mention slow, latency, bottleneck, memory leak, timeout, bundle size, or Core Web Vitals."
     tools: Read, Edit, Grep, Bash, WebFetch
     permissionMode: default
     memory: project
@@ -203,7 +203,7 @@
     ---
     name: codebase-navigator
     model: haiku
-    description: "Explores and maps codebases without modifying files. Use when tasks say where is, find, locate, how does X work, trace, entrypoint, or when understanding structure before delegating."
+    description: "Explores and maps codebases without modifying files. Use proactively when tasks say where is, find, locate, how does X work, trace, entrypoint, audit, or when understanding structure before delegating."
     tools: Grep, Glob, Read, WebFetch
     permissionMode: default
     memory: project
@@ -235,7 +235,7 @@
     ---
     name: code-reviewer
     model: opus
-    description: "Two-pass code review (spec compliance + quality). Use when tasks say review, audit, verify, pre-merge, or before committing. Blocks on critical security issues."
+    description: "Two-pass code review (spec compliance + quality). Use proactively when tasks say review, audit, verify, pre-merge, or before committing. Blocks on critical security issues."
     tools: Read, Grep, Glob, Bash, WebFetch, Write, Edit
     permissionMode: acceptEdits
     memory: project
@@ -312,7 +312,7 @@
     ---
     name: quick-fix
     model: haiku
-    description: "Applies small targeted changes under 20 lines. Use when tasks say fix typo, rename, small change, tweak, cleanup, or when the fix is obvious and contained to 1-2 files."
+    description: "Applies small targeted changes under 20 lines. Use proactively when tasks say fix typo, rename, small change, tweak, cleanup, or when the fix is obvious and contained to 1-2 files."
     tools: Read, Edit, Grep, Bash
     permissionMode: acceptEdits
     memory: project
@@ -345,7 +345,7 @@
     ---
     name: nix-expert
     model: sonnet
-    description: "Edits nix-darwin, flakes, and home-manager config. Use when editing *.nix files or tasks mention nix, darwin-rebuild, flake, nixpkgs, home-manager, or module config."
+    description: "Edits nix-darwin, flakes, and home-manager config. Use proactively when editing *.nix files or tasks mention nix, darwin-rebuild, flake, nixpkgs, home-manager, or module config."
     tools: Read, Edit, Bash, WebFetch
     permissionMode: acceptEdits
     memory: project
@@ -413,7 +413,7 @@
     ---
     name: git-ship
     model: haiku
-    description: "Stages, commits, and pushes git changes. Use when tasks say commit, push, ship, stage, or after implementation is verified and ready for version control."
+    description: "Stages, commits, and pushes git changes. Use proactively when tasks say commit, push, ship, stage, or after implementation is verified and ready for version control."
     tools: Bash, Read
     permissionMode: default
     memory: project
@@ -463,7 +463,7 @@
     ---
     name: team-lead
     model: opus
-    description: "Orchestrates multi-agent workflows from PLAN.md task XMLs. Use when complexity is L/XL, multiple agents needed, wave-based execution required, or CONTEXT/PLAN.md exists."
+    description: "Orchestrates multi-agent workflows from PLAN.md task XMLs. Use proactively when complexity is L/XL, multiple agents needed, wave-based execution required, or CONTEXT/PLAN.md exists."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, Task
     permissionMode: default
     memory: project

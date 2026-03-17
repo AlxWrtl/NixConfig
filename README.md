@@ -34,7 +34,7 @@ flake.nix
     ├── zsh.nix                  # Shell configuration
     ├── starship.nix             # Prompt
     ├── direnv.nix               # Directory environments
-    └── claude-code/             # Claude Code CLI (agents, hooks, skills)
+    └── claude-code/             # Claude Code CLI (agents, hooks, skills, MCP servers)
 ```
 
 ## Commands
@@ -69,6 +69,7 @@ nix flake check
 | GUI apps | Homebrew (`modules/brew.nix`) | Arc, VS Code, Docker Desktop |
 | Fonts | Nix (`modules/ui.nix`) | JetBrains Mono, Fira Code |
 | User config | home-manager (`home/`) | zsh, git, starship, direnv |
+| MCP servers | Nix (`home/claude-code/settings.nix`) | gsap-master |
 
 ## Shell Aliases
 

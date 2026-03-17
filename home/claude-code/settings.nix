@@ -15,6 +15,13 @@
       CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
     };
 
+    mcpServers = {
+      gsap-master = {
+        command = "npx";
+        args = [ "bruzethegreat-gsap-master-mcp-server@latest" ];
+      };
+    };
+
     model = "opus";
 
     attribution = {

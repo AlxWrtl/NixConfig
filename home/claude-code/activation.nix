@@ -92,6 +92,7 @@
     set -euo pipefail
     MCP_BASE="$HOME/.claude/mcp-servers-base.json"
     TARGET="$HOME/.claude/.claude.json"
+    SECRET_21ST="$HOME/.config/secrets/21st-dev-api-key"
 
     if ! command -v jq >/dev/null 2>&1; then
       exit 0
@@ -99,7 +100,15 @@
 
     if [ -f "$TARGET" ] && [ -f "$MCP_BASE" ]; then
       TMP=$(mktemp)
-      jq --argjson mcp "$(cat "$MCP_BASE")" '.mcpServers = $mcp' "$TARGET" > "$TMP" \
+      MCP_DATA=$(cat "$MCP_BASE")
+
+      # Inject secrets at runtime (replace placeholders with actual keys)
+      if [ -f "$SECRET_21ST" ]; then
+        API_KEY=$(cat "$SECRET_21ST")
+        MCP_DATA=$(echo "$MCP_DATA" | sed "s/__SECRET_21ST_DEV__/$API_KEY/g")
+      fi
+
+      jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP" \
         && mv "$TMP" "$TARGET"
       chmod 600 "$TARGET"
     fi

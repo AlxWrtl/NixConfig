@@ -13,6 +13,7 @@
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
     memory: project
+    maxTurns: 40
     ---
 
     # Frontend Expert
@@ -52,6 +53,7 @@
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
     memory: project
+    maxTurns: 40
     ---
 
     # Backend Expert
@@ -95,6 +97,7 @@
     tools: Read, Write, Grep, Glob, WebFetch
     permissionMode: default
     memory: project
+    maxTurns: 50
     ---
 
     # Architecture Expert
@@ -170,6 +173,7 @@
     tools: Read, Edit, Grep, Bash, WebFetch
     permissionMode: default
     memory: project
+    maxTurns: 25
     ---
 
     # Performance Expert
@@ -203,6 +207,8 @@
     tools: Grep, Glob, Read, WebFetch
     permissionMode: default
     memory: project
+    maxTurns: 25
+    disallowedTools: Write, Edit, Agent
     ---
 
     # Codebase Navigator
@@ -233,6 +239,7 @@
     tools: Read, Grep, Glob, Bash, WebFetch, Write, Edit
     permissionMode: acceptEdits
     memory: project
+    maxTurns: 50
     ---
 
     # Code Reviewer
@@ -309,6 +316,7 @@
     tools: Read, Edit, Grep, Bash
     permissionMode: acceptEdits
     memory: project
+    maxTurns: 25
     ---
 
     # Quick Fix
@@ -343,6 +351,7 @@
     memory: project
     skills:
       - nix-darwin
+    maxTurns: 40
     ---
 
     # Nix Expert
@@ -408,6 +417,8 @@
     tools: Bash, Read
     permissionMode: default
     memory: project
+    maxTurns: 25
+    disallowedTools: Write, Edit, Agent
     ---
 
     # Git Ship
@@ -456,6 +467,7 @@
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, Task
     permissionMode: default
     memory: project
+    maxTurns: 50
     ---
 
     # Team Lead

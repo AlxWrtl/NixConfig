@@ -1,69 +1,61 @@
 # Hook scripts for Claude Code
+# All command hooks: read JSON from stdin, exit 0 (allow) or exit 2 + stderr (block)
+# In Nix '' strings: escape single quotes as ''' (two apostrophes + the quote)
 {
   hookProtectMain = ''
     #!/usr/bin/env node
-    setTimeout(() => process.exit(0), 5000);
-
-    const { exec } = require('child_process');
-    const util = require('util');
-    const execPromise = util.promisify(exec);
-
-    module.exports = async () => {
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const { execSync } = require("child_process");
       try {
-        const { stdout } = await execPromise('git branch --show-current');
-        const branch = stdout.trim();
-        if (branch === 'main' || branch === 'master') {
-          return { block: true, message: "Cannot edit on main/master. Create feature branch first." };
+        const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
+        if (branch === "main" || branch === "master") {
+          process.stderr.write("Cannot edit on main/master. Create feature branch first.");
+          process.exit(2);
         }
-      } catch (e) {}
-      return {};
-    };
+      } catch (e) { process.exit(0); }
+      process.exit(0);
+    });
   '';
 
   hookFormatTypescript = ''
     #!/usr/bin/env node
-    setTimeout(() => process.exit(0), 10000);
-
-    const { execSync } = require('child_process');
-    const path = require('path');
-    const exts = ['.ts', '.tsx', '.js', '.jsx', '.css', '.json'];
-
-    module.exports = async (context) => {
-      const { file } = context;
-      if (file && exts.some(ext => file.endsWith(ext))) {
-        try {
-          execSync('which prettier', { stdio: 'pipe' });
-          execSync('prettier --write ' + file, { stdio: 'inherit' });
-          console.log('formatted ' + path.basename(file));
-        } catch (e) {}
-      }
-      return {};
-    };
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const { execSync } = require("child_process");
+      const exts = [".ts", ".tsx", ".js", ".jsx", ".css", ".json"];
+      try {
+        const data = JSON.parse(input);
+        const file = (data.tool_input && data.tool_input.file_path) || "";
+        if (file && exts.some(ext => file.endsWith(ext))) {
+          execSync("which prettier", { stdio: "pipe" });
+          execSync("prettier --write " + JSON.stringify(file), { stdio: "pipe" });
+        }
+      } catch (e) { process.exit(0); }
+      process.exit(0);
+    });
   '';
 
   hookBlockMainBash = ''
     #!/usr/bin/env node
-    setTimeout(() => process.exit(0), 5000);
-
-    const { exec } = require('child_process');
-    const util = require('util');
-    const execPromise = util.promisify(exec);
-
-    module.exports = async (context) => {
-      const { tool_input } = context;
-      const cmd = (tool_input && tool_input.command) || "";
-      const isGitWrite = /git\s+(commit|push|merge|rebase)/.test(cmd);
-      if (!isGitWrite) return {};
-
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const { execSync } = require("child_process");
       try {
-        const { stdout } = await execPromise('git branch --show-current');
-        const branch = stdout.trim();
-        if (branch === 'main' || branch === 'master') {
-          return { block: true, message: "Cannot commit/push on main/master. Create a feature branch first." };
+        const data = JSON.parse(input);
+        const cmd = (data.tool_input && data.tool_input.command) || "";
+        if (!/git\s+(commit|push|merge|rebase)/.test(cmd)) process.exit(0);
+        const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
+        if (branch === "main" || branch === "master") {
+          process.stderr.write("Cannot commit/push on main/master. Create a feature branch first.");
+          process.exit(2);
         }
-      } catch (e) {}
-      return {};
-    };
+      } catch (e) { process.exit(0); }
+      process.exit(0);
+    });
   '';
 
   hookPreCompactBackup = ''
@@ -73,10 +65,8 @@
     mkdir -p "$BACKUP_DIR"
     TIMESTAMP=$(date +%Y%m%d-%H%M%S)
     TRANSCRIPT="$BACKUP_DIR/session-$TIMESTAMP.jsonl"
-    # Copy current transcript if available
     if [ -n "''${CLAUDE_TRANSCRIPT_PATH:-}" ] && [ -f "$CLAUDE_TRANSCRIPT_PATH" ]; then
       cp "$CLAUDE_TRANSCRIPT_PATH" "$TRANSCRIPT"
-      echo "Backup saved: $TRANSCRIPT"
     fi
   '';
 
@@ -91,32 +81,39 @@
 
   hookSubagentStop = ''
     #!/usr/bin/env node
-    setTimeout(() => process.exit(0), 5000);
-
-    const fs = require('fs');
-    const path = require('path');
-
-    module.exports = async (context) => {
-      const logDir = path.join(process.env.HOME, '.claude/output');
-      const logFile = path.join(logDir, 'agent-log.jsonl');
-
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const fs = require("fs");
+      const path = require("path");
       try {
+        const data = JSON.parse(input);
+        const logDir = path.join(process.env.HOME, ".claude/output");
         fs.mkdirSync(logDir, { recursive: true });
         const entry = {
           ts: new Date().toISOString(),
-          agent: context.agent_name || 'unknown',
-          status: context.status || 'completed',
-          duration_ms: context.duration_ms || 0,
-          task_summary: (context.task_description || "").slice(0, 200)
+          agent: data.agent_type || data.agent_name || "unknown",
+          duration_ms: data.duration_ms || 0,
+          summary: (data.task_description || "").slice(0, 200)
         };
-        fs.appendFileSync(logFile, JSON.stringify(entry) + '\n');
-      } catch (e) {}
-      return {};
-    };
+        fs.appendFileSync(path.join(logDir, "agent-log.jsonl"), JSON.stringify(entry) + "\n");
+      } catch (e) { process.exit(0); }
+      process.exit(0);
+    });
   '';
 
   hookTaskCompleted = ''
     #!/usr/bin/env bash
-    osascript -e 'display notification "Task completed" with title "Claude Code"' 2>/dev/null || true
+    osascript -e '''display notification "Task completed" with title "Claude Code"''' 2>/dev/null || true
+  '';
+
+  hookNotification = ''
+    #!/usr/bin/env bash
+    osascript -e '''display notification "Attention requise" with title "Claude Code" sound name "Tink"''' 2>/dev/null || true
+  '';
+
+  hookCompactContext = ''
+    #!/usr/bin/env bash
+    echo "Post-compact context: Shell=zsh+starship+nix-darwin | PM=pnpm | Rebuild=sudo darwin-rebuild switch --flake .#alex-mbp | Protected branches: main/master | Commits: EN imperative, type prefix | Read CLAUDE.md + skills before coding"
   '';
 }

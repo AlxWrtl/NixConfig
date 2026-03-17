@@ -48,6 +48,8 @@ let
     hookSessionStart
     hookSubagentStop
     hookTaskCompleted
+    hookNotification
+    hookCompactContext
     ;
   inherit (agents)
     agentFrontend
@@ -149,6 +151,14 @@ in
     };
     "${claudeDir}/hooks/task-completed.sh" = {
       text = hookTaskCompleted;
+      executable = true;
+    };
+    "${claudeDir}/hooks/notification.sh" = {
+      text = hookNotification;
+      executable = true;
+    };
+    "${claudeDir}/hooks/compact-context.sh" = {
+      text = hookCompactContext;
       executable = true;
     };
 

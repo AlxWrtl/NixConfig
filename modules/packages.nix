@@ -50,6 +50,7 @@
         pkgs.age
         pkgs.sops
         pkgs.libwebp
+        pkgs.sox
       ];
 
       environment.variables = {

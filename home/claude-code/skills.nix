@@ -4,6 +4,8 @@
     ---
     name: apex
     description: "Systematic implementation using APEX methodology"
+    disable-model-invocation: true
+    context: fork
     ---
 
     # APEX: Systematic Implementation
@@ -111,6 +113,8 @@
     ---
     name: debug
     description: "Systematic debugging workflow"
+    disable-model-invocation: true
+    context: fork
     ---
 
     # Debug: Systematic Problem Solving

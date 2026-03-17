@@ -1,41 +1,21 @@
 # Claude Code settings and statusline script
 {
   settingsJson = builtins.toJSON {
+    "$schema" = "https://json.schemastore.org/claude-code-settings.json";
+    language = "french";
+    effortLevel = "high";
+    showTurnDuration = true;
+
     env = {
       npm_config_prefer_pnpm = "true";
       npm_config_user_agent = "pnpm";
       BASH_DEFAULT_TIMEOUT_MS = "300000";
       BASH_MAX_TIMEOUT_MS = "600000";
       CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS = "1";
-      CLAUDE_CODE_EFFORT_LEVEL = "high";
       CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
     };
 
     model = "opus";
-
-    autoSave = true;
-    skipPermissions = false;
-
-    ui = {
-      theme = "dark";
-      compactMode = false;
-      showTokens = true;
-      showCost = true;
-      animations = true;
-    };
-
-    notifications = {
-      enabled = true;
-      channel = "terminal_bell";
-      showProgress = true;
-    };
-
-    performance = {
-      parallelTools = true;
-      cacheEnabled = true;
-      compactHistory = true;
-      compactFrequency = 30;
-    };
 
     attribution = {
       commit = "";
@@ -49,14 +29,7 @@
       command = "$HOME/.claude/statusline.sh";
     };
 
-    enabledPlugins = { };
-
     alwaysThinkingEnabled = false;
-
-    betaHeaders = {
-      "context-management-2025-06-27" = true;
-      "advanced-tool-use-2025-11-20" = true;
-    };
 
     permissions = {
       defaultMode = "acceptEdits";
@@ -128,41 +101,6 @@
       ];
     };
 
-    continuousLearningV2 = {
-      enabled = true;
-      extraction = {
-        enabled = true;
-        minChangesBeforeExtraction = 3;
-        confidenceThreshold = 0.7;
-      };
-      promotion = {
-        enabled = true;
-        usageThresholdForSkill = 5;
-        autoGenerateSkills = true;
-      };
-      application = {
-        autoSuggest = true;
-        relevanceThreshold = 0.8;
-        maxSuggestions = 3;
-      };
-    };
-
-    apex = {
-      defaultFlags = {
-        auto = false;
-        save = true;
-        examine = false;
-        test = false;
-      };
-      outputDir = ".claude/output/apex";
-    };
-
-    ralphWiggum = {
-      defaultMaxIterations = 20;
-      sandbox = true;
-      autoSave = true;
-    };
-
     hooks = {
       PreToolUse = [
         {
@@ -209,6 +147,17 @@
           ];
         }
       ];
+      Notification = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/notification.sh";
+              timeout = 3;
+            }
+          ];
+        }
+      ];
       SessionStart = [
         {
           hooks = [
@@ -216,6 +165,16 @@
               type = "command";
               command = "bash ~/.claude/hooks/session-start.sh";
               timeout = 5;
+            }
+          ];
+        }
+        {
+          matcher = "compact";
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/compact-context.sh";
+              timeout = 3;
             }
           ];
         }

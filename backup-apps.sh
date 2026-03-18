@@ -20,7 +20,7 @@ echo -e "${BLUE}Exporting app configs to:${NC} $BACKUP_DIR"
 echo -e "${BLUE}(encrypted by git-crypt on push)${NC}"
 echo ""
 
-mkdir -p "$BACKUP_DIR"/{raycast,plex,logitech}
+mkdir -p "$BACKUP_DIR"/{raycast,plex,logitech,ice}
 
 # --- Raycast ---
 echo -e "${YELLOW}[Raycast]${NC} Open Raycast → Settings → Advanced → Export"
@@ -52,6 +52,15 @@ for plist in com.logi.optionsplus com.logi.optionsplus.updater com.logi.cp-dev-m
 done
 if [ $exported -gt 0 ]; then
   echo -e "${GREEN}✓${NC} Exported $exported plists"
+else
+  echo "not installed, skipping"
+fi
+
+# --- Ice (menu bar manager) ---
+echo -ne "${YELLOW}[Ice]${NC} "
+if defaults read com.jordanbaird.Ice &>/dev/null 2>&1; then
+  defaults export com.jordanbaird.Ice "$BACKUP_DIR/ice/com.jordanbaird.Ice.plist"
+  echo -e "${GREEN}✓${NC} Exported (includes menu bar item layout)"
 else
   echo "not installed, skipping"
 fi

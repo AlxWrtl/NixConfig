@@ -299,6 +299,26 @@ in
         ActivityReceivingAllowed = true;
       };
 
+      # Ice (menu bar manager) — item layout in backups/ice/ plist
+      "com.jordanbaird.Ice" = {
+        AutoRehide = true;
+        RehideInterval = 15;
+        RehideStrategy = 0;
+        HideApplicationMenus = true;
+        ShowOnClick = true;
+        ShowOnHover = true;
+        ShowOnHoverDelay = "0.2";
+        ShowOnScroll = true;
+        ShowAllSectionsOnUserDrag = true;
+        ShowIceIcon = true;
+        ShowSectionDividers = false;
+        EnableAlwaysHiddenSection = false;
+        UseIceBar = false;
+        IceBarLocation = 2;
+        TempShowInterval = 15;
+        ItemSpacingOffset = 0;
+      };
+
       # Touch Bar: mini control strip (brightness, volume, mute)
       "com.apple.controlstrip".MiniCustomized = [
         "com.apple.system.brightness"

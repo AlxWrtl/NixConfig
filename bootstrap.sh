@@ -128,6 +128,14 @@ fi
 step "Restore app configs (Plex, Logitech, Raycast)"
 BACKUP_DIR="$(cd "$(dirname "$0")" && pwd)/backups"
 
+# Ice (menu bar layout)
+if [ -f "$BACKUP_DIR/ice/com.jordanbaird.Ice.plist" ]; then
+  defaults import com.jordanbaird.Ice "$BACKUP_DIR/ice/com.jordanbaird.Ice.plist"
+  ok "Ice menu bar layout restored"
+else
+  skip "No Ice backup found"
+fi
+
 # Plex
 if [ -f "$BACKUP_DIR/plex/com.plexapp.plexmediaserver.plist" ]; then
   defaults import com.plexapp.plexmediaserver "$BACKUP_DIR/plex/com.plexapp.plexmediaserver.plist"

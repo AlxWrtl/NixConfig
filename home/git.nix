@@ -13,6 +13,10 @@ in
   programs.git = {
     enable = true;
 
+    ignores = [
+      "**/.claude/settings.local.json"
+    ];
+
     settings = {
       user = {
         name = "Alexandre";

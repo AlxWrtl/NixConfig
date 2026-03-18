@@ -397,6 +397,13 @@ in
       osascript -e "tell application \"System Events\" to tell every desktop to set picture to \"$wallpaper\""
       echo "Wallpaper set: $wallpaper"
     fi
+
+    # Display: 2048x1280 ("More Space" scaling on MacBook Pro M1)
+    if command -v displayplacer &>/dev/null; then
+      displayplacer "id:37D8832A-2D66-02CA-B9F7-8F30A301B230 res:2048x1280 hz:60 color_depth:8 enabled:true scaling:off origin:(0,0) degree:0" 2>/dev/null \
+        && echo "Display set: 2048x1280" \
+        || echo "Display: skipped (different hardware?)"
+    fi
   '';
 
   environment.variables = {

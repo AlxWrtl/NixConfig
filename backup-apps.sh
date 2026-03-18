@@ -20,7 +20,7 @@ echo -e "${BLUE}Exporting app configs to:${NC} $BACKUP_DIR"
 echo -e "${BLUE}(encrypted by git-crypt on push)${NC}"
 echo ""
 
-mkdir -p "$BACKUP_DIR"/{raycast,plex,logitech,ice}
+mkdir -p "$BACKUP_DIR"/{raycast,plex,logitech,ice,finder-sidebar}
 
 # --- Raycast ---
 echo -e "${YELLOW}[Raycast]${NC} Open Raycast → Settings → Advanced → Export"
@@ -54,6 +54,22 @@ if [ $exported -gt 0 ]; then
   echo -e "${GREEN}✓${NC} Exported $exported plists"
 else
   echo "not installed, skipping"
+fi
+
+# --- Finder sidebar ---
+echo -ne "${YELLOW}[Finder sidebar]${NC} "
+sidebar_src="$HOME/Library/Application Support/com.apple.sharedfilelist"
+sidebar_count=0
+for f in FavoriteItems.sfl4 FavoriteVolumes.sfl4 iCloudItems.sfl4; do
+  if [ -f "$sidebar_src/com.apple.LSSharedFileList.$f" ]; then
+    cp "$sidebar_src/com.apple.LSSharedFileList.$f" "$BACKUP_DIR/finder-sidebar/"
+    sidebar_count=$((sidebar_count + 1))
+  fi
+done
+if [ $sidebar_count -gt 0 ]; then
+  echo -e "${GREEN}✓${NC} Exported $sidebar_count sidebar files"
+else
+  echo "no sidebar files found, skipping"
 fi
 
 # --- Ice (menu bar manager) ---

@@ -128,6 +128,22 @@ fi
 step "Restore app configs (Plex, Logitech, Raycast)"
 BACKUP_DIR="$(cd "$(dirname "$0")" && pwd)/backups"
 
+# Finder sidebar (Favorites: Downloads, Applications, Desktop, Documents + Locations)
+sidebar_dest="$HOME/Library/Application Support/com.apple.sharedfilelist"
+sidebar_restored=0
+for f in FavoriteItems.sfl4 FavoriteVolumes.sfl4 iCloudItems.sfl4; do
+  if [ -f "$BACKUP_DIR/finder-sidebar/$f" ]; then
+    mkdir -p "$sidebar_dest"
+    cp "$BACKUP_DIR/finder-sidebar/$f" "$sidebar_dest/com.apple.LSSharedFileList.$f"
+    sidebar_restored=$((sidebar_restored + 1))
+  fi
+done
+if [ $sidebar_restored -gt 0 ]; then
+  ok "Finder sidebar restored ($sidebar_restored files)"
+else
+  skip "No Finder sidebar backup found"
+fi
+
 # Ice (menu bar layout)
 if [ -f "$BACKUP_DIR/ice/com.jordanbaird.Ice.plist" ]; then
   defaults import com.jordanbaird.Ice "$BACKUP_DIR/ice/com.jordanbaird.Ice.plist"

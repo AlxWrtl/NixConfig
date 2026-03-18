@@ -207,6 +207,22 @@ in
         FinderSpawnTab = false;
         ShowRecentTags = false;
 
+        # Desktop: Use Stacks grouped by Kind
+        FXPreferredGroupBy = "Kind";
+        FXArrangeGroupViewBy = "Name";
+        DesktopViewSettings = {
+          GroupBy = "Kind";
+          IconViewSettings = {
+            arrangeBy = "dateAdded";
+            iconSize = 64;
+            textSize = 12;
+            gridSpacing = 54;
+            showIconPreview = true;
+            showItemInfo = false;
+            labelOnBottom = true;
+          };
+        };
+
         # iCloud Drive sync
         FXICloudDriveEnabled = true;
         FXICloudDriveDesktop = true;
@@ -282,6 +298,16 @@ in
         ActivityAdvertisingAllowed = true;
         ActivityReceivingAllowed = true;
       };
+
+      # Touch Bar: mini control strip (brightness, volume, mute)
+      "com.apple.controlstrip".MiniCustomized = [
+        "com.apple.system.brightness"
+        "com.apple.system.volume"
+        "com.apple.system.mute"
+      ];
+
+      # Input source indicator visible in menu bar
+      "com.apple.TextInputMenu".visible = true;
 
       # NSGlobalDomain extras (not in typed options)
       NSGlobalDomain = {

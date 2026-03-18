@@ -128,6 +128,21 @@ fi
 step "Restore app configs (Plex, Logitech, Raycast)"
 BACKUP_DIR="$(cd "$(dirname "$0")" && pwd)/backups"
 
+# WiFi & Bluetooth (reference)
+if [ -f "$BACKUP_DIR/wifi-bluetooth/wifi-networks.txt" ]; then
+  echo -e "  ${YELLOW}WiFi${NC}: passwords restore via iCloud Keychain (sign in to Apple ID)"
+  ok "WiFi: $(wc -l < "$BACKUP_DIR/wifi-bluetooth/wifi-networks.txt" | tr -d ' ') networks in iCloud Keychain"
+else
+  skip "No WiFi backup found"
+fi
+if [ -f "$BACKUP_DIR/wifi-bluetooth/bluetooth-devices.txt" ]; then
+  echo -e "  ${YELLOW}Bluetooth${NC}: devices need manual re-pairing:"
+  grep "Name:" "$BACKUP_DIR/wifi-bluetooth/bluetooth-devices.txt" | grep -v "Controller" | sed 's/.*Name: /    /' | head -10
+  ok "Bluetooth: re-pair devices listed above"
+else
+  skip "No Bluetooth backup found"
+fi
+
 # Finder sidebar (Favorites: Downloads, Applications, Desktop, Documents + Locations)
 sidebar_dest="$HOME/Library/Application Support/com.apple.sharedfilelist"
 sidebar_restored=0

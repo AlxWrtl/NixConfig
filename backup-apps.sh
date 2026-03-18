@@ -56,6 +56,17 @@ else
   echo "not installed, skipping"
 fi
 
+# --- WiFi & Bluetooth ---
+echo -ne "${YELLOW}[WiFi]${NC} "
+mkdir -p "$BACKUP_DIR/wifi-bluetooth"
+networksetup -listpreferredwirelessnetworks en0 > "$BACKUP_DIR/wifi-bluetooth/wifi-networks.txt" 2>/dev/null
+echo -e "${GREEN}✓${NC} $(wc -l < "$BACKUP_DIR/wifi-bluetooth/wifi-networks.txt" | tr -d ' ') networks saved"
+
+echo -ne "${YELLOW}[Bluetooth]${NC} "
+system_profiler SPBluetoothDataType > "$BACKUP_DIR/wifi-bluetooth/bluetooth-devices.txt" 2>/dev/null
+sudo cp /Library/Preferences/com.apple.Bluetooth.plist "$BACKUP_DIR/wifi-bluetooth/" 2>/dev/null
+echo -e "${GREEN}✓${NC} Devices + pairing plist saved"
+
 # --- Finder sidebar ---
 echo -ne "${YELLOW}[Finder sidebar]${NC} "
 sidebar_src="$HOME/Library/Application Support/com.apple.sharedfilelist"

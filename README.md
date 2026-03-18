@@ -7,13 +7,19 @@
 ## Clean Install
 
 ```bash
-# Clone and run bootstrap (handles everything)
+# 1. Prerequisites (git + clone access)
+xcode-select --install
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install gh
+gh auth login                    # authenticate with GitHub
+
+# 2. Clone and run bootstrap (handles everything else)
 git clone https://github.com/AlxWrtl/NixConfig.git ~/.config/nix-darwin
 cd ~/.config/nix-darwin
 ./bootstrap.sh
 ```
 
-The script automates: Xcode CLT → Nix → Homebrew → 1Password → git-crypt unlock → rebuild → VS Code extensions. It pauses for manual steps (1Password login, App Store login) and skips what's already done.
+The script automates: Nix → 1Password → SSH keys → git-crypt unlock → App Store → rebuild → VS Code extensions → app config restore. It pauses for manual steps and skips what's already done.
 
 <details>
 <summary>Manual step-by-step (if you prefer)</summary>
@@ -22,23 +28,27 @@ The script automates: Xcode CLT → Nix → Homebrew → 1Password → git-crypt
 # 1. Xcode Command Line Tools
 xcode-select --install
 
-# 2. Install Nix
+# 2. Install Homebrew + GitHub CLI
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+brew install gh
+gh auth login
+
+# 3. Install Nix
 curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh
 
-# 3. Install Homebrew
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+# 4. Clone
+git clone https://github.com/AlxWrtl/NixConfig.git ~/.config/nix-darwin
+cd ~/.config/nix-darwin
 
-# 4. Install 1Password and retrieve keys
+# 5. Install 1Password and retrieve keys
 brew install --cask 1password
 # Open 1Password → login → save SSH keys to ~/.ssh/ and git-crypt key to ~/git-crypt-key
 
-# 5. Clone and decrypt
-git clone https://github.com/AlxWrtl/NixConfig.git ~/.config/nix-darwin
-cd ~/.config/nix-darwin
+# 6. Decrypt secrets
 nix-shell -p git-crypt --run "git-crypt unlock ~/git-crypt-key"
 rm ~/git-crypt-key
 
-# 6. Login to App Store (for masApps)
+# 7. Login to App Store (for masApps)
 
 # 7. Build & apply
 sudo darwin-rebuild switch --flake .#alex-mbp

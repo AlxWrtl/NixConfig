@@ -7,6 +7,7 @@
 }:
 
 let
+  # Single source of truth for power settings (overrides power.sleep)
   displaySleepMinutes = 25;
   systemSleepMinutes = 45;
   tcpSlowStartFlightSize = 16;

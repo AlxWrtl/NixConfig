@@ -24,6 +24,7 @@
         pkgs.btop
         pkgs.fastfetch
         pkgs.git
+        pkgs.git-crypt
         pkgs.git-lfs
         pkgs.gh
         pkgs.nixd

@@ -25,6 +25,7 @@
 
     brews = [
       "cloudflared"
+      "displayplacer"
       "libomp"
       "mas"
       "trash"

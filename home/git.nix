@@ -5,6 +5,10 @@
   ...
 }:
 
+let
+  secrets = import ../secrets.nix;
+in
+
 {
   programs.git = {
     enable = true;
@@ -12,8 +16,8 @@
     settings = {
       user = {
         name = "Alexandre";
-        email = "indexes-benzine0p@icloud.com";
-        signingKey = "~/.ssh/id_ed25519.pub";
+        email = secrets.git.email;
+        signingKey = secrets.git.signingKey;
       };
 
       init.defaultBranch = "main";

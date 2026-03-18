@@ -9,8 +9,11 @@
   imports = [
     ./zsh.nix
     ./git.nix
+    ./ssh.nix
     ./starship.nix
     ./direnv.nix
+    ./ghostty.nix
+    ./vscode.nix
     ./claude-code.nix
   ];
 

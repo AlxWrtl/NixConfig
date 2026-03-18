@@ -145,11 +145,22 @@ in
       StageManagerHideWidgets = true;
     };
 
+    # Menu bar clock
+    menuExtraClock = {
+      IsAnalog = false;
+      Show24Hour = true;
+      ShowDate = 1;
+      ShowDayOfWeek = false;
+      ShowSeconds = false;
+    };
+
     # Security
     screensaver = {
       askForPassword = true;
       askForPasswordDelay = 0;
     };
+
+    screencapture.type = "png";
 
     loginwindow.SHOWFULLNAME = false;
     LaunchServices.LSQuarantine = false;
@@ -194,6 +205,25 @@ in
         FXEnableExtensionChangeWarning = false;
         NSWindowTabbingEnabled = true;
         FinderSpawnTab = false;
+        ShowRecentTags = false;
+
+        # iCloud Drive sync
+        FXICloudDriveEnabled = true;
+        FXICloudDriveDesktop = true;
+        FXICloudDriveDocuments = true;
+
+        # Column view defaults
+        FK_StandardViewOptions2.ColumnViewOptions = {
+          ColumnWidth = 245;
+          FontSize = 13;
+          ShowPreview = true;
+          ShowIconThumbnails = true;
+          ColumnShowFolderArrow = true;
+          ColumnShowIcons = true;
+          PreviewDisclosureState = true;
+          ArrangeBy = "dnam";
+          SharedArrangeBy = "kipl";
+        };
       };
 
       # Spotlight: disable only unwanted categories (others enabled by default)
@@ -252,14 +282,96 @@ in
         ActivityAdvertisingAllowed = true;
         ActivityReceivingAllowed = true;
       };
+
+      # NSGlobalDomain extras (not in typed options)
+      NSGlobalDomain = {
+        # Text replacements
+        NSUserDictionaryReplacementItems = [
+          {
+            on = 1;
+            replace = "jrv";
+            "with" = "J'arrive !";
+          }
+          {
+            on = 1;
+            replace = "omw";
+            "with" = "On my way!";
+          }
+          {
+            on = 1;
+            replace = "lol";
+            "with" = "lol";
+          }
+        ];
+
+        AppleEnableSwipeNavigateWithScrolls = true;
+        "com.apple.trackpad.forceClick" = true;
+        AppleWindowTabbingMode = "always";
+        AppleMiniaturizeOnDoubleClick = false;
+        NSWindowShouldDragOnGesture = true;
+        NSDocumentSaveNewDocumentsToCloud = false;
+        NSNavPanelExpandedStateForSaveMode = true;
+        NSNavPanelExpandedStateForSaveMode2 = true;
+        PMPrintingExpandedStateForPrint = true;
+        PMPrintingExpandedStateForPrint2 = true;
+        NSTableViewDefaultSizeMode = 1;
+      };
+
+      # Window Manager extras
+      "com.apple.WindowManager" = {
+        EnableTiledWindowMargins = false;
+        AppWindowGroupingBehavior = true;
+      };
+
+      # Siri disabled (using Raycast)
+      "com.apple.assistant.support"."Assistant Enabled" = false;
+
+      # Screensaver: Fliqlo, 2 min idle, no clock overlay
+      "com.apple.screensaver" = {
+        idleTime = 120;
+        showClock = false;
+      };
+
+      # Screen capture
+      "com.apple.screencapture".style = "display";
+
+      # Trackpad gestures (full declaration)
+      "com.apple.AppleMultitouchTrackpad" = {
+        Clicking = true;
+        TrackpadRightClick = true;
+        TrackpadThreeFingerDrag = true;
+        TrackpadThreeFingerTapGesture = 0;
+        TrackpadFourFingerHorizSwipeGesture = 2;
+        TrackpadFourFingerVertSwipeGesture = 2;
+        TrackpadFourFingerPinchGesture = 2;
+        TrackpadFiveFingerPinchGesture = 2;
+        TrackpadTwoFingerDoubleTapGesture = 1;
+        TrackpadTwoFingerFromRightEdgeSwipeGesture = 3;
+        TrackpadPinch = true;
+        TrackpadRotate = true;
+        TrackpadMomentumScroll = true;
+        USBMouseStopsTrackpad = false;
+        DragLock = false;
+        FirstClickThreshold = 1;
+        SecondClickThreshold = 1;
+        ActuateDetents = true;
+        ForceSuppressed = false;
+      };
+
     };
   };
 
-  power.sleep = {
-    display = 15;
-    computer = 30;
-    harddisk = 10;
-  };
+  # Power managed by launchd daemon in services.nix (pmset)
+  # Do not use power.sleep here — it would be overridden
+
+  # Wallpaper (applied on rebuild)
+  system.activationScripts.postActivation.text = lib.mkAfter ''
+    wallpaper="${../wallpapers/wallpaper.jpg}"
+    if [ -f "$wallpaper" ]; then
+      osascript -e "tell application \"System Events\" to tell every desktop to set picture to \"$wallpaper\""
+      echo "Wallpaper set: $wallpaper"
+    fi
+  '';
 
   environment.variables = {
     FONTCONFIG_FILE = "${pkgs.fontconfig.out}/etc/fonts/fonts.conf";

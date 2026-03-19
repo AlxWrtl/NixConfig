@@ -148,6 +148,26 @@ else
   checkpoint "ssh_perms"
 fi
 
+# --- GitHub CLI auth ---
+step "GitHub CLI authentication"
+if past_checkpoint "gh_auth"; then
+  skip "gh auth (checkpointed)"
+else
+  if ! command -v gh &>/dev/null; then
+    brew install gh
+    ok "gh CLI installed"
+  fi
+  if gh auth status &>/dev/null; then
+    skip "gh already authenticated"
+  else
+    echo -e "  ${YELLOW}→${NC} Run: gh auth login"
+    echo -e "  ${YELLOW}→${NC} Choose: GitHub.com → SSH → Yes (use SSH key) → Login with a web browser"
+    gh auth login
+    gh auth status &>/dev/null && ok "gh authenticated" || fail "gh auth failed"
+  fi
+  checkpoint "gh_auth"
+fi
+
 # --- git-crypt unlock ---
 step "Decrypt secrets"
 if past_checkpoint "decrypt_secrets"; then

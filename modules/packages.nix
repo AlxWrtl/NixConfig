@@ -33,10 +33,9 @@
         pkgs.nix-tree
         pkgs.nix-index
         pkgs.vulnix
-        pkgs.nodejs_20
+        pkgs.nodejs_22
         pkgs.pnpm
         pkgs.bun
-        pkgs.nodePackages."@angular/cli"
         pkgs.nodePackages.typescript
         pkgs.nodePackages.eslint
         pkgs.nodePackages.prettier

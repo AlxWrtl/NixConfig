@@ -210,7 +210,6 @@ in
         ShowRecentTags = false;
 
         # Desktop: Use Stacks grouped by Kind
-        _FXSortFoldersFirst = false;
         FXPreferredGroupBy = "Kind";
         FXArrangeGroupViewBy = "Name";
         DesktopViewSettings = {

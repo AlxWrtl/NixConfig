@@ -39,9 +39,13 @@ if command -v nix &>/dev/null; then
   skip "Nix $(nix --version 2>/dev/null | head -1)"
 else
   curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install
-  # Source nix in current shell
+  # Source nix in current shell (Determinate Nix path)
   if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
     . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+  elif [ -e /nix/var/nix/profiles/default/etc/profile.d/nix.sh ]; then
+    . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
+  elif [ -e /etc/profile.d/nix.sh ]; then
+    . /etc/profile.d/nix.sh
   fi
   command -v nix &>/dev/null || fail "Nix install failed. Open a new terminal and re-run."
   ok "Nix installed"
@@ -84,7 +88,7 @@ fi
 # --- git-crypt unlock ---
 step "Decrypt secrets"
 if [ -f ~/git-crypt-key ]; then
-  nix-shell -p git-crypt --run "git-crypt unlock $HOME/git-crypt-key"
+  nix shell nixpkgs#git-crypt -c git-crypt unlock "$HOME/git-crypt-key"
   rm ~/git-crypt-key
   ok "Secrets decrypted, key removed from disk"
 elif head -c 10 secrets.nix 2>/dev/null | grep -q "GITCRYPT"; then

@@ -70,17 +70,18 @@ else
   brew install --cask 1password
   ok "1Password installed"
 fi
+mkdir -p ~/.ssh && chmod 700 ~/.ssh
 wait_for_user "Open 1Password, login, and retrieve:
-    - SSH keys → save to ~/.ssh/id_ed25519 and ~/.ssh/id_ed25519.pub
+    - SSH key (auth + signing) → save to ~/.ssh/id_ed25519 and ~/.ssh/id_ed25519.pub
     - git-crypt key (\"git-crypt nix-darwin key\") → save to ~/git-crypt-key"
 
-# --- SSH keys permissions ---
-step "SSH keys permissions"
+# --- SSH key permissions ---
+step "SSH key permissions"
 if [ -f ~/.ssh/id_ed25519 ]; then
   chmod 700 ~/.ssh
   chmod 600 ~/.ssh/id_ed25519
   chmod 644 ~/.ssh/id_ed25519.pub 2>/dev/null
-  ok "SSH keys permissions set"
+  ok "SSH key permissions set (auth + signing)"
 else
   echo -e "  ${YELLOW}⚠${NC}  No SSH key at ~/.ssh/id_ed25519 — git push will need HTTPS"
 fi
@@ -104,15 +105,24 @@ wait_for_user "Open App Store and sign in with your Apple ID (needed for: DaisyD
 # --- Rebuild ---
 step "darwin-rebuild switch"
 echo "  Building system configuration..."
-sudo nix run nix-darwin/master -- switch --flake .#alex-mbp
+if command -v darwin-rebuild &>/dev/null; then
+  darwin-rebuild switch --flake .#alex-mbp
+else
+  sudo nix run nix-darwin/master -- switch --flake .#alex-mbp
+fi
 ok "System built and activated"
 
 # --- Switch remote to SSH ---
 step "Switch git remote to SSH"
 current_remote=$(git remote get-url origin 2>/dev/null || echo "")
 if [[ "$current_remote" == *"https://"* ]] && [ -f ~/.ssh/id_ed25519 ]; then
-  git remote set-url origin git@github.com:AlxWrtl/NixConfig.git
-  ok "Remote switched to SSH"
+  if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    git remote set-url origin git@github.com:AlxWrtl/NixConfig.git
+    ok "Remote switched to SSH"
+  else
+    echo -e "  ${YELLOW}⚠${NC}  SSH key not recognized by GitHub — add it at github.com/settings/keys"
+    skip "Keeping HTTPS until SSH is configured on GitHub"
+  fi
 elif [[ "$current_remote" == *"git@"* ]]; then
   skip "Already using SSH"
 else
@@ -210,6 +220,6 @@ echo -e "${GREEN}║   Bootstrap complete!                ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════╝${NC}"
 echo ""
 echo -e "Remaining manual steps:"
-echo -e "  • Set default browser: Arc → Settings → Set as Default"
-echo -e "  • Login: Arc, iCloud, Discord, WhatsApp, Spark, Teams, Figma"
+echo -e "  • Arc: login to restore Spaces, Folders & Tabs via Arc Sync → Set as Default"
+echo -e "  • Login: iCloud, Discord, WhatsApp, Spark, Teams, Figma"
 echo -e "  • Restart your terminal: ${BLUE}exec \$SHELL${NC}"

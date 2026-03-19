@@ -92,15 +92,8 @@ in
 
       # Persistent apps
       persistent-apps = [
-        {
-          spacer.small = true;
-        }
-        "/Applications/Arc.app"
-        "/Applications/Ghostty.app"
-        "/Applications/Visual Studio Code.app"
-        {
-          spacer.small = true;
-        }
+        { spacer.small = true; }
+        { spacer.small = true; }
       ];
     };
 

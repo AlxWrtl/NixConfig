@@ -145,6 +145,13 @@ in
       StageManagerHideWidgets = true;
     };
 
+    # Control Center
+    controlcenter = {
+      BatteryShowPercentage = true;
+      Bluetooth = false;
+      Sound = false;
+    };
+
     # Menu bar clock
     menuExtraClock = {
       IsAnalog = false;

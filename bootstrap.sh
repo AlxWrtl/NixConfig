@@ -100,7 +100,7 @@ wait_for_user "Open App Store and sign in with your Apple ID (needed for: DaisyD
 # --- Rebuild ---
 step "darwin-rebuild switch"
 echo "  Building system configuration..."
-sudo darwin-rebuild switch --flake .#alex-mbp
+sudo nix run nix-darwin/master -- switch --flake .#alex-mbp
 ok "System built and activated"
 
 # --- Switch remote to SSH ---

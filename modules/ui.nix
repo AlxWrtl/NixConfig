@@ -202,11 +202,13 @@ in
         ConfigDataInstall = true;
       };
 
-      # Disable Spotlight shortcuts (using Raycast)
+      # Disable Spotlight shortcuts and hide menu bar icon (using Raycast)
       "com.apple.symbolichotkeys".AppleSymbolicHotKeys = {
         "64".enabled = false;
         "65".enabled = false;
       };
+
+      "com.apple.Spotlight".MenuItemHidden = true;
 
       "com.apple.finder" = {
         FXEnableExtensionChangeWarning = false;
@@ -334,7 +336,7 @@ in
       ];
 
       # Input source indicator visible in menu bar
-      "com.apple.TextInputMenu".visible = true;
+      "com.apple.TextInputMenu".visible = false;
 
       # NSGlobalDomain extras (not in typed options)
       NSGlobalDomain = {

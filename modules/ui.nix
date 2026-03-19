@@ -90,9 +90,12 @@ in
       expose-animation-duration = exposeAnimationDuration;
       expose-group-apps = false;
 
-      # Persistent apps
+      # Persistent apps (installed by Homebrew before rebuild)
       persistent-apps = [
         { spacer.small = true; }
+        "/Applications/Arc.app"
+        "/Applications/Ghostty.app"
+        "/Applications/Visual Studio Code.app"
         { spacer.small = true; }
       ];
     };
@@ -420,6 +423,11 @@ in
       osascript -e "tell application \"System Events\" to tell every desktop to set picture to \"$wallpaper\""
       echo "Wallpaper set: $wallpaper"
     fi
+
+    # Desktop Stacks grouped by Kind (defaults alone don't always activate)
+    /usr/bin/defaults write com.apple.finder FXPreferredGroupBy -string Kind
+    killall Finder 2>/dev/null || true
+    echo "Desktop: Stacks by Kind enabled"
 
     # Display: 2048x1280 ("More Space" scaling on MacBook Pro M1)
     if command -v displayplacer &>/dev/null; then

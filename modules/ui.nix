@@ -92,15 +92,8 @@ in
 
       # Persistent apps
       persistent-apps = [
-        {
-          spacer.small = true;
-        }
-        "/Applications/Arc.app"
-        "/Applications/Ghostty.app"
-        "/Applications/Visual Studio Code.app"
-        {
-          spacer.small = true;
-        }
+        { spacer.small = true; }
+        { spacer.small = true; }
       ];
     };
 
@@ -217,10 +210,12 @@ in
         ShowRecentTags = false;
 
         # Desktop: Use Stacks grouped by Kind
+        _FXSortFoldersFirst = false;
         FXPreferredGroupBy = "Kind";
         FXArrangeGroupViewBy = "Name";
         DesktopViewSettings = {
           GroupBy = "Kind";
+          ArrangeBy = "kind";
           IconViewSettings = {
             arrangeBy = "dateAdded";
             iconSize = 64;

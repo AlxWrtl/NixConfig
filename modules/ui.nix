@@ -141,7 +141,7 @@ in
       GloballyEnabled = false;
       EnableStandardClickToShowDesktop = false;
       StandardHideDesktopIcons = false;
-      StandardHideWidgets = false;
+      StandardHideWidgets = true;
       StageManagerHideWidgets = true;
     };
 

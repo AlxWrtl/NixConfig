@@ -9,7 +9,7 @@
 {
 
   nix = {
-    enable = true;
+    enable = false;
     package = pkgs.nixVersions.latest;
 
     settings = {
@@ -65,9 +65,9 @@
     };
 
     # Automatic maintenance
-    optimise.automatic = true;
+    optimise.automatic = false;
     gc = {
-      automatic = true;
+      automatic = false;
       interval = {
         Weekday = 7;
         Hour = 10;

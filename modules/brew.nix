@@ -11,7 +11,7 @@
   homebrew = {
     enable = true;
 
-    caskArgs.no_quarantine = true;
+    caskArgs.no_quarantine = false;
 
     onActivation = {
       cleanup = "zap";

@@ -208,15 +208,16 @@ if past_checkpoint "darwin_rebuild"; then
   skip "darwin-rebuild (checkpointed)"
 else
   echo "  Building system configuration..."
-  if command -v darwin-rebuild &>/dev/null; then
-    darwin-rebuild switch --flake .#alex-mbp
-  else
-    sudo nix run nix-darwin/master -- switch --flake .#alex-mbp
-  fi
+  # Always use nix run — darwin-rebuild doesn't exist on first run
+  sudo nix run nix-darwin/master -- switch --flake .#alex-mbp
   ok "System built and activated"
   checkpoint "darwin_rebuild"
-  echo -e "  ${YELLOW}→${NC} Re-launching in a fresh shell to pick up nix-darwin changes..."
-  exec "$SHELL" -l -c "cd '$(pwd)' && exec bash '$0'"
+  # Re-exec in a clean login shell so post-rebuild steps get the new zsh env
+  echo -e "  ${YELLOW}→${NC} Re-launching in a clean shell to pick up nix-darwin changes..."
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  exec env -i HOME="$HOME" USER="$USER" TERM="$TERM" \
+    PATH="/usr/bin:/bin:/usr/sbin:/sbin:/nix/var/nix/profiles/default/bin:/opt/homebrew/bin:/run/current-system/sw/bin" \
+    bash "$SCRIPT_DIR/$(basename "$0")"
 fi
 
 # --- Switch remote to SSH ---

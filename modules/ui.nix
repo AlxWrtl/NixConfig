@@ -357,6 +357,7 @@ in
         ];
 
         AppleEnableSwipeNavigateWithScrolls = true;
+        "com.apple.mouse.tapBehavior" = 1;
         "com.apple.trackpad.forceClick" = true;
         AppleWindowTabbingMode = "always";
         AppleMiniaturizeOnDoubleClick = false;
@@ -423,6 +424,9 @@ in
       osascript -e "tell application \"System Events\" to tell every desktop to set picture to \"$wallpaper\""
       echo "Wallpaper set: $wallpaper"
     fi
+
+    # Tap-to-click: -currentHost write required (nix-darwin can't do this declaratively)
+    /usr/bin/defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 
     # Desktop Stacks grouped by Kind (defaults alone don't always activate)
     /usr/bin/defaults write com.apple.finder FXPreferredGroupBy -string Kind

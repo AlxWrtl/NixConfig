@@ -221,5 +221,6 @@ echo -e "${GREEN}╚════════════════════
 echo ""
 echo -e "Remaining manual steps:"
 echo -e "  • Arc: login to restore Spaces, Folders & Tabs via Arc Sync → Set as Default"
-echo -e "  • Login: iCloud, Discord, WhatsApp, Spark, Teams, Figma"
+echo -e "  • iCloud: System Settings → Apple ID → iCloud → iCloud Drive → Options → enable Desktop & Documents"
+echo -e "  • Login: Discord, WhatsApp, Spark, Teams, Figma"
 echo -e "  • Restart your terminal: ${BLUE}exec \$SHELL${NC}"

@@ -71,7 +71,7 @@ else
   else
     NIX_INSTALL_LOG="$(mktemp)"
     curl --proto '=https' --tlsv1.2 -sSf -L https://install.determinate.systems/nix \
-      | sh -s -- install 2>&1 | tee "$NIX_INSTALL_LOG" || {
+      | sh -s -- install --no-confirm 2>&1 | tee "$NIX_INSTALL_LOG" || {
         if grep -qE "Volume on disk|failed to mount" "$NIX_INSTALL_LOG"; then
           rm -f "$NIX_INSTALL_LOG"
           echo -e "  ${RED}✗${NC} Nix volume failed to mount."

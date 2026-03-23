@@ -280,4 +280,49 @@
     └── hooks/*.js|*.sh        Hook scripts
     ```
   '';
+
+  # -------------------------
+  # Obsidian Vault Skill (mcpvault)
+  # -------------------------
+  skillObsidian = ''
+    ---
+    name: obsidian
+    description: "Read, search, and write notes in the Obsidian vault via mcpvault MCP server. Use when the user mentions notes, vault, Obsidian, knowledge base, or wants to search/create/edit markdown notes."
+    ---
+
+    # Obsidian Vault (mcpvault)
+
+    MCP server: `obsidian` — connects to AlxVault via @bitbonsai/mcpvault.
+
+    ## Available Tools
+    | Tool | Purpose |
+    |------|---------|
+    | `search_notes` | Search by content or frontmatter (BM25 ranking) |
+    | `read_note` | Read a note with parsed frontmatter |
+    | `read_multiple_notes` | Batch read (max 10 files) |
+    | `write_note` | Create/overwrite a note with optional frontmatter |
+    | `patch_note` | Replace exact string in a note (no full rewrite) |
+    | `list_directory` | List files/dirs in vault |
+    | `get_frontmatter` | Extract frontmatter only |
+    | `update_frontmatter` | Update frontmatter without changing content |
+    | `manage_tags` | Add/remove/list tags |
+    | `get_notes_info` | Metadata without full content |
+    | `get_vault_stats` | High-level vault statistics |
+    | `move_note` | Move/rename a note |
+    | `delete_note` | Delete (requires confirmation) |
+
+    ## Vault Structure
+    - `00-Meta/` — Templates, vault config
+    - `01-Inbox/` — Quick capture, unsorted
+    - `02-Projets/` — Active projects
+    - `03-Areas/` — Ongoing areas of responsibility
+    - `04-Resources/` — Reference material
+
+    ## Guidelines
+    - Prefer `search_notes` before creating to avoid duplicates
+    - Use `patch_note` for small edits, `write_note` for new notes
+    - Respect existing frontmatter — use `update_frontmatter` to modify
+    - New notes: place in `01-Inbox/` unless the user specifies otherwise
+    - Always confirm before `delete_note`
+  '';
 }

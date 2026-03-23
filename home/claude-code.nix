@@ -39,6 +39,7 @@ let
     skillFeatureWorkflow
     skillNixDarwin
     skillClaudeCodeMeta
+    skillObsidian
     ;
   inherit (hooks)
     hookProtectMain
@@ -125,6 +126,9 @@ in
     "${claudeDir}/skills/debug/SKILL.md".text = skillDebug;
     "${claudeDir}/skills/nix-darwin/SKILL.md".text = skillNixDarwin;
     "${claudeDir}/skills/claude-code-meta/SKILL.md".text = skillClaudeCodeMeta;
+
+    # Obsidian Vault
+    "${claudeDir}/skills/obsidian/SKILL.md".text = skillObsidian;
 
     # Continuous Learning V2
     "${claudeDir}/skills/continuous-learning-v2/SKILL.md".text = skillContinuousLearning;

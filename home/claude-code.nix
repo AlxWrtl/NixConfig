@@ -9,7 +9,7 @@ let
   claudeDir = ".claude";
 
   # Import modular definitions
-  settings = import ./claude-code/settings.nix;
+  settings = import ./claude-code/settings.nix { homeDirectory = config.home.homeDirectory; };
   commands = import ./claude-code/commands.nix;
   skills = import ./claude-code/skills.nix;
   hooks = import ./claude-code/hooks.nix;

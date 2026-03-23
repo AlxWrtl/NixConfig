@@ -1,4 +1,5 @@
 # Claude Code settings and statusline script
+{ homeDirectory }:
 {
   settingsJson = builtins.toJSON {
     "$schema" = "https://json.schemastore.org/claude-code-settings.json";
@@ -230,6 +231,15 @@
       env = {
         API_KEY = "__SECRET_21ST_DEV__";
       };
+    };
+    obsidian = {
+      type = "stdio";
+      command = "npx";
+      args = [
+        "-y"
+        "@bitbonsai/mcpvault@latest"
+        "${homeDirectory}/Library/Mobile Documents/com~apple~CloudDocs/Documents/AlxVault"
+      ];
     };
   };
 

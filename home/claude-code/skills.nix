@@ -324,5 +324,27 @@
     - Respect existing frontmatter — use `update_frontmatter` to modify
     - New notes: place in `01-Inbox/` unless the user specifies otherwise
     - Always confirm before `delete_note`
+
+    ## Conventions Alx
+
+    ### Démarrage de session
+    - Toujours lire `00-Meta/CLAUDE.md` en début de session pour charger le contexte
+    - Si un projet est mentionné, lire aussi `02-Projets/[projet]/[projet].md`
+
+    ### Sessions
+    - Nom du fichier : `YYYY-MM-DD - sujet-court.md` dans `02-Projets/[projet]/sessions/`
+    - La note doit TOUJOURS commencer par `[[02-Projets/[projet]/[projet]]]` en première ligne
+    - Ensuite le titre `# YYYY-MM-DD - Sujet court`
+    - Contenu : ce qui a été fait, décisions prises, prochaines étapes
+    - Exemple : `02-Projets/Preliz/sessions/2026-03-23 - Audit vault Obsidian.md`
+
+    ### Wikilinks
+    - Toujours utiliser le chemin complet : `[[02-Projets/Preliz/Preliz]]`
+    - Ne jamais créer de wikilink sans chemin complet (évite les nœuds orphelins dans le graph)
+
+    ### Règles
+    - Ne jamais modifier les fichiers dans `decisions/` sans demander
+    - `01-Inbox/` = capture brute, ne pas restructurer sans accord
+    - Toujours répondre en français sauf pour le code
   '';
 }

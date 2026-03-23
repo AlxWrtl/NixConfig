@@ -109,6 +109,10 @@
         greedy = true;
       }
       {
+        name = "obsidian";
+        greedy = true;
+      }
+      {
         name = "ollama-app";
         greedy = true;
       }

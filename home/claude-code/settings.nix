@@ -232,6 +232,13 @@
         API_KEY = "__SECRET_21ST_DEV__";
       };
     };
+    nanobanana = {
+      command = "uvx";
+      args = [ "nanobanana-mcp-server@latest" ];
+      env = {
+        GEMINI_API_KEY = "__SECRET_GEMINI_API_KEY__";
+      };
+    };
     obsidian = {
       type = "stdio";
       command = "npx";

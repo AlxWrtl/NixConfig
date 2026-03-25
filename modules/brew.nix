@@ -26,6 +26,7 @@
     brews = [
       "cloudflared"
       "displayplacer"
+      "ffmpeg"
       "libomp"
       "mas"
       "trash"

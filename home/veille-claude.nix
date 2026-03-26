@@ -1,14 +1,16 @@
 # ~/.config/nix-darwin/home/veille-claude.nix
-# Veille technologique — triggers GitHub Actions + pulls results locally
+# Veille technologique — runs alx-claude-radar locally via claude --print
 { pkgs, lib, ... }:
 
 let
+  radarRepo = "/Users/alx/projects/alx-claude-radar";
+
   veille-claude = pkgs.writeShellScriptBin "veille-claude" ''
     set -euo pipefail
 
     MODE="''${1:-daily}"
     OBSIDIAN_FLAG="''${2:-}"
-    REPO="AlxWrtl/alx-claude-radar"
+    RADAR_DIR="${radarRepo}"
     TODAY_ISO=$(date '+%Y-%m-%d')
     REPORTS_DIR="''${VEILLE_REPORTS_DIR:-$HOME/veille}"
     OBSIDIAN_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Documents/AlxVault/04-Resources/veille-claude"
@@ -17,33 +19,38 @@ let
 
     echo "veille-claude [$MODE] -- $(date '+%d %B %Y')"
 
+    if [ ! -d "$RADAR_DIR" ]; then
+      echo "Radar repo not found at $RADAR_DIR"
+      echo "Run: gh repo clone AlxWrtl/alx-claude-radar ~/projects/alx-claude-radar"
+      exit 1
+    fi
+
+    cd "$RADAR_DIR"
+
+    # Ensure deps are installed
+    if [ ! -d "node_modules" ]; then
+      echo "Installing dependencies..."
+      pnpm install --frozen-lockfile
+    fi
+
+    # Set provider to claude-cli (uses claude --print, no API key needed)
+    export LLM_PROVIDER="claude-cli"
+    export GITHUB_TOKEN=$(gh auth token)
+
     case "$MODE" in
       daily)
-        WORKFLOW="daily-digest.yml"
+        echo "Running daily digest..."
+        pnpm start
         ;;
       compare)
-        WORKFLOW="config-compare.yml"
+        echo "Running config comparison..."
+        pnpm compare
         ;;
       full)
-        echo "Triggering monthly digest..."
-        gh workflow run monthly-digest.yml --repo "$REPO"
-        echo "Triggering config comparison..."
-        gh workflow run config-compare.yml --repo "$REPO"
-        echo "Waiting for workflows (60s)..."
-        sleep 60
-        LATEST_RUN=$(gh run list --repo "$REPO" --workflow=monthly-digest.yml --limit 1 --json databaseId -q '.[0].databaseId')
-        if [ -n "$LATEST_RUN" ]; then
-          gh run watch "$LATEST_RUN" --repo "$REPO" --exit-status || true
-          CLONE_DIR=$(mktemp -d)
-          gh repo clone "$REPO" "$CLONE_DIR" -- --depth 1 --single-branch 2>/dev/null
-          if [ -d "$CLONE_DIR/digests/$TODAY_ISO" ]; then
-            cp -r "$CLONE_DIR/digests/$TODAY_ISO" "$REPORTS_DIR/''${TODAY_ISO}-full"
-            echo "Saved to $REPORTS_DIR/''${TODAY_ISO}-full"
-          fi
-          rm -rf "$CLONE_DIR"
-        fi
-        osascript -e 'display notification "Veille full terminee" with title "veille-claude" sound name "Tink"' 2>/dev/null || true
-        exit 0
+        echo "Running monthly digest..."
+        pnpm monthly
+        echo "Running config comparison..."
+        pnpm compare
         ;;
       *)
         echo "Mode inconnu: $MODE"
@@ -52,32 +59,15 @@ let
         ;;
     esac
 
-    echo "Triggering $WORKFLOW..."
-    gh workflow run "$WORKFLOW" --repo "$REPO"
-
-    echo "Waiting for workflow start (10s)..."
-    sleep 10
-
-    RUN_ID=$(gh run list --repo "$REPO" --workflow="$WORKFLOW" --limit 1 --json databaseId -q '.[0].databaseId')
-
-    if [ -z "$RUN_ID" ]; then
-      echo "Could not find workflow run"
-      exit 1
-    fi
-
-    gh run watch "$RUN_ID" --repo "$REPO" --exit-status
-
-    echo "Pulling latest digests..."
-    CLONE_DIR=$(mktemp -d)
-    gh repo clone "$REPO" "$CLONE_DIR" -- --depth 1 --single-branch 2>/dev/null
-
-    if [ -d "$CLONE_DIR/digests/$TODAY_ISO" ]; then
-      cp -r "$CLONE_DIR/digests/$TODAY_ISO" "$REPORTS_DIR/"
+    # Copy results to reports dir
+    if [ -d "digests/$TODAY_ISO" ]; then
+      cp -r "digests/$TODAY_ISO" "$REPORTS_DIR/"
       echo "Saved to $REPORTS_DIR/$TODAY_ISO/"
 
+      # Obsidian copy
       if [ "$OBSIDIAN_FLAG" = "--obsidian" ] || [ "''${VEILLE_OBSIDIAN:-}" = "1" ]; then
         mkdir -p "$OBSIDIAN_DIR"
-        for f in "$REPORTS_DIR/$TODAY_ISO"/*.md; do
+        for f in "digests/$TODAY_ISO"/*.md; do
           [ -f "$f" ] || continue
           BASENAME=$(basename "$f" .md)
           {
@@ -89,13 +79,12 @@ let
             cat "$f"
           } > "$OBSIDIAN_DIR/''${TODAY_ISO}-''${BASENAME}.md"
         done
-        echo "Copie dans Obsidian vault: $OBSIDIAN_DIR"
+        echo "Copie dans Obsidian vault"
       fi
     else
-      echo "No digests found for $TODAY_ISO in repo"
+      echo "No digests found for $TODAY_ISO"
     fi
 
-    rm -rf "$CLONE_DIR"
     osascript -e "display notification \"Veille $MODE terminee\" with title \"veille-claude\" sound name \"Tink\"" 2>/dev/null || true
   '';
 
@@ -105,7 +94,7 @@ in
 
   launchd.agents = {
 
-    # Mon/Wed/Fri 9:00 — daily digest
+    # Mon/Wed/Fri 9:00 — daily digest (local, claude --print)
     veille-daily = {
       enable = true;
       config = {

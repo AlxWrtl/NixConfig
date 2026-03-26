@@ -1,46 +1,97 @@
 # ~/.config/nix-darwin/home/veille-claude.nix
-# Veille technologique Claude Code — commande `veille-claude`
+# Veille technologique — runs alx-claude-radar locally via claude --print
 { pkgs, lib, ... }:
 
 let
-  veilleRepo = "/Users/alx/projects/Claude Code Tech Watch";
+  radarRepo = "/Users/alx/projects/alx-claude-radar";
 
   veille-claude = pkgs.writeShellScriptBin "veille-claude" ''
-        set -euo pipefail
+    set -euo pipefail
 
-        MODE="''${1:-weekly}"
-        TODAY=$(date '+%d %B %Y')
-        TODAY_ISO=$(date '+%Y-%m-%d')
-        WEEK_AGO=$(date -v-7d '+%d %B %Y')
-        REPORTS_DIR="''${VEILLE_REPORTS_DIR:-$HOME/veille}"
-        PROMPT_DIR="${veilleRepo}/prompts"
-        OUTPUT="$REPORTS_DIR/''${TODAY_ISO}-''${MODE}.md"
+    MODE="''${1:-daily}"
+    OBSIDIAN_FLAG="''${2:-}"
+    RADAR_DIR="${radarRepo}"
+    TODAY_ISO=$(date '+%Y-%m-%d')
+    REPORTS_DIR="''${VEILLE_REPORTS_DIR:-$HOME/veille}"
+    OBSIDIAN_DIR="$HOME/Library/Mobile Documents/com~apple~CloudDocs/Documents/AlxVault/04-Resources/veille-claude"
 
-        mkdir -p "$REPORTS_DIR"
+    mkdir -p "$REPORTS_DIR"
 
-        echo "🔍 veille-claude [''${MODE}] — ''${TODAY}"
-        echo "📄 Output : ''${OUTPUT}"
-        echo ""
+    echo "veille-claude [$MODE] -- $(date '+%d %B %Y')"
 
-        PROMPT_FILE="''${PROMPT_DIR}/''${MODE}.md"
-        if [[ ! -f "''${PROMPT_FILE}" ]]; then
-          echo "❌ Prompt introuvable : ''${PROMPT_FILE}"
-          echo "   Modes disponibles : weekly | compare | mcp | full"
-          exit 1
-        fi
+    if [ ! -d "$RADAR_DIR" ]; then
+      echo "Radar repo not found at $RADAR_DIR"
+      echo "Run: gh repo clone AlxWrtl/alx-claude-radar ~/projects/alx-claude-radar"
+      exit 1
+    fi
 
-        PROMPT=$(sed \
-          -e "s/{{TODAY}}/''${TODAY}/g" \
-          -e "s/{{TODAY_ISO}}/''${TODAY_ISO}/g" \
-          -e "s/{{WEEK_AGO}}/''${WEEK_AGO}/g" \
-          "''${PROMPT_FILE}")
+    cd "$RADAR_DIR"
 
-    echo "''${PROMPT}" | claude --model claude-opus-4-5 --print > "''${OUTPUT}"
+    # Ensure deps are installed
+    if [ ! -d "node_modules" ]; then
+      echo "Installing dependencies..."
+      pnpm install --frozen-lockfile
+    fi
 
-        echo ""
-        echo "✅ ''${OUTPUT}"
-        echo ""
-        cat "''${OUTPUT}"
+    # Set provider to claude-cli (uses claude --print, no API key needed)
+    export LLM_PROVIDER="claude-cli"
+    export GITHUB_TOKEN=$(gh auth token)
+
+    # Telegram notifications
+    if [ -f "$HOME/.config/secrets/telegram-bot-token" ]; then
+      export TELEGRAM_BOT_TOKEN=$(cat "$HOME/.config/secrets/telegram-bot-token")
+      export TELEGRAM_CHAT_ID=$(cat "$HOME/.config/secrets/telegram-chat-id")
+    fi
+
+    case "$MODE" in
+      daily)
+        echo "Running daily digest..."
+        pnpm start
+        ;;
+      compare)
+        echo "Running config comparison..."
+        pnpm compare
+        ;;
+      full)
+        echo "Running monthly digest..."
+        pnpm monthly
+        echo "Running config comparison..."
+        pnpm compare
+        ;;
+      *)
+        echo "Mode inconnu: $MODE"
+        echo "   Usage: veille-claude [daily|compare|full] [--obsidian]"
+        exit 1
+        ;;
+    esac
+
+    # Copy results to reports dir
+    if [ -d "digests/$TODAY_ISO" ]; then
+      cp -r "digests/$TODAY_ISO" "$REPORTS_DIR/"
+      echo "Saved to $REPORTS_DIR/$TODAY_ISO/"
+
+      # Obsidian copy
+      if [ "$OBSIDIAN_FLAG" = "--obsidian" ] || [ "''${VEILLE_OBSIDIAN:-}" = "1" ]; then
+        mkdir -p "$OBSIDIAN_DIR"
+        for f in "digests/$TODAY_ISO"/*.md; do
+          [ -f "$f" ] || continue
+          BASENAME=$(basename "$f" .md)
+          {
+            echo "---"
+            echo "tags: [veille, claude-code, $MODE]"
+            echo "date: $TODAY_ISO"
+            echo "---"
+            echo ""
+            cat "$f"
+          } > "$OBSIDIAN_DIR/''${TODAY_ISO}-''${BASENAME}.md"
+        done
+        echo "Copie dans Obsidian vault"
+      fi
+    else
+      echo "No digests found for $TODAY_ISO"
+    fi
+
+    osascript -e "display notification \"Veille $MODE terminee\" with title \"veille-claude\" sound name \"Tink\"" 2>/dev/null || true
   '';
 
 in
@@ -49,53 +100,28 @@ in
 
   launchd.agents = {
 
-    # Lundi 9h00 — nouveautés de la semaine
-    veille-weekly = {
+    # Mon/Wed/Fri 9:00 — daily digest (local, claude --print)
+    veille-daily = {
       enable = true;
       config = {
-        Label = "com.alx.veille-weekly";
+        Label = "com.alx.veille-daily";
         ProgramArguments = [
           "${pkgs.bash}/bin/bash"
           "-l"
           "-c"
-          "veille-claude weekly"
+          "veille-claude daily"
         ];
         StartCalendarInterval = [
-          {
-            Weekday = 1;
-            Hour = 9;
-            Minute = 0;
-          }
+          { Weekday = 1; Hour = 9; Minute = 0; }
+          { Weekday = 3; Hour = 9; Minute = 0; }
+          { Weekday = 5; Hour = 9; Minute = 0; }
         ];
-        StandardOutPath = "/tmp/veille-weekly.log";
-        StandardErrorPath = "/tmp/veille-weekly-err.log";
+        StandardOutPath = "/tmp/veille-daily.log";
+        StandardErrorPath = "/tmp/veille-daily-err.log";
       };
     };
 
-    # Lundi 9h30 — nouveaux MCP pertinents
-    veille-mcp = {
-      enable = true;
-      config = {
-        Label = "com.alx.veille-mcp";
-        ProgramArguments = [
-          "${pkgs.bash}/bin/bash"
-          "-l"
-          "-c"
-          "veille-claude mcp"
-        ];
-        StartCalendarInterval = [
-          {
-            Weekday = 1;
-            Hour = 9;
-            Minute = 30;
-          }
-        ];
-        StandardOutPath = "/tmp/veille-mcp.log";
-        StandardErrorPath = "/tmp/veille-mcp-err.log";
-      };
-    };
-
-    # 1er et 15 du mois à 10h — ma config vs état de l'art
+    # 1st and 15th at 10:00 — config comparison
     veille-compare = {
       enable = true;
       config = {
@@ -107,23 +133,15 @@ in
           "veille-claude compare"
         ];
         StartCalendarInterval = [
-          {
-            Day = 1;
-            Hour = 10;
-            Minute = 0;
-          }
-          {
-            Day = 15;
-            Hour = 10;
-            Minute = 0;
-          }
+          { Day = 1; Hour = 10; Minute = 0; }
+          { Day = 15; Hour = 10; Minute = 0; }
         ];
         StandardOutPath = "/tmp/veille-compare.log";
         StandardErrorPath = "/tmp/veille-compare-err.log";
       };
     };
 
-    # 1er du mois à 8h — veille mensuelle complète + roadmap
+    # 1st of month at 8:00 — full (monthly + compare)
     veille-full = {
       enable = true;
       config = {
@@ -135,11 +153,7 @@ in
           "veille-claude full"
         ];
         StartCalendarInterval = [
-          {
-            Day = 1;
-            Hour = 8;
-            Minute = 0;
-          }
+          { Day = 1; Hour = 8; Minute = 0; }
         ];
         StandardOutPath = "/tmp/veille-full.log";
         StandardErrorPath = "/tmp/veille-full-err.log";

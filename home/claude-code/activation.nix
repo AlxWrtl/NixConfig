@@ -121,6 +121,57 @@
   '';
 
   # -------------------------
+  # Generate config-snapshot.json at rebuild time
+  # -------------------------
+  claudeCodeConfigSnapshot = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    set -euo pipefail
+    SNAPSHOT="$HOME/.claude/config-snapshot.json"
+    GEN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    ${pkgs.jq}/bin/jq -n \
+      --arg date "$GEN_DATE" \
+      '{
+        generatedAt: $date,
+        mcpServers: ["gsap-master","chrome-devtools","magic","nanobanana","obsidian"],
+        hooks: [
+          {event:"PreToolUse",   matcher:"Edit|Write", script:"protect-main.js",       type:"node"},
+          {event:"PreToolUse",   matcher:"Bash",       script:"block-main-bash.js",    type:"node"},
+          {event:"PostToolUse",  matcher:"Write|Edit", script:"format-typescript.js",  type:"node"},
+          {event:"PreCompact",   matcher:"",           script:"pre-compact-backup.sh", type:"bash"},
+          {event:"Notification", matcher:"",           script:"notification.sh",       type:"bash"},
+          {event:"SessionStart", matcher:"",           script:"session-start.sh",      type:"bash"},
+          {event:"SubagentStop", matcher:"",           script:"subagent-stop.js",      type:"node"},
+          {event:"TaskCompleted",matcher:"",           script:"task-completed.sh",     type:"bash"}
+        ],
+        agents: [
+          {name:"frontend-expert",     model:"sonnet"},
+          {name:"backend-expert",      model:"sonnet"},
+          {name:"architecture-expert", model:"opus"},
+          {name:"performance-expert",  model:"haiku"},
+          {name:"codebase-navigator",  model:"haiku"},
+          {name:"code-reviewer",       model:"opus"},
+          {name:"quick-fix",           model:"haiku"},
+          {name:"nix-expert",          model:"sonnet"},
+          {name:"git-ship",            model:"haiku"},
+          {name:"team-lead",           model:"opus"}
+        ],
+        skills: ["apex","debug","continuous-learning-v2","nix-darwin","claude-code-meta","feature-workflow","obsidian"],
+        commands: ["tdd","optimize","context-prime","auto","discuss","verify-feature","ralph-loop","cancel-ralph","init-memory-bank"],
+        envVars: {
+          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
+          CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "90",
+          CLAUDE_STREAM_IDLE_TIMEOUT_MS: "600000",
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
+        },
+        settings: {
+          model: "opus",
+          effortLevel: "high",
+          defaultMode: "acceptEdits"
+        }
+      }' > "$SNAPSHOT"
+    chmod 600 "$SNAPSHOT"
+  '';
+
+  # -------------------------
   # Install Ralph Wiggum scripts
   # -------------------------
   claudeCodeRalphWiggum = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''

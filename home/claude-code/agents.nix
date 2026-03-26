@@ -590,6 +590,7 @@
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch, Agent
     permissionMode: default
     memory: project
+    isolation: worktree
     maxTurns: 50
     skills:
       - feature-workflow
@@ -606,6 +607,11 @@
     - If neither exists: delegate to architecture-expert to produce them first.
     - Delegate subtasks to the most appropriate specialist agents.
     - Synthesize and validate results from multiple agents.
+
+    ## Agent Teams vs Subagents
+    - Independent tasks (compile, test, review): use subagents (Agent tool)
+    - Competing hypotheses / cross-layer coordination: propose agent team
+    - File conflict risk: use isolation: worktree on spawned agents
 
     ## Wave Execution Protocol
     When executing a plan with task XMLs:

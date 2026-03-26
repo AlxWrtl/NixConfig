@@ -151,13 +151,52 @@
 
     # Continuous Learning V2
 
-    Auto-extract patterns from interactions.
+    Automatically extract reusable patterns from interactions and promote them to skills.
 
-    Extraction: min 3 changes, 0.7 confidence
-    Promotion: usage threshold 5, auto-generate
-    Application: auto-suggest, relevance 0.8, max 3
+    ## Instinct Format
+    Each extracted pattern is an "instinct":
+    ```yaml
+    title: Short descriptive name
+    category: architecture | workflow | testing | nix | debugging | style
+    evidence:
+      - "session X: did Y because Z"
+      - "session X: same pattern applied to W"
+    confidence: 0-100 (based on repetition + outcome)
+    examples:
+      - "When X, always do Y"
+    counter_examples:
+      - "Except when Z, then do W instead"
+    ```
 
-    Generated skills → ~/.claude/skills/generated/
+    ## Extraction Rules
+    - Minimum 3 occurrences of same pattern across sessions
+    - Confidence >= 70 to record as instinct
+    - Only extract patterns that are NOT already in CLAUDE.md or existing skills
+    - Focus on: recurring decisions, repeated fix patterns, project-specific conventions
+
+    ## Promotion Pipeline
+    1. **Record**: Save instinct to `~/.claude/generated/instincts.jsonl`
+    2. **Cluster**: When 3+ instincts share the same category/topic → candidate for skill
+    3. **Generate**: Auto-create skill file in `~/.claude/skills/generated/{topic}/SKILL.md`
+       - Include: description, frontmatter with globs, all evidence
+       - Mark as `status: draft` until manually reviewed
+    4. **Validate**: Usage threshold >= 5 applied references → promote to `status: active`
+
+    ## Application Rules
+    - Max 3 suggestions per session (avoid noise)
+    - Relevance threshold 0.8 (only suggest when highly relevant)
+    - Never suggest instincts that contradict CLAUDE.md rules
+    - Prefer suggesting existing skills before creating new ones
+
+    ## Review Trigger
+    When instincts.jsonl exceeds 20 entries, suggest a review:
+    - Prune low-confidence entries (< 50)
+    - Merge overlapping instincts
+    - Promote mature clusters to skills
+
+    ## Output
+    - Instincts: `~/.claude/generated/instincts.jsonl`
+    - Generated skills: `~/.claude/skills/generated/`
   '';
 
   # -------------------------

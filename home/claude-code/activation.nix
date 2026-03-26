@@ -154,7 +154,10 @@
           {name:"quick-fix",           model:"haiku"},
           {name:"nix-expert",          model:"sonnet"},
           {name:"git-ship",            model:"haiku"},
-          {name:"team-lead",           model:"opus"}
+          {name:"team-lead",           model:"opus"},
+          {name:"test-runner",         model:"haiku"},
+          {name:"security-auditor",    model:"haiku"},
+          {name:"debugger",            model:"sonnet"}
         ],
         skills: ["apex","debug","continuous-learning-v2","nix-darwin","claude-code-meta","feature-workflow","obsidian"],
         commands: ["tdd","optimize","context-prime","auto","discuss","verify-feature","ralph-loop","cancel-ralph","init-memory-bank"],

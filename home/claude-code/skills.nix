@@ -381,4 +381,99 @@
     - `01-Inbox/` = capture brute, ne pas restructurer sans accord
     - Toujours repondre en francais sauf pour le code
   '';
+
+  # -------------------------
+  # Schliff — SKILL.md quality linter
+  # -------------------------
+  skillSchliff = ''
+    ---
+    name: schliff
+    description: "Analyze and score SKILL.md quality using Schliff linter. Use when tasks mention skill quality, skill audit, skill score, or skill optimization."
+    ---
+
+    # Schliff — Skill Quality Linter
+
+    Static analyzer for SKILL.md files. 7-dimension scoring (S→F grade).
+
+    ## Commands
+    - `uvx schliff score <path>` — score a single skill
+    - `uvx schliff doctor <dir>` — scan all skills in a directory
+    - `uvx schliff verify <path> --min-score 75` — CI gate (exit 1 if below threshold)
+    - `uvx schliff diff <path>` — show what changed since last score
+
+    ## Scoring Dimensions
+    | Dimension | Weight | Measures |
+    |-----------|--------|----------|
+    | Structure | 15% | Frontmatter, headers, examples |
+    | Triggers | 20% | Activation accuracy, false positive risk |
+    | Quality | 20% | Assertion depth, feature coverage |
+    | Edges | 15% | Edge cases, invalid inputs, scale |
+    | Efficiency | 10% | Filler words, signal-to-noise |
+    | Composability | 10% | Scope boundaries, error behavior |
+    | Clarity | 5% | Contradiction detection |
+
+    ## Workflow
+    1. Run `uvx schliff doctor ~/.claude/skills/` to audit all skills
+    2. Fix skills scoring below B (< 75)
+    3. Re-score to verify improvement
+    4. Use `uvx schliff verify --min-score 75` in CI/pre-commit
+
+    ## Grade Scale
+    S (95+) | A (85+) | B (75+) | C (60+) | D (45+) | E (30+) | F (<30)
+  '';
+
+  # -------------------------
+  # Autoresearch — Autonomous experiment loop
+  # -------------------------
+  skillAutoresearch = ''
+    ---
+    name: autoresearch
+    description: "Set up and run an autonomous experiment loop for any optimization target. Use when asked to run autoresearch, optimize X in a loop, set up autoresearch for X, or start experiments."
+    ---
+
+    # Autoresearch
+
+    Autonomous experiment loop: try ideas, keep what works, discard what doesn't.
+
+    ## Setup
+    1. Ask (or infer): **Goal**, **Command**, **Metric** (+ direction), **Files in scope**, **Constraints**
+    2. `git checkout -b autoresearch/<goal>-<date>`
+    3. Read source files deeply before writing anything
+    4. `mkdir -p experiments` then write `autoresearch.md`, `autoresearch.sh`, `experiments/worklog.md`
+    5. Initialize → run baseline → log result → start looping
+
+    ## Core Files
+    - `autoresearch.md` — Session context (goal, metrics, files, constraints, what's been tried)
+    - `autoresearch.sh` — Benchmark script, outputs `METRIC name=number` lines
+    - `autoresearch.jsonl` — State: config headers + result lines (source of truth)
+    - `autoresearch-dashboard.md` — Regenerated after each run (table of all experiments)
+    - `experiments/worklog.md` — Narrative log, survives context compactions
+
+    ## JSONL Protocol
+    Config header (first line):
+    ```json
+    {"type":"config","name":"<name>","metricName":"<metric>","metricUnit":"<unit>","bestDirection":"lower|higher"}
+    ```
+    Result lines:
+    ```json
+    {"run":1,"commit":"abc1234","metric":42.3,"metrics":{},"status":"keep|discard|crash","description":"baseline","timestamp":1234567890,"segment":0}
+    ```
+
+    ## Loop Rules
+    - **LOOP FOREVER.** Never ask "should I continue?"
+    - Primary metric improved → `keep`. Worse/equal → `discard`
+    - Simpler is better. Removing code for equal perf = keep
+    - Don't thrash — if same idea fails twice, try structurally different
+    - On keep: `git add -A && git commit`. On discard: `git checkout -- . && git clean -fd`
+    - **Never** `git clean -fdx` (deletes JSONL state)
+    - Regenerate dashboard after every run
+    - Update `experiments/worklog.md` after every run
+    - Think longer when stuck — re-read source, study profiling data
+
+    ## Resuming
+    If `autoresearch.md` exists: read it + JSONL + worklog + git log, continue looping
+
+    ## Ideas Backlog
+    Append promising but deferred ideas to `autoresearch.ideas.md`
+  '';
 }

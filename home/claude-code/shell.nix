@@ -8,6 +8,9 @@
     ccn = "cd ~/.config/nix-darwin && claude";
     ccv = "claude --version";
     ccro = "claude --plan-mode --read-only";
+    # Skill analysis tools
+    schliff = "uvx schliff";
+    schliff-all = "uvx schliff doctor ~/.claude/skills/";
   };
 
   sessionVars = {

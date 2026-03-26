@@ -9,7 +9,6 @@ let
     set -euo pipefail
 
     MODE="''${1:-daily}"
-    OBSIDIAN_FLAG="''${2:-}"
     RADAR_DIR="${radarRepo}"
     TODAY_ISO=$(date '+%Y-%m-%d')
     REPORTS_DIR="''${VEILLE_REPORTS_DIR:-$HOME/veille}"
@@ -70,23 +69,56 @@ let
       cp -r "digests/$TODAY_ISO" "$REPORTS_DIR/"
       echo "Saved to $REPORTS_DIR/$TODAY_ISO/"
 
-      # Obsidian copy
-      if [ "$OBSIDIAN_FLAG" = "--obsidian" ] || [ "''${VEILLE_OBSIDIAN:-}" = "1" ]; then
-        mkdir -p "$OBSIDIAN_DIR"
+      # Obsidian copy (always on, FR only, with wikilinks)
+      mkdir -p "$OBSIDIAN_DIR"
+
+      # Copy each FR report with frontmatter + wikilinks
+      for f in "digests/$TODAY_ISO"/*.md; do
+        [ -f "$f" ] || continue
+        BASENAME=$(basename "$f" .md)
+        case "$BASENAME" in *-en) continue ;; esac
+        NOTE_NAME="''${TODAY_ISO}-''${BASENAME}"
+
+        {
+          echo "---"
+          echo "tags: [veille, claude-code, $MODE]"
+          echo "date: $TODAY_ISO"
+          echo "---"
+          echo ""
+          cat "$f"
+          echo ""
+          echo "---"
+          echo "## Voir aussi"
+          echo ""
+          echo "- [[''${TODAY_ISO}-veille|Index du jour]]"
+          for sib in "digests/$TODAY_ISO"/*.md; do
+            [ -f "$sib" ] || continue
+            S=$(basename "$sib" .md)
+            case "$S" in *-en) continue ;; esac
+            [ "$S" = "$BASENAME" ] && continue
+            echo "- [[''${TODAY_ISO}-''${S}]]"
+          done
+        } > "$OBSIDIAN_DIR/''${NOTE_NAME}.md"
+      done
+
+      # Daily MOC (Map of Content)
+      {
+        echo "---"
+        echo "tags: [veille, claude-code, moc]"
+        echo "date: $TODAY_ISO"
+        echo "---"
+        echo ""
+        echo "# Veille Claude Code — $TODAY_ISO"
+        echo ""
         for f in "digests/$TODAY_ISO"/*.md; do
           [ -f "$f" ] || continue
-          BASENAME=$(basename "$f" .md)
-          {
-            echo "---"
-            echo "tags: [veille, claude-code, $MODE]"
-            echo "date: $TODAY_ISO"
-            echo "---"
-            echo ""
-            cat "$f"
-          } > "$OBSIDIAN_DIR/''${TODAY_ISO}-''${BASENAME}.md"
+          SIB=$(basename "$f" .md)
+          case "$SIB" in *-en) continue ;; esac
+          echo "- [[''${TODAY_ISO}-''${SIB}]]"
         done
-        echo "Copie dans Obsidian vault"
-      fi
+      } > "$OBSIDIAN_DIR/''${TODAY_ISO}-veille.md"
+
+      echo "Obsidian: $OBSIDIAN_DIR"
     else
       echo "No digests found for $TODAY_ISO"
     fi

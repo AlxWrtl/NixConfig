@@ -128,6 +128,7 @@
               type = "command";
               command = "node ~/.claude/hooks/format-typescript.js";
               timeout = 10;
+              async = true;
             }
           ];
         }
@@ -192,6 +193,29 @@
             {
               type = "command";
               command = "bash ~/.claude/hooks/task-completed.sh";
+              timeout = 3;
+            }
+          ];
+        }
+      ];
+      FileChanged = [
+        {
+          matcher = "flake.lock|.envrc|package.json|pnpm-lock.yaml";
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/file-changed.sh";
+              timeout = 5;
+            }
+          ];
+        }
+      ];
+      StopFailure = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/stop-failure.sh";
               timeout = 3;
             }
           ];

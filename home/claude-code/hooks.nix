@@ -126,4 +126,32 @@
     #!/usr/bin/env bash
     echo "Post-compact context: Shell=zsh+starship+nix-darwin | PM=pnpm | Rebuild=sudo darwin-rebuild switch --flake .#alex-mbp | Protected branches: main/master | Commits: EN imperative, type prefix | Read CLAUDE.md + skills before coding"
   '';
+
+  hookFileChanged = ''
+    #!/usr/bin/env bash
+    # React to file changes (flake.lock, .envrc, package.json)
+    INPUT=$(cat)
+    FILE=$(echo "$INPUT" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+    case "$FILE" in
+      */flake.lock)
+        echo "flake.lock changed — run: nix flake update or rebuild"
+        ;;
+      */.envrc)
+        direnv allow 2>/dev/null || true
+        echo "direnv reloaded"
+        ;;
+      */package.json|*/pnpm-lock.yaml)
+        echo "deps changed — run: pnpm install"
+        ;;
+    esac
+  '';
+
+  hookStopFailure = ''
+    #!/usr/bin/env bash
+    # Alert on rate limits or API failures
+    INPUT=$(cat)
+    if echo "$INPUT" | grep -qi "rate.limit\|429\|overloaded"; then
+      osascript -e '''display notification "Rate limit hit — pause recommended" with title "Claude Code" sound name "Basso"''' 2>/dev/null || true
+    fi
+  '';
 }

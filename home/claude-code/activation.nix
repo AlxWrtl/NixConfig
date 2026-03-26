@@ -139,8 +139,10 @@
           {event:"PreCompact",   matcher:"",           script:"pre-compact-backup.sh", type:"bash"},
           {event:"Notification", matcher:"",           script:"notification.sh",       type:"bash"},
           {event:"SessionStart", matcher:"",           script:"session-start.sh",      type:"bash"},
-          {event:"SubagentStop", matcher:"",           script:"subagent-stop.js",      type:"node"},
-          {event:"TaskCompleted",matcher:"",           script:"task-completed.sh",     type:"bash"}
+          {event:"SubagentStop",  matcher:"",                               script:"subagent-stop.js",      type:"node"},
+          {event:"TaskCompleted", matcher:"",                               script:"task-completed.sh",     type:"bash"},
+          {event:"FileChanged",   matcher:"flake.lock|.envrc|package.json", script:"file-changed.sh",       type:"bash"},
+          {event:"StopFailure",   matcher:"",                               script:"stop-failure.sh",        type:"bash"}
         ],
         agents: [
           {name:"frontend-expert",     model:"sonnet"},

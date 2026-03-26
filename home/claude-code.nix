@@ -51,6 +51,8 @@ let
     hookTaskCompleted
     hookNotification
     hookCompactContext
+    hookFileChanged
+    hookStopFailure
     ;
   inherit (agents)
     agentFrontend
@@ -63,6 +65,9 @@ let
     agentNix
     agentGitShip
     agentTeamLead
+    agentTestRunner
+    agentSecurityAuditor
+    agentDebugger
     ;
   inherit (shell) aliases sessionVars;
 in
@@ -109,7 +114,7 @@ in
       executable = true;
     };
 
-    # Agents (10)
+    # Agents (13)
     "${claudeDir}/agents/frontend-expert.md".text = agentFrontend;
     "${claudeDir}/agents/backend-expert.md".text = agentBackend;
     "${claudeDir}/agents/architecture-expert.md".text = agentArch;
@@ -120,6 +125,9 @@ in
     "${claudeDir}/agents/nix-expert.md".text = agentNix;
     "${claudeDir}/agents/git-ship.md".text = agentGitShip;
     "${claudeDir}/agents/team-lead.md".text = agentTeamLead;
+    "${claudeDir}/agents/test-runner.md".text = agentTestRunner;
+    "${claudeDir}/agents/security-auditor.md".text = agentSecurityAuditor;
+    "${claudeDir}/agents/debugger.md".text = agentDebugger;
 
     # Skills
     "${claudeDir}/skills/apex/SKILL.md".text = skillApex;
@@ -168,6 +176,14 @@ in
     };
     "${claudeDir}/hooks/compact-context.sh" = {
       text = hookCompactContext;
+      executable = true;
+    };
+    "${claudeDir}/hooks/file-changed.sh" = {
+      text = hookFileChanged;
+      executable = true;
+    };
+    "${claudeDir}/hooks/stop-failure.sh" = {
+      text = hookStopFailure;
       executable = true;
     };
 

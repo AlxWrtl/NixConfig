@@ -203,12 +203,6 @@
   # MCP servers merged into ~/.claude/.claude.json by activation script
   # Secrets (API keys) are injected at runtime by claudeCodeMcpMerge, not here
   mcpServersJson = builtins.toJSON {
-    gsap-master = {
-      type = "stdio";
-      command = "npx";
-      args = [ "bruzethegreat-gsap-master-mcp-server@latest" ];
-      env = { };
-    };
     chrome-devtools = {
       type = "stdio";
       command = "npx";
@@ -232,15 +226,6 @@
       env = {
         GEMINI_API_KEY = "__SECRET_GEMINI_API_KEY__";
       };
-    };
-    obsidian = {
-      type = "stdio";
-      command = "npx";
-      args = [
-        "-y"
-        "@bitbonsai/mcpvault@latest"
-        "${homeDirectory}/Library/Mobile Documents/com~apple~CloudDocs/Documents/AlxVault"
-      ];
     };
   };
 

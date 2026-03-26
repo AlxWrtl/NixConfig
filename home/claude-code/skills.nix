@@ -282,69 +282,64 @@
   '';
 
   # -------------------------
-  # Obsidian Vault Skill (mcpvault)
+  # Obsidian Vault Skill (direct file access — no MCP)
   # -------------------------
   skillObsidian = ''
     ---
     name: obsidian
-    description: "Read, search, and write notes in the Obsidian vault via mcpvault MCP server. Use when the user mentions notes, vault, Obsidian, knowledge base, or wants to search/create/edit markdown notes."
+    description: "Read, search, and write notes in the Obsidian vault via native file tools (Read, Write, Edit, Grep, Glob). Use when the user mentions notes, vault, Obsidian, knowledge base, or wants to search/create/edit markdown notes."
     ---
 
-    # Obsidian Vault (mcpvault)
+    # Obsidian Vault (direct file access)
 
-    MCP server: `obsidian` — connects to AlxVault via @bitbonsai/mcpvault.
+    Vault path: `~/Library/Mobile Documents/com~apple~CloudDocs/Documents/AlxVault`
 
-    ## Available Tools
-    | Tool | Purpose |
-    |------|---------|
-    | `search_notes` | Search by content or frontmatter (BM25 ranking) |
-    | `read_note` | Read a note with parsed frontmatter |
-    | `read_multiple_notes` | Batch read (max 10 files) |
-    | `write_note` | Create/overwrite a note with optional frontmatter |
-    | `patch_note` | Replace exact string in a note (no full rewrite) |
-    | `list_directory` | List files/dirs in vault |
-    | `get_frontmatter` | Extract frontmatter only |
-    | `update_frontmatter` | Update frontmatter without changing content |
-    | `manage_tags` | Add/remove/list tags |
-    | `get_notes_info` | Metadata without full content |
-    | `get_vault_stats` | High-level vault statistics |
-    | `move_note` | Move/rename a note |
-    | `delete_note` | Delete (requires confirmation) |
+    No MCP server needed — use native tools directly on the vault files.
+
+    ## Tool Mapping
+    | Action | Tool | Example |
+    |--------|------|---------|
+    | Search notes | `Grep` | `Grep(pattern: "keyword", path: "~/Library/Mobile Documents/.../AlxVault")` |
+    | Read note | `Read` | `Read(file_path: ".../AlxVault/02-Projets/Preliz/Preliz.md")` |
+    | List directory | `Glob` | `Glob(pattern: "**/*.md", path: ".../AlxVault/02-Projets/")` |
+    | Create note | `Write` | `Write(file_path: ".../AlxVault/01-Inbox/new-note.md", content: "...")` |
+    | Edit note | `Edit` | `Edit(file_path: "...", old_string: "...", new_string: "...")` |
+    | Find by tag | `Grep` | `Grep(pattern: "tags:.*veille", path: ".../AlxVault")` |
+    | Find by frontmatter | `Grep` | `Grep(pattern: "^date: 2026", path: ".../AlxVault", multiline: true)` |
 
     ## Vault Structure
     - `00-Meta/` — Templates, vault config
     - `01-Inbox/` — Quick capture, unsorted
     - `02-Projets/` — Active projects
     - `03-Areas/` — Ongoing areas of responsibility
-    - `04-Resources/` — Reference material
+    - `04-Resources/` — Reference material, veille-claude output
 
     ## Guidelines
-    - Prefer `search_notes` before creating to avoid duplicates
-    - Use `patch_note` for small edits, `write_note` for new notes
-    - Respect existing frontmatter — use `update_frontmatter` to modify
+    - Grep before creating to avoid duplicates
+    - Use Edit for small changes, Write for new notes
+    - Preserve existing frontmatter when editing
     - New notes: place in `01-Inbox/` unless the user specifies otherwise
-    - Always confirm before `delete_note`
+    - Always confirm before deleting
 
     ## Conventions Alx
 
-    ### Démarrage de session
-    - Toujours lire `00-Meta/CLAUDE.md` en début de session pour charger le contexte
-    - Si un projet est mentionné, lire aussi `02-Projets/[projet]/[projet].md`
+    ### Demarrage de session
+    - Toujours lire `00-Meta/CLAUDE.md` en debut de session pour charger le contexte
+    - Si un projet est mentionne, lire aussi `02-Projets/[projet]/[projet].md`
 
     ### Sessions
     - Nom du fichier : `YYYY-MM-DD - sujet-court.md` dans `02-Projets/[projet]/sessions/`
-    - La note doit TOUJOURS commencer par `[[02-Projets/[projet]/[projet]]]` en première ligne
+    - La note doit TOUJOURS commencer par `[[02-Projets/[projet]/[projet]]]` en premiere ligne
     - Ensuite le titre `# YYYY-MM-DD - Sujet court`
-    - Contenu : ce qui a été fait, décisions prises, prochaines étapes
-    - Exemple : `02-Projets/Preliz/sessions/2026-03-23 - Audit vault Obsidian.md`
+    - Contenu : ce qui a ete fait, decisions prises, prochaines etapes
 
     ### Wikilinks
     - Toujours utiliser le chemin complet : `[[02-Projets/Preliz/Preliz]]`
-    - Ne jamais créer de wikilink sans chemin complet (évite les nœuds orphelins dans le graph)
+    - Ne jamais creer de wikilink sans chemin complet (evite les noeuds orphelins dans le graph)
 
-    ### Règles
+    ### Regles
     - Ne jamais modifier les fichiers dans `decisions/` sans demander
     - `01-Inbox/` = capture brute, ne pas restructurer sans accord
-    - Toujours répondre en français sauf pour le code
+    - Toujours repondre en francais sauf pour le code
   '';
 }

@@ -131,7 +131,7 @@
       --arg date "$GEN_DATE" \
       '{
         generatedAt: $date,
-        mcpServers: ["gsap-master","chrome-devtools","magic","nanobanana","obsidian"],
+        mcpServers: ["chrome-devtools","magic","nanobanana"],
         hooks: [
           {event:"PreToolUse",   matcher:"Edit|Write", script:"protect-main.js",       type:"node"},
           {event:"PreToolUse",   matcher:"Bash",       script:"block-main-bash.js",    type:"node"},

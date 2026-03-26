@@ -37,6 +37,12 @@ let
     export LLM_PROVIDER="claude-cli"
     export GITHUB_TOKEN=$(gh auth token)
 
+    # Telegram notifications
+    if [ -f "$HOME/.config/secrets/telegram-bot-token" ]; then
+      export TELEGRAM_BOT_TOKEN=$(cat "$HOME/.config/secrets/telegram-bot-token")
+      export TELEGRAM_CHAT_ID=$(cat "$HOME/.config/secrets/telegram-chat-id")
+    fi
+
     case "$MODE" in
       daily)
         echo "Running daily digest..."

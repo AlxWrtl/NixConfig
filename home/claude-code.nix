@@ -40,6 +40,8 @@ let
     skillNixDarwin
     skillClaudeCodeMeta
     skillObsidian
+    skillSchliff
+    skillAutoresearch
     ;
   inherit (hooks)
     hookProtectMain
@@ -137,6 +139,10 @@ in
 
     # Obsidian Vault
     "${claudeDir}/skills/obsidian/SKILL.md".text = skillObsidian;
+
+    # Skill analysis tools
+    "${claudeDir}/skills/schliff/SKILL.md".text = skillSchliff;
+    "${claudeDir}/skills/autoresearch/SKILL.md".text = skillAutoresearch;
 
     # Continuous Learning V2
     "${claudeDir}/skills/continuous-learning-v2/SKILL.md".text = skillContinuousLearning;

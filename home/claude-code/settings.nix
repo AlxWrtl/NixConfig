@@ -37,29 +37,21 @@
     permissions = {
       defaultMode = "acceptEdits";
       allow = [
-        # Read access
         "Read(*)"
-        # Package managers
+        # Package managers (npx covers prettier)
         "Bash(pnpm *)"
         "Bash(npm run *)"
-        "Bash(npx prettier *)"
         "Bash(npx *)"
         "Bash(bunx *)"
         "Bash(node *)"
-        # Git (read-only operations)
-        "Bash(git status *)"
-        "Bash(git diff *)"
-        "Bash(git log *)"
-        "Bash(git branch *)"
-        "Bash(git stash *)"
+        # Git + GitHub (single wildcard covers all subcommands)
         "Bash(git *)"
         "Bash(gh *)"
         # Nix
         "Bash(darwin-rebuild *)"
         "Bash(nix *)"
         "Bash(nixfmt *)"
-        "Bash(nix-instantiate *)"
-        # File operations (safe)
+        # File operations
         "Bash(ls *)"
         "Bash(cat *)"
         "Bash(find *)"

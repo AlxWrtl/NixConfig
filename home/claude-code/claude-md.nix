@@ -1,60 +1,58 @@
-# Global CLAUDE.md content (< 100 lines)
+# Global CLAUDE.md content (< 80 lines)
 {
   claudeMdGlobal = ''
     # Claude Code — Global Guardrails
 
-    ## Non-negotiables (EN)
-    - Be extremely concise (incl. commit messages). Sacrifice grammar for brevity.
-    - Read before write. Propose a short plan before any edits.
-    - Ask before: write/delete, chmod, sudo, installs, network calls, or large refactors.
+    ## Non-negotiables
+    - Be extremely concise. Sacrifice grammar for brevity.
+    - Read before write. Short plan before any edits.
+    - Ask before: write/delete, chmod, sudo, installs, network calls, large refactors.
     - Never touch secrets: ~/.ssh, ~/.aws, ~/.gnupg, **/.env*, secrets/, *token*, *key*, *cert*.
     - No git add/commit/push unless explicitly asked.
-    - Keep diffs minimal. Prefer small, reversible changes.
-    - Prefer targeted tests; run full suite only when requested or clearly required.
+    - Keep diffs minimal. Small, reversible changes.
 
     ## Identity
-    - macOS with nix-darwin declarative configuration
+    - macOS with nix-darwin + flakes + home-manager (M1)
     - Package manager: pnpm (never npm or yarn)
-    - TypeScript strict mode by default
-    - All code must be accessible (WCAG AA minimum)
+    - TypeScript strict mode
+    - WCAG AA accessibility minimum
 
-    ## Official docs + senior standards (GLOBAL)
-    - Source of truth: repo docs OR official vendor docs only.
-    - If version/spec unclear: STOP + ask me.
-    - No WebSearch. WebFetch only if allowed by allowlist.
-    - Every code change: Doc ref + Code ref + Verify step.
+    ## Project Map (nix-darwin)
+    modules/system.nix    — Core nix, env, security, shell
+    modules/packages.nix  — CLI tools
+    modules/services.nix  — Background services (launchd)
+    modules/ui.nix        — Fonts, Dock, Finder, system.defaults
+    modules/brew.nix      — GUI apps (Homebrew)
+    home/*.nix            — User config via home-manager
+    home/claude-code/     — Claude Code declarative config
 
-    ## Workflow Rules
-    - ALWAYS run verification commands before marking work as done.
-    - ALWAYS check for existing utilities/components before creating new ones.
-    - One concern per commit.
-    - Commit messages: English, imperative, type prefix (feat/fix/chore/refactor).
+    ## Model Allocation
+    Architecture/planning/review: opus | Implementation: sonnet | Exploration/tests: haiku
+
+    ## Verify Checklist
+    - nix: `nix-instantiate --parse file.nix && sudo darwin-rebuild switch --flake .#alex-mbp`
+    - ts: `pnpm typecheck && pnpm lint --max-warnings 0`
+    - git: never commit on main/master, one concern per commit
+    - commit: English, imperative, type prefix (feat/fix/chore/refactor)
 
     ## Code Quality
-    - No console.log in production code (use proper logging).
+    - No console.log in production (proper logging).
     - No `any` types in TypeScript.
     - Explicit error handling (no silent catches).
     - Input validation on all external data.
+    - Source of truth: repo docs OR official vendor docs only.
+
+    ## Delegation
+    - Specialist agents in ~/.claude/agents/. Delegate to matching agent.
+    - Read project skills before coding (auto-injected via agent frontmatter).
+    - Multi-domain or > 5 files → @team-lead. Repeated pattern (N >= 4) → ralph-loop.
 
     ## When Compacting
-    - Preserve: modified files list, test results, design decisions, next steps.
-    - Preserve: error patterns encountered and their solutions.
+    - Preserve: modified files, test results, design decisions, next steps, error patterns.
     - Discard: file contents already committed, redundant exploration.
 
-    ## Agents & Skills
-    - Specialist agents in ~/.claude/agents/. Always delegate to matching agent.
-    - Project skills in .claude/skills/*/SKILL.md. Read matching skills before coding.
-    - Before ANY task: silently assess complexity and delegate to the right agent. Just act.
-    - Multi-domain or > 5 files → @team-lead. Repeated pattern (N ≥ 4 files) → ralph-loop.
-    - Scope unclear → @codebase-navigator first, then specialist.
-    - Never implement directly when delegation is the right call.
-
     ## Style (FR)
-    - Réponses courtes et actionnables.
-    - Si tu hésites : 2–3 hypothèses max, puis la plus probable.
-    - Quand tu modifies du code : quoi / pourquoi / comment vérifier (3 bullets).
-
-    ## Plans
-    - End each plan with unresolved questions (if any). Ultra concise.
+    - Reponses courtes et actionnables.
+    - Quand tu modifies du code : quoi / pourquoi / comment verifier (3 bullets).
   '';
 }

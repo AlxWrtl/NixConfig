@@ -14,7 +14,8 @@
       try {
         const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
         if (branch === "main" || branch === "master") {
-          process.stderr.write("Cannot edit on main/master. Create feature branch first.");
+          const msg = "Cannot edit on main/master. Create feature branch first.";
+          process.stdout.write(JSON.stringify({ hookSpecificOutput: { permissionDecisionReason: msg } }));
           process.exit(2);
         }
       } catch (e) { process.exit(0); }
@@ -56,7 +57,8 @@
         if (!/git\s+(commit|push|merge|rebase)/.test(cmd)) process.exit(0);
         const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
         if (branch === "main" || branch === "master") {
-          process.stderr.write("Cannot commit/push on main/master. Create a feature branch first.");
+          const msg = "Cannot commit/push on main/master. Create a feature branch first.";
+          process.stdout.write(JSON.stringify({ hookSpecificOutput: { permissionDecisionReason: msg } }));
           process.exit(2);
         }
       } catch (e) { process.exit(0); }

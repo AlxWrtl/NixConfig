@@ -111,6 +111,7 @@
         }
         {
           matcher = "Bash";
+          "if" = "Bash(git commit *)|Bash(git push *)|Bash(git merge *)|Bash(git rebase *)|Bash(git checkout *)";
           hooks = [
             {
               type = "command";

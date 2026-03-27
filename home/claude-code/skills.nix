@@ -6,6 +6,7 @@
     description: "Systematic implementation using APEX methodology"
     disable-model-invocation: true
     context: fork
+    effort: high
     ---
 
     # APEX: Systematic Implementation
@@ -68,6 +69,7 @@
     name: feature-workflow
     description: Feature development methodology — discuss→plan→verify cycle. Referenced by architecture-expert, team-lead, code-reviewer.
     globs: ["**/.claude/output/feature/**", "**/.claude/output/CONTEXT-*"]
+    effort: high
     ---
 
     # Feature Development Methodology
@@ -147,6 +149,7 @@
     description: "Systematic debugging workflow"
     disable-model-invocation: true
     context: fork
+    effort: high
     ---
 
     # Debug: Systematic Problem Solving
@@ -495,6 +498,7 @@
     ---
     name: schliff
     description: "Analyze and score SKILL.md quality using Schliff linter. Use when tasks mention skill quality, skill audit, skill score, or skill optimization."
+    effort: low
     ---
 
     # Schliff — Skill Quality Linter
@@ -549,6 +553,7 @@
     ---
     name: autoresearch
     description: "Set up and run an autonomous experiment loop for any optimization target. Use when asked to run autoresearch, optimize X in a loop, set up autoresearch for X, or start experiments."
+    effort: high
     ---
 
     # Autoresearch
@@ -609,5 +614,203 @@
     - If optimization target is a skill file → use schliff for structural scoring first, then autoresearch to push score past plateau
     - After experiment loop completes → hand off to code-reviewer for review of accumulated commits
     - If no benchmark command exists yet → stop and ask for one before looping
+  '';
+
+  # -------------------------
+  # Testing Patterns Skill
+  # -------------------------
+  skillTestingPatterns = ''
+    ---
+    name: testing-patterns
+    description: "Testing methodology and patterns. Use when writing tests, designing test strategy, or tasks mention test, spec, coverage, TDD, or testing patterns."
+    globs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**"]
+    effort: high
+    ---
+
+    # Testing Patterns
+
+    Systematic testing methodology for TypeScript/JS projects.
+
+    ## Trophy Model (preferred over pyramid)
+    ```
+    ┌──────────────┐
+    │   E2E (few)  │  Critical user flows only
+    ├──────────────┤
+    │ Integration  │  ← Most tests here
+    │   (many)     │  Components + services together
+    ├──────────────┤
+    │  Unit (some) │  Pure logic, utils, transforms
+    ├──────────────┤
+    │ Static (all) │  TypeScript + ESLint
+    └──────────────┘
+    ```
+
+    ## AAA Pattern (Arrange-Act-Assert)
+    Every test follows this structure:
+    ```typescript
+    test("descriptive name of behavior", () => {
+      // Arrange — set up test data and dependencies
+      const input = createTestInput();
+
+      // Act — execute the thing being tested
+      const result = processInput(input);
+
+      // Assert — verify the expected outcome
+      expect(result).toMatchObject({ status: "success" });
+    });
+    ```
+
+    ## Test Naming
+    - Format: `describe("ModuleName")` → `test("should [behavior] when [condition]")`
+    - Test the behavior, not the implementation
+    - One assertion concept per test (multiple expects OK if same concept)
+
+    ## What to Test
+    - **Always:** business logic, data transforms, validation, error paths
+    - **Usually:** API handlers, hooks with side effects, state machines
+    - **Rarely:** UI layout, CSS, simple pass-through components
+    - **Never:** third-party library internals, trivial getters/setters
+
+    ## Mocking Rules
+    - Mock at boundaries: network, filesystem, time, randomness
+    - Never mock the thing being tested
+    - Prefer real implementations over mocks when feasible
+    - If a mock is complex, the design might need refactoring
+
+    ## Coverage Strategy
+    - Target: 80% line coverage on business logic, not vanity 100%
+    - Focus on branch coverage over line coverage
+    - Uncovered code should be a deliberate decision, not oversight
+
+    ## Vitest Patterns
+    ```typescript
+    import { describe, test, expect, vi, beforeEach } from "vitest";
+
+    // Time mocking
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01"));
+
+    // Module mocking
+    vi.mock("./dependency", () => ({ fetchData: vi.fn() }));
+
+    // Snapshot (use sparingly)
+    expect(result).toMatchSnapshot();
+
+    // Error testing
+    expect(() => riskyOperation()).toThrow(/expected error/);
+    await expect(asyncRisky()).rejects.toThrow();
+    ```
+
+    ## Input/Output Contract
+    - **Expects:** module/function to test, or test strategy request. Optionally: existing test files.
+    - **Produces:** test files following AAA pattern, Trophy model placement, and project conventions.
+    - **Side effects:** creates/modifies test files. May update test config if needed.
+
+    ## Scope
+    - **Use this skill when:** writing new tests, improving test coverage, designing test strategy, or reviewing test quality.
+    - **Do NOT use for:** debugging production issues (use debug skill), implementing features, or code review.
+
+    ## Handoffs
+    - After writing tests → hand off to test-runner agent to execute and verify
+    - If tests reveal a bug → hand off to debugger agent for root-cause analysis
+    - If testing requires architectural changes → escalate to architecture-expert
+    - For test quality scoring → use schliff on test-related skills
+  '';
+
+  # -------------------------
+  # Codebase Audit Skill
+  # -------------------------
+  skillCodebaseAudit = ''
+    ---
+    name: codebase-audit
+    description: "Audit codebase health: dead code, unused deps, doc gaps, file bloat. Use when tasks mention audit, cleanup, inventory, drift, tech debt, or codebase health."
+    effort: high
+    ---
+
+    # Codebase Audit
+
+    Systematic 8-step audit producing a CODEBASE-STATUS.md report.
+
+    ## Audit Steps
+
+    ### 01 — Dead Exports
+    Find exported functions/types never imported elsewhere.
+    ```bash
+    grep -r "export " src/ | # extract names
+    # cross-reference with imports across codebase
+    ```
+
+    ### 02 — Unused Dependencies
+    ```bash
+    pnpm ls --depth 0  # installed deps
+    # grep each dep name in src/ — missing = unused
+    ```
+
+    ### 03 — Orphan Files
+    Files not imported by any other file and not an entrypoint.
+    Check: `src/**/*.ts` not referenced in any import statement.
+
+    ### 04 — Config Drift
+    Compare tsconfig, eslint, prettier configs against project CLAUDE.md conventions.
+    Flag mismatches (e.g., strict mode off when CLAUDE.md says strict).
+
+    ### 05 — Doc Gaps
+    - README mentions features that no longer exist
+    - CLAUDE.md references files/paths that moved
+    - Missing JSDoc on public API functions
+
+    ### 06 — File Bloat
+    Files over 300 lines — candidates for splitting.
+    Functions over 50 lines — candidates for extraction.
+
+    ### 07 — Test Coverage Gaps
+    Source files with no corresponding test file.
+    ```bash
+    # for each src/foo.ts, check if src/foo.test.ts or __tests__/foo.test.ts exists
+    ```
+
+    ### 08 — Security Surface
+    - Hardcoded URLs, IPs, ports
+    - TODO/FIXME/HACK comments (count and categorize)
+    - Dependencies with known vulnerabilities (`pnpm audit`)
+
+    ## Output: CODEBASE-STATUS.md
+    ```markdown
+    # Codebase Status — YYYY-MM-DD
+
+    ## Summary
+    | Metric | Count | Status |
+    |--------|-------|--------|
+    | Dead exports | N | OK/WARN |
+    | Unused deps | N | OK/WARN |
+    | Orphan files | N | OK/WARN |
+    | Config drift | N | OK/WARN |
+    | Doc gaps | N | OK/WARN |
+    | Bloated files | N | OK/WARN |
+    | Untested files | N | OK/WARN |
+    | Security items | N | OK/WARN |
+
+    ## Details
+    [per-step findings with file paths and recommendations]
+
+    ## Recommended Actions
+    [prioritized list of cleanup tasks]
+    ```
+
+    ## Input/Output Contract
+    - **Expects:** project directory (defaults to cwd). Optionally: specific steps to run.
+    - **Produces:** CODEBASE-STATUS.md with findings and recommendations.
+    - **Side effects:** none — read-only audit. No file modifications.
+
+    ## Scope
+    - **Use this skill when:** periodic health checks, pre-refactor assessment, tech debt inventory, or onboarding to understand codebase state.
+    - **Do NOT use for:** implementing fixes (hand off to relevant agent), security penetration testing (use security-auditor), or performance profiling (use performance-expert).
+
+    ## Handoffs
+    - Dead exports/orphan files → hand off to quick-fix agent for removal
+    - Config drift → hand off to nix-expert or relevant specialist
+    - Test coverage gaps → hand off with testing-patterns skill for test creation
+    - Security items → hand off to security-auditor for deep analysis
+    - Bloated files → hand off to architecture-expert for decomposition plan
   '';
 }

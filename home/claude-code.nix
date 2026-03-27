@@ -42,6 +42,8 @@ let
     skillObsidian
     skillSchliff
     skillAutoresearch
+    skillTestingPatterns
+    skillCodebaseAudit
     ;
   inherit (hooks)
     hookProtectMain
@@ -139,6 +141,8 @@ in
     "${claudeDir}/skills/schliff/SKILL.md" = { text = skillSchliff; force = true; };
     "${claudeDir}/skills/autoresearch/SKILL.md" = { text = skillAutoresearch; force = true; };
     "${claudeDir}/skills/continuous-learning-v2/SKILL.md" = { text = skillContinuousLearning; force = true; };
+    "${claudeDir}/skills/testing-patterns/SKILL.md" = { text = skillTestingPatterns; force = true; };
+    "${claudeDir}/skills/codebase-audit/SKILL.md" = { text = skillCodebaseAudit; force = true; };
 
     # Hooks
     "${claudeDir}/hooks/protect-main.js" = {

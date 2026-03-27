@@ -14,6 +14,8 @@
     mkdir -p "$HOME/.claude/skills/continuous-learning-v2"
     mkdir -p "$HOME/.claude/skills/nix-darwin"
     mkdir -p "$HOME/.claude/skills/claude-code-meta"
+    mkdir -p "$HOME/.claude/skills/testing-patterns"
+    mkdir -p "$HOME/.claude/skills/codebase-audit"
     mkdir -p "$HOME/.claude/skills/generated"
     mkdir -p "$HOME/.claude/backups"
     mkdir -p "$HOME/.claude/output"
@@ -181,7 +183,7 @@
           {name:"security-auditor",    model:"haiku"},
           {name:"debugger",            model:"sonnet"}
         ],
-        skills: ["apex","debug","continuous-learning-v2","nix-darwin","claude-code-meta","feature-workflow","obsidian"],
+        skills: ["apex","debug","continuous-learning-v2","nix-darwin","claude-code-meta","feature-workflow","obsidian","schliff","autoresearch","testing-patterns","codebase-audit"],
         commands: ["tdd","optimize","context-prime","auto","discuss","verify-feature","ralph-loop","cancel-ralph","init-memory-bank"],
         envVars: {
           CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",

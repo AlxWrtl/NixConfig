@@ -211,6 +211,17 @@
           ];
         }
       ];
+      Stop = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "printf '\\e[>4;0m'";
+              timeout = 1;
+            }
+          ];
+        }
+      ];
       StopFailure = [
         {
           hooks = [

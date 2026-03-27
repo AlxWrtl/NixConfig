@@ -10,7 +10,7 @@
     ccro = "claude --plan-mode --read-only";
     # Skill analysis tools
     schliff = "uvx schliff";
-    schliff-all = "uvx schliff doctor ~/.claude/skills/";
+    schliff-all = "uvx schliff doctor --skill-dirs ~/.claude/skills/";
   };
 
   sessionVars = {

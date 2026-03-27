@@ -35,7 +35,7 @@
     alwaysThinkingEnabled = false;
 
     permissions = {
-      defaultMode = "acceptEdits";
+      defaultMode = "bypassPermissions";
       allow = [
         "Read(*)"
         # Package managers (npx covers prettier)

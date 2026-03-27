@@ -107,8 +107,8 @@ in
     "${claudeDir}/commands/discuss.md".text = commandDiscuss;
     "${claudeDir}/commands/verify-feature.md".text = commandVerifyFeature;
 
-    # Feature workflow skill
-    "${claudeDir}/skills/feature-workflow/SKILL.md".text = skillFeatureWorkflow;
+    # Skills (force = true: desymlink activation script replaces these with real copies)
+    "${claudeDir}/skills/feature-workflow/SKILL.md" = { text = skillFeatureWorkflow; force = true; };
 
     # Feature chain script
     "${claudeDir}/feature-chain.sh" = {
@@ -131,21 +131,14 @@ in
     "${claudeDir}/agents/security-auditor.md".text = agentSecurityAuditor;
     "${claudeDir}/agents/debugger.md".text = agentDebugger;
 
-    # Skills
-    "${claudeDir}/skills/apex/SKILL.md".text = skillApex;
-    "${claudeDir}/skills/debug/SKILL.md".text = skillDebug;
-    "${claudeDir}/skills/nix-darwin/SKILL.md".text = skillNixDarwin;
-    "${claudeDir}/skills/claude-code-meta/SKILL.md".text = skillClaudeCodeMeta;
-
-    # Obsidian Vault
-    "${claudeDir}/skills/obsidian/SKILL.md".text = skillObsidian;
-
-    # Skill analysis tools
-    "${claudeDir}/skills/schliff/SKILL.md".text = skillSchliff;
-    "${claudeDir}/skills/autoresearch/SKILL.md".text = skillAutoresearch;
-
-    # Continuous Learning V2
-    "${claudeDir}/skills/continuous-learning-v2/SKILL.md".text = skillContinuousLearning;
+    "${claudeDir}/skills/apex/SKILL.md" = { text = skillApex; force = true; };
+    "${claudeDir}/skills/debug/SKILL.md" = { text = skillDebug; force = true; };
+    "${claudeDir}/skills/nix-darwin/SKILL.md" = { text = skillNixDarwin; force = true; };
+    "${claudeDir}/skills/claude-code-meta/SKILL.md" = { text = skillClaudeCodeMeta; force = true; };
+    "${claudeDir}/skills/obsidian/SKILL.md" = { text = skillObsidian; force = true; };
+    "${claudeDir}/skills/schliff/SKILL.md" = { text = skillSchliff; force = true; };
+    "${claudeDir}/skills/autoresearch/SKILL.md" = { text = skillAutoresearch; force = true; };
+    "${claudeDir}/skills/continuous-learning-v2/SKILL.md" = { text = skillContinuousLearning; force = true; };
 
     # Hooks
     "${claudeDir}/hooks/protect-main.js" = {

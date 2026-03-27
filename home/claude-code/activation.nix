@@ -29,6 +29,11 @@
     mkdir -p "$HOME/.claude/agents-memory/team-lead"
   '';
 
+  # Remove read-only backups before linkGeneration to avoid interactive mv prompts
+  claudeCodePreLink = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+    rm -f "$HOME/.claude/skills"/*/SKILL.md.backup
+  '';
+
   # Fix HM GC root when nix-store --add-root fails under sudo
   fixHmGcRoot = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
     GC_ROOT="$HOME/.local/state/home-manager/gcroots/current-home"
@@ -39,7 +44,24 @@
     fi
   '';
 
-  claudeCodePerms = lib.hm.dag.entryAfter [ "fixHmGcRoot" ] ''
+  # Replace nix-store symlinks in skills/ with real copies
+  # Reason: schliff doctor does realpath() + relative_to(scan_root)
+  # and silently skips symlinks that resolve outside ~/.claude/skills/
+  claudeCodeDesymlinkSkills = lib.hm.dag.entryAfter [ "fixHmGcRoot" ] ''
+    set -euo pipefail
+    for f in "$HOME/.claude/skills"/*/SKILL.md; do
+      # Remove stale backups (read-only from nix store) to avoid mv prompts
+      rm -f "''${f}.backup"
+      [ -L "$f" ] || continue
+      target=$(readlink "$f")
+      cp "$target" "$f.tmp"
+      rm "$f"
+      mv "$f.tmp" "$f"
+      chmod 644 "$f"
+    done
+  '';
+
+  claudeCodePerms = lib.hm.dag.entryAfter [ "claudeCodeDesymlinkSkills" ] ''
     set -euo pipefail
     chmod 700 "$HOME/.claude"
     chmod 700 "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks" "$HOME/.claude/skills"

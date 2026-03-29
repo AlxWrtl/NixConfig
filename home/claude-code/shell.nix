@@ -5,6 +5,7 @@
     cca = "claude --agent";
     ccr = "claude --resume";
     ccd = "claude --dangerously-skip-permissions";
+    ccdl = "claude --dangerously-skip-permissions -c";
     ccn = "cd ~/.config/nix-darwin && claude";
     ccv = "claude --version";
     ccro = "claude --plan-mode --read-only";

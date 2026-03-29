@@ -57,6 +57,13 @@ let
     hookCompactContext
     hookFileChanged
     hookStopFailure
+    hookCircuitBreaker
+    hookCircuitBreakerReset
+    hookPreCompactState
+    hookPostCompactRestore
+    hookQualityGate
+    hookGovernanceAudit
+    hookCorrectionCapture
     ;
   inherit (agents)
     agentFrontend
@@ -187,6 +194,34 @@ in
     };
     "${claudeDir}/hooks/stop-failure.sh" = {
       text = hookStopFailure;
+      executable = true;
+    };
+    "${claudeDir}/hooks/circuit-breaker.js" = {
+      text = hookCircuitBreaker;
+      executable = true;
+    };
+    "${claudeDir}/hooks/circuit-breaker-reset.js" = {
+      text = hookCircuitBreakerReset;
+      executable = true;
+    };
+    "${claudeDir}/hooks/pre-compact-state.js" = {
+      text = hookPreCompactState;
+      executable = true;
+    };
+    "${claudeDir}/hooks/post-compact-restore.js" = {
+      text = hookPostCompactRestore;
+      executable = true;
+    };
+    "${claudeDir}/hooks/quality-gate.js" = {
+      text = hookQualityGate;
+      executable = true;
+    };
+    "${claudeDir}/hooks/governance-audit.js" = {
+      text = hookGovernanceAudit;
+      executable = true;
+    };
+    "${claudeDir}/hooks/correction-capture.js" = {
+      text = hookCorrectionCapture;
       executable = true;
     };
 

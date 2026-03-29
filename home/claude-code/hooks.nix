@@ -78,6 +78,70 @@
     fi
   '';
 
+  # Save working state before compaction so it can be restored
+  hookPreCompactState = ''
+    #!/usr/bin/env node
+    const fs = require("fs");
+    const path = require("path");
+    const { execSync } = require("child_process");
+    const stateFile = path.join(process.env.HOME, ".claude/compact-state.json");
+    try {
+      const state = { ts: new Date().toISOString() };
+      // Capture modified files
+      try {
+        state.modifiedFiles = execSync("git diff --name-only 2>/dev/null || true", { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+        state.stagedFiles = execSync("git diff --cached --name-only 2>/dev/null || true", { encoding: "utf8" }).trim().split("\n").filter(Boolean);
+        state.branch = execSync("git branch --show-current 2>/dev/null || true", { encoding: "utf8" }).trim();
+      } catch { state.modifiedFiles = []; state.stagedFiles = []; state.branch = ""; }
+      // Capture active plan/context if exists
+      try {
+        const planDir = ".claude/output";
+        if (fs.existsSync(planDir)) {
+          const plans = fs.readdirSync(planDir).filter(f => f.endsWith(".md")).slice(-3);
+          state.activePlans = plans;
+        }
+      } catch {}
+      // Capture circuit breaker state
+      const cbFile = path.join(process.env.HOME, ".claude/circuit-breaker-state.json");
+      try { state.circuitBreaker = JSON.parse(fs.readFileSync(cbFile, "utf8")); } catch {}
+      fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+    } catch {}
+    process.exit(0);
+  '';
+
+  # Restore state after compaction via additionalContext
+  hookPostCompactRestore = ''
+    #!/usr/bin/env node
+    const fs = require("fs");
+    const path = require("path");
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const stateFile = path.join(process.env.HOME, ".claude/compact-state.json");
+      try {
+        const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+        // Skip if state is stale (>1 hour)
+        const age = Date.now() - new Date(state.ts).getTime();
+        if (age > 3600000) { process.exit(0); return; }
+        const parts = [];
+        if (state.branch) parts.push("Branch: " + state.branch);
+        if (state.modifiedFiles && state.modifiedFiles.length > 0)
+          parts.push("Modified files: " + state.modifiedFiles.join(", "));
+        if (state.stagedFiles && state.stagedFiles.length > 0)
+          parts.push("Staged files: " + state.stagedFiles.join(", "));
+        if (state.activePlans && state.activePlans.length > 0)
+          parts.push("Active plans in .claude/output/: " + state.activePlans.join(", "));
+        if (state.circuitBreaker && state.circuitBreaker.totalTrips > 0)
+          parts.push("Circuit breaker trips: " + state.circuitBreaker.totalTrips);
+        if (parts.length > 0) {
+          const ctx = "POST-COMPACT STATE RESTORE:\n" + parts.join("\n");
+          process.stdout.write(JSON.stringify({ hookSpecificOutput: { additionalContext: ctx } }));
+        }
+      } catch {}
+      process.exit(0);
+    });
+  '';
+
   hookSessionStart = ''
     #!/usr/bin/env bash
     # Guard: graceful handling outside git repos
@@ -146,6 +210,186 @@
         echo "deps changed — run: pnpm install"
         ;;
     esac
+  '';
+
+  # Quality gate — scan recent changes for anti-patterns on Stop
+  hookQualityGate = ''
+    #!/usr/bin/env node
+    const { execSync } = require("child_process");
+    const fs = require("fs");
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      try {
+        // Only check if we are in a git repo with changes
+        const diff = execSync("git diff --name-only HEAD 2>/dev/null || true", { encoding: "utf8" }).trim();
+        if (!diff) { process.exit(0); return; }
+        const files = diff.split("\n").filter(f => /\.(ts|tsx|js|jsx)$/.test(f));
+        if (files.length === 0) { process.exit(0); return; }
+        const patterns = [
+          { re: /console\.log\(/g, msg: "console.log in production code" },
+          { re: /:\s*any\b/g, msg: "TypeScript 'any' type" },
+          { re: /\balert\s*\(/g, msg: "alert() call" },
+          { re: /\bconfirm\s*\(/g, msg: "confirm() call" },
+          { re: /\/\/\s*TODO\b/gi, msg: "TODO comment" },
+          { re: /\/\/\s*HACK\b/gi, msg: "HACK comment" },
+          { re: /\/\/\s*FIXME\b/gi, msg: "FIXME comment" },
+        ];
+        const issues = [];
+        for (const file of files) {
+          try {
+            const content = fs.readFileSync(file, "utf8");
+            const lines = content.split("\n");
+            for (const p of patterns) {
+              for (let i = 0; i < lines.length; i++) {
+                if (p.re.test(lines[i])) {
+                  issues.push(file + ":" + (i+1) + " — " + p.msg);
+                }
+                p.re.lastIndex = 0;
+              }
+            }
+          } catch {}
+        }
+        if (issues.length > 0) {
+          const ctx = "QUALITY GATE — " + issues.length + " issue(s) in changed files:\n" + issues.slice(0, 10).join("\n");
+          // Advisory only — exit 0 with additionalContext (Stop does not support it, use stderr info)
+          process.stderr.write(ctx);
+          process.exit(2);
+        }
+      } catch {}
+      process.exit(0);
+    });
+  '';
+
+  # Governance audit log — append-only log of significant tool calls
+  hookGovernanceAudit = ''
+    #!/usr/bin/env node
+    const fs = require("fs");
+    const path = require("path");
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      try {
+        const data = JSON.parse(input);
+        const logDir = path.join(process.env.HOME, ".claude/audit");
+        fs.mkdirSync(logDir, { recursive: true });
+        const entry = {
+          ts: new Date().toISOString(),
+          tool: data.tool_name || "unknown",
+          target: "",
+          session: data.session_id || ""
+        };
+        const ti = data.tool_input || {};
+        if (ti.file_path) entry.target = ti.file_path;
+        else if (ti.command) entry.target = ti.command.slice(0, 200);
+        else if (ti.prompt) entry.target = "agent: " + (ti.prompt || "").slice(0, 100);
+        fs.appendFileSync(
+          path.join(logDir, "audit.jsonl"),
+          JSON.stringify(entry) + "\n"
+        );
+      } catch {}
+      process.exit(0);
+    });
+  '';
+
+  # Correction capture — detect user corrections in prompts
+  hookCorrectionCapture = ''
+    #!/usr/bin/env node
+    const fs = require("fs");
+    const path = require("path");
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      try {
+        const data = JSON.parse(input);
+        const prompt = (data.prompt || "").toLowerCase();
+        if (!prompt || prompt.length > 500 || prompt.length < 5) { process.exit(0); return; }
+        // Detection patterns with confidence scores
+        const patterns = [
+          { re: /\bnon[,.]?\s/i, conf: 0.70, type: "correction" },
+          { re: /\bpas (?:ca|ça|comme)\b/i, conf: 0.80, type: "correction" },
+          { re: /\bstop\b.*\b(?:doing|adding|making)\b/i, conf: 0.85, type: "correction" },
+          { re: /\bdon'''t\b.*\b(?:use|add|do|make|create)\b/i, conf: 0.85, type: "correction" },
+          { re: /\butilise\b.*\bplutôt\b/i, conf: 0.80, type: "correction" },
+          { re: /\bpas\b.*\bmais\b/i, conf: 0.70, type: "correction" },
+          { re: /\bnever\b.*\b(?:use|add|do)\b/i, conf: 0.90, type: "guardrail" },
+          { re: /\balways\b.*\b(?:use|prefer|check)\b/i, conf: 0.75, type: "preference" },
+          { re: /\bremember\s*:/i, conf: 0.90, type: "explicit" },
+        ];
+        let bestMatch = null;
+        for (const p of patterns) {
+          if (p.re.test(data.prompt || "")) {
+            if (!bestMatch || p.conf > bestMatch.conf) bestMatch = p;
+          }
+        }
+        if (!bestMatch) { process.exit(0); return; }
+        const queueFile = path.join(process.env.HOME, ".claude/learnings-queue.json");
+        let queue = [];
+        try { queue = JSON.parse(fs.readFileSync(queueFile, "utf8")); } catch {}
+        queue.push({
+          ts: new Date().toISOString(),
+          prompt: (data.prompt || "").slice(0, 300),
+          type: bestMatch.type,
+          confidence: bestMatch.conf,
+          cwd: data.cwd || ""
+        });
+        // Cap queue at 50 entries
+        if (queue.length > 50) queue = queue.slice(-50);
+        fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
+      } catch {}
+      process.exit(0);
+    });
+  '';
+
+  hookCircuitBreaker = ''
+    #!/usr/bin/env node
+    const fs = require("fs");
+    const path = require("path");
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const stateFile = path.join(process.env.HOME, ".claude/circuit-breaker-state.json");
+      let state = { consecutiveFailures: 0, totalTrips: 0, lastTool: "", lastError: "" };
+      try { state = JSON.parse(fs.readFileSync(stateFile, "utf8")); } catch {}
+      try {
+        const data = JSON.parse(input);
+        state.consecutiveFailures++;
+        state.lastTool = data.tool_name || "unknown";
+        state.lastError = (data.error || "").slice(0, 200);
+        let ctx = "";
+        if (state.consecutiveFailures >= 5) {
+          state.totalTrips++;
+          state.consecutiveFailures = 0;
+          ctx = "CIRCUIT BREAKER TRIPPED (" + state.totalTrips + " total). STOP retrying the same approach. Step back, re-read the code, and try a structurally different solution.";
+        } else if (state.consecutiveFailures >= 3) {
+          ctx = "WARNING: " + state.consecutiveFailures + " consecutive tool failures on " + state.lastTool + ". Consider a different approach before continuing.";
+        }
+        fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+        if (ctx) {
+          process.stdout.write(JSON.stringify({ hookSpecificOutput: { additionalContext: ctx } }));
+        }
+      } catch {}
+      process.exit(0);
+    });
+  '';
+
+  hookCircuitBreakerReset = ''
+    #!/usr/bin/env node
+    const fs = require("fs");
+    const path = require("path");
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const stateFile = path.join(process.env.HOME, ".claude/circuit-breaker-state.json");
+      try {
+        const state = JSON.parse(fs.readFileSync(stateFile, "utf8"));
+        if (state.consecutiveFailures > 0) {
+          state.consecutiveFailures = 0;
+          fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+        }
+      } catch {}
+      process.exit(0);
+    });
   '';
 
   hookStopFailure = ''

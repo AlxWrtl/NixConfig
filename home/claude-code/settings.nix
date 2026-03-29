@@ -16,6 +16,7 @@
       CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
       CLAUDE_STREAM_IDLE_TIMEOUT_MS = "600000";
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB = "1";
+      CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
     };
 
     model = "opus";
@@ -34,24 +35,88 @@
 
     alwaysThinkingEnabled = false;
 
+    includeGitInstructions = false;
+
+    sandbox = {
+      enabled = true;
+      filesystem = {
+        denyWrite = [
+          "/etc"
+          "/System"
+          "/Library"
+          "${homeDirectory}/.ssh"
+          "${homeDirectory}/.aws"
+          "${homeDirectory}/.gnupg"
+          "${homeDirectory}/.config/secrets"
+        ];
+        denyRead = [
+          "${homeDirectory}/.ssh/id_*"
+          "${homeDirectory}/.aws/credentials"
+          "${homeDirectory}/.gnupg/private-keys-v1.d"
+        ];
+      };
+      network = {
+        allowedDomains = [
+          "github.com"
+          "raw.githubusercontent.com"
+          "api.github.com"
+          "nix-darwin.github.io"
+          "nixos.org"
+          "search.nixos.org"
+          "registry.npmjs.org"
+          "docs.anthropic.com"
+          "code.claude.com"
+        ];
+      };
+    };
+
     permissions = {
-      defaultMode = "bypassPermissions";
+      defaultMode = "acceptEdits";
       allow = [
         "Read(*)"
-        # Package managers (npx covers prettier)
+        # Package managers
         "Bash(pnpm *)"
         "Bash(npm run *)"
         "Bash(npx *)"
         "Bash(bunx *)"
         "Bash(node *)"
-        # Git + GitHub (single wildcard covers all subcommands)
-        "Bash(git *)"
-        "Bash(gh *)"
+        # Git — safe operations (granular, not blanket)
+        "Bash(git status *)"
+        "Bash(git diff *)"
+        "Bash(git log *)"
+        "Bash(git branch *)"
+        "Bash(git show *)"
+        "Bash(git stash *)"
+        "Bash(git fetch *)"
+        "Bash(git pull *)"
+        "Bash(git add *)"
+        "Bash(git checkout -b *)"
+        "Bash(git switch *)"
+        "Bash(git commit *)"
+        "Bash(git push)"
+        "Bash(git push -u *)"
+        "Bash(git push origin *)"
+        "Bash(git merge *)"
+        "Bash(git rebase *)"
+        "Bash(git cherry-pick *)"
+        "Bash(git tag *)"
+        "Bash(git remote *)"
+        "Bash(git rev-parse *)"
+        "Bash(git ls-files *)"
+        "Bash(git blame *)"
+        "Bash(git shortlog *)"
+        # GitHub CLI
+        "Bash(gh pr *)"
+        "Bash(gh issue *)"
+        "Bash(gh repo *)"
+        "Bash(gh run *)"
+        "Bash(gh api *)"
+        "Bash(gh auth *)"
         # Nix
         "Bash(darwin-rebuild *)"
         "Bash(nix *)"
         "Bash(nixfmt *)"
-        # File operations
+        # File operations (read-only + safe)
         "Bash(ls *)"
         "Bash(cat *)"
         "Bash(find *)"
@@ -83,17 +148,49 @@
         "WebFetch(domain:code.claude.com)"
       ];
       deny = [
-        "Agent(Explore)"
+        # Shell bypass — prevent permission/hook circumvention
+        "Bash(bash -c *)"
+        "Bash(bash -i *)"
+        "Bash(sh -c *)"
+        "Bash(sh -i *)"
+        "Bash(zsh -c *)"
+        "Bash(zsh -i *)"
+        "Bash(python -c *)"
+        "Bash(python3 -c *)"
+        "Bash(node -e *)"
+        "Bash(node --eval *)"
+        "Bash(ruby -e *)"
+        "Bash(perl -e *)"
+        "Bash(perl -E *)"
+        "Bash(eval *)"
+        # Git destructive ops
+        "Bash(git push --force *)"
+        "Bash(git push -f *)"
+        "Bash(git push --force-with-lease *)"
+        "Bash(git reset --hard *)"
+        "Bash(git clean -fdx *)"
+        "Bash(git clean -fxd *)"
+        "Bash(git checkout -- .)"
+        # Filesystem destructive
+        "Bash(rm -rf /*)"
+        "Bash(sudo *)"
+        "Bash(chmod 777 *)"
+        # Secrets — absolute paths via Nix interpolation
+        "Read(${homeDirectory}/.ssh/**)"
+        "Read(${homeDirectory}/.aws/**)"
+        "Read(${homeDirectory}/.gnupg/**)"
+        "Read(${homeDirectory}/.config/secrets/**)"
+        "Read(**/.env)"
+        "Read(**/.env.*)"
+        "Read(**/secrets/**)"
+        # Network piping
+        "Bash(curl * | sh)"
+        "Bash(curl * | bash)"
+        "Bash(wget * | sh)"
+        "Bash(wget * | bash)"
+        # Web search
         "Websearch"
         "WebSearch"
-        "Bash(rm -rf /*)"
-        "Bash(sudo rm *)"
-        "Bash(chmod 777 *)"
-        "Read(.env)"
-        "Read(.env.*)"
-        "Read(secrets/**)"
-        "Bash(curl * | sh)"
-        "Bash(wget * | sh)"
       ];
     };
 
@@ -120,6 +217,29 @@
             }
           ];
         }
+        {
+          matcher = "Edit|Write|Bash|Agent";
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/governance-audit.js";
+              timeout = 3;
+              async = true;
+            }
+          ];
+        }
+      ];
+      UserPromptSubmit = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/correction-capture.js";
+              timeout = 5;
+              async = true;
+            }
+          ];
+        }
       ];
       PostToolUse = [
         {
@@ -133,6 +253,27 @@
             }
           ];
         }
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/circuit-breaker-reset.js";
+              timeout = 3;
+              async = true;
+            }
+          ];
+        }
+      ];
+      PostToolUseFailure = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/circuit-breaker.js";
+              timeout = 5;
+            }
+          ];
+        }
       ];
       PreCompact = [
         {
@@ -140,6 +281,26 @@
             {
               type = "command";
               command = "bash ~/.claude/hooks/pre-compact-backup.sh";
+              timeout = 5;
+            }
+          ];
+        }
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/pre-compact-state.js";
+              timeout = 10;
+            }
+          ];
+        }
+      ];
+      PostCompact = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/post-compact-restore.js";
               timeout = 5;
             }
           ];
@@ -218,6 +379,15 @@
               type = "command";
               command = "printf '\\e[>4;0m'";
               timeout = 1;
+            }
+          ];
+        }
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "node ~/.claude/hooks/quality-gate.js";
+              timeout = 10;
             }
           ];
         }

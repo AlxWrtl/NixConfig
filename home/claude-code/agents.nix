@@ -97,6 +97,7 @@
     ---
     name: architecture-expert
     model: opus
+    effort: max
     description: "Produces system design docs and implementation plans (no code). Use proactively when tasks say plan, design, architect, refactor strategy, or feature scope, or when complexity is M/L."
     tools: Read, Write, Grep, Glob, WebFetch
     permissionMode: default
@@ -241,6 +242,7 @@
     ---
     name: code-reviewer
     model: opus
+    effort: max
     description: "Two-pass code review (spec compliance + quality). Use proactively when tasks say review, audit, verify, pre-merge, or before committing. Blocks on critical security issues."
     tools: Read, Grep, Glob, Bash, WebFetch, Write, Edit
     permissionMode: acceptEdits
@@ -505,6 +507,7 @@
     ---
     name: security-auditor
     model: haiku
+    effort: max
     description: "Audits code for security vulnerabilities (OWASP top 10, deps, secrets). Use proactively before merging, or when tasks mention security, audit, vulnerability, CVE, or dependency check."
     tools: Read, Grep, Glob, Bash
     permissionMode: plan

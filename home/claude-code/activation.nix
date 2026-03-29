@@ -19,6 +19,7 @@
     mkdir -p "$HOME/.claude/skills/generated"
     mkdir -p "$HOME/.claude/backups"
     mkdir -p "$HOME/.claude/output"
+    mkdir -p "$HOME/.claude/audit"
     mkdir -p "$HOME/.claude/agents-memory/frontend-expert"
     mkdir -p "$HOME/.claude/agents-memory/backend-expert"
     mkdir -p "$HOME/.claude/agents-memory/architecture-expert"
@@ -166,6 +167,13 @@
           {event:"SubagentStop",  matcher:"",                               script:"subagent-stop.js",      type:"node"},
           {event:"TaskCompleted", matcher:"",                               script:"task-completed.sh",     type:"bash"},
           {event:"FileChanged",   matcher:"flake.lock|.envrc|package.json", script:"file-changed.sh",       type:"bash"},
+          {event:"PreToolUse",    matcher:"Edit|Write|Bash|Agent",            script:"governance-audit.js",    type:"node"},
+          {event:"UserPromptSubmit", matcher:"",                             script:"correction-capture.js",  type:"node"},
+          {event:"PostToolUseFailure", matcher:"",                           script:"circuit-breaker.js",     type:"node"},
+          {event:"PostToolUse",   matcher:"",                               script:"circuit-breaker-reset.js", type:"node"},
+          {event:"PreCompact",    matcher:"",                               script:"pre-compact-state.js",   type:"node"},
+          {event:"PostCompact",   matcher:"",                               script:"post-compact-restore.js", type:"node"},
+          {event:"Stop",          matcher:"",                               script:"quality-gate.js",        type:"node"},
           {event:"StopFailure",   matcher:"",                               script:"stop-failure.sh",        type:"bash"}
         ],
         agents: [
@@ -189,7 +197,8 @@
           CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
           CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "90",
           CLAUDE_STREAM_IDLE_TIMEOUT_MS: "600000",
-          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1"
+          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+          CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1"
         },
         settings: {
           model: "opus",

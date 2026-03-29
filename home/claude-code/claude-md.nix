@@ -42,6 +42,16 @@
     - Input validation on all external data.
     - Source of truth: repo docs OR official vendor docs only.
 
+    ## Tool Selection (forbidden → required)
+    - `grep`/`rg` → Grep tool | `find`/`ls -R` → Glob tool
+    - `cat`/`head`/`tail` → Read tool | `sed`/`awk` → Edit tool
+    - `echo >` / heredoc → Write tool | `curl` for docs → WebFetch tool
+
+    ## Confidence Gate (nix)
+    - Before writing nix syntax: rate confidence 0-100.
+    - < 80% → STOP, load nix-darwin skill, check docs via WebFetch before proceeding.
+    - 80-95% → state assumptions inline, proceed with caution.
+
     ## Delegation
     - Specialist agents in ~/.claude/agents/. Delegate to matching agent.
     - Read project skills before coding (auto-injected via agent frontmatter).

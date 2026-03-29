@@ -1,4 +1,26 @@
 # Skill definitions
+let
+  # Shared template blocks for DRY skill authoring
+  contract = { expects, produces, sideEffects ? "none" }: ''
+
+    ## Input/Output Contract
+    - **Expects:** ${expects}
+    - **Produces:** ${produces}
+    - **Side effects:** ${sideEffects}
+  '';
+
+  scope = { useWhen, notFor }: ''
+
+    ## Scope
+    - **Use this skill when:** ${useWhen}
+    - **Do NOT use for:** ${notFor}
+  '';
+
+  handoffs = items: ''
+
+    ## Handoffs
+'' + builtins.concatStringsSep "\n" (map (i: "    - ${i}") items) + "\n";
+in
 {
   skillApex = ''
     ---
@@ -45,20 +67,21 @@
     ### 09 — Finish
     Final verification, commit, summarize.
 
-    ## Input/Output Contract
-    - **Expects:** task description + complexity classification (M/L). Optional: existing CLAUDE.md and project context.
-    - **Produces:** implementation across 9 steps (initialize → analyze → plan → prepare → execute → test → examine → polish → finish).
-    - **Side effects:** modifies source files, creates tests, updates docs, commits on each kept step.
-
-    ## Scope
-    - **Use this skill when:** Implementing a well-defined M/L feature, module, or task that benefits from structured 9-step execution.
-    - **Do NOT use for:** Quick fixes, one-liners, debugging, exploratory research, or code review.
-
-    ## Handoffs
-    - If task is broken and needs diagnosis → use debug skill instead.
-    - If scope is unclear → run feature-workflow DISCUSS phase first.
-    - After step 05-Test fails repeatedly → hand off to debug skill for root-cause analysis.
-    - After step 09-Finish on L/XL changes → hand off to code-reviewer agent.
+    ${contract {
+      expects = "task description + complexity classification (M/L). Optional: existing CLAUDE.md and project context.";
+      produces = "implementation across 9 steps (initialize → analyze → plan → prepare → execute → test → examine → polish → finish).";
+      sideEffects = "modifies source files, creates tests, updates docs, commits on each kept step.";
+    }}
+    ${scope {
+      useWhen = "Implementing a well-defined M/L feature, module, or task that benefits from structured 9-step execution.";
+      notFor = "Quick fixes, one-liners, debugging, exploratory research, or code review.";
+    }}
+    ${handoffs [
+      "If task is broken and needs diagnosis → use debug skill instead."
+      "If scope is unclear → run feature-workflow DISCUSS phase first."
+      "After step 05-Test fails repeatedly → hand off to debug skill for root-cause analysis."
+      "After step 09-Finish on L/XL changes → hand off to code-reviewer agent."
+    ]}
   '';
 
   # -------------------------
@@ -123,21 +146,22 @@
     3. Executing without review → circular deps or missing tasks
     4. Manual commits during chain → breaks atomic tracking
 
-    ## Input/Output Contract
-    - **Expects:** feature description + complexity assessment (S/M/L/XL). Optional: existing project CLAUDE.md.
-    - **Produces:** CONTEXT.md (DISCUSS), PLAN.md + task XMLs (PLAN), PLAN-REVIEW.md (REVIEW), EXECUTION.md (EXECUTE), VERIFY.md (VERIFY).
-    - **Side effects:** creates .claude/output/feature/{slug}/ directory with phase artifacts.
-
-    ## Scope
-    - **Use this skill when:** M/L/XL features needing structured planning (5+ files, multi-agent, or >1 day work)
-    - **Do NOT use for:** Quick fixes (<20 lines), pure debugging, single-file edits, or anything classified S complexity
-
-    ## Handoffs
-    - If task is S complexity → route directly to quick-fix or relevant specialist agent instead
-    - After DISCUSS phase → hand off to architecture-expert for PLAN creation
-    - After PLAN phase → hand off to code-reviewer for two-pass REVIEW before EXECUTE
-    - After EXECUTE phase → hand off to code-reviewer for VERIFY (6-layer check)
-    - If XL epic → split into L milestones first, run full cycle per milestone
+    ${contract {
+      expects = "feature description + complexity assessment (S/M/L/XL). Optional: existing project CLAUDE.md.";
+      produces = "CONTEXT.md (DISCUSS), PLAN.md + task XMLs (PLAN), PLAN-REVIEW.md (REVIEW), EXECUTION.md (EXECUTE), VERIFY.md (VERIFY).";
+      sideEffects = "creates .claude/output/feature/{slug}/ directory with phase artifacts.";
+    }}
+    ${scope {
+      useWhen = "M/L/XL features needing structured planning (5+ files, multi-agent, or >1 day work)";
+      notFor = "Quick fixes (<20 lines), pure debugging, single-file edits, or anything classified S complexity";
+    }}
+    ${handoffs [
+      "If task is S complexity → route directly to quick-fix or relevant specialist agent instead"
+      "After DISCUSS phase → hand off to architecture-expert for PLAN creation"
+      "After PLAN phase → hand off to code-reviewer for two-pass REVIEW before EXECUTE"
+      "After EXECUTE phase → hand off to code-reviewer for VERIFY (6-layer check)"
+      "If XL epic → split into L milestones first, run full cycle per milestone"
+    ]}
   '';
 
   # -------------------------
@@ -173,20 +197,21 @@
     ### 05 — Verify
     Run reproduction, test edge cases, run regression.
 
-    ## Input/Output Contract
-    - **Expects:** error description or failing test. Optionally: stack trace, logs, git commit range.
-    - **Produces:** root cause analysis + minimal fix applied to source files.
-    - **Side effects:** modifies source files (step 04-Fix), adds logging temporarily (step 03-Diagnose, removed after).
-
-    ## Scope
-    - **Use this skill when:** Something is broken and needs systematic diagnosis — errors, crashes, unexpected behavior, flaky tests.
-    - **Do NOT use for:** Feature implementation, code review, refactoring, or infrastructure changes.
-
-    ## Handoffs
-    - After step 04-Fix → hand off to test-runner to verify the fix with regression suite.
-    - If root cause is an architectural issue → escalate to architecture-expert.
-    - If fix requires a large refactor (> 10 files) → hand off to feature-workflow for full planning cycle.
-    - If the bug is in production only → gather logs/observability data before starting step 01.
+    ${contract {
+      expects = "error description or failing test. Optionally: stack trace, logs, git commit range.";
+      produces = "root cause analysis + minimal fix applied to source files.";
+      sideEffects = "modifies source files (step 04-Fix), adds logging temporarily (step 03-Diagnose, removed after).";
+    }}
+    ${scope {
+      useWhen = "Something is broken and needs systematic diagnosis — errors, crashes, unexpected behavior, flaky tests.";
+      notFor = "Feature implementation, code review, refactoring, or infrastructure changes.";
+    }}
+    ${handoffs [
+      "After step 04-Fix → hand off to test-runner to verify the fix with regression suite."
+      "If root cause is an architectural issue → escalate to architecture-expert."
+      "If fix requires a large refactor (> 10 files) → hand off to feature-workflow for full planning cycle."
+      "If the bug is in production only → gather logs/observability data before starting step 01."
+    ]}
   '';
 
   # -------------------------
@@ -248,19 +273,20 @@
     - Instincts: `~/.claude/generated/instincts.jsonl`
     - Generated skills: `~/.claude/skills/generated/`
 
-    ## Input/Output Contract
-    - **Expects:** session patterns (automatic from conversation history) or explicit pattern description from user.
-    - **Produces:** instincts.jsonl entries (record), generated SKILL.md drafts (promote).
-    - **Side effects:** writes to ~/.claude/generated/instincts.jsonl and ~/.claude/skills/generated/{topic}/SKILL.md.
-
-    ## Scope
-    - **Use this skill when:** Extracting recurring patterns from sessions, clustering instincts by category, or promoting mature instinct clusters to generated skills.
-    - **Do NOT use for:** Direct code changes, feature implementation, bug fixes, or writing new skills manually.
-
-    ## Handoffs
-    - When an instinct cluster reaches promotion threshold → use schliff to validate the generated skill quality before activating.
-    - If a generated skill contradicts CLAUDE.md → flag for manual review, do not promote automatically.
-    - After promoting a skill to active → update the skills.nix file via the nix-darwin skill workflow.
+    ${contract {
+      expects = "session patterns (automatic from conversation history) or explicit pattern description from user.";
+      produces = "instincts.jsonl entries (record), generated SKILL.md drafts (promote).";
+      sideEffects = "writes to ~/.claude/generated/instincts.jsonl and ~/.claude/skills/generated/{topic}/SKILL.md.";
+    }}
+    ${scope {
+      useWhen = "Extracting recurring patterns from sessions, clustering instincts by category, or promoting mature instinct clusters to generated skills.";
+      notFor = "Direct code changes, feature implementation, bug fixes, or writing new skills manually.";
+    }}
+    ${handoffs [
+      "When an instinct cluster reaches promotion threshold → use schliff to validate the generated skill quality before activating."
+      "If a generated skill contradicts CLAUDE.md → flag for manual review, do not promote automatically."
+      "After promoting a skill to active → update the skills.nix file via the nix-darwin skill workflow."
+    ]}
   '';
 
   # -------------------------
@@ -331,20 +357,21 @@
     3. Raw plist files → prefer `launchd.daemons`
     4. `with pkgs;` pollutes scope → use explicit `pkgs.` prefix
 
-    ## Input/Output Contract
-    - **Expects:** .nix file path or module description (what to add/change). Optionally: target module name.
-    - **Produces:** nix module code (attribute set additions or new module file).
-    - **Side effects:** modifies .nix files in modules/ or home/; may trigger darwin-rebuild on verification.
-
-    ## Scope
-    - **Use this skill when:** Editing any *.nix file, flake.lock, adding packages/services/fonts/defaults, configuring home-manager, or any task involving declarative macOS setup
-    - **Do NOT use for:** Non-nix config changes (tsconfig, package.json, dotfiles managed outside home-manager), running arbitrary shell commands, or app-level TypeScript/JS code
-
-    ## Handoffs
-    - If adding a GUI app → always use `modules/brew.nix` casks, not packages.nix
-    - If change affects user dotfiles (git, zsh, starship) → edit `home/*.nix`, not `modules/`
-    - After any nix edit → run `nix-instantiate --parse` then `rebuild` to verify before committing
-    - If flake input is missing → update flake.nix first, `git add flake.nix`, then rebuild
+    ${contract {
+      expects = ".nix file path or module description (what to add/change). Optionally: target module name.";
+      produces = "nix module code (attribute set additions or new module file).";
+      sideEffects = "modifies .nix files in modules/ or home/; may trigger darwin-rebuild on verification.";
+    }}
+    ${scope {
+      useWhen = "Editing any *.nix file, flake.lock, adding packages/services/fonts/defaults, configuring home-manager, or any task involving declarative macOS setup";
+      notFor = "Non-nix config changes (tsconfig, package.json, dotfiles managed outside home-manager), running arbitrary shell commands, or app-level TypeScript/JS code";
+    }}
+    ${handoffs [
+      "If adding a GUI app → always use modules/brew.nix casks, not packages.nix"
+      "If change affects user dotfiles (git, zsh, starship) → edit home/*.nix, not modules/"
+      "After any nix edit → run nix-instantiate --parse then rebuild to verify before committing"
+      "If flake input is missing → update flake.nix first, git add flake.nix, then rebuild"
+    ]}
   '';
 
   # -------------------------
@@ -398,20 +425,21 @@
     └── hooks/*.js|*.sh        Hook scripts
     ```
 
-    ## Input/Output Contract
-    - **Expects:** agent/skill/hook specification (name, purpose, triggers). Optionally: existing file to update.
-    - **Produces:** .nix config code for agents.nix, skills.nix, hooks.nix, or claude-md.nix.
-    - **Side effects:** modifies home/claude-code/*.nix files; changes take effect after darwin-rebuild.
-
-    ## Scope
-    - **Use this skill when:** Editing agents.nix, skills.nix, hooks.nix, claude-md.nix, or any file under .claude/ (agents, skills, hooks, commands, CLAUDE.md)
-    - **Do NOT use for:** Application code, deployment config, database schemas, or anything outside the Claude Code meta-layer
-
-    ## Handoffs
-    - If new skill covers a domain with existing agents → update matching agent's `skills:` frontmatter too
-    - If hook logic is complex (>50 lines) → extract to `hooks/*.js` and reference from settings.json
-    - After editing CLAUDE.md → verify line count stays under 200 to avoid context truncation
-    - If agent activation rate is low → use schliff skill to audit trigger quality before manual tuning
+    ${contract {
+      expects = "agent/skill/hook specification (name, purpose, triggers). Optionally: existing file to update.";
+      produces = ".nix config code for agents.nix, skills.nix, hooks.nix, or claude-md.nix.";
+      sideEffects = "modifies home/claude-code/*.nix files; changes take effect after darwin-rebuild.";
+    }}
+    ${scope {
+      useWhen = "Editing agents.nix, skills.nix, hooks.nix, claude-md.nix, or any file under .claude/ (agents, skills, hooks, commands, CLAUDE.md)";
+      notFor = "Application code, deployment config, database schemas, or anything outside the Claude Code meta-layer";
+    }}
+    ${handoffs [
+      "If new skill covers a domain with existing agents → update matching agent's skills: frontmatter too"
+      "If hook logic is complex (>50 lines) → extract to hooks/*.js and reference from settings.json"
+      "After editing CLAUDE.md → verify line count stays under 200 to avoid context truncation"
+      "If agent activation rate is low → use schliff skill to audit trigger quality before manual tuning"
+    ]}
   '';
 
   # -------------------------
@@ -475,20 +503,21 @@
     - `01-Inbox/` = capture brute, ne pas restructurer sans accord
     - Toujours repondre en francais sauf pour le code
 
-    ## Input/Output Contract
-    - **Expects:** note path or search query. Optionally: frontmatter fields (tags, date, project link).
-    - **Produces:** note content (Read/search), search results (Grep/Glob), or new/edited markdown note.
-    - **Side effects:** may create or modify files in AlxVault/; decisions/ changes require explicit confirmation.
-
-    ## Scope
-    - **Use this skill when:** Any request involving notes, vault, Obsidian, knowledge base, or searching/creating/editing markdown notes in AlxVault
-    - **Do NOT use for:** Code editing, deployment tasks, git operations, or any work outside the AlxVault directory
-
-    ## Handoffs
-    - If note content involves a code decision → capture summary in vault then hand off to relevant specialist agent for implementation
-    - If user mentions a project name → read `02-Projets/[projet]/[projet].md` before acting on vault tasks
-    - Before creating any note → Grep first to avoid duplicates; if found, Edit instead of Write
-    - After session ends → create session note in `02-Projets/[projet]/sessions/` with decisions + next steps
+    ${contract {
+      expects = "note path or search query. Optionally: frontmatter fields (tags, date, project link).";
+      produces = "note content (Read/search), search results (Grep/Glob), or new/edited markdown note.";
+      sideEffects = "may create or modify files in AlxVault/; decisions/ changes require explicit confirmation.";
+    }}
+    ${scope {
+      useWhen = "Any request involving notes, vault, Obsidian, knowledge base, or searching/creating/editing markdown notes in AlxVault";
+      notFor = "Code editing, deployment tasks, git operations, or any work outside the AlxVault directory";
+    }}
+    ${handoffs [
+      "If note content involves a code decision → capture summary in vault then hand off to relevant specialist agent for implementation"
+      "If user mentions a project name → read 02-Projets/[projet]/[projet].md before acting on vault tasks"
+      "Before creating any note → Grep first to avoid duplicates; if found, Edit instead of Write"
+      "After session ends → create session note in 02-Projets/[projet]/sessions/ with decisions + next steps"
+    ]}
   '';
 
   # -------------------------
@@ -531,19 +560,19 @@
     ## Grade Scale
     S (95+) | A (85+) | B (75+) | C (60+) | D (45+) | E (30+) | F (<30)
 
-    ## Input/Output Contract
-    - **Expects:** SKILL.md path (score/verify) or directory path (doctor).
-    - **Produces:** score report with dimension breakdown (Structure/Triggers/Quality/Edges/Efficiency/Composability/Clarity) and letter grade.
-    - **Side effects:** none — read-only analysis. No file modifications.
-
-    ## Scope
-    - **Use this skill when:** evaluating SKILL.md quality, auditing skill files, setting CI gates for skill scores, or improving skill structure.
-    - **Do NOT use for:** runtime testing, code quality checks, linting application code, or validating non-SKILL.md files.
-
-    ## Handoffs
-    - If score < 60 → run `/schliff:auto` first to apply structural fixes before re-scoring
-    - After scoring → use autoresearch to optimize if score plateaus and manual iteration isn't converging
-    - If skill has missing scope/handoffs → add those sections before re-scoring (boosts Composability dimension)
+    ${contract {
+      expects = "SKILL.md path (score/verify) or directory path (doctor).";
+      produces = "score report with dimension breakdown (Structure/Triggers/Quality/Edges/Efficiency/Composability/Clarity) and letter grade.";
+    }}
+    ${scope {
+      useWhen = "evaluating SKILL.md quality, auditing skill files, setting CI gates for skill scores, or improving skill structure.";
+      notFor = "runtime testing, code quality checks, linting application code, or validating non-SKILL.md files.";
+    }}
+    ${handoffs [
+      "If score < 60 → run /schliff:auto first to apply structural fixes before re-scoring"
+      "After scoring → use autoresearch to optimize if score plateaus and manual iteration isn't converging"
+      "If skill has missing scope/handoffs → add those sections before re-scoring (boosts Composability dimension)"
+    ]}
   '';
 
   # -------------------------
@@ -601,19 +630,20 @@
     ## Ideas Backlog
     Append promising but deferred ideas to `autoresearch.ideas.md`
 
-    ## Input/Output Contract
-    - **Expects:** goal + benchmark command + metric name/direction (lower/higher). Optionally: files in scope, constraints.
-    - **Produces:** optimized code committed across N runs + experiment log in autoresearch.jsonl + dashboard in autoresearch-dashboard.md.
-    - **Side effects:** creates git branch autoresearch/{goal}-{date}, writes autoresearch.md/jsonl/sh, modifies source files per experiment.
-
-    ## Scope
-    - **Use this skill when:** autonomous optimization with a measurable numeric metric, iterative experiment loops, benchmarking with a clear goal and direction (lower/higher).
-    - **Do NOT use for:** one-off tasks, subjective quality improvements, tasks without a measurable metric, or manual step-by-step workflows.
-
-    ## Handoffs
-    - If optimization target is a skill file → use schliff for structural scoring first, then autoresearch to push score past plateau
-    - After experiment loop completes → hand off to code-reviewer for review of accumulated commits
-    - If no benchmark command exists yet → stop and ask for one before looping
+    ${contract {
+      expects = "goal + benchmark command + metric name/direction (lower/higher). Optionally: files in scope, constraints.";
+      produces = "optimized code committed across N runs + experiment log in autoresearch.jsonl + dashboard in autoresearch-dashboard.md.";
+      sideEffects = "creates git branch autoresearch/{goal}-{date}, writes autoresearch.md/jsonl/sh, modifies source files per experiment.";
+    }}
+    ${scope {
+      useWhen = "autonomous optimization with a measurable numeric metric, iterative experiment loops, benchmarking with a clear goal and direction (lower/higher).";
+      notFor = "one-off tasks, subjective quality improvements, tasks without a measurable metric, or manual step-by-step workflows.";
+    }}
+    ${handoffs [
+      "If optimization target is a skill file → use schliff for structural scoring first, then autoresearch to push score past plateau"
+      "After experiment loop completes → hand off to code-reviewer for review of accumulated commits"
+      "If no benchmark command exists yet → stop and ask for one before looping"
+    ]}
   '';
 
   # -------------------------
@@ -701,20 +731,21 @@
     await expect(asyncRisky()).rejects.toThrow();
     ```
 
-    ## Input/Output Contract
-    - **Expects:** module/function to test, or test strategy request. Optionally: existing test files.
-    - **Produces:** test files following AAA pattern, Trophy model placement, and project conventions.
-    - **Side effects:** creates/modifies test files. May update test config if needed.
-
-    ## Scope
-    - **Use this skill when:** writing new tests, improving test coverage, designing test strategy, or reviewing test quality.
-    - **Do NOT use for:** debugging production issues (use debug skill), implementing features, or code review.
-
-    ## Handoffs
-    - After writing tests → hand off to test-runner agent to execute and verify
-    - If tests reveal a bug → hand off to debugger agent for root-cause analysis
-    - If testing requires architectural changes → escalate to architecture-expert
-    - For test quality scoring → use schliff on test-related skills
+    ${contract {
+      expects = "module/function to test, or test strategy request. Optionally: existing test files.";
+      produces = "test files following AAA pattern, Trophy model placement, and project conventions.";
+      sideEffects = "creates/modifies test files. May update test config if needed.";
+    }}
+    ${scope {
+      useWhen = "writing new tests, improving test coverage, designing test strategy, or reviewing test quality.";
+      notFor = "debugging production issues (use debug skill), implementing features, or code review.";
+    }}
+    ${handoffs [
+      "After writing tests → hand off to test-runner agent to execute and verify"
+      "If tests reveal a bug → hand off to debugger agent for root-cause analysis"
+      "If testing requires architectural changes → escalate to architecture-expert"
+      "For test quality scoring → use schliff on test-related skills"
+    ]}
   '';
 
   # -------------------------
@@ -797,20 +828,20 @@
     [prioritized list of cleanup tasks]
     ```
 
-    ## Input/Output Contract
-    - **Expects:** project directory (defaults to cwd). Optionally: specific steps to run.
-    - **Produces:** CODEBASE-STATUS.md with findings and recommendations.
-    - **Side effects:** none — read-only audit. No file modifications.
-
-    ## Scope
-    - **Use this skill when:** periodic health checks, pre-refactor assessment, tech debt inventory, or onboarding to understand codebase state.
-    - **Do NOT use for:** implementing fixes (hand off to relevant agent), security penetration testing (use security-auditor), or performance profiling (use performance-expert).
-
-    ## Handoffs
-    - Dead exports/orphan files → hand off to quick-fix agent for removal
-    - Config drift → hand off to nix-expert or relevant specialist
-    - Test coverage gaps → hand off with testing-patterns skill for test creation
-    - Security items → hand off to security-auditor for deep analysis
-    - Bloated files → hand off to architecture-expert for decomposition plan
+    ${contract {
+      expects = "project directory (defaults to cwd). Optionally: specific steps to run.";
+      produces = "CODEBASE-STATUS.md with findings and recommendations.";
+    }}
+    ${scope {
+      useWhen = "periodic health checks, pre-refactor assessment, tech debt inventory, or onboarding to understand codebase state.";
+      notFor = "implementing fixes (hand off to relevant agent), security penetration testing (use security-auditor), or performance profiling (use performance-expert).";
+    }}
+    ${handoffs [
+      "Dead exports/orphan files → hand off to quick-fix agent for removal"
+      "Config drift → hand off to nix-expert or relevant specialist"
+      "Test coverage gaps → hand off with testing-patterns skill for test creation"
+      "Security items → hand off to security-auditor for deep analysis"
+      "Bloated files → hand off to architecture-expert for decomposition plan"
+    ]}
   '';
 }

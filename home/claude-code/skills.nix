@@ -26,14 +26,18 @@ in
     ---
     name: apex
     description: "Systematic implementation using APEX methodology"
-    disable-model-invocation: true
-    context: fork
     effort: high
     ---
 
     # APEX: Systematic Implementation
 
     Flags: -a (auto), -s (save), -e (examine), -t (test), -h (help)
+
+    ## Interaction Mode
+    After each step, present a summary of what was done and what comes next.
+    Wait for user approval before proceeding to the next step.
+    If the user says "continue" or "ok", proceed. If they give feedback, adapt.
+    With -a flag: skip approval, run all steps autonomously.
 
     ## Steps
 

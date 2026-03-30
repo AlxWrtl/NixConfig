@@ -50,7 +50,6 @@
           "${homeDirectory}/.config/secrets"
         ];
         denyRead = [
-          "${homeDirectory}/.ssh/id_*"
           "${homeDirectory}/.aws/credentials"
           "${homeDirectory}/.gnupg/private-keys-v1.d"
         ];

@@ -166,7 +166,6 @@
           {event:"SessionStart", matcher:"",           script:"session-start.sh",      type:"bash"},
           {event:"SubagentStop",  matcher:"",                               script:"subagent-stop.js",      type:"node"},
           {event:"TaskCompleted", matcher:"",                               script:"task-completed.sh",     type:"bash"},
-          {event:"FileChanged",   matcher:"flake.lock|.envrc|package.json", script:"file-changed.sh",       type:"bash"},
           {event:"PreToolUse",    matcher:"Edit|Write|Bash|Agent",            script:"governance-audit.js",    type:"node"},
           {event:"UserPromptSubmit", matcher:"",                             script:"correction-capture.js",  type:"node"},
           {event:"PostToolUseFailure", matcher:"",                           script:"circuit-breaker.js",     type:"node"},

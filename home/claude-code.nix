@@ -55,7 +55,6 @@ let
     hookTaskCompleted
     hookNotification
     hookCompactContext
-    hookFileChanged
     hookStopFailure
     hookCircuitBreaker
     hookCircuitBreakerReset
@@ -186,10 +185,6 @@ in
     };
     "${claudeDir}/hooks/compact-context.sh" = {
       text = hookCompactContext;
-      executable = true;
-    };
-    "${claudeDir}/hooks/file-changed.sh" = {
-      text = hookFileChanged;
       executable = true;
     };
     "${claudeDir}/hooks/stop-failure.sh" = {

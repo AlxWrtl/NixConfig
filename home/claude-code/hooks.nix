@@ -1,5 +1,6 @@
 # Hook scripts for Claude Code
-# All command hooks: read JSON from stdin, exit 0 (allow) or exit 2 + stderr (block)
+# All command hooks: read JSON from stdin, exit 0 + JSON stdout
+# permissionDecision: "allow" | "deny" | "ask"
 # In Nix '' strings: escape single quotes as ''' (two apostrophes + the quote)
 {
   hookProtectMain = ''
@@ -8,17 +9,20 @@
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
       const { execSync } = require("child_process");
-      const fs = require("fs");
-      // Guard: skip if not in a git repo
-      if (!fs.existsSync(".git") && !fs.existsSync("../.git")) process.exit(0);
+      try { execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" }); } catch { process.exit(0); }
       try {
         const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
         if (branch === "main" || branch === "master") {
-          const msg = "Cannot edit on main/master. Create feature branch first.";
-          process.stdout.write(JSON.stringify({ hookSpecificOutput: { permissionDecisionReason: msg } }));
-          process.exit(2);
+          const reason = "BLOCKED: on " + branch + ". Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: reason
+            }
+          }));
         }
-      } catch (e) { process.exit(0); }
+      } catch (e) {}
       process.exit(0);
     });
   '';
@@ -48,20 +52,23 @@
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
       const { execSync } = require("child_process");
-      const fs = require("fs");
-      // Guard: skip if not in a git repo
-      if (!fs.existsSync(".git") && !fs.existsSync("../.git")) process.exit(0);
+      try { execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" }); } catch { process.exit(0); }
       try {
         const data = JSON.parse(input);
         const cmd = (data.tool_input && data.tool_input.command) || "";
         if (!/git\s+(commit|push|merge|rebase)/.test(cmd)) process.exit(0);
         const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
         if (branch === "main" || branch === "master") {
-          const msg = "Cannot commit/push on main/master. Create a feature branch first.";
-          process.stdout.write(JSON.stringify({ hookSpecificOutput: { permissionDecisionReason: msg } }));
-          process.exit(2);
+          const reason = "BLOCKED: on " + branch + ". Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: reason
+            }
+          }));
         }
-      } catch (e) { process.exit(0); }
+      } catch (e) {}
       process.exit(0);
     });
   '';
@@ -191,25 +198,6 @@
   hookCompactContext = ''
     #!/usr/bin/env bash
     echo "Post-compact context: Shell=zsh+starship+nix-darwin | PM=pnpm | Rebuild=sudo darwin-rebuild switch --flake .#alex-mbp | Protected branches: main/master | Commits: EN imperative, type prefix | Read CLAUDE.md + skills before coding"
-  '';
-
-  hookFileChanged = ''
-    #!/usr/bin/env bash
-    # React to file changes (flake.lock, .envrc, package.json)
-    INPUT=$(cat)
-    FILE=$(echo "$INPUT" | grep -o '"file_path":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
-    case "$FILE" in
-      */flake.lock)
-        echo "flake.lock changed — run: nix flake update or rebuild"
-        ;;
-      */.envrc)
-        direnv allow 2>/dev/null || true
-        echo "direnv reloaded"
-        ;;
-      */package.json|*/pnpm-lock.yaml)
-        echo "deps changed — run: pnpm install"
-        ;;
-    esac
   '';
 
   # Quality gate — scan recent changes for anti-patterns on Stop

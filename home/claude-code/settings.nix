@@ -367,18 +367,6 @@
           ];
         }
       ];
-      FileChanged = [
-        {
-          matcher = "flake.lock|.envrc|package.json|pnpm-lock.yaml";
-          hooks = [
-            {
-              type = "command";
-              command = "bash ~/.claude/hooks/file-changed.sh";
-              timeout = 5;
-            }
-          ];
-        }
-      ];
       Stop = [
         {
           hooks = [

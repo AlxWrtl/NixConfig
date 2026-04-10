@@ -53,10 +53,6 @@
         pkgs.sox
       ];
 
-      environment.variables = {
-        NODE_ENV = "development";
-      };
-
       environment.shellAliases = {
         # Python
         serve = "python3 -m http.server";

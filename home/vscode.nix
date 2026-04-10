@@ -145,7 +145,7 @@ let
     # Language: HTML
     "[html]" = {
       "editor.tabSize" = 2;
-      "editor.defaultFormatter" = "mohd-akram.vscode-html-format";
+      "editor.defaultFormatter" = "esbenp.prettier-vscode";
     };
 
     # Language: CSS / Tailwind

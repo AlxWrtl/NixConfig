@@ -159,7 +159,6 @@
   };
 
   environment.variables = {
-    HOMEBREW_CASK_OPTS_NO_BINARIES = "1";
     MAS_NO_PROMPT = "1";
   };
 

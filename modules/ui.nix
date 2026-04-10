@@ -29,14 +29,6 @@ in
     pkgs.noto-fonts-color-emoji
   ];
 
-  networking.applicationFirewall = {
-    enable = true;
-    blockAllIncoming = false;
-    allowSigned = true;
-    allowSignedApp = true;
-    enableStealthMode = true;
-  };
-
   system.defaults = {
     NSGlobalDomain = {
       # Visual appearance
@@ -207,7 +199,7 @@ in
       "com.apple.Spotlight".MenuItemHidden = true;
 
       "com.apple.finder" = {
-        FXEnableExtensionChangeWarning = false;
+        # FXEnableExtensionChangeWarning: set via system.defaults.finder
         NSWindowTabbingEnabled = true;
         FinderSpawnTab = false;
         ShowRecentTags = false;

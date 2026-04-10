@@ -56,26 +56,8 @@
         ];
       };
       network = {
-        allowedDomains = [
-          # GitHub
-          "github.com"
-          "raw.githubusercontent.com"
-          "api.github.com"
-          # Nix
-          "nix-darwin.github.io"
-          "nixos.org"
-          "search.nixos.org"
-          # NPM
-          "registry.npmjs.org"
-          "*.npmjs.org"
-          # Docs
-          "docs.anthropic.com"
-          "code.claude.com"
-          "developer.mozilla.org"
-          "www.typescriptlang.org"
-          # Web analysis — design, content, APIs
-          "*"
-        ];
+        # All domains allowed (web analysis, design, docs, APIs)
+        allowedDomains = [ "*" ];
       };
     };
 

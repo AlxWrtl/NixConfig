@@ -19,7 +19,5 @@
     schliff-all = "uvx schliff doctor --skill-dirs ~/.claude/skills/ -v";
   };
 
-  sessionVars = {
-    CLAUDE_CONFIG_DIR = "$HOME/.claude";
-  };
+  sessionVars = { };
 }

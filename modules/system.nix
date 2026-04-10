@@ -98,9 +98,6 @@
   security.pam.services.sudo_local.touchIdAuth = true;
 
   environment.systemPackages = [
-    pkgs.vulnix
-    pkgs.age
-    pkgs.sops
     pkgs.nmap
     pkgs.htop
   ];

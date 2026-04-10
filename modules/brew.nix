@@ -11,17 +11,11 @@
   homebrew = {
     enable = true;
 
-    caskArgs.no_quarantine = false;
-
     onActivation = {
       cleanup = "zap";
       autoUpdate = true;
       upgrade = true;
     };
-
-    global.brewfile = true;
-
-    taps = [ ];
 
     brews = [
       "cloudflared"

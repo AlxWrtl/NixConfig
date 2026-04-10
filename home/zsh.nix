@@ -53,9 +53,6 @@
       zstyle ':completion:*' use-cache on
       zstyle ':completion:*' cache-path ~/.zsh/cache
 
-      # ---- Performance: Early exit for non-interactive shells ----
-      [[ $- != *i* ]] && return
-
       # GIT_EDITOR: nano over SSH (no GUI), VS Code locally
       if [[ -n "$SSH_CONNECTION" ]]; then
         export GIT_EDITOR="nano"
@@ -72,7 +69,6 @@
       setopt AUTO_CD                               # Auto cd when typing directory name
       setopt CORRECT                               # Spelling correction for commands
       setopt NO_BEEP
-      unsetopt BEEP
       unsetopt NOMATCH
 
       # Plugin tuning

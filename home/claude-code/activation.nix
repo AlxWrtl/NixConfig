@@ -68,8 +68,6 @@
     set -euo pipefail
     chmod 700 "$HOME/.claude"
     chmod 700 "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks" "$HOME/.claude/skills"
-    chmod +x "$HOME/.claude/hooks"/*.js 2>/dev/null || true
-    chmod +x "$HOME/.claude/hooks"/*.sh 2>/dev/null || true
   '';
 
   # -------------------------

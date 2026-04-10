@@ -41,6 +41,7 @@ let
     apexStep00bSave
     apexStep01Analyze
     apexStep02Plan
+    apexStep02cVerify
     apexStep02bTasks
     apexStep03Execute
     apexStep03ExecuteTeams
@@ -166,6 +167,7 @@ in
     "${claudeDir}/skills/apex/steps/step-00b-save.md".text = apexStep00bSave;
     "${claudeDir}/skills/apex/steps/step-01-analyze.md".text = apexStep01Analyze;
     "${claudeDir}/skills/apex/steps/step-02-plan.md".text = apexStep02Plan;
+    "${claudeDir}/skills/apex/steps/step-02c-verify.md".text = apexStep02cVerify;
     "${claudeDir}/skills/apex/steps/step-02b-tasks.md".text = apexStep02bTasks;
     "${claudeDir}/skills/apex/steps/step-03-execute.md".text = apexStep03Execute;
     "${claudeDir}/skills/apex/steps/step-03-execute-teams.md".text = apexStep03ExecuteTeams;

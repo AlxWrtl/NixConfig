@@ -10,6 +10,7 @@
     mkdir -p "$HOME/.claude/plugins"
     mkdir -p "$HOME/.claude/scripts"
     mkdir -p "$HOME/.claude/skills/apex"
+    mkdir -p "$HOME/.claude/skills/apex/steps"
     mkdir -p "$HOME/.claude/skills/debug"
     mkdir -p "$HOME/.claude/skills/continuous-learning-v2"
     mkdir -p "$HOME/.claude/skills/nix-darwin"

@@ -22,6 +22,11 @@ let
 '' + builtins.concatStringsSep "\n" (map (i: "    - ${i}") items) + "\n";
 in
 {
+  # =========================================================================
+  # APEX Workflow — Orchestrator + 16 Step Files
+  # Progressive step loading: each step is read on-demand for recency bias.
+  # =========================================================================
+
   skillApex = ''
     ---
     name: apex
@@ -29,63 +34,642 @@ in
     effort: high
     ---
 
-    # APEX: Systematic Implementation
+    # APEX: Systematic Implementation Workflow
 
-    Flags: -a (auto), -s (save), -e (examine), -t (test), -h (help)
+    You are about to execute a structured, multi-step implementation workflow.
+    Each step is a separate file that you will read and execute one at a time.
+    This keeps instructions fresh in your context for maximum attention.
 
-    ## Interaction Mode
-    After each step, present a summary of what was done and what comes next.
-    Wait for user approval before proceeding to the next step.
-    If the user says "continue" or "ok", proceed. If they give feedback, adapt.
-    With -a flag: skip approval, run all steps autonomously.
+    ## Available Flags
 
-    ## Steps
+    | Enable | Disable | Description |
+    |--------|---------|-------------|
+    | -a | -A | Auto — skip confirmations |
+    | -x | -X | Examine — adversarial code review |
+    | -s | -S | Save — persist outputs to files |
+    | -t | -T | Test — create and run tests |
+    | -e | -E | Economy — no subagents, direct tools only |
+    | -b | -B | Branch — create git branch |
+    | -pr | -PR | Pull request — commit + PR (implies -b) |
+    | -k | -K | Tasks — task breakdown with dependency graph |
+    | -m | -M | Teams — Agent Teams parallel execution (implies -k) |
+    | -i | | Interactive — configure flags via menu |
+    | -r | | Resume — continue previous task |
 
-    ### 00 — Initialize
-    Set up task context, check git status, create output dir.
+    ## Common Usage
 
-    ### 01 — Analyze
-    Read files, identify patterns, document requirements.
+    ```
+    /apex add feature                    # Basic
+    /apex -a -s implement auth           # Autonomous + save
+    /apex -a -x -s fix bug              # Full autonomous with review
+    /apex -a -t -pr add endpoint        # Auto + tests + PR
+    /apex -e simple fix                  # Economy mode (save tokens)
+    /apex -a -x -t -pr full feature    # Everything enabled
+    ```
 
-    ### 02 — Plan
-    Propose approaches, break down tasks, identify risks.
+    ## Execution
 
-    ### 03 — Prepare
-    Create branch, install deps, create stubs.
-
-    ### 04 — Execute
-    Implement solution following plan.
-
-    ### 05 — Test
-    Run tests, verify implementation.
-
-    ### 06 — Examine
-    Deep review: security, performance, maintainability.
-
-    ### 07 — Polish
-    Clean up code, refine, improve naming.
-
-    ### 08 — Document
-    Update docs, README, CHANGELOG.
-
-    ### 09 — Finish
-    Final verification, commit, summarize.
+    Read [steps/step-00-init.md](steps/step-00-init.md) and execute it now.
 
     ${contract {
-      expects = "task description + complexity classification (M/L). Optional: existing CLAUDE.md and project context.";
-      produces = "implementation across 9 steps (initialize → analyze → plan → prepare → execute → test → examine → polish → finish).";
-      sideEffects = "modifies source files, creates tests, updates docs, commits on each kept step.";
+      expects = "task description with optional flags. Example: /apex -a -x implement user auth";
+      produces = "complete implementation through progressive steps: init → analyze → plan → execute → validate (+ optional: tests, examine, resolve, finish).";
+      sideEffects = "modifies source files, optionally creates tests, commits, creates PRs.";
     }}
     ${scope {
-      useWhen = "Implementing a well-defined M/L feature, module, or task that benefits from structured 9-step execution.";
-      notFor = "Quick fixes, one-liners, debugging, exploratory research, or code review.";
+      useWhen = "Implementing features, modules, or tasks that benefit from structured multi-step execution with quality gates.";
+      notFor = "Quick fixes (<20 lines) → use quick-fix. Debugging → use /debug. Research → use Explore agent.";
     }}
     ${handoffs [
       "If task is broken and needs diagnosis → use debug skill instead."
-      "If scope is unclear → run feature-workflow DISCUSS phase first."
-      "After step 05-Test fails repeatedly → hand off to debug skill for root-cause analysis."
-      "After step 09-Finish on L/XL changes → hand off to code-reviewer agent."
+      "If scope is unclear → run /discuss first."
+      "After tests fail repeatedly → hand off to debugger agent."
+      "After finish on L/XL changes → hand off to code-reviewer agent."
     ]}
+  '';
+
+  # --- Step 00: Init ---
+  apexStep00Init = ''
+    # Step 00: Initialize
+
+    YOU ARE AN INITIALIZER, not an executor. Do NOT start implementing yet.
+
+    ## Parse Flags
+
+    Extract flags from $ARGUMENTS. Default: all flags OFF.
+    - If `-pr` is set, auto-enable `-b` (branch)
+    - If `-m` is set, auto-enable `-k` (tasks)
+    - Uppercase flag disables (e.g., `-A` disables auto)
+
+    ## Initialize State
+
+    Record the following:
+    - **Task**: the user's request (everything after flags)
+    - **Flags**: which flags are active
+    - **Working directory**: current project path
+    - **Git status**: current branch, clean/dirty, uncommitted changes
+
+    ## Present Summary
+
+    Display a compact summary:
+    ```
+    APEX initialized
+    Task: {description}
+    Flags: {active flags}
+    Branch: {current branch}
+    Status: {clean/dirty}
+    ```
+
+    ## Conditional Sub-Steps
+
+    Execute these in order, ONLY if the corresponding flag is active:
+
+    1. If `-i` (interactive): Read [step-00b-interactive.md](step-00b-interactive.md) and execute it.
+    2. If `-b` or `-pr`: Read [step-00b-branch.md](step-00b-branch.md) and execute it.
+    3. If `-e` (economy): Read [step-00b-economy.md](step-00b-economy.md) and execute it.
+    4. If `-s` (save): Read [step-00b-save.md](step-00b-save.md) and execute it.
+    5. If `-r` (resume): Look for saved state in `.claude/output/apex/` and restore context. Skip to the last incomplete step.
+
+    ## Next Step
+
+    Read [step-01-analyze.md](step-01-analyze.md) and execute it.
+  '';
+
+  # --- Step 00b: Interactive ---
+  apexStep00bInteractive = ''
+    # Step 00b: Interactive Configuration
+
+    Present all available flags to the user as a toggle menu.
+    Use AskUserQuestion to let them enable/disable each flag.
+
+    Display current flag state and let user toggle:
+    ```
+    Current flags:
+    [ ] -a  Auto (skip confirmations)
+    [ ] -x  Examine (adversarial review)
+    [ ] -s  Save (persist outputs)
+    [ ] -t  Test (create + run tests)
+    [ ] -e  Economy (no subagents)
+    [ ] -b  Branch (create git branch)
+    [ ] -pr Pull Request (commit + PR)
+    [ ] -k  Tasks (task breakdown)
+    [ ] -m  Teams (parallel execution)
+    ```
+
+    After user confirms, update the active flags and return to step-00-init flow.
+  '';
+
+  # --- Step 00b: Branch ---
+  apexStep00bBranch = ''
+    # Step 00b: Branch Setup
+
+    1. Check current branch. If already on a feature branch, use it.
+    2. If on main/master, create a new branch:
+       - Name format: `feat/{task-id}` where task-id is a short slug from the task description
+       - `git checkout -b feat/{task-id}`
+    3. Confirm branch is ready.
+
+    Return to step-00-init flow.
+  '';
+
+  # --- Step 00b: Economy ---
+  apexStep00bEconomy = ''
+    # Step 00b: Economy Mode Override
+
+    ECONOMY MODE ACTIVE. These 6 rules override ALL subsequent steps:
+
+    1. **No subagents.** Never use the Agent tool. Use Glob, Grep, Read directly.
+    2. **No parallel exploration.** Explore sequentially, one file at a time.
+    3. **Minimal scope.** Read only files directly relevant to the task.
+    4. **Skip optional steps.** If examine (-x) is also set, do a self-review checklist instead of launching review agents.
+    5. **No TodoWrite.** Track progress mentally, don't create formal todo lists.
+    6. **Concise outputs.** Shorter summaries, no detailed analysis documents.
+
+    These rules save ~70% tokens. Apply them to every subsequent step.
+
+    Return to step-00-init flow.
+  '';
+
+  # --- Step 00b: Save ---
+  apexStep00bSave = ''
+    # Step 00b: Save Mode Setup
+
+    Create output directory for this task:
+    ```
+    .claude/output/apex/{task-id}/
+    ```
+
+    Where `{task-id}` is a zero-padded sequential number + short slug (e.g., `01-user-auth`).
+
+    Create initial context file:
+    ```
+    .claude/output/apex/{task-id}/00-context.md
+    ```
+
+    With content:
+    ```markdown
+    # APEX: {task description}
+    Date: {current date}
+    Flags: {active flags}
+    Branch: {branch name}
+
+    ## Progress
+    | Step | Status | Notes |
+    |------|--------|-------|
+    | 00-init | complete | |
+    | 01-analyze | pending | |
+    | 02-plan | pending | |
+    | 03-execute | pending | |
+    | 04-validate | pending | |
+    ```
+
+    After each step completes, update this progress table.
+
+    Return to step-00-init flow.
+  '';
+
+  # --- Step 01: Analyze ---
+  apexStep01Analyze = ''
+    # Step 01: Analyze
+
+    YOU ARE AN EXPLORER, not a planner. Do NOT plan or implement yet.
+    Your only job is to deeply understand the codebase and the task.
+
+    ## Strategy
+
+    Evaluate task complexity across 4 dimensions:
+    - **Scope**: how many files/modules affected?
+    - **Libraries**: unfamiliar dependencies?
+    - **Patterns**: existing conventions to follow?
+    - **Uncertainty**: unclear requirements?
+
+    ### If economy mode is active:
+    Use Glob and Grep directly. Read only the most relevant files. No agents.
+
+    ### If economy mode is NOT active:
+    Launch parallel Explore agents based on complexity:
+    - Simple (1-2 files): 1-2 agents
+    - Medium (3-5 files): 3-5 agents
+    - Complex (6+ files): 5-10 agents
+
+    Each agent should explore a different aspect:
+    - File structure and conventions
+    - Existing patterns and utilities
+    - Related components and dependencies
+    - Test patterns (if -t flag active)
+
+    ## Output
+
+    Document your findings:
+    - **Requirements**: what exactly needs to be built
+    - **Affected files**: list of files to create/modify
+    - **Conventions**: patterns to follow (naming, structure, imports)
+    - **Dependencies**: libraries, utilities, types to use
+    - **Risks**: potential issues or unknowns
+
+    ## If save mode (-s):
+    Write findings to `.claude/output/apex/{task-id}/01-analyze.md`
+
+    ## Next Step
+
+    Read [step-02-plan.md](step-02-plan.md) and execute it.
+  '';
+
+  # --- Step 02: Plan ---
+  apexStep02Plan = ''
+    # Step 02: Plan
+
+    YOU ARE A PLANNER, not an implementer. Do NOT write any code yet.
+
+    ## ULTRA THINK
+
+    Before writing the plan, mentally simulate the entire implementation:
+    - Walk through every file you'll create or modify
+    - Consider the order of changes (what depends on what)
+    - Identify where things could go wrong
+    - Think about edge cases the user didn't mention
+
+    ## Create Implementation Plan
+
+    Produce a structured plan with:
+
+    1. **Tasks** — numbered, ordered by dependency:
+       ```
+       T1: Create types/interfaces in types.ts
+       T2: Add database migration
+       T3: Implement API endpoint (depends on T1, T2)
+       T4: Create UI component (depends on T1)
+       T5: Wire up route (depends on T3, T4)
+       ```
+
+    2. **Acceptance Criteria** — specific, verifiable conditions:
+       ```
+       AC1: User can create a new item via the form
+       AC2: Validation errors display inline
+       AC3: Success redirects to the list page
+       ```
+
+    3. **Testing Strategy** (if -t flag active):
+       ```
+       - Unit tests for validation logic
+       - Integration test for API endpoint
+       - Component test for form submission
+       ```
+
+    4. **Risks & Mitigations**
+
+    ## Create TodoWrite Checklist
+
+    Convert tasks into a TodoWrite checklist. Only ONE todo can be in_progress at a time.
+
+    ## If tasks mode (-k) or teams mode (-m):
+    Read [step-02b-tasks.md](step-02b-tasks.md) and execute it before proceeding.
+
+    ## User Approval
+
+    If auto mode (-a) is NOT active:
+    - Present the complete plan
+    - Ask the user if they want to modify anything
+    - Wait for approval before proceeding
+
+    If auto mode (-a) IS active:
+    - Display the plan briefly
+    - Proceed automatically
+
+    ## Next Step
+
+    If teams mode (-m) is active:
+      Read [step-03-execute-teams.md](step-03-execute-teams.md) and execute it.
+    Else:
+      Read [step-03-execute.md](step-03-execute.md) and execute it.
+  '';
+
+  # --- Step 02b: Tasks ---
+  apexStep02bTasks = ''
+    # Step 02b: Task Decomposition
+
+    Break the plan into individual task files with a dependency graph.
+
+    For each task, create a structured entry:
+    ```
+    Task: T{n} — {name}
+    Files: {files to create/modify}
+    Depends: {T1, T2, ...} or none
+    Agent: {suggested agent type}
+    Instructions: {specific implementation details}
+    Verify: {how to verify this task is done}
+    ```
+
+    Order tasks by dependency — tasks with no dependencies first.
+    Group independent tasks into waves for parallel execution.
+
+    ```
+    Wave 1: T1, T2 (no deps — can run in parallel)
+    Wave 2: T3, T4 (depend on wave 1)
+    Wave 3: T5 (depends on wave 2)
+    ```
+
+    Return to step-02-plan flow.
+  '';
+
+  # --- Step 03: Execute ---
+  apexStep03Execute = ''
+    # Step 03: Execute
+
+    YOU ARE AN IMPLEMENTER following a plan, not a designer.
+    Do NOT deviate from the plan. Do NOT add features that weren't planned.
+
+    ## Process
+
+    Work through the TodoWrite checklist one task at a time:
+
+    1. Mark the current todo as `in_progress`
+    2. Read the target file (if modifying an existing file)
+    3. Implement the changes for this task
+    4. Verify the change works (no syntax errors, imports resolve)
+    5. Mark the todo as `completed`
+    6. Move to the next todo
+
+    ## Rules
+
+    - ONE todo in_progress at a time
+    - Follow the conventions identified in Step 01
+    - Reuse existing utilities and patterns — don't reinvent
+    - If you encounter something unexpected, note it but stay on plan
+    - If a task is blocked, skip it and note the blocker
+
+    ## If save mode (-s):
+    Update progress in `.claude/output/apex/{task-id}/00-context.md`
+
+    ## Next Step
+
+    Read [step-04-validate.md](step-04-validate.md) and execute it.
+  '';
+
+  # --- Step 03: Execute Teams ---
+  apexStep03ExecuteTeams = ''
+    # Step 03: Execute (Teams Mode)
+
+    YOU ARE A TEAM LEAD coordinating parallel implementation.
+
+    ## Agent Teams Execution
+
+    Using the wave structure from step-02b-tasks:
+
+    1. For each wave, spawn implementer subagents in parallel using the Agent tool
+    2. Each agent gets:
+       - The specific task(s) assigned to them
+       - Full context from step-01 analysis
+       - The conventions to follow
+    3. Wait for all agents in a wave to complete before starting the next wave
+    4. After each wave, verify integration between the pieces
+
+    ## Coordination Rules
+
+    - Each agent works on separate files — no conflicts
+    - If an agent encounters a blocker, it reports back
+    - After all waves complete, do a quick integration check
+
+    ## Next Step
+
+    Read [step-04-validate.md](step-04-validate.md) and execute it.
+  '';
+
+  # --- Step 04: Validate ---
+  apexStep04Validate = ''
+    # Step 04: Validate
+
+    YOU ARE A VALIDATOR, not an implementer. Do NOT add new features.
+
+    ## Verification Checklist
+
+    1. **Acceptance Criteria**: go through each AC from the plan.
+       For each one, verify it is actually implemented. Check the code.
+
+    2. **Build Check**: if applicable, run:
+       - TypeScript: typecheck (`pnpm typecheck` or `npx tsc --noEmit`)
+       - Lint: `pnpm lint` or equivalent
+       - Build: `pnpm build` or equivalent
+
+    3. **Integration Check**: verify that:
+       - All imports resolve
+       - No circular dependencies introduced
+       - Types are consistent across boundaries
+
+    4. **Quick Smoke Test**: if there's a dev server, verify it starts without errors
+
+    ## If any AC is not met:
+    Go back and fix it. Do not proceed until all ACs pass.
+
+    ## If save mode (-s):
+    Update progress in context file.
+
+    ## Next Step — Conditional
+
+    Choose the next step based on active flags:
+
+    1. If `-t` (test) is active: Read [step-07-tests.md](step-07-tests.md) and execute it.
+    2. Else if `-x` (examine) is active: Read [step-05-examine.md](step-05-examine.md) and execute it.
+    3. Else if `-pr` (pull request) is active: Read [step-09-finish.md](step-09-finish.md) and execute it.
+    4. Else: **COMPLETE.** Present a summary of what was implemented.
+  '';
+
+  # --- Step 05: Examine ---
+  apexStep05Examine = ''
+    # Step 05: Examine
+
+    YOU ARE A SKEPTICAL REVIEWER, not a defender of this code.
+    Your job is to find problems, not to validate the implementation.
+
+    ## Adversarial Code Review
+
+    Launch 3 parallel code-reviewer agents, each with a different focus:
+
+    ### Agent 1: Security Review
+    - Authentication/authorization gaps
+    - Input validation missing
+    - Data exposure in responses
+    - SQL injection, XSS, CSRF risks
+    - Secrets or credentials in code
+
+    ### Agent 2: Logic Review
+    - Race conditions
+    - Null/undefined edge cases
+    - Error handling gaps
+    - Off-by-one errors
+    - State management issues
+    - Missing error boundaries
+
+    ### Agent 3: Clean Code Review
+    - Naming consistency
+    - Dead code
+    - Unnecessary complexity
+    - Missing type safety
+    - Convention violations (from step-01 analysis)
+
+    ### If economy mode (-e):
+    Do NOT launch agents. Instead, go through each review dimension yourself
+    as a self-review checklist. Be thorough but use no subagents.
+
+    ## Collect Findings
+
+    Aggregate all findings and sort by severity:
+    - **Critical**: security vulnerabilities, data loss risks
+    - **Important**: logic bugs, error handling gaps
+    - **Minor**: naming, style, minor improvements
+
+    ## Next Step
+
+    If there are Critical or Important findings:
+      Read [step-06-resolve.md](step-06-resolve.md) and execute it.
+    Else if `-pr` (pull request) is active:
+      Read [step-09-finish.md](step-09-finish.md) and execute it.
+    Else:
+      **COMPLETE.** Present the review summary.
+  '';
+
+  # --- Step 06: Resolve ---
+  apexStep06Resolve = ''
+    # Step 06: Resolve
+
+    YOU ARE A RESOLVER. Fix the findings from the examination step.
+
+    ## Process
+
+    ### If auto mode (-a):
+    Automatically fix all Critical and Important findings.
+    Skip Minor findings unless they're trivial to fix.
+
+    ### If NOT auto mode:
+    Present findings to the user grouped by severity.
+    For each finding, ask:
+    - **Fix**: apply the fix
+    - **Skip**: acknowledge but don't fix
+    - **Discuss**: need more context
+
+    ## After Fixing
+
+    Re-run any build/lint checks to ensure fixes didn't break anything.
+
+    ## If save mode (-s):
+    Write resolution summary to output file.
+
+    ## Next Step
+
+    If `-pr` (pull request) is active:
+      Read [step-09-finish.md](step-09-finish.md) and execute it.
+    Else:
+      **COMPLETE.** Present the resolution summary.
+  '';
+
+  # --- Step 07: Tests ---
+  apexStep07Tests = ''
+    # Step 07: Tests
+
+    YOU ARE A TEST ENGINEER, not an implementer.
+
+    ## Analyze Test Patterns
+
+    Before writing any tests:
+    1. Find existing test files in the project (Glob for `**/*.test.*`, `**/*.spec.*`, `**/__tests__/**`)
+    2. Read 2-3 existing tests to understand:
+       - Test framework (Jest, Vitest, Playwright, etc.)
+       - Naming conventions
+       - Setup/teardown patterns
+       - Assertion style
+       - Mock patterns
+
+    ## Create Tests
+
+    Based on the acceptance criteria from step-02:
+    1. Write unit tests for pure logic/utilities
+    2. Write integration tests for API endpoints/data flow
+    3. Write component tests for UI (if applicable)
+
+    Follow the EXISTING test patterns exactly. Don't introduce new testing paradigms.
+
+    ## Rules
+
+    - Each test should be independent
+    - Use descriptive test names that explain the behavior
+    - Test edge cases, not just happy paths
+    - Mock external dependencies, not internal ones
+
+    ## Next Step
+
+    Read [step-08-run-tests.md](step-08-run-tests.md) and execute it.
+  '';
+
+  # --- Step 08: Run Tests ---
+  apexStep08RunTests = ''
+    # Step 08: Run Tests
+
+    ## Test Loop
+
+    Execute the test runner and iterate until all tests pass.
+
+    ```
+    Attempt 1/10:
+    1. Run the test command (pnpm test, npm test, vitest, etc.)
+    2. If all pass → proceed to next step
+    3. If failures:
+       a. Read the error output carefully
+       b. Identify the root cause (test bug vs implementation bug)
+       c. Fix the issue
+       d. Go to attempt N+1
+    ```
+
+    **Maximum 10 attempts.** If tests still fail after 10 attempts:
+    - Present the remaining failures to the user
+    - Ask for guidance
+    - Do NOT loop forever
+
+    ## Next Step — Conditional
+
+    1. If `-x` (examine) is active: Read [step-05-examine.md](step-05-examine.md) and execute it.
+    2. Else if `-pr` (pull request) is active: Read [step-09-finish.md](step-09-finish.md) and execute it.
+    3. Else: **COMPLETE.** Present test results summary.
+  '';
+
+  # --- Step 09: Finish ---
+  apexStep09Finish = ''
+    # Step 09: Finish
+
+    ## If teams were used (-m):
+    Ensure all team agents have completed and shut down cleanly.
+
+    ## Git Operations
+
+    1. **Stage changes**: `git add` all modified/created files
+    2. **Commit**: use conventional commit format
+       - `feat: {description}` for new features
+       - `fix: {description}` for bug fixes
+       - Include a body with key changes if the diff is large
+    3. **Push**: `git push -u origin {branch-name}`
+
+    ## Create Pull Request
+
+    Use `gh pr create` with:
+    - **Title**: conventional format matching the commit
+    - **Body**: structured with:
+      - ## Summary (what was done)
+      - ## Changes (bullet list of key changes)
+      - ## Testing (how it was tested)
+      - ## Acceptance Criteria (checklist from plan)
+
+    ## If NOT auto mode:
+    Show the PR title and body for approval before creating.
+
+    ## COMPLETE
+
+    Present final summary:
+    ```
+    APEX Complete
+    Branch: {branch}
+    Commit: {hash}
+    PR: {url}
+    Steps completed: {list}
+    ```
   '';
 
   # -------------------------

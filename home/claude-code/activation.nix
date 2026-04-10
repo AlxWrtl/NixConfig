@@ -156,7 +156,7 @@
       --arg date "$GEN_DATE" \
       '{
         generatedAt: $date,
-        mcpServers: ["chrome-devtools","magic","nanobanana"],
+        mcpServers: ["magic","nanobanana"],
         hooks: [
           {event:"PreToolUse",   matcher:"Edit|Write", script:"protect-main.js",       type:"node"},
           {event:"PreToolUse",   matcher:"Bash",       script:"block-main-bash.js",    type:"node"},
@@ -254,5 +254,32 @@
     rm -rf "$TMP_DIR"
 
     echo "✓ Ralph Wiggum scripts installed"
+  '';
+
+  # -------------------------
+  # Install dev-browser CLI (once)
+  # -------------------------
+  claudeCodeDevBrowser = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    MARKER="$HOME/.claude/.dev-browser-installed"
+
+    # Skip if already installed
+    if [ -f "$MARKER" ]; then
+      exit 0
+    fi
+
+    echo "Installing dev-browser..."
+    export PATH="${pkgs.nodejs_22}/bin:$PATH"
+
+    # npm global prefix → ~/.npm-global (nix store is immutable)
+    NPM_GLOBAL="$HOME/.npm-global"
+    mkdir -p "$NPM_GLOBAL"
+    export npm_config_prefix="$NPM_GLOBAL"
+    export PATH="$NPM_GLOBAL/bin:$PATH"
+
+    npm install -g dev-browser@0.2.7 2>&1 || { echo "dev-browser install failed"; exit 0; }
+    "$NPM_GLOBAL/bin/dev-browser" install 2>&1 || { echo "dev-browser playwright install failed"; exit 0; }
+
+    touch "$MARKER"
+    echo "✓ dev-browser installed"
   '';
 }

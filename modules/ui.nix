@@ -428,10 +428,8 @@ in
     # Tap-to-click: -currentHost write required (nix-darwin can't do this declaratively)
     /usr/bin/defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 
-    # Desktop Stacks grouped by Kind (defaults alone don't always activate)
-    /usr/bin/defaults write com.apple.finder FXPreferredGroupBy -string Kind
-    killall Finder 2>/dev/null || true
-    echo "Desktop: Stacks by Kind enabled"
+    # Desktop Stacks: FXPreferredGroupBy already set declaratively via
+    # system.defaults.CustomUserPreferences."com.apple.finder" — no killall needed
 
     # Display: 2048x1280 ("More Space" scaling on MacBook Pro M1)
     if command -v displayplacer &>/dev/null; then

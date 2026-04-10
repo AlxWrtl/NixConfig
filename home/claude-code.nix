@@ -86,6 +86,9 @@ in
   programs.zsh.shellAliases = aliases;
   programs.zsh.sessionVariables = sessionVars;
 
+  # npm global prefix (nix store is immutable, npm install -g needs a writable prefix)
+  home.sessionPath = [ "$HOME/.npm-global/bin" ];
+
   # Write ~/.claude content declaratively
   home.file = {
     # Settings base (read-only reference, merged by activation script)

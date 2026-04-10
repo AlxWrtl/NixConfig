@@ -286,11 +286,7 @@ in
         autohide-time-modifier = 0.3;
       };
 
-      "com.apple.driver.AppleBluetoothMultitouch.trackpad" = {
-        Clicking = true;
-        DragLock = false;
-        TrackpadThreeFingerDrag = true;
-      };
+      # Bluetooth trackpad: covered by system.defaults.trackpad + AppleMultitouchTrackpad
 
       "com.apple.coreservices.useractivityd" = {
         ActivityAdvertisingAllowed = true;
@@ -380,11 +376,9 @@ in
       # Screen capture
       "com.apple.screencapture".style = "display";
 
-      # Trackpad gestures (full declaration)
+      # Trackpad gestures (extras not covered by system.defaults.trackpad)
       "com.apple.AppleMultitouchTrackpad" = {
-        Clicking = true;
-        TrackpadRightClick = true;
-        TrackpadThreeFingerDrag = true;
+        # Clicking, TrackpadRightClick, TrackpadThreeFingerDrag: set via system.defaults.trackpad
         TrackpadThreeFingerTapGesture = 0;
         TrackpadFourFingerHorizSwipeGesture = 2;
         TrackpadFourFingerVertSwipeGesture = 2;

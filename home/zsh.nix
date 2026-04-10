@@ -22,10 +22,8 @@
     };
 
     initContent = ''
-      # ---- Performance: Skip expensive operations for non-interactive shells ----
-      skip_global_compinit=1
-
-      # ---- Production-Grade Completion System ----
+      # ---- Custom Completion System ----
+      # enableCompletion = false above disables HM's compinit
       # Custom compinit with 24-hour caching and background bytecode compilation
       () {
         setopt local_options extendedglob

@@ -144,64 +144,31 @@
   '';
 
   # -------------------------
-  # Generate config-snapshot.json at rebuild time
+  # Generate config-snapshot.json dynamically from installed files
   # -------------------------
   claudeCodeConfigSnapshot = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     set -euo pipefail
     SNAPSHOT="$HOME/.claude/config-snapshot.json"
     GEN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Discover installed components from actual files
+    AGENTS=$(ls "$HOME/.claude/agents/"*.md 2>/dev/null | xargs -I{} basename {} .md | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+    SKILLS=$(ls -d "$HOME/.claude/skills/"*/SKILL.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {} | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+    COMMANDS=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | xargs -I{} basename {} .md | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+    HOOKS=$(ls "$HOME/.claude/hooks/"*.{js,sh} 2>/dev/null | xargs -I{} basename {} | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+
     ${pkgs.jq}/bin/jq -n \
       --arg date "$GEN_DATE" \
+      --argjson agents "$AGENTS" \
+      --argjson skills "$SKILLS" \
+      --argjson commands "$COMMANDS" \
+      --argjson hooks "$HOOKS" \
       '{
         generatedAt: $date,
-        mcpServers: ["magic","nanobanana"],
-        hooks: [
-          {event:"PreToolUse",   matcher:"Edit|Write", script:"protect-main.js",       type:"node"},
-          {event:"PreToolUse",   matcher:"Bash",       script:"block-main-bash.js",    type:"node"},
-          {event:"PostToolUse",  matcher:"Write|Edit", script:"format-typescript.js",  type:"node"},
-          {event:"PreCompact",   matcher:"",           script:"pre-compact-backup.sh", type:"bash"},
-          {event:"Notification", matcher:"",           script:"notification.sh",       type:"bash"},
-          {event:"SessionStart", matcher:"",           script:"session-start.sh",      type:"bash"},
-          {event:"SubagentStop",  matcher:"",                               script:"subagent-stop.js",      type:"node"},
-          {event:"TaskCompleted", matcher:"",                               script:"task-completed.sh",     type:"bash"},
-          {event:"PreToolUse",    matcher:"Edit|Write|Bash|Agent",            script:"governance-audit.js",    type:"node"},
-          {event:"UserPromptSubmit", matcher:"",                             script:"correction-capture.js",  type:"node"},
-          {event:"PostToolUseFailure", matcher:"",                           script:"circuit-breaker.js",     type:"node"},
-          {event:"PostToolUse",   matcher:"",                               script:"circuit-breaker-reset.js", type:"node"},
-          {event:"PreCompact",    matcher:"",                               script:"pre-compact-state.js",   type:"node"},
-          {event:"PostCompact",   matcher:"",                               script:"post-compact-restore.js", type:"node"},
-          {event:"Stop",          matcher:"",                               script:"quality-gate.js",        type:"node"},
-          {event:"StopFailure",   matcher:"",                               script:"stop-failure.sh",        type:"bash"}
-        ],
-        agents: [
-          {name:"frontend-expert",     model:"sonnet"},
-          {name:"backend-expert",      model:"sonnet"},
-          {name:"architecture-expert", model:"opus"},
-          {name:"performance-expert",  model:"haiku"},
-          {name:"codebase-navigator",  model:"haiku"},
-          {name:"code-reviewer",       model:"opus"},
-          {name:"quick-fix",           model:"haiku"},
-          {name:"nix-expert",          model:"sonnet"},
-          {name:"git-ship",            model:"haiku"},
-          {name:"team-lead",           model:"opus"},
-          {name:"test-runner",         model:"haiku"},
-          {name:"security-auditor",    model:"haiku"},
-          {name:"debugger",            model:"sonnet"}
-        ],
-        skills: ["apex","debug","continuous-learning-v2","nix-darwin","claude-code-meta","feature-workflow","obsidian","schliff","autoresearch","testing-patterns","codebase-audit"],
-        commands: ["tdd","optimize","context-prime","auto","discuss","verify-feature","ralph-loop","cancel-ralph","init-memory-bank"],
-        envVars: {
-          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
-          CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "90",
-          CLAUDE_STREAM_IDLE_TIMEOUT_MS: "600000",
-          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
-          CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1"
-        },
-        settings: {
-          model: "opus",
-          effortLevel: "high",
-          defaultMode: "acceptEdits"
-        }
+        agents: $agents,
+        skills: $skills,
+        commands: $commands,
+        hooks: $hooks
       }' > "$SNAPSHOT"
     chmod 600 "$SNAPSHOT"
   '';

@@ -56,15 +56,16 @@
       # ---- Performance: Early exit for non-interactive shells ----
       [[ $- != *i* ]] && return
 
-      # ---- Command History Configuration ----
-      HISTFILE=$HOME/.zhistory
-      SAVEHIST=10000
-      HISTSIZE=10000
+      # GIT_EDITOR: nano over SSH (no GUI), VS Code locally
+      if [[ -n "$SSH_CONNECTION" ]]; then
+        export GIT_EDITOR="nano"
+      else
+        export GIT_EDITOR="code --wait"
+      fi
 
-      # History behavior options
-      setopt share_history                         # Share history between sessions
+      # History: managed by programs.zsh.history (50000 entries, share, dedup)
+      # Only add options HM doesn't set:
       setopt hist_expire_dups_first                # Remove duplicates first when trimming
-      setopt hist_ignore_dups                      # Don't record duplicates
       setopt hist_verify                           # Show history expansion before executing
 
       # ---- Shell Behavior Options ----
@@ -163,7 +164,6 @@
     sessionVariables = {
       GNUPGHOME = "$XDG_CONFIG_HOME/gnupg";
       AGE_DIR = "$XDG_CONFIG_HOME/age";
-      GIT_EDITOR = if builtins.getEnv "SSH_CONNECTION" != "" then "nano" else "code --wait";
     };
   };
 }

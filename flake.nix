@@ -13,6 +13,11 @@
       url = "github:nix-community/home-manager/master";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    determinate = {
+      url = "https://flakehub.com/f/DeterminateSystems/determinate/3";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
@@ -52,6 +57,9 @@
         };
 
         modules = [
+          # Determinate Nix integration (manages daemon, GC, nix.conf)
+          inputs.determinate.darwinModules.default
+
           # Host configuration
           ./hosts/alex-mbp
 

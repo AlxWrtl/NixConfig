@@ -42,7 +42,12 @@ in
         "/bin/sh"
         "-c"
         ''
-          cd ${inputs.self} && \
+          FLAKE_DIR="$HOME/.config/nix-darwin"
+          if [ ! -d "$FLAKE_DIR" ]; then
+            echo "Flake dir not found: $FLAKE_DIR" >> ~/.cache/nix-flake-update-error.log
+            exit 1
+          fi
+          cd "$FLAKE_DIR" && \
           ${pkgs.nix}/bin/nix flake update && \
           echo "Flake updated (no auto-rebuild): $(date)" >> ~/.cache/nix-flake-update.log && \
           echo "⚠️  Run 'rebuild' to apply changes"

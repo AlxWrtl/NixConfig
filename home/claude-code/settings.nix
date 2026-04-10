@@ -56,26 +56,8 @@
         ];
       };
       network = {
-        allowedDomains = [
-          # GitHub
-          "github.com"
-          "raw.githubusercontent.com"
-          "api.github.com"
-          # Nix
-          "nix-darwin.github.io"
-          "nixos.org"
-          "search.nixos.org"
-          # NPM
-          "registry.npmjs.org"
-          "*.npmjs.org"
-          # Docs
-          "docs.anthropic.com"
-          "code.claude.com"
-          "developer.mozilla.org"
-          "www.typescriptlang.org"
-          # Web analysis — design, content, APIs
-          "*"
-        ];
+        # All domains allowed (web analysis, design, docs, APIs)
+        allowedDomains = [ "*" ];
       };
     };
 
@@ -86,7 +68,12 @@
         # Package managers
         "Bash(pnpm *)"
         "Bash(npm run *)"
-        "Bash(npx *)"
+        "Bash(dev-browser *)"
+        "Bash(npx dev-browser *)"
+        "Bash(npx @21st-dev/magic@*)"
+        "Bash(npx ccusage@*)"
+        "Bash(npx prettier *)"
+        "Bash(npx tsc *)"
         "Bash(bunx *)"
         "Bash(node *)"
         # Git — safe operations (granular, not blanket)
@@ -404,18 +391,12 @@
   # MCP servers merged into ~/.claude/.claude.json by activation script
   # Secrets (API keys) are injected at runtime by claudeCodeMcpMerge, not here
   mcpServersJson = builtins.toJSON {
-    chrome-devtools = {
-      type = "stdio";
-      command = "npx";
-      args = [ "chrome-devtools-mcp@latest" ];
-      env = { };
-    };
     magic = {
       type = "stdio";
       command = "npx";
       args = [
         "-y"
-        "@21st-dev/magic@latest"
+        "@21st-dev/magic@0.1.0"
       ];
       env = {
         API_KEY = "__SECRET_21ST_DEV__";
@@ -423,7 +404,7 @@
     };
     nanobanana = {
       command = "uvx";
-      args = [ "nanobanana-mcp-server@latest" ];
+      args = [ "nanobanana-mcp-server@latest" ];  # uvx/pip — pas npm, risque different
       env = {
         GEMINI_API_KEY = "__SECRET_GEMINI_API_KEY__";
       };
@@ -463,7 +444,7 @@
       fi
 
       if [ -z "$MONTHLY_COST" ]; then
-        MONTHLY_COST=$(npx -y ccusage@latest monthly --json 2>/dev/null | jq -r '.totals.totalCost // 0' | xargs printf "\$%.2f")
+        MONTHLY_COST=$(npx -y ccusage@18.0.10 monthly --json 2>/dev/null | jq -r '.totals.totalCost // 0' | xargs printf "\$%.2f")
         echo "$MONTHLY_COST" > "$CACHE_FILE" 2>/dev/null || true
       fi
     else

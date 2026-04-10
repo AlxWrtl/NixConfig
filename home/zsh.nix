@@ -22,10 +22,8 @@
     };
 
     initContent = ''
-      # ---- Performance: Skip expensive operations for non-interactive shells ----
-      skip_global_compinit=1
-
-      # ---- Production-Grade Completion System ----
+      # ---- Custom Completion System ----
+      # enableCompletion = false above disables HM's compinit
       # Custom compinit with 24-hour caching and background bytecode compilation
       () {
         setopt local_options extendedglob
@@ -53,25 +51,22 @@
       zstyle ':completion:*' use-cache on
       zstyle ':completion:*' cache-path ~/.zsh/cache
 
-      # ---- Performance: Early exit for non-interactive shells ----
-      [[ $- != *i* ]] && return
+      # GIT_EDITOR: nano over SSH (no GUI), VS Code locally
+      if [[ -n "$SSH_CONNECTION" ]]; then
+        export GIT_EDITOR="nano"
+      else
+        export GIT_EDITOR="code --wait"
+      fi
 
-      # ---- Command History Configuration ----
-      HISTFILE=$HOME/.zhistory
-      SAVEHIST=10000
-      HISTSIZE=10000
-
-      # History behavior options
-      setopt share_history                         # Share history between sessions
+      # History: managed by programs.zsh.history (50000 entries, share, dedup)
+      # Only add options HM doesn't set:
       setopt hist_expire_dups_first                # Remove duplicates first when trimming
-      setopt hist_ignore_dups                      # Don't record duplicates
       setopt hist_verify                           # Show history expansion before executing
 
       # ---- Shell Behavior Options ----
       setopt AUTO_CD                               # Auto cd when typing directory name
       setopt CORRECT                               # Spelling correction for commands
       setopt NO_BEEP
-      unsetopt BEEP
       unsetopt NOMATCH
 
       # Plugin tuning
@@ -163,7 +158,20 @@
     sessionVariables = {
       GNUPGHOME = "$XDG_CONFIG_HOME/gnupg";
       AGE_DIR = "$XDG_CONFIG_HOME/age";
-      GIT_EDITOR = if builtins.getEnv "SSH_CONNECTION" != "" then "nano" else "code --wait";
+
+      # FZF
+      FZF_CTRL_R_OPTS = "--no-preview";
+      FZF_CTRL_T_OPTS = "--preview 'bat -n --color=always --line-range :500 {}'";
+      FZF_ALT_C_OPTS = "--preview 'eza --tree --color=always {} | head -200'";
+      FZF_DEFAULT_COMMAND = "fd --type f --hidden --follow --exclude .git";
+      FZF_DEFAULT_OPTS = "--height 40% --layout=reverse --border --ansi";
+
+      # Tools
+      BAT_THEME = "TwoDark";
+      LESS = "-R --use-color";
+      DOCKER_DEFAULT_PLATFORM = "linux/amd64";
+      EZA_CONFIG_DIR = "$HOME/.config/eza";
+      PNPM_HOME = "$HOME/Library/pnpm";
     };
   };
 }

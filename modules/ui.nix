@@ -29,14 +29,6 @@ in
     pkgs.noto-fonts-color-emoji
   ];
 
-  networking.applicationFirewall = {
-    enable = true;
-    blockAllIncoming = false;
-    allowSigned = true;
-    allowSignedApp = true;
-    enableStealthMode = true;
-  };
-
   system.defaults = {
     NSGlobalDomain = {
       # Visual appearance
@@ -207,7 +199,7 @@ in
       "com.apple.Spotlight".MenuItemHidden = true;
 
       "com.apple.finder" = {
-        FXEnableExtensionChangeWarning = false;
+        # FXEnableExtensionChangeWarning: set via system.defaults.finder
         NSWindowTabbingEnabled = true;
         FinderSpawnTab = false;
         ShowRecentTags = false;
@@ -294,11 +286,7 @@ in
         autohide-time-modifier = 0.3;
       };
 
-      "com.apple.driver.AppleBluetoothMultitouch.trackpad" = {
-        Clicking = true;
-        DragLock = false;
-        TrackpadThreeFingerDrag = true;
-      };
+      # Bluetooth trackpad: covered by system.defaults.trackpad + AppleMultitouchTrackpad
 
       "com.apple.coreservices.useractivityd" = {
         ActivityAdvertisingAllowed = true;
@@ -388,11 +376,9 @@ in
       # Screen capture
       "com.apple.screencapture".style = "display";
 
-      # Trackpad gestures (full declaration)
+      # Trackpad gestures (extras not covered by system.defaults.trackpad)
       "com.apple.AppleMultitouchTrackpad" = {
-        Clicking = true;
-        TrackpadRightClick = true;
-        TrackpadThreeFingerDrag = true;
+        # Clicking, TrackpadRightClick, TrackpadThreeFingerDrag: set via system.defaults.trackpad
         TrackpadThreeFingerTapGesture = 0;
         TrackpadFourFingerHorizSwipeGesture = 2;
         TrackpadFourFingerVertSwipeGesture = 2;
@@ -428,10 +414,8 @@ in
     # Tap-to-click: -currentHost write required (nix-darwin can't do this declaratively)
     /usr/bin/defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 1
 
-    # Desktop Stacks grouped by Kind (defaults alone don't always activate)
-    /usr/bin/defaults write com.apple.finder FXPreferredGroupBy -string Kind
-    killall Finder 2>/dev/null || true
-    echo "Desktop: Stacks by Kind enabled"
+    # Desktop Stacks: FXPreferredGroupBy already set declaratively via
+    # system.defaults.CustomUserPreferences."com.apple.finder" — no killall needed
 
     # Display: 2048x1280 ("More Space" scaling on MacBook Pro M1)
     if command -v displayplacer &>/dev/null; then

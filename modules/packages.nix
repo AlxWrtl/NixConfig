@@ -6,81 +6,88 @@
 }:
 
 {
-  config = lib.mkMerge [
-    {
-      environment.systemPackages = [
-        pkgs.starship
-        pkgs.zsh-autosuggestions
-        pkgs.zsh-fast-syntax-highlighting
-        pkgs.eza
-        pkgs.bat
-        pkgs.fd
-        pkgs.ripgrep
-        pkgs.tree
-        pkgs.zoxide
-        pkgs.fzf
-        pkgs.atuin
-        pkgs.rsync
-        pkgs.btop
-        pkgs.fastfetch
-        pkgs.git
-        pkgs.git-crypt
-        pkgs.git-lfs
-        pkgs.gh
-        pkgs.nixd
-        pkgs.nil
-        pkgs.nixfmt
-        pkgs.nix-tree
-        pkgs.nix-index
-        pkgs.vulnix
-        pkgs.nodejs_22
-        pkgs.pnpm
-        pkgs.bun
-        pkgs.nodePackages.typescript
-        pkgs.nodePackages.eslint
-        pkgs.nodePackages.prettier
-        pkgs.sqlite
-        pkgs.postgresql
-        pkgs.curl
-        pkgs.wget
-        pkgs.httpie
-        pkgs.jq
-        pkgs.yq
-        pkgs.redis
-        pkgs.age
-        pkgs.sops
-        pkgs.libwebp
-        pkgs.sox
-      ];
+  environment.systemPackages = [
+    # Shell & prompt
+    pkgs.starship
+    pkgs.zsh-autosuggestions
+    pkgs.zsh-fast-syntax-highlighting
 
-      environment.variables = {
-        NODE_ENV = "development";
-      };
+    # File tools
+    pkgs.eza
+    pkgs.bat
+    pkgs.fd
+    pkgs.ripgrep
+    pkgs.tree
+    pkgs.zoxide
+    pkgs.fzf
 
-      environment.shellAliases = {
-        # Python
-        serve = "python3 -m http.server";
-        py = "python3";
-        ipy = "ipython";
+    # System monitoring
+    pkgs.atuin
+    pkgs.rsync
+    pkgs.btop
+    pkgs.fastfetch
 
-        # Nix
-        nix-shell = "nix-shell --run zsh";
-        rebuild = "sudo darwin-rebuild switch --flake .";
+    # Git
+    pkgs.git
+    pkgs.git-crypt
+    pkgs.git-lfs
+    pkgs.gh
 
-        # Docker
-        dc = "docker-compose";
-        dcu = "docker-compose up";
-        dcd = "docker-compose down";
-      };
+    # Nix tooling
+    pkgs.nixd
+    pkgs.nil
+    pkgs.nixfmt
+    pkgs.nix-tree
+    pkgs.nix-index
+    pkgs.vulnix
 
-    }
+    # Node.js
+    pkgs.nodejs_22
+    pkgs.pnpm
+    pkgs.bun
+    pkgs.nodePackages.typescript
+    pkgs.nodePackages.eslint
+    pkgs.nodePackages.prettier
 
-    {
-      environment.systemPackages = [
-        pkgs.python3
-        pkgs.uv
-        pkgs.ruff
-      ];
-    }
+    # Python
+    pkgs.python3
+    pkgs.uv
+    pkgs.ruff
+
+    # Databases
+    pkgs.sqlite
+    pkgs.postgresql
+    pkgs.redis
+
+    # Network & data
+    pkgs.curl
+    pkgs.wget
+    pkgs.httpie
+    pkgs.jq
+    pkgs.yq
+
+    # Security
+    pkgs.age
+    pkgs.sops
+
+    # Media
+    pkgs.libwebp
+    pkgs.sox
   ];
+
+  environment.shellAliases = {
+    # Python
+    serve = "python3 -m http.server";
+    py = "python3";
+    ipy = "ipython";
+
+    # Nix
+    nix-shell = "nix-shell --run zsh";
+    rebuild = "sudo darwin-rebuild switch --flake .";
+
+    # Docker
+    dc = "docker-compose";
+    dcu = "docker-compose up";
+    dcd = "docker-compose down";
+  };
 }

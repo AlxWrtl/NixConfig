@@ -8,19 +8,14 @@
 
 {
 
-  nix = {
-    enable = false;
-    package = pkgs.nixVersions.latest;
-
-    settings = {
-      # Modern features
-      experimental-features = [
-        "nix-command"
-        "flakes"
-        "fetch-closure"
-      ];
-
-      # Security (CVE-2025-46415, CVE-2025-46416, etc.)
+  # Determinate Nix manages the daemon, GC, and base nix.conf.
+  # These settings are written to /etc/nix/nix.custom.conf (included by Determinate).
+  # Settings already in Determinate's nix.conf (max-jobs, eval-cores, experimental-features)
+  # are omitted — only additions go here.
+  determinateNix = {
+    enable = true;
+    customSettings = {
+      # Security
       trusted-users = [
         "root"
         "@admin"
@@ -33,19 +28,14 @@
       require-sigs = true;
 
       # Performance
-      max-jobs = "auto";
-      cores = 0;
       builders-use-substitutes = true;
 
-      # Binary cache
-      substituters = [
+      # Binary caches (Determinate adds its own; these are extras)
+      extra-substituters = [
         "https://cache.nixos.org/"
         "https://nix-community.cachix.org"
       ];
-
-      extra-trusted-substituters = [ ];
-
-      trusted-public-keys = [
+      extra-trusted-public-keys = [
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
         "nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs="
       ];
@@ -57,30 +47,13 @@
       download-attempts = 3;
       log-lines = 25;
 
-      # Store management
-      min-free = 1000000000; # 1GB
-      max-free = 5000000000; # 5GB
-      tarball-ttl = 3600 * 24 * 7; # 7 days
+      # Store
+      tarball-ttl = 604800; # 7 days
       eval-cache = true;
-    };
 
-    # Automatic maintenance
-    optimise.automatic = false;
-    gc = {
-      automatic = false;
-      interval = {
-        Weekday = 7;
-        Hour = 10;
-        Minute = 0;
-      };
-      options = "--delete-older-than 60d --max-freed 10G";
+      # Extra experimental features (Determinate already enables nix-command + flakes)
+      extra-experimental-features = [ "fetch-closure" ];
     };
-  };
-
-  nixpkgs.config = {
-    allowBroken = false;
-    allowInsecure = false;
-    permittedInsecurePackages = [ ];
   };
 
   environment.variables = {
@@ -100,20 +73,6 @@
     GNUPGHOME = "$HOME/.config/gnupg";
     AGE_DIR = "$HOME/.config/age";
 
-    # FZF
-    FZF_CTRL_R_OPTS = "--no-preview";
-    FZF_CTRL_T_OPTS = "--preview 'bat -n --color=always --line-range :500 {}'";
-    FZF_ALT_C_OPTS = "--preview 'eza --tree --color=always {} | head -200'";
-    FZF_DEFAULT_COMMAND = "fd --type f --hidden --follow --exclude .git";
-    FZF_DEFAULT_OPTS = "--height 40% --layout=reverse --border --ansi";
-
-    # Tools
-    BAT_THEME = "TwoDark";
-    LESS = "-R --use-color";
-    DOCKER_DEFAULT_PLATFORM = "linux/amd64";
-    EZA_CONFIG_DIR = "$HOME/.config/eza";
-    PNPM_HOME = "$HOME/Library/pnpm";
-
     # Homebrew
     HOMEBREW_NO_ANALYTICS = "1";
     HOMEBREW_NO_INSECURE_REDIRECT = "1";
@@ -124,10 +83,15 @@
 
   security.pam.services.sudo_local.touchIdAuth = true;
 
+  networking.applicationFirewall = {
+    enable = true;
+    blockAllIncoming = false;
+    allowSigned = true;
+    allowSignedApp = true;
+    enableStealthMode = true;
+  };
+
   environment.systemPackages = [
-    pkgs.vulnix
-    pkgs.age
-    pkgs.sops
     pkgs.nmap
     pkgs.htop
   ];
@@ -139,21 +103,6 @@
     check-perms = "ls -la /nix/store | head -20";
     check-security = "cat /var/log/security/vulnix-scan.log | tail -10";
   };
-
-  # Uncomment when secrets are configured:
-  # sops = {
-  #   defaultSopsFile = ./secrets/secrets.yaml;
-  #   age = {
-  #     keyFile = "/Users/alx/.config/age/keys.txt";
-  #     generateKey = false;
-  #   };
-  #   secrets = {
-  #     github_token = {
-  #       owner = "alx";
-  #       mode = "0400";
-  #     };
-  #   };
-  # };
 
   # Shell configuration
   programs.zsh.enable = true;

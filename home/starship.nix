@@ -166,21 +166,16 @@
         style = "#00afaf";
       };
 
+      # Disable language/tool modules we don't use in the prompt
       package.disabled = true;
       conda.disabled = true;
-      memory_usage.disabled = true;
-      time.disabled = true;
       username.disabled = true;
       hostname.disabled = true;
-      shlvl.disabled = true;
       env_var.disabled = true;
       aws.disabled = true;
-      azure.disabled = true;
       gcloud.disabled = true;
-      kubernetes.disabled = true;
       terraform.disabled = true;
       docker_context.disabled = true;
-      direnv.disabled = true;
       lua.disabled = true;
       perl.disabled = true;
       php.disabled = true;

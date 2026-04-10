@@ -10,6 +10,7 @@
     mkdir -p "$HOME/.claude/plugins"
     mkdir -p "$HOME/.claude/scripts"
     mkdir -p "$HOME/.claude/skills/apex"
+    mkdir -p "$HOME/.claude/skills/apex/steps"
     mkdir -p "$HOME/.claude/skills/debug"
     mkdir -p "$HOME/.claude/skills/continuous-learning-v2"
     mkdir -p "$HOME/.claude/skills/nix-darwin"
@@ -68,8 +69,6 @@
     set -euo pipefail
     chmod 700 "$HOME/.claude"
     chmod 700 "$HOME/.claude/agents" "$HOME/.claude/commands" "$HOME/.claude/hooks" "$HOME/.claude/skills"
-    chmod +x "$HOME/.claude/hooks"/*.js 2>/dev/null || true
-    chmod +x "$HOME/.claude/hooks"/*.sh 2>/dev/null || true
   '';
 
   # -------------------------
@@ -128,15 +127,15 @@
       TMP=$(mktemp)
       MCP_DATA=$(cat "$MCP_BASE")
 
-      # Inject secrets at runtime (replace placeholders with actual keys)
+      # Inject secrets at runtime via jq (safe for special chars in keys)
       if [ -f "$SECRET_21ST" ]; then
         API_KEY=$(cat "$SECRET_21ST")
-        MCP_DATA=$(echo "$MCP_DATA" | sed "s/__SECRET_21ST_DEV__/$API_KEY/g")
+        MCP_DATA=$(echo "$MCP_DATA" | jq --arg key "$API_KEY" 'walk(if . == "__SECRET_21ST_DEV__" then $key else . end)')
       fi
 
       if [ -f "$SECRET_GEMINI" ]; then
         GEMINI_KEY=$(cat "$SECRET_GEMINI")
-        MCP_DATA=$(echo "$MCP_DATA" | sed "s/__SECRET_GEMINI_API_KEY__/$GEMINI_KEY/g")
+        MCP_DATA=$(echo "$MCP_DATA" | jq --arg key "$GEMINI_KEY" 'walk(if . == "__SECRET_GEMINI_API_KEY__" then $key else . end)')
       fi
 
       jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP" \
@@ -146,64 +145,31 @@
   '';
 
   # -------------------------
-  # Generate config-snapshot.json at rebuild time
+  # Generate config-snapshot.json dynamically from installed files
   # -------------------------
   claudeCodeConfigSnapshot = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     set -euo pipefail
     SNAPSHOT="$HOME/.claude/config-snapshot.json"
     GEN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+    # Discover installed components from actual files
+    AGENTS=$(ls "$HOME/.claude/agents/"*.md 2>/dev/null | xargs -I{} basename {} .md | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+    SKILLS=$(ls -d "$HOME/.claude/skills/"*/SKILL.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {} | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+    COMMANDS=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | xargs -I{} basename {} .md | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+    HOOKS=$(ls "$HOME/.claude/hooks/"*.{js,sh} 2>/dev/null | xargs -I{} basename {} | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+
     ${pkgs.jq}/bin/jq -n \
       --arg date "$GEN_DATE" \
+      --argjson agents "$AGENTS" \
+      --argjson skills "$SKILLS" \
+      --argjson commands "$COMMANDS" \
+      --argjson hooks "$HOOKS" \
       '{
         generatedAt: $date,
-        mcpServers: ["chrome-devtools","magic","nanobanana"],
-        hooks: [
-          {event:"PreToolUse",   matcher:"Edit|Write", script:"protect-main.js",       type:"node"},
-          {event:"PreToolUse",   matcher:"Bash",       script:"block-main-bash.js",    type:"node"},
-          {event:"PostToolUse",  matcher:"Write|Edit", script:"format-typescript.js",  type:"node"},
-          {event:"PreCompact",   matcher:"",           script:"pre-compact-backup.sh", type:"bash"},
-          {event:"Notification", matcher:"",           script:"notification.sh",       type:"bash"},
-          {event:"SessionStart", matcher:"",           script:"session-start.sh",      type:"bash"},
-          {event:"SubagentStop",  matcher:"",                               script:"subagent-stop.js",      type:"node"},
-          {event:"TaskCompleted", matcher:"",                               script:"task-completed.sh",     type:"bash"},
-          {event:"PreToolUse",    matcher:"Edit|Write|Bash|Agent",            script:"governance-audit.js",    type:"node"},
-          {event:"UserPromptSubmit", matcher:"",                             script:"correction-capture.js",  type:"node"},
-          {event:"PostToolUseFailure", matcher:"",                           script:"circuit-breaker.js",     type:"node"},
-          {event:"PostToolUse",   matcher:"",                               script:"circuit-breaker-reset.js", type:"node"},
-          {event:"PreCompact",    matcher:"",                               script:"pre-compact-state.js",   type:"node"},
-          {event:"PostCompact",   matcher:"",                               script:"post-compact-restore.js", type:"node"},
-          {event:"Stop",          matcher:"",                               script:"quality-gate.js",        type:"node"},
-          {event:"StopFailure",   matcher:"",                               script:"stop-failure.sh",        type:"bash"}
-        ],
-        agents: [
-          {name:"frontend-expert",     model:"sonnet"},
-          {name:"backend-expert",      model:"sonnet"},
-          {name:"architecture-expert", model:"opus"},
-          {name:"performance-expert",  model:"haiku"},
-          {name:"codebase-navigator",  model:"haiku"},
-          {name:"code-reviewer",       model:"opus"},
-          {name:"quick-fix",           model:"haiku"},
-          {name:"nix-expert",          model:"sonnet"},
-          {name:"git-ship",            model:"haiku"},
-          {name:"team-lead",           model:"opus"},
-          {name:"test-runner",         model:"haiku"},
-          {name:"security-auditor",    model:"haiku"},
-          {name:"debugger",            model:"sonnet"}
-        ],
-        skills: ["apex","debug","continuous-learning-v2","nix-darwin","claude-code-meta","feature-workflow","obsidian","schliff","autoresearch","testing-patterns","codebase-audit"],
-        commands: ["tdd","optimize","context-prime","auto","discuss","verify-feature","ralph-loop","cancel-ralph","init-memory-bank"],
-        envVars: {
-          CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: "1",
-          CLAUDE_AUTOCOMPACT_PCT_OVERRIDE: "90",
-          CLAUDE_STREAM_IDLE_TIMEOUT_MS: "600000",
-          CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
-          CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR: "1"
-        },
-        settings: {
-          model: "opus",
-          effortLevel: "high",
-          defaultMode: "acceptEdits"
-        }
+        agents: $agents,
+        skills: $skills,
+        commands: $commands,
+        hooks: $hooks
       }' > "$SNAPSHOT"
     chmod 600 "$SNAPSHOT"
   '';
@@ -254,5 +220,32 @@
     rm -rf "$TMP_DIR"
 
     echo "✓ Ralph Wiggum scripts installed"
+  '';
+
+  # -------------------------
+  # Install dev-browser CLI (once)
+  # -------------------------
+  claudeCodeDevBrowser = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    MARKER="$HOME/.claude/.dev-browser-installed"
+
+    # Skip if already installed
+    if [ -f "$MARKER" ]; then
+      exit 0
+    fi
+
+    echo "Installing dev-browser..."
+    export PATH="${pkgs.nodejs_22}/bin:$PATH"
+
+    # npm global prefix → ~/.npm-global (nix store is immutable)
+    NPM_GLOBAL="$HOME/.npm-global"
+    mkdir -p "$NPM_GLOBAL"
+    export npm_config_prefix="$NPM_GLOBAL"
+    export PATH="$NPM_GLOBAL/bin:$PATH"
+
+    npm install -g dev-browser@0.2.7 2>&1 || { echo "dev-browser install failed"; exit 0; }
+    "$NPM_GLOBAL/bin/dev-browser" install 2>&1 || { echo "dev-browser playwright install failed"; exit 0; }
+
+    touch "$MARKER"
+    echo "✓ dev-browser installed"
   '';
 }

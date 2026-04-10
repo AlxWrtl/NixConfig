@@ -11,17 +11,11 @@
   homebrew = {
     enable = true;
 
-    caskArgs.no_quarantine = false;
-
     onActivation = {
       cleanup = "zap";
       autoUpdate = true;
       upgrade = true;
     };
-
-    global.brewfile = true;
-
-    taps = [ ];
 
     brews = [
       "cloudflared"
@@ -32,127 +26,42 @@
       "trash"
     ];
 
+    # Apps with auto-updaters: simple strings (no greedy)
+    # Apps without auto-updaters: greedy = true to keep them current
     casks = [
-      {
-        name = "1password";
-        greedy = true;
-      }
-      {
-        name = "appcleaner";
-        greedy = true;
-      }
-      {
-        name = "arc";
-        greedy = true;
-      }
-      {
-        name = "claude";
-        greedy = true;
-      }
-      {
-        name = "claude-code";
-        greedy = true;
-      }
-      {
-        name = "coteditor";
-        greedy = true;
-      }
-      {
-        name = "discord";
-        greedy = true;
-      }
-      {
-        name = "docker-desktop";
-        greedy = true;
-      }
-      {
-        name = "figma";
-        greedy = true;
-      }
-      {
-        name = "ghostty";
-        greedy = true;
-      }
-      {
-        name = "google-chrome";
-        greedy = true;
-      }
-      {
-        name = "jordanbaird-ice";
-        greedy = true;
-      }
-      {
-        name = "keka";
-        greedy = true;
-      }
-      {
-        name = "logi-options+";
-        greedy = true;
-      }
-      {
-        name = "microsoft-excel";
-        greedy = true;
-      }
-      {
-        name = "microsoft-powerpoint";
-        greedy = true;
-      }
-      {
-        name = "microsoft-teams";
-        greedy = true;
-      }
-      {
-        name = "microsoft-word";
-        greedy = true;
-      }
-      {
-        name = "notion";
-        greedy = true;
-      }
-      {
-        name = "obsidian";
-        greedy = true;
-      }
-      {
-        name = "ollama-app";
-        greedy = true;
-      }
-      {
-        name = "plex-media-server";
-        greedy = true;
-      }
-      {
-        name = "raycast";
-        greedy = true;
-      }
-      {
-        name = "readdle-spark";
-        greedy = true;
-      }
-      {
-        name = "tailscale-app";
-        greedy = true;
-      }
-      {
-        name = "transmission";
-        greedy = true;
-      }
-      {
-        name = "upscayl";
-        greedy = true;
-      }
-      {
-        name = "visual-studio-code";
-        greedy = true;
-      }
-      {
-        name = "vlc";
-        greedy = true;
-      }
-      {
-        name = "whatsapp";
-        greedy = true;
-      }
+      # Auto-updating apps
+      "1password"
+      "arc"
+      "claude"
+      "claude-code"
+      "discord"
+      "docker-desktop"
+      "figma"
+      "google-chrome"
+      "microsoft-excel"
+      "microsoft-powerpoint"
+      "microsoft-teams"
+      "microsoft-word"
+      "notion"
+      "obsidian"
+      "raycast"
+      "readdle-spark"
+      "visual-studio-code"
+      "whatsapp"
+
+      # No auto-updater — greedy keeps them current
+      { name = "appcleaner"; greedy = true; }
+      { name = "coteditor"; greedy = true; }
+      { name = "ghostty"; greedy = true; }
+      { name = "jordanbaird-ice"; greedy = true; }
+      { name = "keka"; greedy = true; }
+      { name = "logi-options+"; greedy = true; }
+      { name = "ollama-app"; greedy = true; }
+      { name = "plex-media-server"; greedy = true; }
+      { name = "tailscale-app"; greedy = true; }
+      { name = "transmission"; greedy = true; }
+      { name = "upscayl"; greedy = true; }
+      { name = "vlc"; greedy = true; }
     ];
 
     masApps = {
@@ -165,7 +74,6 @@
   };
 
   environment.variables = {
-    HOMEBREW_CASK_OPTS_NO_BINARIES = "1";
     MAS_NO_PROMPT = "1";
   };
 

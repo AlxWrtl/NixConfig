@@ -34,6 +34,22 @@ let
     ;
   inherit (skills)
     skillApex
+    apexStep00Init
+    apexStep00bInteractive
+    apexStep00bBranch
+    apexStep00bEconomy
+    apexStep00bSave
+    apexStep01Analyze
+    apexStep02Plan
+    apexStep02bTasks
+    apexStep03Execute
+    apexStep03ExecuteTeams
+    apexStep04Validate
+    apexStep05Examine
+    apexStep06Resolve
+    apexStep07Tests
+    apexStep08RunTests
+    apexStep09Finish
     skillDebug
     skillContinuousLearning
     skillFeatureWorkflow
@@ -85,6 +101,9 @@ in
   # Shell integration
   programs.zsh.shellAliases = aliases;
   programs.zsh.sessionVariables = sessionVars;
+
+  # npm global prefix (nix store is immutable, npm install -g needs a writable prefix)
+  home.sessionPath = [ "$HOME/.npm-global/bin" ];
 
   # Write ~/.claude content declaratively
   home.file = {
@@ -140,6 +159,22 @@ in
     "${claudeDir}/agents/debugger.md".text = agentDebugger;
 
     "${claudeDir}/skills/apex/SKILL.md" = { text = skillApex; force = true; };
+    "${claudeDir}/skills/apex/steps/step-00-init.md".text = apexStep00Init;
+    "${claudeDir}/skills/apex/steps/step-00b-interactive.md".text = apexStep00bInteractive;
+    "${claudeDir}/skills/apex/steps/step-00b-branch.md".text = apexStep00bBranch;
+    "${claudeDir}/skills/apex/steps/step-00b-economy.md".text = apexStep00bEconomy;
+    "${claudeDir}/skills/apex/steps/step-00b-save.md".text = apexStep00bSave;
+    "${claudeDir}/skills/apex/steps/step-01-analyze.md".text = apexStep01Analyze;
+    "${claudeDir}/skills/apex/steps/step-02-plan.md".text = apexStep02Plan;
+    "${claudeDir}/skills/apex/steps/step-02b-tasks.md".text = apexStep02bTasks;
+    "${claudeDir}/skills/apex/steps/step-03-execute.md".text = apexStep03Execute;
+    "${claudeDir}/skills/apex/steps/step-03-execute-teams.md".text = apexStep03ExecuteTeams;
+    "${claudeDir}/skills/apex/steps/step-04-validate.md".text = apexStep04Validate;
+    "${claudeDir}/skills/apex/steps/step-05-examine.md".text = apexStep05Examine;
+    "${claudeDir}/skills/apex/steps/step-06-resolve.md".text = apexStep06Resolve;
+    "${claudeDir}/skills/apex/steps/step-07-tests.md".text = apexStep07Tests;
+    "${claudeDir}/skills/apex/steps/step-08-run-tests.md".text = apexStep08RunTests;
+    "${claudeDir}/skills/apex/steps/step-09-finish.md".text = apexStep09Finish;
     "${claudeDir}/skills/debug/SKILL.md" = { text = skillDebug; force = true; };
     "${claudeDir}/skills/nix-darwin/SKILL.md" = { text = skillNixDarwin; force = true; };
     "${claudeDir}/skills/claude-code-meta/SKILL.md" = { text = skillClaudeCodeMeta; force = true; };

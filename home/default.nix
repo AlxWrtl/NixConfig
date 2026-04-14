@@ -31,6 +31,10 @@
     pkgs.tldr
   ];
 
+  home.sessionPath = [
+    "$HOME/.npm-global/bin"
+  ];
+
   programs.home-manager.enable = true;
 
   xdg.enable = true;

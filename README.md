@@ -137,6 +137,51 @@ darwin-rebuild switch --flake .#alex-mbp --show-trace -v  # Debug
 - [ ] App logins: Discord, WhatsApp, Spark, Teams, Figma
 - [ ] Raycast settings imported (if backed up)
 
+## APEX Commands
+
+APEX is a structured, multi-step implementation workflow for Claude Code (`/apex`).
+
+### Flags
+
+| Enable | Disable | Description |
+|--------|---------|-------------|
+| `-a` | `-A` | Auto — skip confirmations |
+| `-x` | `-X` | Examine — adversarial code review |
+| `-s` | `-S` | Save — persist outputs to files |
+| `-t` | `-T` | Test — create and run tests |
+| `-e` | `-E` | Economy — no subagents, direct tools only |
+| `-b` | `-B` | Branch — create git branch |
+| `-pr` | `-PR` | Pull request — commit + PR (implies `-b`) |
+| `-k` | `-K` | Tasks — task breakdown with dependency graph |
+| `-m` | `-M` | Teams — Agent Teams parallel execution (implies `-k`) |
+| `-v` | `-V` | Verify — research plan online before executing |
+| `-i` | | Interactive — configure flags via menu |
+| `-r` | | Resume — continue previous task |
+
+### Usage
+
+```
+/apex add feature                    # Basic
+/apex -a -s implement auth           # Autonomous + save
+/apex -a -x -s fix bug              # Full autonomous with review
+/apex -a -t -pr add endpoint        # Auto + tests + PR
+/apex -e simple fix                  # Economy mode (save tokens)
+/apex -a -x -t -pr full feature    # Everything enabled
+```
+
+### Pipeline
+
+`init → analyze → plan → execute → validate` (+ optional: tests, examine, resolve, finish)
+
+### Related commands
+
+| Command | Description |
+|---------|-------------|
+| `/auto <task>` | Route to best workflow (APEX, debug, ralph, agent) |
+| `/discuss <feature>` | Capture decisions before planning |
+| `/verify-feature` | 6-layer quality verification on current branch |
+| `/tdd <feature>` | TDD loop: red → green → refactor |
+
 ## Shell Aliases
 
 ```bash

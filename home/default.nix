@@ -36,4 +36,7 @@
   xdg.enable = true;
 
   fonts.fontconfig.enable = true;
+
+  # Silence builtins.derivation options.json warning (home-manager #7935)
+  manual.manpages.enable = false;
 }

@@ -1,9 +1,4 @@
-{
-  config,
-  pkgs,
-  lib,
-  ...
-}:
+{ pkgs, ... }:
 
 {
   environment.systemPackages = [
@@ -45,9 +40,9 @@
     pkgs.nodejs_22
     pkgs.pnpm
     pkgs.bun
-    pkgs.nodePackages.typescript
-    pkgs.nodePackages.eslint
-    pkgs.nodePackages.prettier
+    pkgs.typescript
+    pkgs.eslint
+    pkgs.prettier
 
     # Python
     pkgs.python3
@@ -83,7 +78,7 @@
 
     # Nix
     nix-shell = "nix-shell --run zsh";
-    rebuild = "sudo darwin-rebuild switch --flake .";
+    rebuild = "sudo darwin-rebuild switch --flake .#alex-mbp";
 
     # Docker
     dc = "docker-compose";

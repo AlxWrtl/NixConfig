@@ -144,9 +144,21 @@ in
           "veille-claude daily"
         ];
         StartCalendarInterval = [
-          { Weekday = 1; Hour = 9; Minute = 0; }
-          { Weekday = 3; Hour = 9; Minute = 0; }
-          { Weekday = 5; Hour = 9; Minute = 0; }
+          {
+            Weekday = 1;
+            Hour = 9;
+            Minute = 0;
+          }
+          {
+            Weekday = 3;
+            Hour = 9;
+            Minute = 0;
+          }
+          {
+            Weekday = 5;
+            Hour = 9;
+            Minute = 0;
+          }
         ];
         StandardOutPath = "/tmp/veille-daily.log";
         StandardErrorPath = "/tmp/veille-daily-err.log";
@@ -165,8 +177,16 @@ in
           "veille-claude compare"
         ];
         StartCalendarInterval = [
-          { Day = 1; Hour = 10; Minute = 0; }
-          { Day = 15; Hour = 10; Minute = 0; }
+          {
+            Day = 1;
+            Hour = 10;
+            Minute = 0;
+          }
+          {
+            Day = 15;
+            Hour = 10;
+            Minute = 0;
+          }
         ];
         StandardOutPath = "/tmp/veille-compare.log";
         StandardErrorPath = "/tmp/veille-compare-err.log";
@@ -185,7 +205,11 @@ in
           "veille-claude full"
         ];
         StartCalendarInterval = [
-          { Day = 1; Hour = 8; Minute = 0; }
+          {
+            Day = 1;
+            Hour = 8;
+            Minute = 0;
+          }
         ];
         StandardOutPath = "/tmp/veille-full.log";
         StandardErrorPath = "/tmp/veille-full-err.log";

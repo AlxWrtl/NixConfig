@@ -1,10 +1,4 @@
-{
-  config,
-  pkgs,
-  lib,
-  inputs,
-  ...
-}:
+{ ... }:
 
 {
 
@@ -38,10 +32,6 @@
       "docker-desktop"
       "figma"
       "google-chrome"
-      "microsoft-excel"
-      "microsoft-powerpoint"
-      "microsoft-teams"
-      "microsoft-word"
       "notion"
       "obsidian"
       "raycast"
@@ -50,26 +40,67 @@
       "whatsapp"
 
       # No auto-updater — greedy keeps them current
-      { name = "appcleaner"; greedy = true; }
-      { name = "coteditor"; greedy = true; }
-      { name = "ghostty"; greedy = true; }
-      { name = "jordanbaird-ice"; greedy = true; }
-      { name = "keka"; greedy = true; }
-      { name = "logi-options+"; greedy = true; }
-      { name = "ollama-app"; greedy = true; }
-      { name = "plex-media-server"; greedy = true; }
-      { name = "tailscale-app"; greedy = true; }
-      { name = "transmission"; greedy = true; }
-      { name = "upscayl"; greedy = true; }
-      { name = "vlc"; greedy = true; }
+      {
+        name = "appcleaner";
+        greedy = true;
+      }
+      {
+        name = "coteditor";
+        greedy = true;
+      }
+      {
+        name = "ghostty";
+        greedy = true;
+      }
+      {
+        name = "jordanbaird-ice";
+        greedy = true;
+      }
+      {
+        name = "keka";
+        greedy = true;
+      }
+      {
+        name = "logi-options+";
+        greedy = true;
+      }
+      {
+        name = "ollama-app";
+        greedy = true;
+      }
+      {
+        name = "plex-media-server";
+        greedy = true;
+      }
+      {
+        name = "tailscale-app";
+        greedy = true;
+      }
+      {
+        name = "transmission";
+        greedy = true;
+      }
+      {
+        name = "upscayl";
+        greedy = true;
+      }
+      {
+        name = "vlc";
+        greedy = true;
+      }
     ];
 
     masApps = {
       "DaisyDisk" = 411643860;
       "Keynote" = 409183694;
+      "Microsoft Excel" = 462058435;
+      "Microsoft PowerPoint" = 462062816;
+      "Microsoft Word" = 462054704;
       "Numbers" = 409203825;
       "Pages" = 409201541;
       "Trello" = 1278508951;
+      "Affinity Photo" = 824183456;
+      "Affinity Publisher" = 881418622;
     };
   };
 

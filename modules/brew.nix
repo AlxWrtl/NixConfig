@@ -37,6 +37,7 @@
       "raycast"
       "readdle-spark"
       "visual-studio-code"
+      "microsoft-teams"
       "whatsapp"
 
       # No auto-updater — greedy keeps them current

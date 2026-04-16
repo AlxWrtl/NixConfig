@@ -31,9 +31,16 @@
     pkgs.tldr
   ];
 
+  home.sessionPath = [
+    "$HOME/.npm-global/bin"
+  ];
+
   programs.home-manager.enable = true;
 
   xdg.enable = true;
 
   fonts.fontconfig.enable = true;
+
+  # Silence builtins.derivation options.json warning (home-manager #7935)
+  manual.manpages.enable = false;
 }

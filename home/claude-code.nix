@@ -136,7 +136,10 @@ in
     "${claudeDir}/commands/verify-feature.md".text = commandVerifyFeature;
 
     # Skills (force = true: desymlink activation script replaces these with real copies)
-    "${claudeDir}/skills/feature-workflow/SKILL.md" = { text = skillFeatureWorkflow; force = true; };
+    "${claudeDir}/skills/feature-workflow/SKILL.md" = {
+      text = skillFeatureWorkflow;
+      force = true;
+    };
 
     # Feature chain script
     "${claudeDir}/feature-chain.sh" = {
@@ -159,7 +162,10 @@ in
     "${claudeDir}/agents/security-auditor.md".text = agentSecurityAuditor;
     "${claudeDir}/agents/debugger.md".text = agentDebugger;
 
-    "${claudeDir}/skills/apex/SKILL.md" = { text = skillApex; force = true; };
+    "${claudeDir}/skills/apex/SKILL.md" = {
+      text = skillApex;
+      force = true;
+    };
     "${claudeDir}/skills/apex/steps/step-00-init.md".text = apexStep00Init;
     "${claudeDir}/skills/apex/steps/step-00b-interactive.md".text = apexStep00bInteractive;
     "${claudeDir}/skills/apex/steps/step-00b-branch.md".text = apexStep00bBranch;
@@ -177,15 +183,42 @@ in
     "${claudeDir}/skills/apex/steps/step-07-tests.md".text = apexStep07Tests;
     "${claudeDir}/skills/apex/steps/step-08-run-tests.md".text = apexStep08RunTests;
     "${claudeDir}/skills/apex/steps/step-09-finish.md".text = apexStep09Finish;
-    "${claudeDir}/skills/debug/SKILL.md" = { text = skillDebug; force = true; };
-    "${claudeDir}/skills/nix-darwin/SKILL.md" = { text = skillNixDarwin; force = true; };
-    "${claudeDir}/skills/claude-code-meta/SKILL.md" = { text = skillClaudeCodeMeta; force = true; };
-    "${claudeDir}/skills/obsidian/SKILL.md" = { text = skillObsidian; force = true; };
-    "${claudeDir}/skills/schliff/SKILL.md" = { text = skillSchliff; force = true; };
-    "${claudeDir}/skills/autoresearch/SKILL.md" = { text = skillAutoresearch; force = true; };
-    "${claudeDir}/skills/continuous-learning-v2/SKILL.md" = { text = skillContinuousLearning; force = true; };
-    "${claudeDir}/skills/testing-patterns/SKILL.md" = { text = skillTestingPatterns; force = true; };
-    "${claudeDir}/skills/codebase-audit/SKILL.md" = { text = skillCodebaseAudit; force = true; };
+    "${claudeDir}/skills/debug/SKILL.md" = {
+      text = skillDebug;
+      force = true;
+    };
+    "${claudeDir}/skills/nix-darwin/SKILL.md" = {
+      text = skillNixDarwin;
+      force = true;
+    };
+    "${claudeDir}/skills/claude-code-meta/SKILL.md" = {
+      text = skillClaudeCodeMeta;
+      force = true;
+    };
+    "${claudeDir}/skills/obsidian/SKILL.md" = {
+      text = skillObsidian;
+      force = true;
+    };
+    "${claudeDir}/skills/schliff/SKILL.md" = {
+      text = skillSchliff;
+      force = true;
+    };
+    "${claudeDir}/skills/autoresearch/SKILL.md" = {
+      text = skillAutoresearch;
+      force = true;
+    };
+    "${claudeDir}/skills/continuous-learning-v2/SKILL.md" = {
+      text = skillContinuousLearning;
+      force = true;
+    };
+    "${claudeDir}/skills/testing-patterns/SKILL.md" = {
+      text = skillTestingPatterns;
+      force = true;
+    };
+    "${claudeDir}/skills/codebase-audit/SKILL.md" = {
+      text = skillCodebaseAudit;
+      force = true;
+    };
 
     # Hooks
     "${claudeDir}/hooks/protect-main.js" = {

@@ -130,7 +130,10 @@ let
       "editor.formatOnPaste" = true;
     };
     "python.languageServer" = "Pylance";
-    "isort.args" = [ "--profile" "autopep8" ];
+    "isort.args" = [
+      "--profile"
+      "autopep8"
+    ];
     "python.terminal.executeInFileDir" = true;
     "python.experiments.enabled" = false;
 
@@ -183,7 +186,12 @@ let
     # Extensions
     "workbench.editor.enablePreview" = false;
     "javascript.suggest.autoImports" = true;
-    "eslint.validate" = [ "javascript" "javascriptreact" "typescript" "typescriptreact" ];
+    "eslint.validate" = [
+      "javascript"
+      "javascriptreact"
+      "typescript"
+      "typescriptreact"
+    ];
     "eslint.workingDirectories" = [ { mode = "auto"; } ];
     "typescript.enablePromptUseWorkspaceTsdk" = true;
     "extensions.ignoreRecommendations" = true;
@@ -210,7 +218,8 @@ let
     "terminal.integrated.cursorStyleInactive" = "line";
     "terminal.integrated.defaultProfile.osx" = "zsh";
     "terminal.external.osxExec" = "iTerm.app";
-    "terminal.integrated.fontFamily" = "'MesloLGS NF' ,FantasqueSansM Nerd Font Mono, Fira Code, hack nerd, FiraCode-Regular";
+    "terminal.integrated.fontFamily" =
+      "'MesloLGS NF' ,FantasqueSansM Nerd Font Mono, Fira Code, hack nerd, FiraCode-Regular";
     "terminal.integrated.cursorStyle" = "line";
     "terminal.integrated.fontSize" = 12;
     "terminal.integrated.shellIntegration.enabled" = false;
@@ -260,7 +269,9 @@ let
     }
   ];
 
-  extensionInstallScript = lib.concatMapStringsSep "\n" (ext: "code --install-extension ${ext} --force") extensions;
+  extensionInstallScript = lib.concatMapStringsSep "\n" (
+    ext: "code --install-extension ${ext} --force"
+  ) extensions;
 in
 
 {

@@ -2,7 +2,6 @@
   config,
   pkgs,
   lib,
-  inputs,
   ...
 }:
 
@@ -97,7 +96,6 @@
   ];
 
   environment.shellAliases = {
-    vulnscan = "vulnix --system /var/run/current-system";
     vulnscan-json = "vulnix --system /var/run/current-system --json /tmp/vulnix-output.json";
     security-logs = "tail -f /var/log/security/*.log";
     check-perms = "ls -la /nix/store | head -20";

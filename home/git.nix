@@ -13,6 +13,8 @@ in
   programs.git = {
     enable = true;
 
+    signing.format = "ssh";
+
     ignores = [
       "**/.claude/settings.local.json"
     ];
@@ -37,8 +39,6 @@ in
       index.version = 4;
       core.untrackedcache = true;
 
-      # SSH commit signing (modern, no GPG required)
-      gpg.format = "ssh";
       commit.gpgSign = true;
     };
   };

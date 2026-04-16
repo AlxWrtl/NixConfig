@@ -1,5 +1,9 @@
 # Claude Code settings and statusline script
 { homeDirectory }:
+let
+  # Absolute path to node — /bin/sh can't find nix-installed node in PATH
+  node = "/run/current-system/sw/bin/node";
+in
 {
   settingsJson = builtins.toJSON {
     "$schema" = "https://json.schemastore.org/claude-code-settings.json";
@@ -195,7 +199,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/protect-main.js";
+              command = "${node} ~/.claude/hooks/protect-main.js";
               timeout = 5;
             }
           ];
@@ -206,7 +210,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/block-main-bash.js";
+              command = "${node} ~/.claude/hooks/block-main-bash.js";
               timeout = 5;
             }
           ];
@@ -216,7 +220,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/governance-audit.js";
+              command = "${node} ~/.claude/hooks/governance-audit.js";
               timeout = 3;
               async = true;
             }
@@ -228,7 +232,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/correction-capture.js";
+              command = "${node} ~/.claude/hooks/correction-capture.js";
               timeout = 5;
               async = true;
             }
@@ -241,7 +245,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/format-typescript.js";
+              command = "${node} ~/.claude/hooks/format-typescript.js";
               timeout = 10;
               async = true;
             }
@@ -251,7 +255,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/circuit-breaker-reset.js";
+              command = "${node} ~/.claude/hooks/circuit-breaker-reset.js";
               timeout = 3;
               async = true;
             }
@@ -263,7 +267,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/circuit-breaker.js";
+              command = "${node} ~/.claude/hooks/circuit-breaker.js";
               timeout = 5;
             }
           ];
@@ -283,7 +287,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/pre-compact-state.js";
+              command = "${node} ~/.claude/hooks/pre-compact-state.js";
               timeout = 10;
             }
           ];
@@ -294,7 +298,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/post-compact-restore.js";
+              command = "${node} ~/.claude/hooks/post-compact-restore.js";
               timeout = 5;
             }
           ];
@@ -337,7 +341,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/subagent-stop.js";
+              command = "${node} ~/.claude/hooks/subagent-stop.js";
               timeout = 5;
             }
           ];
@@ -368,7 +372,7 @@
           hooks = [
             {
               type = "command";
-              command = "node ~/.claude/hooks/quality-gate.js";
+              command = "${node} ~/.claude/hooks/quality-gate.js";
               timeout = 10;
             }
           ];

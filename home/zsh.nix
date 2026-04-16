@@ -1,7 +1,6 @@
 {
   config,
   pkgs,
-  lib,
   ...
 }:
 
@@ -145,9 +144,6 @@
       tree = "eza --group-directories-first --color=always --long --tree --icons=always --git";
       treeall = "eza --group-directories-first --color=always --long --tree --icons=always --git --all";
 
-      # ---- Claude Code ----
-      ccd = "claude --dangerously-skip-permissions";
-
       # ---- System Tool Replacements ----
       clr = "clear";
       vim = "nvim";
@@ -156,9 +152,6 @@
     };
 
     sessionVariables = {
-      GNUPGHOME = "$XDG_CONFIG_HOME/gnupg";
-      AGE_DIR = "$XDG_CONFIG_HOME/age";
-
       # FZF
       FZF_CTRL_R_OPTS = "--no-preview";
       FZF_CTRL_T_OPTS = "--preview 'bat -n --color=always --line-range :500 {}'";

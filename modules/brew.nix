@@ -27,7 +27,7 @@
       "1password"
       "arc"
       "claude"
-      "claude-code"
+      "claude-code@latest"
       "discord"
       "docker-desktop"
       "figma"
@@ -41,6 +41,10 @@
       "whatsapp"
 
       # No auto-updater — greedy keeps them current
+      {
+        name = "balenaetcher";
+        greedy = true;
+      }
       {
         name = "appcleaner";
         greedy = true;

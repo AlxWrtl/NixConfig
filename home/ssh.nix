@@ -42,6 +42,19 @@ in
           TCPKeepAlive = "yes";
         };
       };
+
+      ubuntu = {
+        hostname = secrets.ssh.ubuntu.hostname;
+        user = secrets.ssh.ubuntu.user;
+        port = secrets.ssh.ubuntu.port;
+        identityFile = "~/.ssh/id_ed25519";
+        identitiesOnly = true;
+        serverAliveInterval = 60;
+        serverAliveCountMax = 10;
+        extraOptions = {
+          TCPKeepAlive = "yes";
+        };
+      };
     };
   };
 }

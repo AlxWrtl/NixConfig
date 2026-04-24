@@ -9,19 +9,34 @@
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
       const { execSync } = require("child_process");
+      const path = require("path");
+      const fs = require("fs");
       try { execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" }); } catch { process.exit(0); }
       try {
         const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
-        if (branch === "main" || branch === "master") {
-          const reason = "BLOCKED: on " + branch + ". Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
-          process.stdout.write(JSON.stringify({
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: reason
-            }
-          }));
-        }
+        if (branch !== "main" && branch !== "master") process.exit(0);
+        let filePath;
+        try {
+          const data = JSON.parse(input);
+          filePath = data && data.tool_input && data.tool_input.file_path;
+        } catch { process.exit(0); }
+        if (!filePath) process.exit(0);
+        let toplevel;
+        try { toplevel = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim(); } catch { process.exit(0); }
+        let realTop = toplevel;
+        try { realTop = fs.realpathSync(toplevel); } catch {}
+        const resolved = path.resolve(filePath);
+        let realResolved = resolved;
+        try { realResolved = fs.realpathSync(resolved); } catch {}
+        if (!realResolved.startsWith(realTop + path.sep)) process.exit(0);
+        const reason = "BLOCKED: on " + branch + ". Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
+        process.stdout.write(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason
+          }
+        }));
       } catch (e) {}
       process.exit(0);
     });

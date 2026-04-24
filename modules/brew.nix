@@ -17,6 +17,7 @@
       "ffmpeg"
       "libomp"
       "mas"
+      "postgresql@16"
       "trash"
     ];
 

@@ -32,10 +32,10 @@ in
         identitiesOnly = true;
       };
 
-      rog = {
-        hostname = secrets.ssh.rog.hostname;
-        user = secrets.ssh.rog.user;
-        port = secrets.ssh.rog.port;
+      ubuntu = {
+        hostname = secrets.ssh.ubuntu.hostname;
+        user = secrets.ssh.ubuntu.user;
+        port = secrets.ssh.ubuntu.port;
         serverAliveInterval = 60;
         serverAliveCountMax = 10;
         extraOptions = {

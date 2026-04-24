@@ -40,6 +40,7 @@ let
     apexStep00bEconomy
     apexStep00bSave
     apexStep01Analyze
+    apexStep01bObsidianContext
     apexStep02Plan
     apexStep02cVerify
     apexStep02bTasks
@@ -51,6 +52,7 @@ let
     apexStep07Tests
     apexStep08RunTests
     apexStep09Finish
+    apexStep09bObsidianNote
     skillDebug
     skillContinuousLearning
     skillFeatureWorkflow
@@ -172,6 +174,7 @@ in
     "${claudeDir}/skills/apex/steps/step-00b-economy.md".text = apexStep00bEconomy;
     "${claudeDir}/skills/apex/steps/step-00b-save.md".text = apexStep00bSave;
     "${claudeDir}/skills/apex/steps/step-01-analyze.md".text = apexStep01Analyze;
+    "${claudeDir}/skills/apex/steps/step-01b-obsidian-context.md".text = apexStep01bObsidianContext;
     "${claudeDir}/skills/apex/steps/step-02-plan.md".text = apexStep02Plan;
     "${claudeDir}/skills/apex/steps/step-02c-verify.md".text = apexStep02cVerify;
     "${claudeDir}/skills/apex/steps/step-02b-tasks.md".text = apexStep02bTasks;
@@ -183,6 +186,7 @@ in
     "${claudeDir}/skills/apex/steps/step-07-tests.md".text = apexStep07Tests;
     "${claudeDir}/skills/apex/steps/step-08-run-tests.md".text = apexStep08RunTests;
     "${claudeDir}/skills/apex/steps/step-09-finish.md".text = apexStep09Finish;
+    "${claudeDir}/skills/apex/steps/step-09b-obsidian-note.md".text = apexStep09bObsidianNote;
     "${claudeDir}/skills/debug/SKILL.md" = {
       text = skillDebug;
       force = true;

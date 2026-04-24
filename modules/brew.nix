@@ -27,7 +27,7 @@
       "1password"
       "arc"
       "claude"
-      "claude-code"
+      "claude-code@latest"
       "discord"
       "docker-desktop"
       "figma"

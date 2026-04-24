@@ -54,6 +54,8 @@ in
     | -k | -K | Tasks — task breakdown with dependency graph |
     | -m | -M | Teams — Agent Teams parallel execution (implies -k) |
     | -v | -V | Verify — research plan online before executing |
+    | -o | -O | Obsidian context — load vault project notes before planning |
+    | -n | -N | Note — create Obsidian session note at the end |
     | -i | | Interactive — configure flags via menu |
     | -r | | Resume — continue previous task |
 
@@ -65,7 +67,8 @@ in
     /apex -a -x -s fix bug              # Full autonomous with review
     /apex -a -t -pr add endpoint        # Auto + tests + PR
     /apex -e simple fix                  # Economy mode (save tokens)
-    /apex -a -x -t -pr full feature    # Everything enabled
+    /apex -a -o -n add feature           # With Obsidian context load + session note
+    /apex -a -x -t -pr -o -n feature   # Everything enabled
     ```
 
     ## Execution
@@ -130,6 +133,12 @@ in
     3. If `-e` (economy): Read [step-00b-economy.md](step-00b-economy.md) and execute it.
     4. If `-s` (save): Read [step-00b-save.md](step-00b-save.md) and execute it.
     5. If `-r` (resume): Look for saved state in `.claude/output/apex/` and restore context. Skip to the last incomplete step.
+       If `-o` was active AND resumed step is >= 02 AND `-s` was set: re-read `.claude/output/apex/{task-id}/01b-obsidian-context.md` to restore vault context.
+       If `-o` was active but `-s` was not: warn the user that Obsidian context was lost and offer to re-run step-01b.
+
+    Note: `-o` and `-n` are NOT init-time sub-steps.
+    - `-o` fires at end of step-01-analyze (loads vault BEFORE planning).
+    - `-n` fires at terminal steps (04/05/06/08/09) to write a session note.
 
     ## Next Step
 
@@ -155,6 +164,8 @@ in
     [ ] -pr Pull Request (commit + PR)
     [ ] -k  Tasks (task breakdown)
     [ ] -m  Teams (parallel execution)
+    [ ] -o  Obsidian context (load vault)
+    [ ] -n  Obsidian note (create session note)
     ```
 
     After user confirms, update the active flags and return to step-00-init flow.
@@ -270,6 +281,96 @@ in
 
     ## If save mode (-s):
     Write findings to `.claude/output/apex/{task-id}/01-analyze.md`
+
+    ## Next Step
+
+    If obsidian mode (-o) is active:
+      Read [step-01b-obsidian-context.md](step-01b-obsidian-context.md) and execute it.
+    Else:
+      Read [step-02-plan.md](step-02-plan.md) and execute it.
+  '';
+
+  # --- Step 01b: Obsidian Context Load ---
+  apexStep01bObsidianContext = ''
+    # Step 01b: Obsidian Context Load
+
+    YOU ARE A CONTEXT GATHERER, not a planner. Do NOT plan or implement yet.
+    Your job is to load project knowledge from the Obsidian vault so APEX stays aligned
+    with what the user already knows/decided about this project.
+
+    ## Vault
+
+    Root: `~/Documents/AlxVault`
+
+    ## Process
+
+    1. **Load global conventions** — Read `00-Meta/CLAUDE.md` (if exists) for vault-wide rules.
+
+    2. **Detect project name** in this priority order:
+       a. Explicit hint in task description: `project X`, `projet X`, or `--project X`.
+       b. Current working directory basename, lowercased and kebab-cased.
+       Keep both the normalized slug (for folder/file matching) and the original display casing.
+       Example: `/Users/alx/.config/nix-darwin` → slug `nix-darwin`.
+
+    3. **Find the project note** (case-insensitive match):
+       - `Glob` `02-Projets/*/*.md`, filter where folder-name matches slug (case-insensitive)
+         OR file stem matches slug.
+       - 0 matches → report "no project note found for '{slug}'" and suggest creating it via `-n` at the end. Skip to step-02.
+       - 1 match → use it.
+       - 2+ matches → use `AskUserQuestion` to let the user pick; do NOT silently pick a "closest match".
+
+    4. **Read the project note** — extract:
+       - Current goals / status
+       - Architecture decisions already made
+       - Open questions / known issues
+       - Links to sub-notes (decisions, sessions, etc.)
+
+    5. **Scan recent sessions** — `Glob` pattern: `02-Projets/[project]/sessions/*.md`
+       - Read the 3 most recent session notes (by filename date `YYYY-MM-DD`)
+       - Extract: decisions, next steps, blockers, context that informs the current task
+
+    6. **Scan decisions** (if folder exists) — `Glob` pattern: `02-Projets/[project]/decisions/*.md`
+       - Read titles + summaries only (do NOT modify files in `decisions/`)
+
+    ## Output — Context Report
+
+    Produce a compact report:
+
+    ```
+    ## Obsidian Context — {project}
+
+    ### Project note: [[02-Projets/{project}/{project}]]
+    {1-3 line summary of current project state}
+
+    ### Recent sessions
+    - [[02-Projets/{project}/sessions/YYYY-MM-DD - title]] — {key takeaway}
+    - [[02-Projets/{project}/sessions/YYYY-MM-DD - title]] — {key takeaway}
+
+    ### Relevant decisions
+    - [[02-Projets/{project}/decisions/slug]] — {one-liner}
+
+    ### Implications for current task
+    - {how this context changes/informs the plan}
+    - {constraints or prior choices to respect}
+    - {any conflict between the task and prior decisions — flag it}
+    ```
+
+    ## Rules
+
+    - Read-only. Do NOT write to the vault in this step (that's step-09b).
+    - Never modify `decisions/` files.
+    - If no project note exists, say so and suggest creating one via `-n` flag at the end.
+    - Use full-path wikilinks always: `[[02-Projets/Project/Project]]`.
+
+    ## If save mode (-s):
+    Target file: `.claude/output/apex/{task-id}/01b-obsidian-context.md`.
+    - If file absent → `Write` with the full context report.
+    - If file present → `Edit` to append `\n\n## Run {ISO-timestamp}\n\n{report}`.
+
+    ## Merge into Analysis
+
+    Feed the "Implications for current task" section into the Step 01 findings so the
+    subsequent plan (Step 02) reflects the vault knowledge.
 
     ## Next Step
 
@@ -535,7 +636,8 @@ in
     1. If `-t` (test) is active: Read [step-07-tests.md](step-07-tests.md) and execute it.
     2. Else if `-x` (examine) is active: Read [step-05-examine.md](step-05-examine.md) and execute it.
     3. Else if `-pr` (pull request) is active: Read [step-09-finish.md](step-09-finish.md) and execute it.
-    4. Else: **COMPLETE.** Present a summary of what was implemented.
+    4. Else if `-n` (note) is active: Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
+    5. Else: **COMPLETE.** Present a summary of what was implemented.
   '';
 
   # --- Step 05: Examine ---
@@ -588,6 +690,8 @@ in
       Read [step-06-resolve.md](step-06-resolve.md) and execute it.
     Else if `-pr` (pull request) is active:
       Read [step-09-finish.md](step-09-finish.md) and execute it.
+    Else if `-n` (note) is active:
+      Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
     Else:
       **COMPLETE.** Present the review summary.
   '';
@@ -622,6 +726,8 @@ in
 
     If `-pr` (pull request) is active:
       Read [step-09-finish.md](step-09-finish.md) and execute it.
+    Else if `-n` (note) is active:
+      Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
     Else:
       **COMPLETE.** Present the resolution summary.
   '';
@@ -692,7 +798,8 @@ in
 
     1. If `-x` (examine) is active: Read [step-05-examine.md](step-05-examine.md) and execute it.
     2. Else if `-pr` (pull request) is active: Read [step-09-finish.md](step-09-finish.md) and execute it.
-    3. Else: **COMPLETE.** Present test results summary.
+    3. Else if `-n` (note) is active: Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
+    4. Else: **COMPLETE.** Present test results summary.
   '';
 
   # --- Step 09: Finish ---
@@ -734,6 +841,156 @@ in
     PR: {url}
     Steps completed: {list}
     ```
+
+    ## Next Step — Obsidian Note
+
+    # INVARIANT: when both -pr and -n are set, steps 04/05/06/08 route to step-09
+    # FIRST (pr takes precedence), so this tail is the ONLY path to step-09b in that case.
+    # Do not remove this check without restoring -n branches in predecessors.
+    If note mode (-n) is active:
+      Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
+  '';
+
+  # --- Step 09b: Obsidian Session Note ---
+  apexStep09bObsidianNote = ''
+    # Step 09b: Obsidian Session Note
+
+    YOU ARE A SCRIBE. Create a session note in the Obsidian vault capturing what was done,
+    decisions taken, and next steps — following the Alx vault conventions.
+
+    ## Vault
+
+    Root: `~/Documents/AlxVault`
+
+    ## Process
+
+    ### 1. Resolve project
+
+    - Reuse the project name (both slug and display form) detected in step-01b if `-o` was active.
+    - Otherwise detect in this order:
+      a. Explicit hint in task description (`project X`, `projet X`, `--project X`).
+      b. cwd basename, normalized to kebab-case lowercase slug.
+    - `Glob` `02-Projets/*/` (case-insensitive compare) to confirm the folder exists.
+    - If 0 folders match:
+      - In auto mode (-a): create `02-Projets/{display-name}/` and a minimal `{display-name}.md` stub.
+      - Otherwise: `AskUserQuestion` — pick an existing project from the list, or confirm creation of a new one.
+    - If 2+ folders match (casing variants or aliases): `AskUserQuestion` to pick; do NOT silently pick the first.
+
+    ### 2. Build the filename
+
+    Format: `YYYY-MM-DD - {slug}.md`
+    - `YYYY-MM-DD` — today's date (absolute, not relative)
+    - `{slug}` — short kebab-case summary of the task (max ~50 chars)
+
+    Target path: `02-Projets/{project}/sessions/{filename}`
+
+    ### 3. Avoid duplicates
+
+    `Glob` `02-Projets/{project}/sessions/{date}*.md`. For each match, extract the slug
+    (portion after ` - ` and before `.md`) and compare to the current slug:
+
+    - **Exact slug match** → `Edit` the existing note: append a new section
+      `## Mise a jour {HH:MM}` with the new content. Do NOT overwrite previous sections.
+    - **Different slug** → `Write` the new file at `02-Projets/{project}/sessions/{filename}`.
+    - **Race (target path already exists after Write check)** → suffix the slug with
+      `-2`, `-3`, ... until the path is unique, then `Write`.
+    - NEVER `Write` to an existing path without the suffix-disambiguation check.
+
+    ### 4. Write the note
+
+    Template (respect Alx conventions strictly):
+
+    ```markdown
+    ---
+    date: {YYYY-MM-DD}
+    type: session
+    project: "[[02-Projets/{project}/{project}|{project}]]"
+    tags:
+      - session
+      - apex
+      - {project-slug}   # kebab-case, lowercase, ASCII only — safe for YAML
+    aliases:
+      - "{YYYY-MM-DD} {Short subject}"
+    ---
+    [[02-Projets/{project}/{project}|{project}]]
+
+    # {YYYY-MM-DD} - {Short subject}
+
+    ## Contexte
+    {1-3 lines: why this session happened, what triggered it}
+
+    ## Ce qui a ete fait
+    - {bullet 1}
+    - {bullet 2}
+    - {...}
+
+    ## Fichiers modifies
+    - `path/to/file.ext` — {one-line reason}
+    - `path/to/other.ext` — {one-line reason}
+
+    ## Decisions
+    - **{Decision title}** — {rationale}
+      - Alternatives ecartees : {option B} parce que {raison}
+
+    ## Prochaines etapes
+    - [ ] {next action 1}
+    - [ ] {next action 2}
+
+    ## Liens
+    - Branche : `{branch-name}`
+    - Commit : `{hash}` (si -pr ou commit cree)
+    - PR : {url} (si -pr)
+    - Notes liees :
+      - [[02-Projets/{project}/sessions/YYYY-MM-DD - previous|session precedente]] (si pertinent)
+      - [[02-Projets/{project}/decisions/slug|decision]] (si une decision formelle a ete prise)
+    ```
+
+    ### 5. Rules to respect (Obsidian 2026 conventions)
+
+    - **Typed frontmatter** — uses Obsidian Properties UI format:
+      - `date:` as YAML date (typed), `type: session` for Bases filtering
+      - `project:` as a **link property** `"[[full-path|alias]]"` so Bases can query sessions by project
+      - `tags:` as a YAML **list** (one per line with `  - `), NEVER prefixed with `#` inside YAML (invalidates the tag)
+      - `aliases:` as a list for alternate search names
+    - **Absolute wikilinks with alias pipe** — `[[02-Projets/Preliz/Preliz|Preliz]]` (robust + readable). Absolute paths prevent ambiguity when generating programmatically; alias keeps display clean.
+    - **Project-note wikilink on first line after frontmatter** — maintains Alx convention for quick navigation
+    - **No orphan links** — Grep to verify every `[[...]]` target exists OR clearly flag as `(a creer)`
+    - **French content** — the vault is in French per Alx conventions
+    - **Do NOT modify `decisions/` files** — only link to them
+    - **Do NOT restructure `01-Inbox/` content**
+
+    References (cite only if user asks why):
+    - Obsidian Properties: https://help.obsidian.md/properties
+    - Obsidian YAML: https://help.obsidian.md/Advanced+topics/YAML+front+matter
+
+    ### 6. Update the project note (optional, auto only)
+
+    If in auto mode (-a), append a line to `02-Projets/{project}/{project}.md` under a
+    `## Sessions` section (create the section if missing) with the new wikilink:
+
+    ```markdown
+    - [[02-Projets/{project}/sessions/YYYY-MM-DD - slug]] — {one-liner}
+    ```
+
+    If the note is already up-to-date or the section structure differs, skip this step
+    rather than forcing a structure the user didn't set up.
+
+    ## If save mode (-s):
+    Also copy the note content to `.claude/output/apex/{task-id}/09b-obsidian-note.md`
+    (local mirror for traceability).
+
+    ## Output
+
+    Report:
+    ```
+    Obsidian session note created
+    Path: 02-Projets/{project}/sessions/{filename}
+    Wikilink: [[02-Projets/{project}/sessions/{filename-without-ext}]]
+    ```
+
+    ## Next Step
+
+    **COMPLETE.** This is a terminal step — no further chaining.
   '';
 
   # -------------------------
@@ -1105,20 +1362,20 @@ in
 
     # Obsidian Vault (direct file access)
 
-    Vault path: `~/Library/Mobile Documents/com~apple~CloudDocs/Documents/AlxVault`
+    Vault path: `~/Documents/AlxVault`
 
     No MCP server needed — use native tools directly on the vault files.
 
     ## Tool Mapping
     | Action | Tool | Example |
     |--------|------|---------|
-    | Search notes | `Grep` | `Grep(pattern: "keyword", path: "~/Library/Mobile Documents/.../AlxVault")` |
-    | Read note | `Read` | `Read(file_path: ".../AlxVault/02-Projets/Preliz/Preliz.md")` |
-    | List directory | `Glob` | `Glob(pattern: "**/*.md", path: ".../AlxVault/02-Projets/")` |
-    | Create note | `Write` | `Write(file_path: ".../AlxVault/01-Inbox/new-note.md", content: "...")` |
+    | Search notes | `Grep` | `Grep(pattern: "keyword", path: "~/Documents/AlxVault")` |
+    | Read note | `Read` | `Read(file_path: "~/Documents/AlxVault/02-Projets/Preliz/Preliz.md")` |
+    | List directory | `Glob` | `Glob(pattern: "**/*.md", path: "~/Documents/AlxVault/02-Projets/")` |
+    | Create note | `Write` | `Write(file_path: "~/Documents/AlxVault/01-Inbox/new-note.md", content: "...")` |
     | Edit note | `Edit` | `Edit(file_path: "...", old_string: "...", new_string: "...")` |
-    | Find by tag | `Grep` | `Grep(pattern: "tags:.*veille", path: ".../AlxVault")` |
-    | Find by frontmatter | `Grep` | `Grep(pattern: "^date: 2026", path: ".../AlxVault", multiline: true)` |
+    | Find by tag | `Grep` | `Grep(pattern: "tags:.*veille", path: "~/Documents/AlxVault")` |
+    | Find by frontmatter | `Grep` | `Grep(pattern: "^date: 2026", path: "~/Documents/AlxVault", multiline: true)` |
 
     ## Vault Structure
     - `00-Meta/` — Templates, vault config
@@ -1142,12 +1399,16 @@ in
 
     ### Sessions
     - Nom du fichier : `YYYY-MM-DD - sujet-court.md` dans `02-Projets/[projet]/sessions/`
-    - La note doit TOUJOURS commencer par `[[02-Projets/[projet]/[projet]]]` en premiere ligne
+    - Frontmatter YAML type en tete (Properties UI) : `date`, `type: session`, `project: "[[...]]"` (link property), `tags:` en liste
+    - Apres le frontmatter, premiere ligne = wikilink vers la note projet : `[[02-Projets/[projet]/[projet]|[projet]]]`
     - Ensuite le titre `# YYYY-MM-DD - Sujet court`
     - Contenu : ce qui a ete fait, decisions prises, prochaines etapes
 
+    > Note : les runs APEX avec le flag `-n` ecrivent ces notes automatiquement via step-09b-obsidian-note.md — voir ce fichier pour le template complet (format 2026 Properties UI).
+
     ### Wikilinks
     - Toujours utiliser le chemin complet : `[[02-Projets/Preliz/Preliz]]`
+    - Forme alias recommandee pour lisibilite : `[[02-Projets/Preliz/Preliz|Preliz]]`
     - Ne jamais creer de wikilink sans chemin complet (evite les noeuds orphelins dans le graph)
 
     ### Regles

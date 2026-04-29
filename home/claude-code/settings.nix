@@ -23,6 +23,8 @@ in
     };
 
     model = "opus";
+    voiceEnabled = true;
+    skipDangerousModePermissionPrompt = true;
 
     attribution = {
       commit = "";

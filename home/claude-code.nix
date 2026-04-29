@@ -63,8 +63,11 @@ let
     skillAutoresearch
     skillTestingPatterns
     skillCodebaseAudit
+    skillCaveman
+    skillCavemem
     ;
   inherit (hooks)
+    hookRtkRewrite
     hookProtectMain
     hookFormatTypescript
     hookBlockMainBash
@@ -223,6 +226,14 @@ in
       text = skillCodebaseAudit;
       force = true;
     };
+    "${claudeDir}/skills/caveman/SKILL.md" = {
+      text = skillCaveman;
+      force = true;
+    };
+    "${claudeDir}/skills/cavemem/SKILL.md" = {
+      text = skillCavemem;
+      force = true;
+    };
 
     # Hooks
     "${claudeDir}/hooks/protect-main.js" = {
@@ -287,6 +298,10 @@ in
     };
     "${claudeDir}/hooks/governance-audit.js" = {
       text = hookGovernanceAudit;
+      executable = true;
+    };
+    "${claudeDir}/hooks/rtk-rewrite.sh" = {
+      text = hookRtkRewrite;
       executable = true;
     };
     "${claudeDir}/hooks/correction-capture.js" = {

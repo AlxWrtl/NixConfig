@@ -403,4 +403,35 @@
       osascript -e '''display notification "Rate limit hit — pause recommended" with title "Claude Code" sound name "Basso"''' 2>/dev/null || true
     fi
   '';
+
+  # RTK transparent rewrite hook — intercepts Bash tool calls
+  # Rewrites command to rtk <command> if rtk is available
+  # Claude never sees the rewrite, just gets compressed output
+  hookRtkRewrite = ''
+    #!/usr/bin/env bash
+    INPUT=$(cat)
+    TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+
+    # Only act on Bash tool calls
+    if [ "$TOOL_NAME" != "Bash" ]; then
+      echo "$INPUT"
+      exit 0
+    fi
+
+    # Check rtk available
+    if ! command -v rtk >/dev/null 2>&1; then
+      echo "$INPUT"
+      exit 0
+    fi
+
+    # Rewrite high-verbosity commands
+    if echo "$COMMAND" | grep -qE "^(git |pnpm |npm |npx |wrangler |tsc |eslint |node |darwin-rebuild |nix build|nix flake)"; then
+      NEW_CMD="rtk $COMMAND"
+      echo "$INPUT" | jq --arg cmd "$NEW_CMD" '.tool_input.command = $cmd'
+      exit 0
+    fi
+
+    echo "$INPUT"
+  '';
 }

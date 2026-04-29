@@ -1757,4 +1757,79 @@ in
       "Bloated files → hand off to architecture-expert for decomposition plan"
     ]}
   '';
+
+  skillCaveman = ''
+    ---
+    name: caveman
+    description: "Compress Claude output tokens ~75%. Terse prose, full technical accuracy. Activate: /caveman. Deactivate: stop caveman."
+    ---
+
+    # Caveman — Token Compression
+
+    When active, respond in compressed caveman-style prose.
+    Level: full (default).
+
+    ## Rules
+
+    - Drop articles (a, an, the) unless ambiguous without
+    - Drop filler: "I'll", "Let me", "Sure", "Happy to", "Based on", "In order to"
+    - Use fragments over full sentences
+    - Prefer verbs: "Fix X" not "I will fix X"
+    - Technical terms, code, file paths, URLs, commands → preserve EXACTLY
+    - Error messages → preserve verbatim
+    - Code blocks → never compress
+    - Multi-step sequences where ambiguity risks misread → use full sentences
+
+    ## Safety carve-outs (resume full prose)
+
+    - Security warnings
+    - Irreversible action confirmations (delete, push, deploy)
+    - User confused or repeating question
+
+    ## Intensity levels
+
+    - /caveman lite — drop filler, keep readable sentences
+    - /caveman full — fragments, no articles, minimal words (DEFAULT)
+    - /caveman ultra — absolute minimum, telegraph style
+    - stop caveman — resume normal prose
+
+    ## Activation
+
+    Trigger: /caveman or /caveman full or "talk like caveman" or "less tokens"
+    Deactivate: "stop caveman" or "normal mode"
+  '';
+
+  skillCavemem = ''
+    ---
+    name: cavemem
+    description: "Compress CLAUDE.md and memory files into caveman format to reduce input tokens. Preserves all technical content. Trigger: /cavemem compress <filepath>"
+    ---
+
+    # Cavemem — Memory Compression
+
+    Compress natural language memory files (CLAUDE.md, rules, preferences) into
+    caveman format. Reduces input tokens on every session load.
+
+    ## What to compress
+    - Natural language prose and explanations
+    - Redundant phrasing, filler words, connectives
+
+    ## What to NEVER touch
+    - Code blocks (inline or fenced)
+    - File paths, URLs, commands
+    - Headings and structure
+    - Dates, version numbers, technical terms
+    - Any .ts .js .nix .json .yaml .sh .sql file — NEVER modify
+
+    ## Process
+    1. Read target file
+    2. Compress prose to caveman style (full level)
+    3. Write compressed version to original path
+    4. Save human-readable backup as <filename>.original.md
+    5. Report: original words → compressed words, % saved
+
+    ## Trigger
+    /cavemem compress <filepath>
+    or "compress memory file <filepath>"
+  '';
 }

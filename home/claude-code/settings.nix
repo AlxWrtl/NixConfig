@@ -130,6 +130,8 @@ in
         "Bash(mkdir *)"
         "Bash(cp *)"
         "Bash(mv *)"
+        # RTK
+        "Bash(rtk *)"
         # Tools
         "Bash(jq *)"
         "Bash(fd *)"
@@ -193,6 +195,16 @@ in
 
     hooks = {
       PreToolUse = [
+        {
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/rtk-rewrite.sh";
+              timeout = 5;
+            }
+          ];
+        }
         {
           matcher = "Edit|Write";
           hooks = [

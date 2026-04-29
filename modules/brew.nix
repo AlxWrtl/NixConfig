@@ -11,8 +11,13 @@
       upgrade = true;
     };
 
+    taps = [
+      "rtk-ai/tap"
+    ];
+
     brews = [
       "cloudflared"
+      "rtk-ai/tap/rtk"
       "displayplacer"
       "ffmpeg"
       "libomp"

@@ -19,5 +19,7 @@
     schliff-all = "uvx schliff doctor --skill-dirs ~/.claude/skills/ -v";
   };
 
-  sessionVars = { };
+  sessionVars = {
+    RTK_AGENT = "claude";
+  };
 }

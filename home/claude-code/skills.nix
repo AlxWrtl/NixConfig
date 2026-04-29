@@ -1124,81 +1124,6 @@ in
   '';
 
   # -------------------------
-  # Continuous Learning V2
-  # -------------------------
-  skillContinuousLearning = ''
-    ---
-    name: continuous-learning-v2
-    description: "Extract and promote patterns to skills automatically"
-    enabled: true
-    ---
-
-    # Continuous Learning V2
-
-    Automatically extract reusable patterns from interactions and promote them to skills.
-
-    ## Instinct Format
-    Each extracted pattern is an "instinct":
-    ```yaml
-    title: Short descriptive name
-    category: architecture | workflow | testing | nix | debugging | style
-    evidence:
-      - "session X: did Y because Z"
-      - "session X: same pattern applied to W"
-    confidence: 0-100 (based on repetition + outcome)
-    examples:
-      - "When X, always do Y"
-    counter_examples:
-      - "Except when Z, then do W instead"
-    ```
-
-    ## Extraction Rules
-    - Minimum 3 occurrences of same pattern across sessions
-    - Confidence >= 70 to record as instinct
-    - Only extract patterns that are NOT already in CLAUDE.md or existing skills
-    - Focus on: recurring decisions, repeated fix patterns, project-specific conventions
-
-    ## Promotion Pipeline
-    1. **Record**: Save instinct to `~/.claude/generated/instincts.jsonl`
-    2. **Cluster**: When 3+ instincts share the same category/topic → candidate for skill
-    3. **Generate**: Auto-create skill file in `~/.claude/skills/generated/{topic}/SKILL.md`
-       - Include: description, frontmatter with globs, all evidence
-       - Mark as `status: draft` until manually reviewed
-    4. **Validate**: Usage threshold >= 5 applied references → promote to `status: active`
-
-    ## Application Rules
-    - Max 3 suggestions per session (avoid noise)
-    - Relevance threshold 0.8 (only suggest when highly relevant)
-    - Never suggest instincts that contradict CLAUDE.md rules
-    - Prefer suggesting existing skills before creating new ones
-
-    ## Review Trigger
-    When instincts.jsonl exceeds 20 entries, suggest a review:
-    - Prune low-confidence entries (< 50)
-    - Merge overlapping instincts
-    - Promote mature clusters to skills
-
-    ## Output
-    - Instincts: `~/.claude/generated/instincts.jsonl`
-    - Generated skills: `~/.claude/skills/generated/`
-
-    ${contract {
-      expects = "session patterns (automatic from conversation history) or explicit pattern description from user.";
-      produces = "instincts.jsonl entries (record), generated SKILL.md drafts (promote).";
-      sideEffects = "writes to ~/.claude/generated/instincts.jsonl and ~/.claude/skills/generated/{topic}/SKILL.md.";
-    }}
-    ${scope {
-      useWhen = "Extracting recurring patterns from sessions, clustering instincts by category, or promoting mature instinct clusters to generated skills.";
-      notFor = "Direct code changes, feature implementation, bug fixes, or writing new skills manually.";
-    }}
-    ${handoffs [
-      "When an instinct cluster reaches promotion threshold → use schliff to validate the generated skill quality before activating."
-      "If a generated skill contradicts CLAUDE.md → flag for manual review, do not promote automatically."
-      "After promoting a skill to active → update the skills.nix file via the nix-darwin skill workflow."
-    ]}
-  '';
-
-  # -------------------------
   # nix-darwin Skill
   # -------------------------
   skillNixDarwin = ''
@@ -1290,7 +1215,7 @@ in
     ---
     name: claude-code-meta
     description: "2026 best practices for Claude Code skill authoring, agent design, and hook patterns. Use when editing agents.nix, skills.nix, hooks.nix, claude-md.nix, or .claude/ config files."
-    globs: ["**/claude-code/*.nix", "**/.claude/**/*.md"]
+    globs: ["**/.claude/agents/*.md", "**/.claude/skills/**/SKILL.md", "**/.claude/hooks/**"]
     ---
 
     # Claude Code Meta — Authoring Best Practices
@@ -1756,5 +1681,80 @@ in
       "Security items → hand off to security-auditor for deep analysis"
       "Bloated files → hand off to architecture-expert for decomposition plan"
     ]}
+  '';
+
+  skillCaveman = ''
+    ---
+    name: caveman
+    description: "Compress Claude output tokens ~75%. Terse prose, full technical accuracy. Activate: /caveman. Deactivate: stop caveman."
+    ---
+
+    # Caveman — Token Compression
+
+    When active, respond in compressed caveman-style prose.
+    Level: full (default).
+
+    ## Rules
+
+    - Drop articles (a, an, the) unless ambiguous without
+    - Drop filler: "I'll", "Let me", "Sure", "Happy to", "Based on", "In order to"
+    - Use fragments over full sentences
+    - Prefer verbs: "Fix X" not "I will fix X"
+    - Technical terms, code, file paths, URLs, commands → preserve EXACTLY
+    - Error messages → preserve verbatim
+    - Code blocks → never compress
+    - Multi-step sequences where ambiguity risks misread → use full sentences
+
+    ## Safety carve-outs (resume full prose)
+
+    - Security warnings
+    - Irreversible action confirmations (delete, push, deploy)
+    - User confused or repeating question
+
+    ## Intensity levels
+
+    - /caveman lite — drop filler, keep readable sentences
+    - /caveman full — fragments, no articles, minimal words (DEFAULT)
+    - /caveman ultra — absolute minimum, telegraph style
+    - stop caveman — resume normal prose
+
+    ## Activation
+
+    Trigger: /caveman or /caveman full or "talk like caveman" or "less tokens"
+    Deactivate: "stop caveman" or "normal mode"
+  '';
+
+  skillCavemem = ''
+    ---
+    name: cavemem
+    description: "Compress CLAUDE.md and memory files into caveman format to reduce input tokens. Preserves all technical content. Trigger: /cavemem compress <filepath>"
+    ---
+
+    # Cavemem — Memory Compression
+
+    Compress natural language memory files (CLAUDE.md, rules, preferences) into
+    caveman format. Reduces input tokens on every session load.
+
+    ## What to compress
+    - Natural language prose and explanations
+    - Redundant phrasing, filler words, connectives
+
+    ## What to NEVER touch
+    - Code blocks (inline or fenced)
+    - File paths, URLs, commands
+    - Headings and structure
+    - Dates, version numbers, technical terms
+    - Any .ts .js .nix .json .yaml .sh .sql file — NEVER modify
+
+    ## Process
+    1. Read target file
+    2. Compress prose to caveman style (full level)
+    3. Write compressed version to original path
+    4. Save human-readable backup as <filename>.original.md
+    5. Report: original words → compressed words, % saved
+
+    ## Trigger
+    /cavemem compress <filepath>
+    or "compress memory file <filepath>"
   '';
 }

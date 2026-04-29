@@ -155,6 +155,8 @@ APEX is a structured, multi-step implementation workflow for Claude Code (`/apex
 | `-k` | `-K` | Tasks — task breakdown with dependency graph |
 | `-m` | `-M` | Teams — Agent Teams parallel execution (implies `-k`) |
 | `-v` | `-V` | Verify — research plan online before executing |
+| `-o` | `-O` | Obsidian context — load vault project notes before planning |
+| `-n` | `-N` | Note — create Obsidian session note at the end |
 | `-i` | | Interactive — configure flags via menu |
 | `-r` | | Resume — continue previous task |
 
@@ -166,7 +168,8 @@ APEX is a structured, multi-step implementation workflow for Claude Code (`/apex
 /apex -a -x -s fix bug              # Full autonomous with review
 /apex -a -t -pr add endpoint        # Auto + tests + PR
 /apex -e simple fix                  # Economy mode (save tokens)
-/apex -a -x -t -pr full feature    # Everything enabled
+/apex -a -o -n add feature           # With Obsidian context load + session note
+/apex -a -x -t -pr -o -n feature   # Everything enabled
 ```
 
 ### Pipeline

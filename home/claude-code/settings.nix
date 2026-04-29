@@ -23,6 +23,8 @@ in
     };
 
     model = "opus";
+    voiceEnabled = true;
+    skipDangerousModePermissionPrompt = true;
 
     attribution = {
       commit = "";
@@ -130,6 +132,8 @@ in
         "Bash(mkdir *)"
         "Bash(cp *)"
         "Bash(mv *)"
+        # RTK
+        "Bash(rtk *)"
         # Tools
         "Bash(jq *)"
         "Bash(fd *)"
@@ -194,6 +198,16 @@ in
     hooks = {
       PreToolUse = [
         {
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/rtk-rewrite.sh";
+              timeout = 5;
+            }
+          ];
+        }
+        {
           matcher = "Edit|Write";
           hooks = [
             {
@@ -221,18 +235,6 @@ in
               type = "command";
               command = "${node} ~/.claude/hooks/governance-audit.js";
               timeout = 3;
-              async = true;
-            }
-          ];
-        }
-      ];
-      UserPromptSubmit = [
-        {
-          hooks = [
-            {
-              type = "command";
-              command = "${node} ~/.claude/hooks/correction-capture.js";
-              timeout = 5;
               async = true;
             }
           ];
@@ -273,15 +275,6 @@ in
         }
       ];
       PreCompact = [
-        {
-          hooks = [
-            {
-              type = "command";
-              command = "bash ~/.claude/hooks/pre-compact-backup.sh";
-              timeout = 5;
-            }
-          ];
-        }
         {
           hooks = [
             {
@@ -403,13 +396,6 @@ in
       ];
       env = {
         API_KEY = "__SECRET_21ST_DEV__";
-      };
-    };
-    nanobanana = {
-      command = "uvx";
-      args = [ "nanobanana-mcp-server@latest" ];  # uvx/pip — pas npm, risque different
-      env = {
-        GEMINI_API_KEY = "__SECRET_GEMINI_API_KEY__";
       };
     };
   };

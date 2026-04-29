@@ -1,6 +1,10 @@
 # Global CLAUDE.md content (< 80 lines)
 {
   claudeMdGlobal = ''
+    Always respond in caveman full mode: terse prose, no filler, fragments over sentences,
+    no articles unless ambiguous. Preserve all code, paths, commands, errors verbatim.
+    Deactivate only for: security warnings, irreversible action confirmations.
+
     # Claude Code — Global Guardrails
 
     ## Non-negotiables

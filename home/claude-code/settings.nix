@@ -238,18 +238,6 @@ in
           ];
         }
       ];
-      UserPromptSubmit = [
-        {
-          hooks = [
-            {
-              type = "command";
-              command = "${node} ~/.claude/hooks/correction-capture.js";
-              timeout = 5;
-              async = true;
-            }
-          ];
-        }
-      ];
       PostToolUse = [
         {
           matcher = "Write|Edit";
@@ -285,15 +273,6 @@ in
         }
       ];
       PreCompact = [
-        {
-          hooks = [
-            {
-              type = "command";
-              command = "bash ~/.claude/hooks/pre-compact-backup.sh";
-              timeout = 5;
-            }
-          ];
-        }
         {
           hooks = [
             {
@@ -415,13 +394,6 @@ in
       ];
       env = {
         API_KEY = "__SECRET_21ST_DEV__";
-      };
-    };
-    nanobanana = {
-      command = "uvx";
-      args = [ "nanobanana-mcp-server@latest" ];  # uvx/pip — pas npm, risque different
-      env = {
-        GEMINI_API_KEY = "__SECRET_GEMINI_API_KEY__";
       };
     };
   };

@@ -27,7 +27,6 @@ let
     cmdAuto
     cmdRalphLoop
     cmdCancelRalph
-    cmdInitMemoryBank
     commandDiscuss
     commandVerifyFeature
     featureChainScript
@@ -54,7 +53,6 @@ let
     apexStep09Finish
     apexStep09bObsidianNote
     skillDebug
-    skillContinuousLearning
     skillFeatureWorkflow
     skillNixDarwin
     skillClaudeCodeMeta
@@ -71,7 +69,6 @@ let
     hookProtectMain
     hookFormatTypescript
     hookBlockMainBash
-    hookPreCompactBackup
     hookSessionStart
     hookSubagentStop
     hookTaskCompleted
@@ -84,19 +81,15 @@ let
     hookPostCompactRestore
     hookQualityGate
     hookGovernanceAudit
-    hookCorrectionCapture
     ;
   inherit (agents)
     agentFrontend
     agentBackend
-    agentArch
-    agentPerf
     agentNavigator
     agentReviewer
     agentQuickFix
     agentNix
     agentGitShip
-    agentTeamLead
     agentTestRunner
     agentSecurityAuditor
     agentDebugger
@@ -132,7 +125,6 @@ in
     "${claudeDir}/commands/optimize.md".text = cmdOptimize;
     "${claudeDir}/commands/context-prime.md".text = cmdContextPrime;
     "${claudeDir}/commands/auto.md".text = cmdAuto;
-    "${claudeDir}/commands/init-memory-bank.md".text = cmdInitMemoryBank;
     "${claudeDir}/commands/ralph-loop.md".text = cmdRalphLoop;
     "${claudeDir}/commands/cancel-ralph.md".text = cmdCancelRalph;
 
@@ -155,14 +147,11 @@ in
     # Agents (13)
     "${claudeDir}/agents/frontend-expert.md".text = agentFrontend;
     "${claudeDir}/agents/backend-expert.md".text = agentBackend;
-    "${claudeDir}/agents/architecture-expert.md".text = agentArch;
-    "${claudeDir}/agents/performance-expert.md".text = agentPerf;
     "${claudeDir}/agents/codebase-navigator.md".text = agentNavigator;
     "${claudeDir}/agents/code-reviewer.md".text = agentReviewer;
     "${claudeDir}/agents/quick-fix.md".text = agentQuickFix;
     "${claudeDir}/agents/nix-expert.md".text = agentNix;
     "${claudeDir}/agents/git-ship.md".text = agentGitShip;
-    "${claudeDir}/agents/team-lead.md".text = agentTeamLead;
     "${claudeDir}/agents/test-runner.md".text = agentTestRunner;
     "${claudeDir}/agents/security-auditor.md".text = agentSecurityAuditor;
     "${claudeDir}/agents/debugger.md".text = agentDebugger;
@@ -214,10 +203,6 @@ in
       text = skillAutoresearch;
       force = true;
     };
-    "${claudeDir}/skills/continuous-learning-v2/SKILL.md" = {
-      text = skillContinuousLearning;
-      force = true;
-    };
     "${claudeDir}/skills/testing-patterns/SKILL.md" = {
       text = skillTestingPatterns;
       force = true;
@@ -246,10 +231,6 @@ in
     };
     "${claudeDir}/hooks/block-main-bash.js" = {
       text = hookBlockMainBash;
-      executable = true;
-    };
-    "${claudeDir}/hooks/pre-compact-backup.sh" = {
-      text = hookPreCompactBackup;
       executable = true;
     };
     "${claudeDir}/hooks/session-start.sh" = {
@@ -302,10 +283,6 @@ in
     };
     "${claudeDir}/hooks/rtk-rewrite.sh" = {
       text = hookRtkRewrite;
-      executable = true;
-    };
-    "${claudeDir}/hooks/correction-capture.js" = {
-      text = hookCorrectionCapture;
       executable = true;
     };
 

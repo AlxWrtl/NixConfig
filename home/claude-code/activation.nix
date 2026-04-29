@@ -12,7 +12,6 @@
     mkdir -p "$HOME/.claude/skills/apex"
     mkdir -p "$HOME/.claude/skills/apex/steps"
     mkdir -p "$HOME/.claude/skills/debug"
-    mkdir -p "$HOME/.claude/skills/continuous-learning-v2"
     mkdir -p "$HOME/.claude/skills/nix-darwin"
     mkdir -p "$HOME/.claude/skills/claude-code-meta"
     mkdir -p "$HOME/.claude/skills/testing-patterns"
@@ -22,16 +21,6 @@
     mkdir -p "$HOME/.claude/backups"
     mkdir -p "$HOME/.claude/output"
     mkdir -p "$HOME/.claude/audit"
-    mkdir -p "$HOME/.claude/agents-memory/frontend-expert"
-    mkdir -p "$HOME/.claude/agents-memory/backend-expert"
-    mkdir -p "$HOME/.claude/agents-memory/architecture-expert"
-    mkdir -p "$HOME/.claude/agents-memory/performance-expert"
-    mkdir -p "$HOME/.claude/agents-memory/codebase-navigator"
-    mkdir -p "$HOME/.claude/agents-memory/code-reviewer"
-    mkdir -p "$HOME/.claude/agents-memory/quick-fix"
-    mkdir -p "$HOME/.claude/agents-memory/nix-expert"
-    mkdir -p "$HOME/.claude/agents-memory/git-ship"
-    mkdir -p "$HOME/.claude/agents-memory/team-lead"
   '';
 
   # Remove read-only backups before linkGeneration to avoid interactive mv prompts

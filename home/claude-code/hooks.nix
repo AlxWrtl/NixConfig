@@ -88,18 +88,6 @@
     });
   '';
 
-  hookPreCompactBackup = ''
-    #!/usr/bin/env bash
-    set -euo pipefail
-    BACKUP_DIR="$HOME/.claude/backups"
-    mkdir -p "$BACKUP_DIR"
-    TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-    TRANSCRIPT="$BACKUP_DIR/session-$TIMESTAMP.jsonl"
-    if [ -n "''${CLAUDE_TRANSCRIPT_PATH:-}" ] && [ -f "$CLAUDE_TRANSCRIPT_PATH" ]; then
-      cp "$CLAUDE_TRANSCRIPT_PATH" "$TRANSCRIPT"
-    fi
-  '';
-
   # Save working state before compaction so it can be restored
   hookPreCompactState = ''
     #!/usr/bin/env node
@@ -290,55 +278,6 @@
           path.join(logDir, "audit.jsonl"),
           JSON.stringify(entry) + "\n"
         );
-      } catch {}
-      process.exit(0);
-    });
-  '';
-
-  # Correction capture — detect user corrections in prompts
-  hookCorrectionCapture = ''
-    #!/usr/bin/env node
-    const fs = require("fs");
-    const path = require("path");
-    let input = "";
-    process.stdin.on("data", c => input += c);
-    process.stdin.on("end", () => {
-      try {
-        const data = JSON.parse(input);
-        const prompt = (data.prompt || "").toLowerCase();
-        if (!prompt || prompt.length > 500 || prompt.length < 5) { process.exit(0); return; }
-        // Detection patterns with confidence scores
-        const patterns = [
-          { re: /\bnon[,.]?\s/i, conf: 0.70, type: "correction" },
-          { re: /\bpas (?:ca|ça|comme)\b/i, conf: 0.80, type: "correction" },
-          { re: /\bstop\b.*\b(?:doing|adding|making)\b/i, conf: 0.85, type: "correction" },
-          { re: /\bdon'''t\b.*\b(?:use|add|do|make|create)\b/i, conf: 0.85, type: "correction" },
-          { re: /\butilise\b.*\bplutôt\b/i, conf: 0.80, type: "correction" },
-          { re: /\bpas\b.*\bmais\b/i, conf: 0.70, type: "correction" },
-          { re: /\bnever\b.*\b(?:use|add|do)\b/i, conf: 0.90, type: "guardrail" },
-          { re: /\balways\b.*\b(?:use|prefer|check)\b/i, conf: 0.75, type: "preference" },
-          { re: /\bremember\s*:/i, conf: 0.90, type: "explicit" },
-        ];
-        let bestMatch = null;
-        for (const p of patterns) {
-          if (p.re.test(data.prompt || "")) {
-            if (!bestMatch || p.conf > bestMatch.conf) bestMatch = p;
-          }
-        }
-        if (!bestMatch) { process.exit(0); return; }
-        const queueFile = path.join(process.env.HOME, ".claude/learnings-queue.json");
-        let queue = [];
-        try { queue = JSON.parse(fs.readFileSync(queueFile, "utf8")); } catch {}
-        queue.push({
-          ts: new Date().toISOString(),
-          prompt: (data.prompt || "").slice(0, 300),
-          type: bestMatch.type,
-          confidence: bestMatch.conf,
-          cwd: data.cwd || ""
-        });
-        // Cap queue at 50 entries
-        if (queue.length > 50) queue = queue.slice(-50);
-        fs.writeFileSync(queueFile, JSON.stringify(queue, null, 2));
       } catch {}
       process.exit(0);
     });

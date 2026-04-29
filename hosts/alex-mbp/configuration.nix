@@ -17,6 +17,13 @@
 
   nixpkgs.hostPlatform = "aarch64-darwin";
 
+  # direnv 2.37.1 test-zsh hangs on macOS sandbox (upstream flake).
+  nixpkgs.overlays = [
+    (final: prev: {
+      direnv = prev.direnv.overrideAttrs (_: { doCheck = false; });
+    })
+  ];
+
   users.users.alx = {
     name = "alx";
     home = "/Users/alx";

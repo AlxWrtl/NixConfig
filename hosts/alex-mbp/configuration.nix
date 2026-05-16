@@ -27,6 +27,7 @@
   users.users.alx = {
     name = "alx";
     home = "/Users/alx";
+    shell = pkgs.zsh;
   };
 
   system.stateVersion = 5;

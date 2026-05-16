@@ -112,7 +112,6 @@
 
       # Shell
       working-directory = ${config.home.homeDirectory}
-      command = /run/current-system/sw/bin/zsh
 
       # Keybindings
       keybind = shift+enter=text:\n

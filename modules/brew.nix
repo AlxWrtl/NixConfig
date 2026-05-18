@@ -31,8 +31,10 @@
       # Auto-updating apps
       "1password"
       "arc"
+      "chatgpt"
       "claude"
       "claude-code@latest"
+      "codex-app"
       "discord"
       "docker-desktop"
       "figma"

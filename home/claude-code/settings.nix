@@ -398,6 +398,18 @@ in
         API_KEY = "__SECRET_21ST_DEV__";
       };
     };
+    trello = {
+      type = "stdio";
+      command = "npx";
+      args = [
+        "-y"
+        "@delorenj/mcp-server-trello"
+      ];
+      env = {
+        TRELLO_API_KEY = "__SECRET_TRELLO_API_KEY__";
+        TRELLO_TOKEN = "__SECRET_TRELLO_TOKEN__";
+      };
+    };
   };
 
   statuslineScript = ''

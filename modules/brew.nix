@@ -108,6 +108,10 @@
         name = "vlc";
         greedy = true;
       }
+      {
+        name = "zed";
+        greedy = true;
+      }
     ];
 
     masApps = {

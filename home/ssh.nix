@@ -22,25 +22,23 @@ in
       "${config.home.homeDirectory}/.colima/ssh_config"
     ];
 
-    matchBlocks = {
+    settings = {
       "*" = {
-        userKnownHostsFile = "~/.ssh/known_hosts ~/.ssh/known_hosts_github";
+        UserKnownHostsFile = "~/.ssh/known_hosts ~/.ssh/known_hosts_github";
       };
 
       "github.com" = {
-        identityFile = "~/.ssh/id_ed25519";
-        identitiesOnly = true;
+        IdentityFile = "~/.ssh/id_ed25519";
+        IdentitiesOnly = true;
       };
 
       ubuntu = {
-        hostname = secrets.ssh.ubuntu.hostname;
-        user = secrets.ssh.ubuntu.user;
-        port = secrets.ssh.ubuntu.port;
-        serverAliveInterval = 60;
-        serverAliveCountMax = 10;
-        extraOptions = {
-          TCPKeepAlive = "yes";
-        };
+        HostName = secrets.ssh.ubuntu.hostname;
+        User = secrets.ssh.ubuntu.user;
+        Port = secrets.ssh.ubuntu.port;
+        ServerAliveInterval = 60;
+        ServerAliveCountMax = 10;
+        TCPKeepAlive = true;
       };
     };
   };

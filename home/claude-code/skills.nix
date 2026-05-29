@@ -24,21 +24,32 @@ in
 {
   # =========================================================================
   # APEX Workflow — Orchestrator + 16 Step Files
-  # Progressive step loading: each step is read on-demand for recency bias.
+  # Progressive disclosure: each step is loaded conditionally by flag/task, not
+  # read linearly. Splitting keeps the context window lean (a public good), it is
+  # NOT about "recency". Effort is set per-step, not globally.
   # =========================================================================
 
   skillApex = ''
     ---
     name: apex
     description: "Systematic implementation using APEX methodology"
-    effort: high
     ---
 
     # APEX: Systematic Implementation Workflow
 
     You are about to execute a structured, multi-step implementation workflow.
-    Each step is a separate file that you will read and execute one at a time.
-    This keeps instructions fresh in your context for maximum attention.
+    Each step lives in its own file. Load a step's file ONLY when you reach it
+    AND its flag is active — skip steps whose flags are off instead of reading
+    them. Splitting steps keeps the context window lean, not to "refresh" you.
+
+    ## Effort per step
+
+    Reasoning effort is set per-step, not globally — spend deep thinking where it
+    pays off, stay cheap on mechanical steps:
+    - **High effort**: 01-analyze, 02-plan, 05-examine (analysis & review).
+    - **Low effort**: 00b-branch, 00b-save, 03-execute (mechanical), 08-run-tests, 09-finish.
+    - **Medium**: everything else.
+    Each step file restates its own effort target at the top.
 
     ## Available Flags
 
@@ -95,6 +106,7 @@ in
   # --- Step 00: Init ---
   apexStep00Init = ''
     # Step 00: Initialize
+    <!-- effort: medium -->
 
     YOU ARE AN INITIALIZER, not an executor. Do NOT start implementing yet.
 
@@ -104,6 +116,24 @@ in
     - If `-pr` is set, auto-enable `-b` (branch)
     - If `-m` is set, auto-enable `-k` (tasks)
     - Uppercase flag disables (e.g., `-A` disables auto)
+
+    ## Complexity Gate (run BEFORE anything else)
+
+    APEX is a heavy multi-step workflow. Do not run it on tasks it is wrong for.
+    Score the task, then route — unless `-a` (auto) is set, confirm the redirect
+    with the user first; with `-a`, redirect silently and state why.
+
+    Redirect OUT of APEX when:
+    - **Trivial** — describable in one sentence AND ≤ ~2 files AND < ~20 lines:
+      → stop, suggest `/quick-fix` (or just do it directly). "If you could
+      describe the diff in one sentence, skip the plan."
+    - **Diagnosis** — task says bug / error / crash / broken / not working, with
+      no clear fix yet: → stop, suggest `/debug`.
+    - **Pure research / "how does X work"** — no code change intended:
+      → stop, suggest the Explore agent.
+
+    Proceed with APEX only if the task is a real implementation with ≥ 1 quality
+    gate worth running. If you proceed, record the gate decision in state below.
 
     ## Initialize State
 
@@ -243,6 +273,7 @@ in
   # --- Step 01: Analyze ---
   apexStep01Analyze = ''
     # Step 01: Analyze
+    <!-- effort: high -->
 
     YOU ARE AN EXPLORER, not a planner. Do NOT plan or implement yet.
     Your only job is to deeply understand the codebase and the task.
@@ -259,16 +290,20 @@ in
     Use Glob and Grep directly. Read only the most relevant files. No agents.
 
     ### If economy mode is NOT active:
-    Launch parallel Explore agents based on complexity:
-    - Simple (1-2 files): 1-2 agents
-    - Medium (3-5 files): 3-5 agents
-    - Complex (6+ files): 5-10 agents
+    Launch parallel Explore agents, count scaled to scope above:
+    - 1-2 files: 1-2 agents
+    - 3-5 files: 3-5 agents
+    - 6+ files: 5-10 agents
 
-    Each agent should explore a different aspect:
+    Each agent explores a different aspect:
     - File structure and conventions
     - Existing patterns and utilities
     - Related components and dependencies
     - Test patterns (if -t flag active)
+
+    **Each agent must return a condensed, distilled summary (~1-2k tokens):
+    files, conventions, risks — NOT raw file dumps.** Their bounded summary is
+    what enters your context; do not paste full file contents back.
 
     ## Output
 
@@ -278,6 +313,20 @@ in
     - **Conventions**: patterns to follow (naming, structure, imports)
     - **Dependencies**: libraries, utilities, types to use
     - **Risks**: potential issues or unknowns
+
+    ## Conflicts & Constraints (REQUIRED — confront task vs codebase)
+
+    This is what makes step-01 analysis, not just exploration. You MUST fill every
+    bullet. Write "none found" only after actually looking — never leave blank:
+    - **Constraining patterns**: existing conventions/architecture that constrain
+      HOW this must be built (e.g. "all DB access goes through repo layer X").
+    - **Divergences**: where the task as asked would break or contradict an
+      existing pattern — name the file/pattern and the conflict.
+    - **Decisions needed from user**: ambiguities that change the design and that
+      you cannot resolve from the codebase. If any exist and `-a` is NOT set,
+      surface them before planning.
+    - **Out-of-scope temptations**: nearby things that look broken but are NOT
+      this task — list them so the plan does not creep into them.
 
     ## If save mode (-s):
     Write findings to `.claude/output/apex/{task-id}/01-analyze.md`
@@ -540,9 +589,14 @@ in
   # --- Step 03: Execute ---
   apexStep03Execute = ''
     # Step 03: Execute
+    <!-- effort: low — mechanical; the thinking happened in 01/02 -->
 
     YOU ARE AN IMPLEMENTER following a plan, not a designer.
     Do NOT deviate from the plan. Do NOT add features that weren't planned.
+
+    Before the first edit, re-check the "Conflicts & Constraints" from step-01:
+    if implementation reveals a conflict that was missed, STOP and revise the
+    plan — do not silently work around it.
 
     ## Process
 

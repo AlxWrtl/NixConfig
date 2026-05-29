@@ -18,6 +18,7 @@
     mkdir -p "$HOME/.claude/skills/codebase-audit"
     mkdir -p "$HOME/.claude/skills/caveman"
     mkdir -p "$HOME/.claude/skills/cavemem"
+    mkdir -p "$HOME/.claude/skills/trello"
     mkdir -p "$HOME/.claude/backups"
     mkdir -p "$HOME/.claude/output"
     mkdir -p "$HOME/.claude/audit"
@@ -108,8 +109,6 @@
     TARGET="$HOME/.claude/.claude.json"
     SECRET_21ST="$HOME/.config/secrets/21st-dev-api-key"
     SECRET_GEMINI="$HOME/.config/secrets/gemini-api-key"
-    SECRET_TRELLO_KEY="$HOME/.config/secrets/trello-api-key"
-    SECRET_TRELLO_TOK="$HOME/.config/secrets/trello-token"
 
     if ! command -v jq >/dev/null 2>&1; then
       exit 0
@@ -128,16 +127,6 @@
       if [ -f "$SECRET_GEMINI" ]; then
         GEMINI_KEY=$(cat "$SECRET_GEMINI")
         MCP_DATA=$(echo "$MCP_DATA" | jq --arg key "$GEMINI_KEY" 'walk(if . == "__SECRET_GEMINI_API_KEY__" then $key else . end)')
-      fi
-
-      if [ -f "$SECRET_TRELLO_KEY" ]; then
-        TRELLO_KEY=$(cat "$SECRET_TRELLO_KEY")
-        MCP_DATA=$(echo "$MCP_DATA" | jq --arg key "$TRELLO_KEY" 'walk(if . == "__SECRET_TRELLO_API_KEY__" then $key else . end)')
-      fi
-
-      if [ -f "$SECRET_TRELLO_TOK" ]; then
-        TRELLO_TOK=$(cat "$SECRET_TRELLO_TOK")
-        MCP_DATA=$(echo "$MCP_DATA" | jq --arg key "$TRELLO_TOK" 'walk(if . == "__SECRET_TRELLO_TOKEN__" then $key else . end)')
       fi
 
       jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP" \

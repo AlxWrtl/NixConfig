@@ -66,6 +66,7 @@ let
     skillCodebaseAudit
     skillCaveman
     skillCavemem
+    skillTrello
     ;
   inherit (hooks)
     hookRtkRewrite
@@ -226,6 +227,10 @@ in
     };
     "${claudeDir}/skills/cavemem/SKILL.md" = {
       text = skillCavemem;
+      force = true;
+    };
+    "${claudeDir}/skills/trello/SKILL.md" = {
+      text = skillTrello;
       force = true;
     };
 

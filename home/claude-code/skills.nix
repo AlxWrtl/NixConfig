@@ -32,24 +32,21 @@ in
   skillApex = ''
     ---
     name: apex
-    description: "Systematic implementation using APEX methodology"
+    description: "Systematic multi-step implementation workflow (APEX methodology). Use when asked to implement, build, add, or create a feature, endpoint, module, dashboard, export, or authentication flow that needs structured analyze → plan → execute → validate steps with quality gates. Not for one-line fixes, debugging, or pure research."
     ---
 
     # APEX: Systematic Implementation Workflow
 
-    You are about to execute a structured, multi-step implementation workflow.
-    Each step lives in its own file. Load a step's file ONLY when you reach it
-    AND its flag is active — skip steps whose flags are off instead of reading
-    them. Splitting steps keeps the context window lean, not to "refresh" you.
+    Run a structured multi-step workflow: analyze → plan → execute → validate.
+    - Read each step's file ONLY when you reach it AND its flag is active.
+    - Skip steps whose flags are off, because loading them wastes context.
+    - Consult `steps/ROUTING.md` for every transition so that routing stays in one place.
 
     ## Effort per step
 
-    Reasoning effort is set per-step, not globally — spend deep thinking where it
-    pays off, stay cheap on mechanical steps:
-    - **High effort**: 01-analyze, 02-plan, 05-examine (analysis & review).
-    - **Low effort**: 00b-branch, 00b-save, 03-execute (mechanical), 08-run-tests, 09-finish.
-    - **Medium**: everything else.
-    Each step file restates its own effort target at the top.
+    Effort is per-step, not global. High: 01-analyze, 02-plan, 05-examine. Low:
+    branch, save, 03-execute, run-tests, finish. Medium: the rest. Each step file
+    restates its effort at the top.
 
     ## Available Flags
 
@@ -73,18 +70,20 @@ in
     ## Common Usage
 
     ```
-    /apex add feature                    # Basic
-    /apex -a -s implement auth           # Autonomous + save
-    /apex -a -x -s fix bug              # Full autonomous with review
-    /apex -a -t -pr add endpoint        # Auto + tests + PR
-    /apex -e simple fix                  # Economy mode (save tokens)
-    /apex -a -o -n add feature           # With Obsidian context load + session note
-    /apex -a -x -t -pr -o -n feature   # Everything enabled
+    /apex add feature              # Basic
+    /apex -a -t -pr add endpoint   # Auto + tests + PR
+    /apex -e simple fix            # Economy (save tokens)
     ```
 
     ## Execution
 
-    Read [steps/step-00-init.md](steps/step-00-init.md) and execute it now.
+    Execute `steps/step-00-init.md` now: read the file and follow it.
+
+    Verify any nix-config changes this workflow produces with:
+
+    ```bash
+    nix-instantiate --parse file.nix && sudo darwin-rebuild switch --flake .#alex-mbp
+    ```
 
     ${contract {
       expects = "task description with optional flags. Example: /apex -a -x implement user auth";
@@ -95,6 +94,25 @@ in
       useWhen = "Implementing features, modules, or tasks that benefit from structured multi-step execution with quality gates.";
       notFor = "Quick fixes (<20 lines) → use quick-fix. Debugging → use /debug. Research → use Explore agent.";
     }}
+
+    ## Error handling
+
+    - If a step fails (blocked task, red build/tests): stop, surface the raw error
+      and failing criteria, never fabricate success or push past red checks.
+    - If a prerequisite is missing (no git repo, no test framework): warn and fall
+      back (manual verification / skip the gated step), do not silently swallow.
+    - Unknown flag → reject it and print the valid flag list.
+
+    ## Idempotency, deps & compatibility
+
+    - **Idempotent**: safe to re-run; `-r` resumes from the last incomplete step,
+      and git branch/commit steps are no-ops when already applied.
+    - **Requires git** for branch/PR steps; needs node or python only when the
+      target project does. Alternatively runs read-only if absent.
+    - **Namespaced** under `apex/`: step files and `.claude/output/apex/` outputs;
+      no global names leak.
+    - **Compatibility**: minimum version is any model supporting the `effort` param.
+
     ${handoffs [
       "If task is broken and needs diagnosis → use debug skill instead."
       "If scope is unclear → run /discuss first."
@@ -489,12 +507,8 @@ in
 
     ## Next Step
 
-    If verify mode (-v) is active:
-      Read [step-02c-verify.md](step-02c-verify.md) and execute it.
-    Else if teams mode (-m) is active:
-      Read [step-03-execute-teams.md](step-03-execute-teams.md) and execute it.
-    Else:
-      Read [step-03-execute.md](step-03-execute.md) and execute it.
+    Consult [ROUTING.md](ROUTING.md): if `-v` go to 02c-verify, else apply the
+    EXECUTE selector (`-m` → 03-execute-teams, else → 03-execute).
   '';
 
   # --- Step 02c: Verify Plan ---
@@ -552,10 +566,8 @@ in
 
     ## Next Step
 
-    If teams mode (-m) is active:
-      Read [step-03-execute-teams.md](step-03-execute-teams.md) and execute it.
-    Else:
-      Read [step-03-execute.md](step-03-execute.md) and execute it.
+    Consult [ROUTING.md](ROUTING.md) → apply the EXECUTE selector
+    (`-m` → 03-execute-teams, else → 03-execute).
   '';
 
   # --- Step 02b: Tasks ---
@@ -683,15 +695,10 @@ in
     ## If save mode (-s):
     Update progress in context file.
 
-    ## Next Step — Conditional
+    ## Next Step
 
-    Choose the next step based on active flags:
-
-    1. If `-t` (test) is active: Read [step-07-tests.md](step-07-tests.md) and execute it.
-    2. Else if `-x` (examine) is active: Read [step-05-examine.md](step-05-examine.md) and execute it.
-    3. Else if `-pr` (pull request) is active: Read [step-09-finish.md](step-09-finish.md) and execute it.
-    4. Else if `-n` (note) is active: Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
-    5. Else: **COMPLETE.** Present a summary of what was implemented.
+    Apply the shared terminal router in [ROUTING.md](ROUTING.md) (this is
+    04-validate → rule 1 `-t` is in play).
   '';
 
   # --- Step 05: Examine ---
@@ -740,14 +747,8 @@ in
 
     ## Next Step
 
-    If there are Critical or Important findings:
-      Read [step-06-resolve.md](step-06-resolve.md) and execute it.
-    Else if `-pr` (pull request) is active:
-      Read [step-09-finish.md](step-09-finish.md) and execute it.
-    Else if `-n` (note) is active:
-      Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
-    Else:
-      **COMPLETE.** Present the review summary.
+    Apply the shared terminal router in [ROUTING.md](ROUTING.md): Critical/Important
+    findings trigger rule 3 (→ 06-resolve); otherwise fall through to pr/note/COMPLETE.
   '';
 
   # --- Step 06: Resolve ---
@@ -778,12 +779,8 @@ in
 
     ## Next Step
 
-    If `-pr` (pull request) is active:
-      Read [step-09-finish.md](step-09-finish.md) and execute it.
-    Else if `-n` (note) is active:
-      Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
-    Else:
-      **COMPLETE.** Present the resolution summary.
+    Apply the shared terminal router in [ROUTING.md](ROUTING.md) (resolve done →
+    rules 2/3 skipped; falls through to pr/note/COMPLETE).
   '';
 
   # --- Step 07: Tests ---
@@ -848,12 +845,10 @@ in
     - Ask for guidance
     - Do NOT loop forever
 
-    ## Next Step — Conditional
+    ## Next Step
 
-    1. If `-x` (examine) is active: Read [step-05-examine.md](step-05-examine.md) and execute it.
-    2. Else if `-pr` (pull request) is active: Read [step-09-finish.md](step-09-finish.md) and execute it.
-    3. Else if `-n` (note) is active: Read [step-09b-obsidian-note.md](step-09b-obsidian-note.md) and execute it.
-    4. Else: **COMPLETE.** Present test results summary.
+    Apply the shared terminal router in [ROUTING.md](ROUTING.md), skipping rule 1
+    (`-t` already consumed).
   '';
 
   # --- Step 09: Finish ---
@@ -1125,6 +1120,234 @@ in
       "After EXECUTE phase → hand off to code-reviewer for VERIFY (6-layer check)"
       "If XL epic → split into L milestones first, run full cycle per milestone"
     ]}
+  '';
+
+  # --- Eval suite: scored by `uvx schliff` (triggers/quality/edges) ---
+  apexEvalSuite = ''
+    {
+      "triggers": [
+        {"prompt": "implement this using apex methodology", "should_trigger": true},
+        {"prompt": "use the apex framework for this feature", "should_trigger": true},
+        {"prompt": "/apex add authentication to the app", "should_trigger": true},
+        {"prompt": "run apex with -a flag to auto-implement the payment module", "should_trigger": true},
+        {"prompt": "apex -s to save the output for the new dashboard feature", "should_trigger": true},
+        {"prompt": "apex -x -t -pr build the export endpoint", "should_trigger": true},
+        {"prompt": "fix this bug in the login form", "should_trigger": false},
+        {"prompt": "what does this function do?", "should_trigger": false},
+        {"prompt": "run the tests and tell me what fails", "should_trigger": false},
+        {"prompt": "review this PR for code quality", "should_trigger": false},
+        {"prompt": "explain how the caching layer works", "should_trigger": false},
+        {"prompt": "rename a single variable in utils.ts", "should_trigger": false}
+      ],
+      "test_cases": [
+        {
+          "name": "step-00-initialize",
+          "prompt": "Start apex for adding a new user settings page. We are at step 00.",
+          "assertions": [
+            {"type": "contains", "value": "git status", "description": "Step 00 must check git status before starting"},
+            {"type": "contains", "value": "Flags", "description": "Step 00 must parse and record active flags"},
+            {"type": "excludes", "value": "implement", "description": "Step 00 must not start implementing — only initialize"},
+            {"type": "pattern", "value": "00|[Ii]nitializ", "description": "Must explicitly reference step 00 initialization"}
+          ]
+        },
+        {
+          "name": "complexity-gate-trivial",
+          "prompt": "apex -a rename the variable x to userId in one function in utils.ts",
+          "assertions": [
+            {"type": "pattern", "value": "[Gg]ate|[Tt]rivial|[Oo]verkill|one sentence", "description": "Must apply the complexity gate before any work"},
+            {"type": "pattern", "value": "quick.fix|[Dd]irect", "description": "Must redirect a one-line rename out of APEX to quick-fix"},
+            {"type": "excludes", "value": "step-02-plan", "description": "Must not proceed into planning for a trivial task"}
+          ]
+        },
+        {
+          "name": "complexity-gate-debug",
+          "prompt": "apex -a the login button is broken and throws an error on click",
+          "assertions": [
+            {"type": "pattern", "value": "[Gg]ate|[Dd]iagnos|[Dd]ebug", "description": "Must detect a diagnosis task at the complexity gate"},
+            {"type": "pattern", "value": "/debug|debug", "description": "Must redirect bug/diagnosis tasks to /debug"}
+          ]
+        },
+        {
+          "name": "step-01-conflict-analysis",
+          "prompt": "apex analyze adding a direct DB call in the controller for a new report feature. We are at step 01.",
+          "assertions": [
+            {"type": "pattern", "value": "[Cc]onflict|[Cc]onstraint", "description": "Step 01 must produce the Conflicts & Constraints section"},
+            {"type": "pattern", "value": "[Dd]iverg|[Pp]attern", "description": "Must flag where the task diverges from existing patterns"},
+            {"type": "pattern", "value": "[Dd]ecision|[Ss]cope", "description": "Must surface decisions needed and out-of-scope temptations"},
+            {"type": "excludes", "value": "raw file dump", "description": "Subagents must return bounded summaries, not raw dumps"}
+          ]
+        },
+        {
+          "name": "full-execution-flow",
+          "prompt": "Execute all apex steps (-a flag) for adding email notifications. Run every step.",
+          "assertions": [
+            {"type": "contains", "value": "00", "description": "Must execute step 00 Initialize"},
+            {"type": "contains", "value": "01", "description": "Must execute step 01 Analyze"},
+            {"type": "contains", "value": "03", "description": "Must execute step 03 Execute"},
+            {"type": "contains", "value": "Finish", "description": "Must reach the Finish step"},
+            {"type": "pattern", "value": "[Aa]nalyze|[Pp]lan|[Ee]xecute|[Vv]alidate", "description": "Must name each major phase in sequence"}
+          ]
+        },
+        {
+          "name": "apex-auto-flag",
+          "prompt": "apex -a implement the CSV export feature",
+          "assertions": [
+            {"type": "contains", "value": "auto", "description": "Must acknowledge -a flag enables auto mode"},
+            {"type": "pattern", "value": "[Ss]tep\\s*0[0-9]", "description": "Must reference step numbers during execution"},
+            {"type": "excludes", "value": "wait for approval", "description": "Auto mode must not pause for manual approval at each step"}
+          ]
+        },
+        {
+          "name": "apex-examine-flag",
+          "prompt": "apex -x build a token refresh endpoint then review it for security issues",
+          "assertions": [
+            {"type": "contains", "value": "05", "description": "Examine flag (-x) routes to step 05, not 06"},
+            {"type": "pattern", "value": "[Ee]xamine|[Ss]ecurity|[Ll]ogic|[Cc]lean", "description": "Must run the three adversarial review focuses in step 05"},
+            {"type": "excludes", "value": "step 00", "description": "Examine must not restart from step 00"}
+          ]
+        },
+        {
+          "name": "per-step-effort",
+          "prompt": "Which apex steps use high reasoning effort and which use low?",
+          "assertions": [
+            {"type": "pattern", "value": "[Hh]igh.*0?1|[Aa]nalyze.*high", "description": "Analysis/plan/examine steps must use high effort"},
+            {"type": "pattern", "value": "[Ll]ow.*03|[Mm]echanical", "description": "Mechanical steps (execute/branch/finish) must use low effort"},
+            {"type": "excludes", "value": "effort: high", "description": "Effort must be per-step, not a single global frontmatter value"}
+          ]
+        }
+      ],
+      "edge_cases": [
+        {
+          "name": "trivial-task-overkill",
+          "category": "minimal",
+          "prompt": "apex -a add a missing semicolon in index.ts",
+          "expected_behavior": "Complexity gate flags APEX as overkill and redirects to quick-fix or a direct edit.",
+          "assertions": [
+            {"type": "pattern", "value": "[Oo]verkill|[Tt]rivial|[Gg]ate|quick.fix", "description": "Must flag APEX as inappropriate for a one-char change"},
+            {"type": "pattern", "value": "[Rr]ecommend|[Ss]uggest|[Dd]irect", "description": "Must recommend a lighter-weight path"}
+          ]
+        },
+        {
+          "name": "diagnosis-task",
+          "category": "redirect",
+          "prompt": "apex why is the app crashing on startup?",
+          "expected_behavior": "Complexity gate detects a diagnosis task and redirects to /debug instead of running the workflow.",
+          "assertions": [
+            {"type": "pattern", "value": "[Dd]iagnos|[Dd]ebug|crash", "description": "Must detect diagnosis and redirect to /debug"}
+          ]
+        },
+        {
+          "name": "missing-conventions",
+          "category": "missing",
+          "prompt": "apex -a implement OAuth but this project has no documented conventions",
+          "expected_behavior": "Analyze step documents the absence of conventions as a risk in Conflicts & Constraints and proceeds with explicit assumptions.",
+          "assertions": [
+            {"type": "pattern", "value": "[Cc]onvention|[Aa]ssumption|[Rr]isk", "description": "Must document missing conventions as a constraint/risk"},
+            {"type": "pattern", "value": "[Pp]roceed|[Ww]arn", "description": "Must proceed with stated assumptions, not block"}
+          ]
+        },
+        {
+          "name": "task-conflicts-with-pattern",
+          "category": "invalid",
+          "prompt": "apex add a feature that bypasses the existing repository layer and queries the DB directly",
+          "expected_behavior": "Step 01 Conflicts & Constraints flags the divergence from the repository pattern and surfaces it as a decision before planning.",
+          "assertions": [
+            {"type": "pattern", "value": "[Cc]onflict|[Dd]iverg|[Pp]attern", "description": "Must flag the divergence from the established pattern"},
+            {"type": "pattern", "value": "[Dd]ecision|[Ss]urface|[Bb]efore planning", "description": "Must surface it as a decision before planning"}
+          ]
+        },
+        {
+          "name": "huge-codebase",
+          "category": "scale",
+          "prompt": "apex -a refactor the entire monorepo — 500+ files across 12 services",
+          "expected_behavior": "Recommends scoping into milestones before running APEX per milestone.",
+          "assertions": [
+            {"type": "pattern", "value": "[Ss]cope|[Ss]plit|[Mm]ilestone|[Pp]hase|[Ss]ub-task", "description": "Must recommend breaking the refactor into milestones"}
+          ]
+        },
+        {
+          "name": "skip-planning-request",
+          "category": "invalid",
+          "prompt": "apex skip analyze and plan, go straight to execute",
+          "expected_behavior": "Warns that executing without analysis/planning risks untested, convention-violating code and recommends the linear spine.",
+          "assertions": [
+            {"type": "pattern", "value": "[Ww]arn|[Rr]isk|[Ss]kip|[Ss]equen|[Ss]pine", "description": "Must warn about skipping analysis/planning"}
+          ]
+        },
+        {
+          "name": "no-test-framework",
+          "category": "missing",
+          "prompt": "apex -t implement a feature but there is no test framework configured",
+          "expected_behavior": "Warns about the missing framework and recommends setup or manual verification fallback.",
+          "assertions": [
+            {"type": "pattern", "value": "[Nn]o test|[Mm]anual|[Ss]etup|[Ff]ramework|[Ww]arn", "description": "Must warn about missing test framework and propose alternatives"}
+          ]
+        },
+        {
+          "name": "malformed-flag",
+          "category": "malformed",
+          "prompt": "apex --unknownflag implement the feature",
+          "expected_behavior": "Rejects the unknown flag and lists the valid flags.",
+          "assertions": [
+            {"type": "pattern", "value": "[Uu]nknown|[Ii]nvalid|[Ff]lag|[Uu]sage", "description": "Must reject the unknown flag"},
+            {"type": "pattern", "value": "-a|-x|-s|-t", "description": "Must list valid flags"}
+          ]
+        }
+      ]
+    }
+  '';
+
+  # --- Routing: single source of truth for step transitions (R7) ---
+  # Every step's "Next Step" defers here instead of duplicating if/else chains.
+  apexRouting = ''
+    # APEX Routing Table — single source of truth
+
+    Every step's "Next Step" section says "consult ROUTING.md". Do NOT duplicate
+    transition logic inside step files. This table is the only place that decides
+    where to go next. Edit transitions HERE, nowhere else.
+
+    ## Linear spine
+
+    | From | Next (unconditional) |
+    |------|----------------------|
+    | 00-init | 01-analyze |
+    | 01-analyze | 01b-obsidian IF `-o`, else 02-plan |
+    | 01b-obsidian | 02-plan |
+    | 02-plan | 02c-verify IF `-v`, else EXECUTE (see below) |
+    | 02c-verify | EXECUTE (see below) |
+    | EXECUTE | 04-validate |
+
+    ## EXECUTE selector
+
+    - `-m` (teams) active → 03-execute-teams
+    - else → 03-execute
+
+    ## Post-validate / post-tests / post-resolve — shared terminal router
+
+    Steps 04-validate, 08-run-tests, 05-examine, 06-resolve all end by applying
+    THIS ordered router. Take the FIRST matching rule:
+
+    1. From 04-validate ONLY: IF `-t` (test) → 07-tests.
+    2. IF `-x` (examine) AND examine not yet run → 05-examine.
+    3. IF 05-examine produced Critical/Important findings AND resolve not yet run → 06-resolve.
+    4. IF `-pr` (pull request) → 09-finish.   ← takes precedence over `-n`
+    5. IF `-n` (note) → 09b-obsidian-note.
+    6. Else → COMPLETE (present summary).
+
+    ## 07-tests / 08-run-tests
+
+    - 07-tests → 08-run-tests (always).
+    - 08-run-tests → apply the shared terminal router above (skip rule 1).
+
+    ## 09-finish
+
+    - 09-finish → 09b-obsidian-note IF `-n`, else COMPLETE.
+
+    ## INVARIANT
+
+    When both `-pr` and `-n` are set, rule 4 (pr) fires before rule 5 (note), so
+    09-finish is reached first; 09-finish's own tail is then the ONLY path to
+    09b. Do not reorder rules 4/5 without updating 09-finish.
   '';
 
   # -------------------------

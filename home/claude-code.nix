@@ -52,6 +52,8 @@ let
     apexStep08RunTests
     apexStep09Finish
     apexStep09bObsidianNote
+    apexRouting
+    apexEvalSuite
     skillDebug
     skillFeatureWorkflow
     skillNixDarwin
@@ -179,6 +181,11 @@ in
     "${claudeDir}/skills/apex/steps/step-08-run-tests.md".text = apexStep08RunTests;
     "${claudeDir}/skills/apex/steps/step-09-finish.md".text = apexStep09Finish;
     "${claudeDir}/skills/apex/steps/step-09b-obsidian-note.md".text = apexStep09bObsidianNote;
+    "${claudeDir}/skills/apex/steps/ROUTING.md".text = apexRouting;
+    "${claudeDir}/skills/apex/eval-suite.json" = {
+      text = apexEvalSuite;
+      force = true;
+    };
     "${claudeDir}/skills/debug/SKILL.md" = {
       text = skillDebug;
       force = true;

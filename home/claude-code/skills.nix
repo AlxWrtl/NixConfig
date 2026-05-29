@@ -37,10 +37,12 @@ in
 
     # APEX: Systematic Implementation Workflow
 
-    Run a structured multi-step workflow: analyze → plan → execute → validate.
+    A structured multi-step workflow: analyze → plan → execute → validate.
     - Read each step's file ONLY when you reach it AND its flag is active.
     - Skip steps whose flags are off, because loading them wastes context.
-    - Consult `steps/ROUTING.md` for every transition so that routing stays in one place.
+    - Consult `steps/ROUTING.md` for every transition so routing stays in one place.
+    - Unless `-e`, act as COORDINATOR per `steps/ORCHESTRATION.md`: spawn each
+      phase as a fresh subagent and keep only its summary, so context stays clean.
 
     ## Effort per step
 
@@ -50,22 +52,22 @@ in
 
     ## Available Flags
 
-    | Enable | Disable | Description |
-    |--------|---------|-------------|
+    | Flag | Disable | Description |
+    |------|---------|-------------|
     | -a | -A | Auto — skip confirmations |
-    | -x | -X | Examine — adversarial code review |
-    | -s | -S | Save — persist outputs to files |
-    | -t | -T | Test — create and run tests |
-    | -e | -E | Economy — no subagents, direct tools only |
-    | -b | -B | Branch — create git branch |
-    | -pr | -PR | Pull request — commit + PR (implies -b) |
-    | -k | -K | Tasks — task breakdown with dependency graph |
-    | -m | -M | Teams — Agent Teams parallel execution (implies -k) |
-    | -v | -V | Verify — research plan online before executing |
-    | -o | -O | Obsidian context — load vault project notes before planning |
-    | -n | -N | Note — create Obsidian session note at the end |
-    | -i | | Interactive — configure flags via menu |
-    | -r | | Resume — continue previous task |
+    | -x | -X | Examine — adversarial review |
+    | -s | -S | Save — persist outputs |
+    | -t | -T | Test — create + run tests |
+    | -e | -E | Economy — no subagents |
+    | -b | -B | Branch — git branch |
+    | -pr | -PR | PR — commit + PR (implies -b) |
+    | -k | -K | Tasks — dependency breakdown |
+    | -m | -M | Teams — parallel exec (implies -k) |
+    | -v | -V | Verify — research plan online |
+    | -o | -O | Obsidian — load vault notes |
+    | -n | -N | Note — session note at end |
+    | -i | | Interactive — flag menu |
+    | -r | | Resume — continue previous |
 
     ## Common Usage
 
@@ -126,7 +128,10 @@ in
     # Step 00: Initialize
     <!-- effort: medium -->
 
-    YOU ARE AN INITIALIZER, not an executor. Do NOT start implementing yet.
+    YOU ARE THE COORDINATOR, not an executor. Do NOT do the analysis or coding
+    yourself. Unless `-e` (economy) is set, you spawn each phase as a fresh
+    subagent and keep only its summary — read [ORCHESTRATION.md](ORCHESTRATION.md)
+    now and follow it for every phase. Under `-e`, run phases inline as before.
 
     ## Parse Flags
 
@@ -152,6 +157,13 @@ in
 
     Proceed with APEX only if the task is a real implementation with ≥ 1 quality
     gate worth running. If you proceed, record the gate decision in state below.
+
+    ## Force external memory (unless economy)
+
+    If NOT `-e`: enable `-s` automatically. Fresh-context-per-phase relies on the
+    on-disk summary chain to survive compaction and `-r` resume, so saving is not
+    optional here — run [step-00b-save.md](step-00b-save.md) even if `-s` was not
+    passed. This is the other half of the orchestration mechanism.
 
     ## Initialize State
 
@@ -296,6 +308,14 @@ in
     YOU ARE AN EXPLORER, not a planner. Do NOT plan or implement yet.
     Your only job is to deeply understand the codebase and the task.
 
+    ## Who runs this (per ORCHESTRATION.md)
+
+    - **Economy (`-e`)**: the coordinator runs this inline, no subagents.
+    - **Default**: the COORDINATOR does the parallel Explore fan-out itself
+      (a phase agent cannot spawn — depth=1), collects the bounded Explore
+      summaries, then either synthesizes directly or spawns one analyzer agent
+      with those summaries as input. Return the analyze phase summary schema.
+
     ## Strategy
 
     Evaluate task complexity across 4 dimensions:
@@ -307,8 +327,8 @@ in
     ### If economy mode is active:
     Use Glob and Grep directly. Read only the most relevant files. No agents.
 
-    ### If economy mode is NOT active:
-    Launch parallel Explore agents, count scaled to scope above:
+    ### If economy mode is NOT active (coordinator-orchestrated):
+    The coordinator launches parallel Explore agents, count scaled to scope:
     - 1-2 files: 1-2 agents
     - 3-5 files: 3-5 agents
     - 6+ files: 5-10 agents
@@ -449,6 +469,10 @@ in
     # Step 02: Plan
 
     YOU ARE A PLANNER, not an implementer. Do NOT write any code yet.
+
+    Per ORCHESTRATION.md: unless `-e`, the coordinator spawns this as a fresh
+    planner agent whose input is the analyze phase summary (not the raw
+    transcript). Return the plan phase summary schema and persist the plan.
 
     ## ULTRA THINK
 
@@ -606,6 +630,11 @@ in
     YOU ARE AN IMPLEMENTER following a plan, not a designer.
     Do NOT deviate from the plan. Do NOT add features that weren't planned.
 
+    Per ORCHESTRATION.md: unless `-e`, your input is the plan phase summary +
+    the persisted plan path. With `-m` (teams) the coordinator spawns the
+    implementer agents per wave directly (see step-03-execute-teams). Return the
+    execute phase summary schema.
+
     Before the first edit, re-check the "Conflicts & Constraints" from step-01:
     if implementation reveals a conflict that was missed, STOP and revise the
     plan — do not silently work around it.
@@ -671,6 +700,10 @@ in
     # Step 04: Validate
 
     YOU ARE A VALIDATOR, not an implementer. Do NOT add new features.
+
+    Per ORCHESTRATION.md: unless `-e`, the coordinator spawns this as a fresh
+    validator agent whose input is the plan + execute phase summaries. Return the
+    validate phase summary schema.
 
     ## Verification Checklist
 
@@ -1348,6 +1381,88 @@ in
     When both `-pr` and `-n` are set, rule 4 (pr) fires before rule 5 (note), so
     09-finish is reached first; 09-finish's own tail is then the ONLY path to
     09b. Do not reorder rules 4/5 without updating 09-finish.
+  '';
+
+  # --- Orchestration: fresh-context-per-phase (subagent isolation) ---
+  # The coordinator is the only spawner (subagents cannot nest, depth=1).
+  apexOrchestration = ''
+    # APEX Orchestration — fresh context per phase
+
+    Goal: each phase (analyze, plan, execute, validate) runs in an ISOLATED
+    subagent with a clean context, so the workflow never loses or pollutes
+    context as it grows. The coordinator keeps only a chain of distilled
+    summaries — never the raw work of each phase.
+
+    ## Roles
+
+    - **Coordinator** = the main `/apex` run. It is the ONLY agent allowed to
+      spawn (subagents cannot spawn subagents — depth is capped at 1). It does
+      NOT do the analysis/coding itself; it spawns a phase agent, receives its
+      summary, verifies it, persists it, then spawns the next phase.
+    - **Phase agent** = a fresh subagent (Agent tool) per phase. Receives a
+      self-contained brief, works in its own window, returns ONLY a bounded
+      summary (~1-2k tokens). Its raw context is discarded after it returns.
+
+    ## When this applies
+
+    - Active when NOT economy mode (`-e`). Under `-e`, phases run inline in the
+      coordinator (no subagents) — that is economy's whole point.
+    - Forces `-s` (save) ON: the chain of summaries is also persisted to disk so
+      it survives compaction and enables `-r` resume. Fresh context + external
+      memory are two halves of the same mechanism; do not enable one without the other.
+
+    ## Fan-out lives in the COORDINATOR, not the phase
+
+    Because a phase agent cannot itself spawn (depth=1), any parallel fan-out is
+    done by the coordinator, which then hands the synthesis to the phase agent:
+    - **Analyze**: coordinator spawns the parallel Explore agents, collects their
+      bounded summaries, THEN spawns the analyzer agent with those summaries as
+      input. The analyzer produces the Conflicts & Constraints synthesis.
+    - **Execute (`-m` teams)**: coordinator spawns the implementer agents per wave
+      directly; there is no separate "execute agent" wrapping them.
+
+    ## Phase brief (what the coordinator passes IN)
+
+    Every spawn must include, per Anthropic's worker-brief contract:
+    1. **Objective** — the one job of this phase.
+    2. **Output format** — the exact summary schema below (mandatory).
+    3. **Context** — the task + the PRECEDING phase summaries (distilled), plus
+       the on-disk plan path. Never the raw transcript.
+    4. **Tools & boundaries** — which tools to use, what NOT to touch.
+
+    ## Phase summary (what each phase returns OUT — fixed schema)
+
+    ```
+    PHASE: {analyze|plan|execute|validate}
+    OBJECTIVE_MET: yes | partial | no
+    DECISIONS: {key choices made}
+    ARTIFACTS: {files touched / created, plan path, ACs}
+    OPEN_RISKS: {anything the next phase must know}
+    HANDOFF: {the single most important thing for the next phase}
+    ```
+
+    Target 1-2k tokens. Distilled, not raw. Over-compression loses subtle info
+    whose importance only appears later — keep every decision and open risk.
+
+    ## Completeness check (mitigates path dependency)
+
+    Before spawning phase N+1, the coordinator verifies phase N's summary has all
+    schema fields filled and OBJECTIVE_MET is yes/partial. If a field is empty or
+    OBJECTIVE_MET is no → re-spawn the phase with a sharper brief, or stop and ask
+    the user. An omission here propagates silently all the way to validate.
+
+    ## Persistence
+
+    Write each phase summary to `.claude/output/apex/{task-id}/NN-{phase}.md` as
+    it completes. The coordinator's live context holds only the summaries; the
+    disk copy is the source of truth for `-r` resume.
+
+    ## Cost note
+
+    A 4-phase subagent chain costs materially more tokens than one continuous
+    context (multi-agent ≈ up to ~15× a plain chat). That is the price of robust,
+    pollution-free context. For small tasks the complexity gate (step-00) should
+    have already redirected out of APEX.
   '';
 
   # -------------------------

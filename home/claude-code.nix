@@ -53,6 +53,7 @@ let
     apexStep09Finish
     apexStep09bObsidianNote
     apexRouting
+    apexOrchestration
     apexEvalSuite
     skillDebug
     skillFeatureWorkflow
@@ -182,6 +183,7 @@ in
     "${claudeDir}/skills/apex/steps/step-09-finish.md".text = apexStep09Finish;
     "${claudeDir}/skills/apex/steps/step-09b-obsidian-note.md".text = apexStep09bObsidianNote;
     "${claudeDir}/skills/apex/steps/ROUTING.md".text = apexRouting;
+    "${claudeDir}/skills/apex/steps/ORCHESTRATION.md".text = apexOrchestration;
     "${claudeDir}/skills/apex/eval-suite.json" = {
       text = apexEvalSuite;
       force = true;

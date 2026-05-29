@@ -133,6 +133,10 @@ in
     subagent and keep only its summary — read [ORCHESTRATION.md](ORCHESTRATION.md)
     now and follow it for every phase. Under `-e`, run phases inline as before.
 
+    Privileged commands (`sudo`, `darwin-rebuild`, `git push`, installs, network):
+    never run them and never disable the sandbox — collect them into a "Run
+    yourself" list for the user. See the classification rule in ORCHESTRATION.md.
+
     ## Parse Flags
 
     Extract flags from $ARGUMENTS. Default: all flags OFF.
@@ -710,10 +714,13 @@ in
     1. **Acceptance Criteria**: go through each AC from the plan.
        For each one, verify it is actually implemented. Check the code.
 
-    2. **Build Check**: if applicable, run:
+    2. **Build Check**: run only the SAFE checks (see ORCHESTRATION.md):
        - TypeScript: typecheck (`pnpm typecheck` or `npx tsc --noEmit`)
        - Lint: `pnpm lint` or equivalent
        - Build: `pnpm build` or equivalent
+       - Nix: `nix-instantiate --parse` (safe). Do NOT run `darwin-rebuild
+         build`/`switch` — those are privileged; mark such ACs **deferred to
+         user** and add the command to the "Run yourself" list.
 
     3. **Integration Check**: verify that:
        - All imports resolve
@@ -1456,6 +1463,29 @@ in
     Write each phase summary to `.claude/output/apex/{task-id}/NN-{phase}.md` as
     it completes. The coordinator's live context holds only the summaries; the
     disk copy is the source of truth for `-r` resume.
+
+    ## Privileged commands — classify, then delegate (never disable the sandbox)
+
+    Before running ANY command (coordinator or phase agent), classify it. This is
+    generalist: do not special-case nix — judge by capability, not by task.
+
+    - **Safe** — read-only, parse, test, edit a file in the repo, `git status/add`,
+      `nix-instantiate --parse`, grep, build steps that do not touch the system:
+      execute directly.
+    - **Privileged or irreversible** — `sudo`, `darwin-rebuild build`/`switch`,
+      `git push`, `git commit` on a protected branch, package installs, network
+      egress, anything that mutates the OS, remote state, or another service:
+      DO NOT execute, and DO NOT try to bypass the sandbox. The sandbox is a
+      safety net, not an obstacle — a freshly written subagent must never gain
+      free system access. Instead, add the exact command to a **"Run yourself"
+      list** and surface it in the phase summary / final output for the user.
+    - **In doubt** — ask the user, unless already durably authorized this session.
+
+    Why: attempting a privileged command in the sandbox either fails (wasting a
+    long wait, e.g. a 10-15 min `darwin-rebuild build` that the sandbox throttles)
+    or would require unsafe escalation. Delegating is faster AND safer. Acceptance
+    criteria that need a privileged command (e.g. "build passes", "switch applied")
+    are marked **deferred to user** in the validate summary, not failed.
 
     ## Cost note
 

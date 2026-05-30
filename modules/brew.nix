@@ -49,10 +49,6 @@
 
       # No auto-updater — greedy keeps them current
       {
-        name = "android-platform-tools";
-        greedy = true;
-      }
-      {
         name = "appcleaner";
         greedy = true;
       }
@@ -62,14 +58,6 @@
       }
       {
         name = "ghostty";
-        greedy = true;
-      }
-      {
-        name = "hp-easy-start";
-        greedy = true;
-      }
-      {
-        name = "hp-easy-admin";
         greedy = true;
       }
       {
@@ -98,10 +86,6 @@
       }
       {
         name = "transmission";
-        greedy = true;
-      }
-      {
-        name = "upscayl";
         greedy = true;
       }
       {

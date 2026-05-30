@@ -108,6 +108,22 @@ darwin-rebuild rollback          # Rollback to previous generation
 darwin-rebuild switch --flake .#alex-mbp --show-trace -v  # Debug
 ```
 
+## Maintenance / Cleanup
+
+Reclaim disk space by garbage-collecting old generations and deduplicating the
+Nix store, then prune Homebrew caches.
+
+```bash
+sudo nix-collect-garbage -d      # Delete all old generations (system + user)
+nix-store --optimise             # Hard-link identical files in the store
+brew autoremove                  # Remove unused brew dependencies
+brew cleanup -s --prune=all      # Purge all download caches and old versions
+```
+
+> **Note:** if `sudo nix-collect-garbage -d` warns `$HOME is not owned by you`
+> and falls back to root's profile (leaving user generations behind), run the
+> user sweep without sudo as well: `nix-collect-garbage -d`.
+
 ## What's Managed
 
 | Layer | Tool | Contents |

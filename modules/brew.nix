@@ -41,7 +41,6 @@
       "google-chrome"
       "notion"
       "obsidian"
-      "protonvpn"
       "raycast"
       "readdle-spark"
       "visual-studio-code"

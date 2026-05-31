@@ -108,7 +108,6 @@
     MCP_BASE="$HOME/.claude/mcp-servers-base.json"
     TARGET="$HOME/.claude/.claude.json"
     SECRET_21ST="$HOME/.config/secrets/21st-dev-api-key"
-    SECRET_GEMINI="$HOME/.config/secrets/gemini-api-key"
 
     if ! command -v jq >/dev/null 2>&1; then
       exit 0
@@ -122,11 +121,6 @@
       if [ -f "$SECRET_21ST" ]; then
         API_KEY=$(cat "$SECRET_21ST")
         MCP_DATA=$(echo "$MCP_DATA" | jq --arg key "$API_KEY" 'walk(if . == "__SECRET_21ST_DEV__" then $key else . end)')
-      fi
-
-      if [ -f "$SECRET_GEMINI" ]; then
-        GEMINI_KEY=$(cat "$SECRET_GEMINI")
-        MCP_DATA=$(echo "$MCP_DATA" | jq --arg key "$GEMINI_KEY" 'walk(if . == "__SECRET_GEMINI_API_KEY__" then $key else . end)')
       fi
 
       jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP" \

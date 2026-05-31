@@ -398,6 +398,14 @@ in
         API_KEY = "__SECRET_21ST_DEV__";
       };
     };
+    playwright = {
+      type = "stdio";
+      command = "npx";
+      args = [
+        "-y"
+        "@playwright/mcp@latest"
+      ];
+    };
   };
 
   statuslineScript = ''

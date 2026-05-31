@@ -457,7 +457,7 @@ in
       CWD=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."' | xargs basename)
       TOKENS_IN=$(echo "$INPUT" | jq -r '.context_window.total_input_tokens // 0')
       TOKENS_OUT=$(echo "$INPUT" | jq -r '.context_window.total_output_tokens // 0')
-      CONTEXT_PCT=$(echo "$INPUT" | jq -r '(.context_window.used_percentage // 0) | floor')
+      CONTEXT_PCT=$(echo "$INPUT" | jq -r '(.context_window.used_percentage // 0) | round')
 
       WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."')
       GIT_BRANCH=$(git -C "$WORKSPACE_DIR" branch --show-current 2>/dev/null || echo "")
@@ -465,9 +465,9 @@ in
       # Rate limits straight from Claude Code JSON (Pro/Max only; absent before the
       # first API call). used_percentage = quota consumed; resets_at = unix epoch.
       NOW=$(date +%s)
-      H5_PCT=$(echo "$INPUT" | jq -r '(.rate_limits.five_hour.used_percentage // empty) | floor')
+      H5_PCT=$(echo "$INPUT" | jq -r '(.rate_limits.five_hour.used_percentage // empty) | round')
       H5_RESET=$(echo "$INPUT" | jq -r '.rate_limits.five_hour.resets_at // empty')
-      D7_PCT=$(echo "$INPUT" | jq -r '(.rate_limits.seven_day.used_percentage // empty) | floor')
+      D7_PCT=$(echo "$INPUT" | jq -r '(.rate_limits.seven_day.used_percentage // empty) | round')
       D7_RESET=$(echo "$INPUT" | jq -r '.rate_limits.seven_day.resets_at // empty')
     else
       MODEL="opus"

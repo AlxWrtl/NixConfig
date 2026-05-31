@@ -402,73 +402,108 @@ in
 
   statuslineScript = ''
     #!/usr/bin/env bash
-    # Statusline with session and monthly costs (cached)
+    # Statusline: model, dir, branch, tokens, context bar, 5h + 7d rate-limit bars.
+    # Rate-limit data comes straight from Claude Code's JSON (rate_limits.*), the
+    # same source as the official usage screen — no ccusage, no transcript parsing.
 
     INPUT=$(cat)
-    CACHE_FILE="/tmp/ccusage-monthly-cache.txt"
-    CACHE_MAX_AGE=300  # 5 minutes
+
+    # Colors — use $'...' so bash expands \033 at assignment time. This avoids
+    # printf "%b", which mangles the UTF-8 bytes of █/░ under a UTF-8 locale.
+    RED=$'\033[91m'
+    ORANGE=$'\033[38;5;208m'
+    YELLOW=$'\033[93m'
+    GREEN=$'\033[92m'
+    CYAN=$'\033[96m'
+    BLUE=$'\033[94m'
+    GREY=$'\033[90m'
+    RESET=$'\033[0m'
+
+    # Glyphs built from explicit UTF-8 bytes via printf, so no literal multibyte
+    # char lives in the source (avoids byte truncation through the nix/CC pipeline).
+    FULL_CH=$(printf '\xe2\x96\x88')        # █ U+2588 full block
+    EMPTY_CH=$(printf '\xe2\x96\x91')       # ░ U+2591 light shade
+
+    # Render a 10-cell progress bar: filled colored by threshold (green<60,
+    # orange<85, red>=85), empty in neutral grey so it stays visible.
+    make_bar() {
+      local pct=$1
+      [ -z "$pct" ] && pct=0
+      pct=''${pct%.*}                       # strip decimals
+      [ "$pct" -gt 100 ] 2>/dev/null && pct=100
+      [ "$pct" -lt 0 ] 2>/dev/null && pct=0
+      local filled=$((pct / 10))
+      local empty=$((10 - filled))
+      local color=$GREEN
+      [ "$pct" -ge 60 ] && color=$ORANGE
+      [ "$pct" -ge 85 ] && color=$RED
+      local full="" rest=""
+      local i
+      for ((i=0; i<filled; i++)); do full="$full$FULL_CH"; done
+      for ((i=0; i<empty;  i++)); do rest="$rest$EMPTY_CH"; done
+      printf '%s%s%s%s%s' "$color" "$full" "$GREY" "$rest" "$RESET"
+    }
 
     if command -v jq >/dev/null 2>&1; then
-      # Parse Claude Code JSON
-      MODEL=$(echo "$INPUT" | jq -r '.model.display_name // "opus"')
+      MODEL=$(echo "$INPUT" | jq -r '.model.display_name // "opus"' | sed -E 's/ *\(.*\)//')
       CWD=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."' | xargs basename)
       TOKENS_IN=$(echo "$INPUT" | jq -r '.context_window.total_input_tokens // 0')
       TOKENS_OUT=$(echo "$INPUT" | jq -r '.context_window.total_output_tokens // 0')
       CONTEXT_PCT=$(echo "$INPUT" | jq -r '.context_window.used_percentage // 0')
-      COST_TOTAL=$(echo "$INPUT" | jq -r '.cost.total_cost_usd // 0' | xargs printf "\$%.2f")
 
-      # Git branch from workspace dir
       WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."')
       GIT_BRANCH=$(git -C "$WORKSPACE_DIR" branch --show-current 2>/dev/null || echo "")
 
-      # Monthly cost (cached for performance)
-      MONTHLY_COST=""
+      # Rate limits straight from Claude Code JSON (Pro/Max only; absent before the
+      # first API call). used_percentage = quota consumed; resets_at = unix epoch.
       NOW=$(date +%s)
-
-      if [ -f "$CACHE_FILE" ]; then
-        CACHE_AGE=$((NOW - $(stat -f %m "$CACHE_FILE" 2>/dev/null || echo 0)))
-        if [ $CACHE_AGE -lt $CACHE_MAX_AGE ]; then
-          MONTHLY_COST=$(cat "$CACHE_FILE")
-        fi
-      fi
-
-      if [ -z "$MONTHLY_COST" ]; then
-        MONTHLY_COST=$(npx -y ccusage@18.0.10 monthly --json 2>/dev/null | jq -r '.totals.totalCost // 0' | xargs printf "\$%.2f")
-        echo "$MONTHLY_COST" > "$CACHE_FILE" 2>/dev/null || true
-      fi
+      H5_PCT=$(echo "$INPUT" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+      H5_RESET=$(echo "$INPUT" | jq -r '.rate_limits.five_hour.resets_at // empty')
+      D7_PCT=$(echo "$INPUT" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+      D7_RESET=$(echo "$INPUT" | jq -r '.rate_limits.seven_day.resets_at // empty')
     else
       MODEL="opus"
       CWD=$(basename "$(pwd)")
       GIT_BRANCH=$(git branch --show-current 2>/dev/null)
-      TOKENS_IN="0"
-      TOKENS_OUT="0"
-      CONTEXT_PCT="0"
-      COST_TOTAL="\$0.00"
-      MONTHLY_COST="\$0.00"
+      TOKENS_IN="0"; TOKENS_OUT="0"; CONTEXT_PCT="0"
+      H5_PCT=""; H5_RESET=""; D7_PCT=""; D7_RESET=""
     fi
 
-    # Colors
-    RED='\033[91m'
-    ORANGE='\033[38;5;208m'
-    YELLOW='\033[93m'
-    GREEN='\033[92m'
-    CYAN='\033[96m'
-    BLUE='\033[94m'
-    MAGENTA='\033[95m'
-    RESET='\033[0m'
-
-    # Format numbers with thousands separator
     TOKENS_IN_FMT=$(printf "%'d" $TOKENS_IN 2>/dev/null || echo $TOKENS_IN)
     TOKENS_OUT_FMT=$(printf "%'d" $TOKENS_OUT 2>/dev/null || echo $TOKENS_OUT)
 
-    # Output: Model | Dir | Branch | Tokens | Context | Session | Month
-    OUT="''${RED}🤖 $MODEL''${RESET} | ''${ORANGE}📁 $CWD''${RESET}"
-    [ -n "$GIT_BRANCH" ] && OUT="$OUT | ''${YELLOW}⎇ $GIT_BRANCH''${RESET}"
-    OUT="$OUT | ''${GREEN}📊 $TOKENS_IN_FMT/$TOKENS_OUT_FMT''${RESET}"
-    OUT="$OUT | ''${CYAN}🧠 $CONTEXT_PCT%''${RESET}"
-    OUT="$OUT | ''${BLUE}💰 $COST_TOTAL''${RESET}"
-    OUT="$OUT | ''${MAGENTA}📅 $MONTHLY_COST''${RESET}"
+    CTX_BAR=$(make_bar "$CONTEXT_PCT")
 
-    echo -e "$OUT"
+    # "Xh YYmin" until an epoch reset
+    fmt_reset() { local s=$(( $1 - NOW )); [ $s -lt 0 ] && s=0; printf '%dh %02dmin' $((s / 3600)) $(((s % 3600) / 60)); }
+
+    # Visible width of a string, ignoring ANSI color codes (strips ESC[...m).
+    vis_width() {
+      local stripped
+      stripped=$(printf '%s' "$1" | sed $'s/\033\\[[0-9;]*m//g')
+      printf '%s' "''${#stripped}"
+    }
+
+    # Group 1 — session info; Group 2 — context + quota bars.
+    G1="''${RED}🤖 $MODEL''${RESET} | ''${ORANGE}📁 $CWD''${RESET}"
+    [ -n "$GIT_BRANCH" ] && G1="$G1 | ''${YELLOW}⎇ $GIT_BRANCH''${RESET}"
+    G1="$G1 | ''${GREEN}📊 $TOKENS_IN_FMT/$TOKENS_OUT_FMT''${RESET}"
+
+    G2="🧠 $CTX_BAR ''${CYAN}$CONTEXT_PCT%''${RESET}"
+    [ -n "$H5_PCT" ] && G2="$G2 | ⏳ $(make_bar "$H5_PCT") ''${CYAN}$H5_PCT% · $(fmt_reset "$H5_RESET")''${RESET}"
+    [ -n "$D7_PCT" ] && G2="$G2 | 📆 $(make_bar "$D7_PCT") ''${CYAN}$D7_PCT% · $(fmt_reset "$D7_RESET")''${RESET}"
+
+    # Single line if it fits the terminal width (COLUMNS, set by Claude Code
+    # v2.1.153+); otherwise wrap onto two lines. Emoji count as width 2, so add
+    # a small margin. Fall back to one line when COLUMNS is unknown.
+    ONE="$G1 | $G2"
+    COLS=''${COLUMNS:-0}
+    if [ "$COLS" -gt 0 ] && [ "$(vis_width "$ONE")" -ge $((COLS - 8)) ]; then
+      OUT="$G1"$'\n'"$G2"
+    else
+      OUT="$ONE"
+    fi
+
+    printf '%s\n' "$OUT"
   '';
 }

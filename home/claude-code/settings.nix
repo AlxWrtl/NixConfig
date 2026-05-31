@@ -457,7 +457,7 @@ in
       CWD=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."' | xargs basename)
       TOKENS_IN=$(echo "$INPUT" | jq -r '.context_window.total_input_tokens // 0')
       TOKENS_OUT=$(echo "$INPUT" | jq -r '.context_window.total_output_tokens // 0')
-      CONTEXT_PCT=$(echo "$INPUT" | jq -r '.context_window.used_percentage // 0')
+      CONTEXT_PCT=$(echo "$INPUT" | jq -r '(.context_window.used_percentage // 0) | floor')
 
       WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."')
       GIT_BRANCH=$(git -C "$WORKSPACE_DIR" branch --show-current 2>/dev/null || echo "")
@@ -465,9 +465,9 @@ in
       # Rate limits straight from Claude Code JSON (Pro/Max only; absent before the
       # first API call). used_percentage = quota consumed; resets_at = unix epoch.
       NOW=$(date +%s)
-      H5_PCT=$(echo "$INPUT" | jq -r '.rate_limits.five_hour.used_percentage // empty')
+      H5_PCT=$(echo "$INPUT" | jq -r '(.rate_limits.five_hour.used_percentage // empty) | floor')
       H5_RESET=$(echo "$INPUT" | jq -r '.rate_limits.five_hour.resets_at // empty')
-      D7_PCT=$(echo "$INPUT" | jq -r '.rate_limits.seven_day.used_percentage // empty')
+      D7_PCT=$(echo "$INPUT" | jq -r '(.rate_limits.seven_day.used_percentage // empty) | floor')
       D7_RESET=$(echo "$INPUT" | jq -r '.rate_limits.seven_day.resets_at // empty')
     else
       MODEL="opus"
@@ -482,8 +482,17 @@ in
 
     CTX_BAR=$(make_bar "$CONTEXT_PCT")
 
-    # "Xh YYmin" until an epoch reset
-    fmt_reset() { local s=$(( $1 - NOW )); [ $s -lt 0 ] && s=0; printf '%dh %02dmin' $((s / 3600)) $(((s % 3600) / 60)); }
+    # Time until an epoch reset: "42min" when under an hour, else decimal "6.22h".
+    fmt_reset() {
+      local s=$(( $1 - NOW )); [ $s -lt 0 ] && s=0
+      local mins=$(( s / 60 ))
+      if [ $mins -lt 60 ]; then
+        printf '%dmin' "$mins"
+      else
+        # hours with two decimals = total minutes / 60, integer math (×100)
+        printf '%d.%02dh' $(( mins / 60 )) $(( (mins % 60) * 100 / 60 ))
+      fi
+    }
 
     # Visible width of a string, ignoring ANSI color codes (strips ESC[...m).
     vis_width() {

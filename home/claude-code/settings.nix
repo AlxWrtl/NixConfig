@@ -44,6 +44,14 @@ in
 
     sandbox = {
       enabled = true;
+      # Commands that run OUTSIDE the sandbox → normal permission prompt (ask)
+      # instead of being hard-blocked with "operation not permitted".
+      # Lets Claude run `sudo darwin-rebuild ...` with a confirmation box,
+      # so the user no longer has to retype it with a leading `!`.
+      excludedCommands = [
+        "sudo *"
+        "darwin-rebuild *"
+      ];
       filesystem = {
         denyWrite = [
           "/etc"
@@ -68,6 +76,12 @@ in
 
     permissions = {
       defaultMode = "acceptEdits";
+      # `ask` forces a confirmation box for matching commands, overriding
+      # skipDangerousModePermissionPrompt and acceptEdits. Precedence: deny > ask > allow.
+      # Every sudo prompts for Yes/No; everything else stays auto-approved.
+      ask = [
+        "Bash(sudo *)"
+      ];
       allow = [
         "Read(*)"
         # Package managers
@@ -170,6 +184,9 @@ in
         "Bash(git push --force *)"
         "Bash(git push -f *)"
         "Bash(git push --force-with-lease *)"
+        # Note: merge/push to master/main is NOT hard-denied — the block-main-bash
+        # hook turns those into a confirmation box (ask) so the user approves
+        # in-place. commit/rebase on master stay denied by that hook.
         "Bash(git reset --hard *)"
         "Bash(git clean -fdx *)"
         "Bash(git clean -fxd *)"

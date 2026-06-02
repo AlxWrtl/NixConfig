@@ -77,8 +77,8 @@
         const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
         if (branch === "main" || branch === "master") {
           // commit/rebase on master stay hard-denied (enforce branch-per-change).
-          // merge/push are the finalization steps — prompt instead of blocking so
-          // the user can approve in-place rather than re-running with `!`.
+          // merge/push are finalization steps → confirmation box instead of block,
+          // so the user can approve in-place rather than re-running with `!`.
           const askOps = op === "merge" || op === "push";
           const decision = askOps ? "ask" : "deny";
           const reason = askOps

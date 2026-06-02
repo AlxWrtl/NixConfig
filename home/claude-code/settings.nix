@@ -76,6 +76,12 @@ in
 
     permissions = {
       defaultMode = "acceptEdits";
+      # `ask` forces a confirmation box for matching commands, overriding
+      # skipDangerousModePermissionPrompt and acceptEdits. Precedence: deny > ask > allow.
+      # Only sudo darwin-rebuild prompts; everything else stays auto-approved.
+      ask = [
+        "Bash(sudo darwin-rebuild *)"
+      ];
       allow = [
         "Read(*)"
         # Package managers

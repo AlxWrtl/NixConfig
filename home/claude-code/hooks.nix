@@ -71,23 +71,18 @@
       try {
         const data = JSON.parse(input);
         const cmd = (data.tool_input && data.tool_input.command) || "";
-        const m = cmd.match(/git\s+(commit|push|merge|rebase)/);
-        if (!m) process.exit(0);
-        const op = m[1];
+        // Branch-per-change workflow: create a branch BEFORE editing code, then
+        // push that branch — never master/main. commit/push/merge/rebase while on
+        // master/main are all hard-denied. Bringing code to master = a manual PR
+        // step by the user on GitHub, never a Claude action.
+        if (!/git\s+(commit|push|merge|rebase)/.test(cmd)) process.exit(0);
         const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
         if (branch === "main" || branch === "master") {
-          // commit/rebase on master stay hard-denied (enforce branch-per-change).
-          // merge/push are finalization steps → confirmation box instead of block,
-          // so the user can approve in-place rather than re-running with `!`.
-          const askOps = op === "merge" || op === "push";
-          const decision = askOps ? "ask" : "deny";
-          const reason = askOps
-            ? "On " + branch + ": confirm git " + op + "? (Approve to finalize, or create a branch instead.)"
-            : "BLOCKED: on " + branch + ". Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
+          const reason = "BLOCKED: on " + branch + ". Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
           process.stdout.write(JSON.stringify({
             hookSpecificOutput: {
               hookEventName: "PreToolUse",
-              permissionDecision: decision,
+              permissionDecision: "deny",
               permissionDecisionReason: reason
             }
           }));

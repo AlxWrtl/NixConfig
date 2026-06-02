@@ -170,6 +170,13 @@ in
         "Bash(git push --force *)"
         "Bash(git push -f *)"
         "Bash(git push --force-with-lease *)"
+        # Never push to master/main (deny wins over allow). Push branches only;
+        # bringing code to master is a manual/PR step. The block-main-bash hook
+        # additionally denies any git mutation while ON master/main.
+        "Bash(git push * master*)"
+        "Bash(git push * main*)"
+        "Bash(git push origin master*)"
+        "Bash(git push origin main*)"
         "Bash(git reset --hard *)"
         "Bash(git clean -fdx *)"
         "Bash(git clean -fxd *)"

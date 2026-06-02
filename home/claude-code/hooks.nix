@@ -71,23 +71,17 @@
       try {
         const data = JSON.parse(input);
         const cmd = (data.tool_input && data.tool_input.command) || "";
-        const m = cmd.match(/git\s+(commit|push|merge|rebase)/);
-        if (!m) process.exit(0);
-        const op = m[1];
+        // Never mutate master/main directly: commit/push/merge/rebase all denied.
+        // Work happens on branches; push branches (git push -u origin <branch>),
+        // never master. Bringing code to master is a manual/PR step by the user.
+        if (!/git\s+(commit|push|merge|rebase)/.test(cmd)) process.exit(0);
         const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
         if (branch === "main" || branch === "master") {
-          // commit/rebase on master stay hard-denied (enforce branch-per-change).
-          // merge/push are the finalization steps — prompt instead of blocking so
-          // the user can approve in-place rather than re-running with `!`.
-          const askOps = op === "merge" || op === "push";
-          const decision = askOps ? "ask" : "deny";
-          const reason = askOps
-            ? "On " + branch + ": confirm git " + op + "? (Approve to finalize, or create a branch instead.)"
-            : "BLOCKED: on " + branch + ". Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
+          const reason = "BLOCKED: on " + branch + ". Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
           process.stdout.write(JSON.stringify({
             hookSpecificOutput: {
               hookEventName: "PreToolUse",
-              permissionDecision: decision,
+              permissionDecision: "deny",
               permissionDecisionReason: reason
             }
           }));

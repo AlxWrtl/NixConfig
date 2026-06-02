@@ -49,7 +49,7 @@ in
       # Lets Claude run `sudo darwin-rebuild ...` with a confirmation box,
       # so the user no longer has to retype it with a leading `!`.
       excludedCommands = [
-        "sudo darwin-rebuild *"
+        "sudo *"
         "darwin-rebuild *"
       ];
       filesystem = {
@@ -78,9 +78,9 @@ in
       defaultMode = "acceptEdits";
       # `ask` forces a confirmation box for matching commands, overriding
       # skipDangerousModePermissionPrompt and acceptEdits. Precedence: deny > ask > allow.
-      # Only sudo darwin-rebuild prompts; everything else stays auto-approved.
+      # Every sudo prompts for Yes/No; everything else stays auto-approved.
       ask = [
-        "Bash(sudo darwin-rebuild *)"
+        "Bash(sudo *)"
       ];
       allow = [
         "Read(*)"

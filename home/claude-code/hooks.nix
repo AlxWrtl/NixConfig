@@ -215,7 +215,12 @@
         // Only check if we are in a git repo with changes
         const diff = execSync("git diff --name-only HEAD 2>/dev/null || true", { encoding: "utf8" }).trim();
         if (!diff) { process.exit(0); return; }
-        const files = diff.split("\n").filter(f => /\.(ts|tsx|js|jsx)$/.test(f));
+        const files = diff.split("\n")
+          .filter(f => /\.(ts|tsx|js|jsx)$/.test(f))
+          // CLI scripts legitimately use console.log (progress output and
+          // machine-readable results parsed by test harnesses). ESLint already
+          // ignores scripts/** — keep the quality gate consistent.
+          .filter(f => !/(^|\/)scripts\//.test(f));
         if (files.length === 0) { process.exit(0); return; }
         const patterns = [
           { re: /console\.log\(/g, msg: "console.log in production code" },

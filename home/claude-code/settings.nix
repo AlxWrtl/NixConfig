@@ -44,6 +44,14 @@ in
 
     sandbox = {
       enabled = true;
+      # Commands that run OUTSIDE the sandbox → normal permission prompt (ask)
+      # instead of being hard-blocked with "operation not permitted".
+      # Lets Claude run `sudo darwin-rebuild ...` with a confirmation box,
+      # so the user no longer has to retype it with a leading `!`.
+      excludedCommands = [
+        "sudo darwin-rebuild *"
+        "darwin-rebuild *"
+      ];
       filesystem = {
         denyWrite = [
           "/etc"

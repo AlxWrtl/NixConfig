@@ -80,16 +80,17 @@
     fi
 
     # Intelligent merge: base provides defaults, existing preserves user changes
-    # Nix-managed keys always win: statusLine, permissions, hooks, env
+    # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox
     if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
       TMP=$(mktemp)
       BASE_SL=$(jq -c '.statusLine' "$BASE")
       BASE_PERMS=$(jq -c '.permissions' "$BASE")
       BASE_HOOKS=$(jq -c '.hooks' "$BASE")
       BASE_ENV=$(jq -c '.env' "$BASE")
+      BASE_SANDBOX=$(jq -c '.sandbox' "$BASE")
       jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
-        | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" \
-          '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e' \
+        | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" \
+          '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb' \
         > "$TMP" && mv "$TMP" "$TARGET"
       chmod 600 "$TARGET"
     else

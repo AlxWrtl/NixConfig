@@ -176,7 +176,8 @@ in
         "Bash(git checkout -- .)"
         # Filesystem destructive
         "Bash(rm -rf /*)"
-        "Bash(sudo *)"
+        # Note: `sudo` intentionally NOT denied — Claude may invoke it but each
+        # call requires interactive confirmation (not in allow-list either).
         "Bash(chmod 777 *)"
         # Secrets — absolute paths via Nix interpolation
         "Read(${homeDirectory}/.ssh/**)"

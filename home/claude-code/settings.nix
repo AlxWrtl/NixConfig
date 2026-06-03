@@ -500,15 +500,19 @@ in
 
     CTX_BAR=$(make_bar "$CONTEXT_PCT")
 
-    # Time until an epoch reset: "42min" when under an hour, else "H.MMh" where the
-    # digits after the dot are literal minutes (00-59), e.g. 5h07 -> "5.07h".
+    # Time until an epoch reset:
+    #   < 1h   -> "42min"
+    #   < 24h  -> "H.MMh" where digits after the dot are literal minutes (00-59), e.g. "5.07h"
+    #   >= 24h -> "Xj Yh" days + remaining whole hours, e.g. 120h52min -> "5j 0h"
     fmt_reset() {
       local s=$(( $1 - NOW )); [ $s -lt 0 ] && s=0
       local mins=$(( s / 60 ))
       if [ $mins -lt 60 ]; then
         printf '%dmin' "$mins"
-      else
+      elif [ $mins -lt 1440 ]; then
         printf '%d.%02dh' $(( mins / 60 )) $(( mins % 60 ))
+      else
+        printf '%dj %dh' $(( mins / 1440 )) $(( (mins % 1440) / 60 ))
       fi
     }
 

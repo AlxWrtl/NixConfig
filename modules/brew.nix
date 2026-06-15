@@ -14,6 +14,14 @@
       # (upstream PR #1774). --force-cleanup is the non-interactive-safe choice
       # (HOMEBREW_ASK would prompt/hang). Drop once nix-darwin ships the fix.
       extraFlags = [ "--force-cleanup" ];
+
+      # brew bundle runs as root during activation; `brew trust` writes to the
+      # user's $HOMEBREW_USER_CONFIG_HOME/trust.json, which root never reads, so
+      # third-party taps (rtk-ai/tap) get refused. Disable the trust gate for
+      # the activation run — taps here are declared in this config, i.e. trusted.
+      extraEnv = {
+        HOMEBREW_NO_REQUIRE_TAP_TRUST = "1";
+      };
     };
 
     taps = [

@@ -65,57 +65,75 @@
   # -------------------------
   # Merge settings.json (intelligent merge)
   # -------------------------
+  # Subshell-wrapped: see claudeCodeDevBrowser note — a bare `exit 0` would
+  # abort the whole activation chain.
   claudeCodeSettingsMerge = lib.hm.dag.entryAfter [ "claudeCodePerms" ] ''
-    set -euo pipefail
-    BASE="$HOME/.claude/settings-base.json"
-    TARGET="$HOME/.claude/settings.json"
+    (
+      set -euo pipefail
+      BASE="$HOME/.claude/settings-base.json"
+      TARGET="$HOME/.claude/settings.json"
 
-    # If jq not available, fallback to copy
-    if ! command -v jq >/dev/null 2>&1; then
-      if [ ! -f "$TARGET" ]; then
+      # If jq not available, fallback to copy
+      if ! command -v jq >/dev/null 2>&1; then
+        if [ ! -f "$TARGET" ]; then
+          cp "$BASE" "$TARGET"
+          chmod 600 "$TARGET"
+        fi
+        exit 0
+      fi
+
+      # Intelligent merge: base provides defaults, existing preserves user changes
+      # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox
+      if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
+        TMP=$(mktemp)
+        BASE_SL=$(jq -c '.statusLine' "$BASE")
+        BASE_PERMS=$(jq -c '.permissions' "$BASE")
+        BASE_HOOKS=$(jq -c '.hooks' "$BASE")
+        BASE_ENV=$(jq -c '.env' "$BASE")
+        BASE_SANDBOX=$(jq -c '.sandbox' "$BASE")
+        jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
+          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" \
+            '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb' \
+          > "$TMP" && mv "$TMP" "$TARGET"
+        chmod 600 "$TARGET"
+      else
+        # First install: copy base
+        rm -f "$TARGET"
         cp "$BASE" "$TARGET"
         chmod 600 "$TARGET"
       fi
-      exit 0
-    fi
-
-    # Intelligent merge: base provides defaults, existing preserves user changes
-    # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox
-    if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
-      TMP=$(mktemp)
-      BASE_SL=$(jq -c '.statusLine' "$BASE")
-      BASE_PERMS=$(jq -c '.permissions' "$BASE")
-      BASE_HOOKS=$(jq -c '.hooks' "$BASE")
-      BASE_ENV=$(jq -c '.env' "$BASE")
-      BASE_SANDBOX=$(jq -c '.sandbox' "$BASE")
-      jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
-        | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" \
-          '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb' \
-        > "$TMP" && mv "$TMP" "$TARGET"
-      chmod 600 "$TARGET"
-    else
-      # First install: copy base
-      rm -f "$TARGET"
-      cp "$BASE" "$TARGET"
-      chmod 600 "$TARGET"
-    fi
+    ) || true
   '';
 
   # -------------------------
-  # Merge MCP servers into ~/.claude/.claude.json
+  # Merge MCP servers (user scope) into ~/.claude.json
   # -------------------------
+  # IMPORTANT: Claude Code (>=2.x) reads user-scope MCP servers from
+  # ~/.claude.json (HOME root), NOT ~/.claude/.claude.json. Writing to the
+  # latter is silently ignored (`claude mcp list` shows nothing). Verified
+  # with `claude mcp add --scope user` → "File modified: ~/.claude.json".
+  # The jq `.mcpServers = $mcp` assignment replaces only that key and
+  # preserves every other key in the (large) root config file.
+  # Subshell-wrapped: see claudeCodeDevBrowser note — a bare `exit 0` would
+  # abort the whole activation chain. (This entry sits LAST in DAG order, so
+  # it was the silent victim: claudeCodeDevBrowser's `exit 0` killed the run
+  # before this ever executed.)
   claudeCodeMcpMerge = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
-    set -euo pipefail
-    MCP_BASE="$HOME/.claude/mcp-servers-base.json"
-    TARGET="$HOME/.claude/.claude.json"
-    SECRET_21ST="$HOME/.config/secrets/21st-dev-api-key"
+    (
+      set -euo pipefail
+      MCP_BASE="$HOME/.claude/mcp-servers-base.json"
+      TARGET="$HOME/.claude.json"
+      SECRET_21ST="$HOME/.config/secrets/21st-dev-api-key"
 
-    if ! command -v jq >/dev/null 2>&1; then
-      exit 0
-    fi
+      command -v jq >/dev/null 2>&1 || exit 0
+      [ -f "$MCP_BASE" ] || exit 0
 
-    if [ -f "$TARGET" ] && [ -f "$MCP_BASE" ]; then
-      TMP=$(mktemp)
+      # Create a minimal root config if Claude Code hasn't written one yet.
+      [ -f "$TARGET" ] || echo '{}' > "$TARGET"
+
+      # Temp file next to TARGET (same filesystem → atomic `mv`).
+      TMP="$TARGET.mcp-merge.tmp"
+      trap 'rm -f "$TMP"' EXIT
       MCP_DATA=$(cat "$MCP_BASE")
 
       # Inject secrets at runtime via jq (safe for special chars in keys)
@@ -127,7 +145,8 @@
       jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP" \
         && mv "$TMP" "$TARGET"
       chmod 600 "$TARGET"
-    fi
+      echo "✓ MCP merge → $TARGET ($(jq -c '.mcpServers | keys' "$TARGET"))"
+    ) || true
   '';
 
   # -------------------------
@@ -163,75 +182,87 @@
   # -------------------------
   # Install Ralph Wiggum scripts
   # -------------------------
+  # Subshell-wrapped: see claudeCodeDevBrowser note — a bare `exit 0` would
+  # abort the whole activation chain.
   claudeCodeRalphWiggum = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
-    RALPH_DIR="$HOME/.claude/plugins/ralph-wiggum"
-    INSTALL_MARKER="$RALPH_DIR/.installed"
+    (
+      RALPH_DIR="$HOME/.claude/plugins/ralph-wiggum"
+      INSTALL_MARKER="$RALPH_DIR/.installed"
 
-    # Skip if already installed (marker exists)
-    if [ -f "$INSTALL_MARKER" ]; then
-      # Update symlinks for scripts only
-      if [ -d "$RALPH_DIR" ]; then
-        mkdir -p "$HOME/.claude/scripts"
-        ln -sf "$RALPH_DIR/scripts/setup-ralph-loop.sh" "$HOME/.claude/scripts/setup-ralph-loop.sh"
-        chmod +x "$HOME/.claude/scripts/setup-ralph-loop.sh"
+      # Skip if already installed (marker exists)
+      if [ -f "$INSTALL_MARKER" ]; then
+        # Update symlinks for scripts only
+        if [ -d "$RALPH_DIR" ]; then
+          mkdir -p "$HOME/.claude/scripts"
+          ln -sf "$RALPH_DIR/scripts/setup-ralph-loop.sh" "$HOME/.claude/scripts/setup-ralph-loop.sh"
+          chmod +x "$HOME/.claude/scripts/setup-ralph-loop.sh"
+        fi
+        exit 0
       fi
-      exit 0
-    fi
 
-    echo "Installing Ralph Wiggum scripts..."
-    export PATH="${pkgs.curl}/bin:${pkgs.unzip}/bin:$PATH"
+      echo "Installing Ralph Wiggum scripts..."
+      export PATH="${pkgs.curl}/bin:${pkgs.unzip}/bin:$PATH"
 
-    # Download plugin from GitHub
-    mkdir -p "$RALPH_DIR"
-    TMP_DIR=$(mktemp -d)
+      # Download plugin from GitHub
+      mkdir -p "$RALPH_DIR"
+      TMP_DIR=$(mktemp -d)
 
-    cd "$TMP_DIR"
-    curl -sL https://github.com/anthropics/claude-code/archive/refs/heads/main.zip -o repo.zip
-    unzip -q repo.zip
+      cd "$TMP_DIR"
+      curl -sL https://github.com/anthropics/claude-code/archive/refs/heads/main.zip -o repo.zip
+      unzip -q repo.zip
 
-    # Copy ALL files including hidden ones
-    shopt -s dotglob
-    cp -R claude-code-main/plugins/ralph-wiggum/* "$RALPH_DIR/"
+      # Copy ALL files including hidden ones
+      shopt -s dotglob
+      cp -R claude-code-main/plugins/ralph-wiggum/* "$RALPH_DIR/"
 
-    # Create install marker
-    touch "$INSTALL_MARKER"
+      # Create install marker
+      touch "$INSTALL_MARKER"
 
-    # Symlink scripts only (commands managed by nix)
-    mkdir -p "$HOME/.claude/scripts"
-    ln -sf "$RALPH_DIR/scripts/setup-ralph-loop.sh" "$HOME/.claude/scripts/setup-ralph-loop.sh"
-    chmod +x "$HOME/.claude/scripts/setup-ralph-loop.sh"
+      # Symlink scripts only (commands managed by nix)
+      mkdir -p "$HOME/.claude/scripts"
+      ln -sf "$RALPH_DIR/scripts/setup-ralph-loop.sh" "$HOME/.claude/scripts/setup-ralph-loop.sh"
+      chmod +x "$HOME/.claude/scripts/setup-ralph-loop.sh"
 
-    # Cleanup
-    cd - > /dev/null
-    rm -rf "$TMP_DIR"
+      # Cleanup
+      cd - > /dev/null
+      rm -rf "$TMP_DIR"
 
-    echo "✓ Ralph Wiggum scripts installed"
+      echo "✓ Ralph Wiggum scripts installed"
+    ) || true
   '';
 
   # -------------------------
   # Install dev-browser CLI (once)
   # -------------------------
+  # NOTE: the body runs inside a ( … ) subshell. Home Manager concatenates all
+  # activation entries into ONE shell with `set -eu`, so a bare `exit 0` here
+  # would terminate the ENTIRE activation and silently skip every later DAG
+  # entry (this is exactly what broke claudeCodeMcpMerge for ~2 months). The
+  # subshell scopes `exit` so only this block returns, not the whole run.
   claudeCodeDevBrowser = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
-    MARKER="$HOME/.claude/.dev-browser-installed"
+    (
+      MARKER="$HOME/.claude/.dev-browser-installed"
 
-    # Skip if already installed
-    if [ -f "$MARKER" ]; then
-      exit 0
-    fi
+      # Skip if already installed
+      if [ -f "$MARKER" ]; then
+        exit 0
+      fi
 
-    echo "Installing dev-browser..."
-    export PATH="${pkgs.nodejs_22}/bin:$PATH"
+      echo "Installing dev-browser..."
+      export PATH="${pkgs.nodejs_22}/bin:$PATH"
 
-    # npm global prefix → ~/.npm-global (nix store is immutable)
-    NPM_GLOBAL="$HOME/.npm-global"
-    mkdir -p "$NPM_GLOBAL"
-    export npm_config_prefix="$NPM_GLOBAL"
-    export PATH="$NPM_GLOBAL/bin:$PATH"
+      # npm global prefix → ~/.npm-global (nix store is immutable)
+      NPM_GLOBAL="$HOME/.npm-global"
+      mkdir -p "$NPM_GLOBAL"
+      export npm_config_prefix="$NPM_GLOBAL"
+      export PATH="$NPM_GLOBAL/bin:$PATH"
 
-    npm install -g dev-browser@0.2.7 2>&1 || { echo "dev-browser install failed"; exit 0; }
-    "$NPM_GLOBAL/bin/dev-browser" install 2>&1 || { echo "dev-browser playwright install failed"; exit 0; }
+      npm install -g dev-browser@0.2.7 2>&1 || { echo "dev-browser install failed"; exit 0; }
+      "$NPM_GLOBAL/bin/dev-browser" install 2>&1 || { echo "dev-browser playwright install failed"; exit 0; }
 
-    touch "$MARKER"
-    echo "✓ dev-browser installed"
+      touch "$MARKER"
+      echo "✓ dev-browser installed"
+    ) || true
   '';
+
 }

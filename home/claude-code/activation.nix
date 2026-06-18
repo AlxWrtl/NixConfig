@@ -266,43 +266,71 @@
   '';
 
   # -------------------------
-  # Install enquire-mcp CLI globally + pre-cache embedding model (once)
+  # Install enquire-mcp CLI globally + pre-cache embedding model (idempotent)
   # -------------------------
   # Global install (not npx -y) so the ~120 MB ONNX model cache lives in a stable
   # node_modules and isn't re-downloaded on every server restart. The settings.nix
   # `enquire` MCP entry points at $HOME/.npm-global/bin/enquire-mcp.
-  # Bump ENQUIRE_VERSION to upgrade; delete the marker to force reinstall.
+  #
+  # The --use-hnsw flag needs the optional NATIVE dep `hnswlib-node` (compiled
+  # build/Release/addon.node); without it HNSW silently falls back to brute-force
+  # ("HNSW build failed; falling back ...").
+  #
+  # NON-DESTRUCTIVE by design: this runs under `sudo darwin-rebuild`, where the
+  # network is restricted (HuggingFace / npm prebuild fetches fail). A blind
+  # `npm install -g` would REMOVE the working install and then fail to recompile
+  # hnswlib offline, leaving HNSW broken. So we only install pieces that are
+  # actually MISSING, and only stamp the marker once every piece is present —
+  # a half-done state simply retries on the next rebuild (or run the steps by
+  # hand outside sudo, where the network works).
   # Subshell-wrapped: a bare `exit 0` would abort the whole activation chain.
   claudeCodeEnquire = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     (
       ENQUIRE_VERSION="3.9.1"
-      MARKER="$HOME/.claude/.enquire-installed-$ENQUIRE_VERSION"
+      MARKER="$HOME/.claude/.enquire-installed-$ENQUIRE_VERSION-hnsw"
 
-      # Skip if this exact version already installed
-      if [ -f "$MARKER" ]; then
-        exit 0
-      fi
+      # Already fully set up → nothing to do.
+      [ -f "$MARKER" ] && exit 0
 
-      echo "Installing enquire-mcp@$ENQUIRE_VERSION (global)..."
       export PATH="${pkgs.nodejs_22}/bin:$PATH"
-
       NPM_GLOBAL="$HOME/.npm-global"
       mkdir -p "$NPM_GLOBAL"
       export npm_config_prefix="$NPM_GLOBAL"
       export PATH="$NPM_GLOBAL/bin:$PATH"
 
-      npm install -g "@oomkapwn/enquire-mcp@$ENQUIRE_VERSION" 2>&1 \
-        || { echo "enquire-mcp install failed"; exit 0; }
+      BIN="$NPM_GLOBAL/bin/enquire-mcp"
+      PKG_DIR="$NPM_GLOBAL/lib/node_modules/@oomkapwn/enquire-mcp"
+      ADDON="$PKG_DIR/node_modules/hnswlib-node/build/Release/addon.node"
+      MODEL_CACHE="$PKG_DIR/node_modules/@huggingface/transformers/.cache/Xenova"
 
-      # Pre-download the multilingual embedding model so the first search
-      # doesn't block on a 120 MB Hugging Face fetch.
-      "$NPM_GLOBAL/bin/enquire-mcp" install-model multilingual 2>&1 \
-        || { echo "enquire-mcp model pre-download failed (will lazy-load)"; }
+      # 1. Install the CLI only if the binary is missing / wrong version.
+      if [ "$("$BIN" --version 2>/dev/null)" != "$ENQUIRE_VERSION" ]; then
+        echo "Installing enquire-mcp@$ENQUIRE_VERSION (global, with HNSW)..."
+        npm install -g --include=optional "@oomkapwn/enquire-mcp@$ENQUIRE_VERSION" 2>&1 \
+          || { echo "enquire-mcp install failed (will retry next rebuild)"; exit 0; }
+      fi
 
-      # Drop stale markers from older versions
-      rm -f "$HOME/.claude"/.enquire-installed-* 2>/dev/null || true
-      touch "$MARKER"
-      echo "✓ enquire-mcp@$ENQUIRE_VERSION installed"
+      # 2. Compile the HNSW native addon only if absent.
+      if [ ! -e "$ADDON" ]; then
+        ( cd "$PKG_DIR" && npm install hnswlib-node@^3 --include=optional 2>&1 ) \
+          || echo "hnswlib-node install failed (HNSW falls back to brute-force; retry outside sudo)"
+      fi
+
+      # 3. Pre-download the embedding model only if not already cached.
+      if [ ! -d "$MODEL_CACHE/paraphrase-multilingual-MiniLM-L12-v2" ]; then
+        "$BIN" install-model multilingual 2>&1 \
+          || echo "model pre-download failed (lazy-loads on first search; retry outside sudo)"
+      fi
+
+      # Stamp the marker ONLY when every piece is in place; otherwise retry next time.
+      if [ -x "$BIN" ] && [ -e "$ADDON" ] \
+         && [ -d "$MODEL_CACHE/paraphrase-multilingual-MiniLM-L12-v2" ]; then
+        rm -f "$HOME/.claude"/.enquire-installed-* 2>/dev/null || true
+        touch "$MARKER"
+        echo "✓ enquire-mcp@$ENQUIRE_VERSION installed (HNSW ready)"
+      else
+        echo "⚠ enquire-mcp not fully set up yet (binary/HNSW/model missing) — will retry"
+      fi
     ) || true
   '';
 }

@@ -3,6 +3,10 @@
 let
   # Absolute path to node — /bin/sh can't find nix-installed node in PATH
   node = "/run/current-system/sw/bin/node";
+
+  # Obsidian vault — shared constant, reusable by other modules.
+  # Real on-disk location (NOT the iCloud~md~obsidian mirror path).
+  alxVaultPath = "/Users/alx/Documents/AlxVault";
 in
 {
   settingsJson = builtins.toJSON {
@@ -90,6 +94,8 @@ in
         "Bash(dev-browser *)"
         "Bash(npx dev-browser *)"
         "Bash(npx @21st-dev/magic@*)"
+        "Bash(npx -y @oomkapwn/enquire-mcp*)"
+        "Bash(enquire-mcp *)"
         "Bash(npx ccusage@*)"
         "Bash(npx prettier *)"
         "Bash(npx tsc *)"
@@ -237,7 +243,8 @@ in
         }
         {
           matcher = "Bash";
-          "if" = "Bash(git commit *)|Bash(git push *)|Bash(git merge *)|Bash(git rebase *)|Bash(git checkout *)";
+          "if" =
+            "Bash(git commit *)|Bash(git push *)|Bash(git merge *)|Bash(git rebase *)|Bash(git checkout *)";
           hooks = [
             {
               type = "command";
@@ -422,6 +429,37 @@ in
       args = [
         "-y"
         "@playwright/mcp@latest"
+      ];
+    };
+    # enquire-mcp — hybrid retrieval (BM25 + local ONNX embeddings + BGE reranker)
+    # over the Obsidian vault. MIT, runs fully local, zero recurring cost.
+    # Installed GLOBALLY (not npx -y) by the claudeCodeEnquire activation script:
+    # npx caches the ~120 MB ONNX model in an ephemeral ~/.npm/_npx/<hash> dir
+    # that gets purged → re-download on every restart. A global install keeps the
+    # model cache in a stable node_modules, so startup stays fast.
+    # Flags enable the FULL hybrid pipeline:
+    #   --persistent-index  SQLite FTS5 BM25 index (sub-100ms keyword search)
+    #   --enable-reranker   BGE cross-encoder rerank on top of RRF fusion
+    #   --use-hnsw          in-memory HNSW vector index (sub-10ms top-K)
+    #   --watch             incrementally re-sync FTS5 + embed-db on vault edits
+    # One-time index build (run after install / big vault changes):
+    #   enquire-mcp setup --vault "<path>"
+    # Health check:  enquire-mcp doctor --vault "<path>"
+    #   (NB: doctor's "model cache" check is a false-negative — it looks in
+    #    ~/.cache/huggingface but transformers.js caches in node_modules; the
+    #    model loads fine regardless. See HNSW/FTS5 lines in `serve` output.)
+    # Verify wired:  claude mcp list   (look for "enquire")
+    enquire = {
+      type = "stdio";
+      command = "${homeDirectory}/.npm-global/bin/enquire-mcp";
+      args = [
+        "serve"
+        "--vault"
+        alxVaultPath
+        "--persistent-index"
+        "--enable-reranker"
+        "--use-hnsw"
+        "--watch"
       ];
     };
   };

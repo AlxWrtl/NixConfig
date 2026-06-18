@@ -265,4 +265,44 @@
     ) || true
   '';
 
+  # -------------------------
+  # Install enquire-mcp CLI globally + pre-cache embedding model (once)
+  # -------------------------
+  # Global install (not npx -y) so the ~120 MB ONNX model cache lives in a stable
+  # node_modules and isn't re-downloaded on every server restart. The settings.nix
+  # `enquire` MCP entry points at $HOME/.npm-global/bin/enquire-mcp.
+  # Bump ENQUIRE_VERSION to upgrade; delete the marker to force reinstall.
+  # Subshell-wrapped: a bare `exit 0` would abort the whole activation chain.
+  claudeCodeEnquire = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    (
+      ENQUIRE_VERSION="3.9.1"
+      MARKER="$HOME/.claude/.enquire-installed-$ENQUIRE_VERSION"
+
+      # Skip if this exact version already installed
+      if [ -f "$MARKER" ]; then
+        exit 0
+      fi
+
+      echo "Installing enquire-mcp@$ENQUIRE_VERSION (global)..."
+      export PATH="${pkgs.nodejs_22}/bin:$PATH"
+
+      NPM_GLOBAL="$HOME/.npm-global"
+      mkdir -p "$NPM_GLOBAL"
+      export npm_config_prefix="$NPM_GLOBAL"
+      export PATH="$NPM_GLOBAL/bin:$PATH"
+
+      npm install -g "@oomkapwn/enquire-mcp@$ENQUIRE_VERSION" 2>&1 \
+        || { echo "enquire-mcp install failed"; exit 0; }
+
+      # Pre-download the multilingual embedding model so the first search
+      # doesn't block on a 120 MB Hugging Face fetch.
+      "$NPM_GLOBAL/bin/enquire-mcp" install-model multilingual 2>&1 \
+        || { echo "enquire-mcp model pre-download failed (will lazy-load)"; }
+
+      # Drop stale markers from older versions
+      rm -f "$HOME/.claude"/.enquire-installed-* 2>/dev/null || true
+      touch "$MARKER"
+      echo "✓ enquire-mcp@$ENQUIRE_VERSION installed"
+    ) || true
+  '';
 }

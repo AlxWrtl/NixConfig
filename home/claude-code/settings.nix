@@ -233,7 +233,10 @@ in
           hooks = [
             {
               type = "command";
-              command = "bash ~/.claude/hooks/rtk-rewrite.sh";
+              # rtk >= 0.43: hook natif du binaire (remplace l'ancien script
+              # rtk-rewrite.sh). Chemin absolu — les hooks tournent sous /bin/sh
+              # sans le PATH homebrew.
+              command = "/opt/homebrew/bin/rtk hook claude";
               timeout = 5;
             }
           ];

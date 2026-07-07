@@ -351,26 +351,4 @@
       osascript -e '''display notification "Rate limit hit — pause recommended" with title "Claude Code" sound name "Basso"''' 2>/dev/null || true
     fi
   '';
-
-  # RTK transparent rewrite hook — intercepts Bash tool calls
-  # Rewrites command to rtk <command> if rtk is available
-  # Uses the documented PreToolUse protocol: hookSpecificOutput.updatedInput
-  # (echoing the whole modified input JSON is NOT a supported mechanism and
-  # was silently ignored). No rewrite → no stdout → no-op.
-  hookRtkRewrite = ''
-    #!/usr/bin/env bash
-    INPUT=$(cat)
-    TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
-    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
-
-    # Only act on Bash tool calls with rtk available
-    [ "$TOOL_NAME" = "Bash" ] || exit 0
-    command -v rtk >/dev/null 2>&1 || exit 0
-
-    # Rewrite high-verbosity commands (never double-wrap an existing rtk call)
-    if echo "$COMMAND" | grep -qE "^(git |pnpm |npm |npx |wrangler |tsc |eslint |node |darwin-rebuild |nix build|nix flake)"; then
-      echo "$INPUT" | jq '{hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: (.tool_input | .command = "rtk " + .command)}}'
-    fi
-    exit 0
-  '';
 }

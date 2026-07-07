@@ -12,7 +12,9 @@ in
   settingsJson = builtins.toJSON {
     "$schema" = "https://json.schemastore.org/claude-code-settings.json";
     language = "french";
-    effortLevel = "high";
+    # xhigh = reco officielle coding/agentic (max: rendements décroissants).
+    # Force-overridden par le merge activation — la valeur live suit le nix.
+    effortLevel = "xhigh";
     showTurnDuration = true;
 
     env = {
@@ -26,6 +28,8 @@ in
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
     };
 
+    # Défaut déclaratif : Opus 4.8 (alias → dernier Opus). NON force-overridden :
+    # /model (ex. fable) et /fast restent des choix de session, jamais écrasés au rebuild.
     model = "opus";
     voiceEnabled = true;
     skipDangerousModePermissionPrompt = true;
@@ -42,7 +46,9 @@ in
       command = "$HOME/.claude/statusline.sh";
     };
 
-    alwaysThinkingEnabled = false;
+    # Thinking adaptatif actif par défaut (Opus 4.8+ : profondeur pilotée par
+    # effortLevel). Force-overridden par le merge activation.
+    alwaysThinkingEnabled = true;
 
     includeGitInstructions = false;
 

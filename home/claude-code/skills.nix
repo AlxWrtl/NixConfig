@@ -1088,7 +1088,7 @@ in
   skillFeatureWorkflow = ''
     ---
     name: feature-workflow
-    description: Feature development methodology — discuss→plan→verify cycle. Referenced by architecture-expert, team-lead, code-reviewer.
+    description: Feature development methodology — discuss→plan→verify cycle. Referenced by code-reviewer and the /discuss + /verify-feature commands.
     globs: ["**/.claude/output/feature/**", "**/.claude/output/CONTEXT-*"]
     effort: high
     ---
@@ -1100,8 +1100,8 @@ in
     | Complexity | Files | Approach | Command |
     |-----------|-------|----------|---------|
     | S (trivial) | < 5 | Single agent directly | quick-fix or specialist agent |
-    | M (medium) | 5-15 | Discuss → agent plan → execute | /discuss → architecture-expert |
-    | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh |
+    | M (medium) | 5-15 | Discuss → plan → execute | /discuss → /apex |
+    | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh or /apex -m |
     | XL (epic) | 30+ | Split into L milestones | Chain per milestone |
 
     ## The 5-Phase Cycle
@@ -1155,7 +1155,7 @@ in
     }}
     ${handoffs [
       "If task is S complexity → route directly to quick-fix or relevant specialist agent instead"
-      "After DISCUSS phase → hand off to architecture-expert for PLAN creation"
+      "After DISCUSS phase → hand off to the Plan agent (or /apex step 02) for PLAN creation"
       "After PLAN phase → hand off to code-reviewer for two-pass REVIEW before EXECUTE"
       "After EXECUTE phase → hand off to code-reviewer for VERIFY (6-layer check)"
       "If XL epic → split into L milestones first, run full cycle per milestone"
@@ -1539,7 +1539,7 @@ in
     }}
     ${handoffs [
       "After step 04-Fix → hand off to test-runner to verify the fix with regression suite."
-      "If root cause is an architectural issue → escalate to architecture-expert."
+      "If root cause is an architectural issue → stop, report it, recommend /discuss."
       "If fix requires a large refactor (> 10 files) → hand off to feature-workflow for full planning cycle."
       "If the bug is in production only → gather logs/observability data before starting step 01."
     ]}
@@ -2003,7 +2003,7 @@ in
     ${handoffs [
       "After writing tests → hand off to test-runner agent to execute and verify"
       "If tests reveal a bug → hand off to debugger agent for root-cause analysis"
-      "If testing requires architectural changes → escalate to architecture-expert"
+      "If testing requires architectural changes → stop, report, recommend /discuss"
       "For test quality scoring → use schliff on test-related skills"
     ]}
   '';
@@ -2094,14 +2094,14 @@ in
     }}
     ${scope {
       useWhen = "periodic health checks, pre-refactor assessment, tech debt inventory, or onboarding to understand codebase state.";
-      notFor = "implementing fixes (hand off to relevant agent), security penetration testing (use security-auditor), or performance profiling (use performance-expert).";
+      notFor = "implementing fixes (hand off to relevant agent), security penetration testing (use security-auditor), or performance profiling (use /optimize).";
     }}
     ${handoffs [
       "Dead exports/orphan files → hand off to quick-fix agent for removal"
       "Config drift → hand off to nix-expert or relevant specialist"
       "Test coverage gaps → hand off with testing-patterns skill for test creation"
       "Security items → hand off to security-auditor for deep analysis"
-      "Bloated files → hand off to architecture-expert for decomposition plan"
+      "Bloated files → run /discuss to produce a decomposition plan"
     ]}
   '';
 

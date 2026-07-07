@@ -243,8 +243,10 @@ in
         }
         {
           matcher = "Bash";
-          "if" =
-            "Bash(git commit *)|Bash(git push *)|Bash(git merge *)|Bash(git rebase *)|Bash(git checkout *)";
+          # `if` uses permission-rule syntax (single rule, no `|` alternation —
+          # a composite pattern silently never matches and the hook never runs).
+          # The script itself narrows to commit/push/merge/rebase via regex.
+          "if" = "Bash(git *)";
           hooks = [
             {
               type = "command";

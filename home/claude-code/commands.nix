@@ -66,8 +66,10 @@
     - Reason: "Detected feature implementation"
 
     **DEBUG** (fix|bug|error|broken|failing|crash|why):
-    - Route: `/debug -a "$ARGUMENTS"`
+    - Route: `Task(subagent_type=debugger)` with the full task description
     - Reason: "Detected debugging task"
+    - Note: the debug skill is user-invocable only (disable-model-invocation) —
+      never route to `/debug` from here, use the debugger agent.
 
     **RALPH** (refactor all|update every|migrate|batch|standardize):
     - Route: `/ralph-loop "$ARGUMENTS" --max-iterations 20 --completion-promise "DONE"`
@@ -91,8 +93,8 @@
     → Execute: /apex -a -s -t "create health check"
 
     Input: "fix database timeout"
-    → Routed to /debug because detected "fix" keyword
-    → Execute: /debug -a "fix database timeout"
+    → Routed to debugger agent because detected "fix" keyword
+    → Execute: Task(subagent_type=debugger, prompt="fix database timeout")
 
     Input: "refactor all imports"
     → Routed to /ralph-loop because detected "refactor all" pattern
@@ -141,14 +143,11 @@
     ```
   '';
 
-  # -------------------------
-  # Memory Bank Command
-  # -------------------------
-  # ── Feature methodology commands (NEW) ──
+  # ── Feature methodology commands ──
 
   commandDiscuss = ''
     Capture implementation decisions before planning a feature.
-    Run this BEFORE asking team-lead or architecture-expert to plan.
+    Run this BEFORE any planning step (/apex, Plan agent, feature-chain.sh).
     Produces a CONTEXT.md that all subsequent agents reference.
 
     ## Input
@@ -160,7 +159,7 @@
     Read project CLAUDE.md for domain map, then determine:
     - **Domains:** Which parts of the codebase are touched?
     - **Users:** Which user types affected? Primary device/context?
-    - **Complexity:** S (< 5 files, 1 agent) / M (5-15 files, 2-3 agents) / L (15+ files, team-lead waves)
+    - **Complexity:** S (< 5 files, 1 agent) / M (5-15 files, 2-3 agents) / L (15+ files, /apex -m waves)
     - **Risk level:** Security-sensitive? Schema migration? Breaking API change? Public-facing?
     - **Existing patterns:** Grep for 2-3 files that solve a similar problem already
 
@@ -219,8 +218,8 @@
 
     Recommended next step based on complexity:
     - S → "Run directly with {agent}: {exact prompt}"
-    - M → "Ask architecture-expert to plan from this context"
-    - L → "Launch team-lead referencing this context"
+    - M → "Run /apex referencing this context (plan step reads CONTEXT-*.md)"
+    - L → "Run /apex -m (teams) or feature-chain.sh referencing this context"
   '';
 
   commandVerifyFeature = ''
@@ -414,32 +413,6 @@
     echo ""
     echo "=== FEATURE CHAIN COMPLETE ==="
     echo "Results: $OUTDIR/"
-  '';
-
-  cmdInitMemoryBank = ''
-    ---
-    tools: Write, Bash
-    description: "Initialize Memory Bank structure in current project"
-    argument-hint: ""
-    ---
-
-    # Init Memory Bank
-
-    Create .claude/memory structure:
-
-    1) mkdir -p .claude/memory
-    2) Create files:
-       - project-info.md
-       - coding-standards.md
-       - team-conventions.md
-       - architecture-decisions.md
-       - common-commands.md
-       - dependencies.md
-       - recent-changes.md
-
-    3) Create .claude/CLAUDE.md with quick reference
-
-    Progressive disclosure: load files when needed.
   '';
 
 }

@@ -12,7 +12,6 @@
     ccw = "claude --worktree";
     ccb = "claude --bare";
     ccrc = "claude --remote-control";
-    cct = "claude --agent team-lead";
     ccl = "claude -c";
     # Skill analysis tools
     schliff = "uvx schliff";

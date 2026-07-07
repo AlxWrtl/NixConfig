@@ -1,4 +1,4 @@
-# Global CLAUDE.md content (< 80 lines)
+# Global CLAUDE.md content (< 100 lines — every line costs context in EVERY session)
 {
   claudeMdGlobal = ''
     Always respond in caveman full mode: terse prose, no filler, fragments over sentences,
@@ -10,9 +10,11 @@
     ## Non-negotiables
     - Be extremely concise. Sacrifice grammar for brevity.
     - Read before write. Short plan before any edits.
-    - Ask before: write/delete, chmod, sudo, installs, network calls, large refactors.
+    - Repo file edits: proceed (acceptEdits + hooks gate them). Ask before: sudo,
+      chmod, installs, deletes outside repo, large refactors, anything irreversible.
     - Never touch secrets: ~/.ssh, ~/.aws, ~/.gnupg, **/.env*, secrets/, *token*, *key*, *cert*.
-    - No git add/commit/push unless explicitly asked.
+    - No git add/commit/push unless explicitly asked. Branch first: never commit
+      on main/master (hooks deny it) — `git checkout -b <type>/<desc>` BEFORE coding.
     - Keep diffs minimal. Small, reversible changes.
 
     ## Identity
@@ -59,7 +61,20 @@
     ## Delegation
     - Specialist agents in ~/.claude/agents/. Delegate to matching agent.
     - Read project skills before coding (auto-injected via agent frontmatter).
-    - Multi-domain or > 5 files → @team-lead. Repeated pattern (N >= 4) → ralph-loop.
+    - Multi-domain or > 5 files → /apex (run /discuss first if scope unclear).
+    - Repeated mechanical pattern (N >= 4 occurrences) → ralph-loop.
+    - Diagnosis (bug/error/crash) → debugger agent. Exploration → codebase-navigator.
+
+    ## Execution Discipline (all models)
+    - Act on established facts. Never re-derive, re-explore, or re-litigate decisions.
+    - Batch independent reads/searches as parallel tool calls in one message.
+    - After a fix: re-run the EXACT failing command. Green = done, state it plainly.
+    - Same error twice → STOP retrying. Re-read the code, question the assumption,
+      change approach structurally.
+    - Blocked after 3 attempts → report findings + what was tried. Never fake success,
+      never weaken a test/check to make it pass.
+    - Lead with outcome: first sentence = result. Supporting detail after.
+    - Scope lock: fix what was asked. Adjacent problems → mention, don't touch.
 
     ## When Compacting
     - Preserve: modified files, test results, design decisions, next steps, error patterns.

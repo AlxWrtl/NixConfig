@@ -210,6 +210,7 @@
     ---
     name: quick-fix
     model: haiku
+    effort: low
     description: "Applies small targeted changes under 20 lines. Use proactively when tasks say fix typo, rename, small change, tweak, cleanup, or when the fix is obvious and contained to 1-2 files."
     tools: Read, Edit, Grep, Bash
     permissionMode: acceptEdits
@@ -286,6 +287,7 @@
     ---
     name: git-ship
     model: haiku
+    effort: low
     description: "Stages, commits, and pushes git changes. Use proactively when tasks say commit, push, ship, stage, or after implementation is verified and ready for version control."
     tools: Bash, Read
     permissionMode: default
@@ -344,6 +346,7 @@
     ---
     name: test-runner
     model: haiku
+    effort: low
     description: "Runs tests and analyzes results. Use proactively after code changes to verify correctness, or when tasks mention test, spec, coverage, or CI."
     tools: Bash, Read, Grep, Glob
     permissionMode: default
@@ -432,6 +435,7 @@
     ---
     name: debugger
     model: sonnet
+    effort: high
     description: "Systematic debugging with code modification. Use when tasks mention bug, error, crash, broken, not working, or when a specific error message is provided."
     tools: Read, Write, Edit, Grep, Glob, Bash
     permissionMode: default

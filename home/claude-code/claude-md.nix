@@ -33,6 +33,8 @@
     home/claude-code/     — Claude Code declarative config
 
     ## Model Allocation
+    Main session: opus (4.8), effort xhigh, thinking ON. Escalate /effort max only
+    on frontier problems (diminishing returns elsewhere — burns 5h/7d quota).
     Architecture/planning/review: opus | Implementation: sonnet | Exploration/tests: haiku
 
     ## Verify Checklist

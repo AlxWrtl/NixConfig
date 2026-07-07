@@ -28,9 +28,10 @@ in
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
     };
 
-    # Défaut déclaratif : Opus 4.8 (alias → dernier Opus). NON force-overridden :
-    # /model (ex. fable) et /fast restent des choix de session, jamais écrasés au rebuild.
-    model = "opus";
+    # Défaut déclaratif : Opus 4.8 + contexte 1M (alias → dernier Opus).
+    # NON force-overridden : /model et /fast restent des choix de session,
+    # jamais écrasés au rebuild.
+    model = "opus[1m]";
     voiceEnabled = true;
     skipDangerousModePermissionPrompt = true;
 

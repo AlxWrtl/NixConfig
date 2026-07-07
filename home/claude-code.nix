@@ -69,7 +69,6 @@ let
     skillTrello
     ;
   inherit (hooks)
-    hookRtkRewrite
     hookProtectMain
     hookFormatTypescript
     hookBlockMainBash
@@ -295,11 +294,6 @@ in
       text = hookGovernanceAudit;
       executable = true;
     };
-    "${claudeDir}/hooks/rtk-rewrite.sh" = {
-      text = hookRtkRewrite;
-      executable = true;
-    };
-
     # Statusline script
     "${claudeDir}/statusline.sh" = {
       text = statuslineScript;

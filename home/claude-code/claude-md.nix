@@ -1,6 +1,8 @@
 # Global CLAUDE.md content (< 100 lines — every line costs context in EVERY session)
 {
   claudeMdGlobal = ''
+    @RTK.md
+
     Always respond in caveman full mode: terse prose, no filler, fragments over sentences,
     no articles unless ambiguous. Preserve all code, paths, commands, errors verbatim.
     Deactivate only for: security warnings, irreversible action confirmations.

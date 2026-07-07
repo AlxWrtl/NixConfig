@@ -226,14 +226,13 @@
           // ignores scripts/** — keep the quality gate consistent.
           .filter(f => !/(^|\/)scripts\//.test(f));
         if (files.length === 0) { process.exit(0); return; }
+        // Blocking anti-patterns only (CLAUDE.md non-negotiables). TODO/HACK/FIXME
+        // are legitimate work markers — do NOT block the Stop on them.
         const patterns = [
           { re: /console\.log\(/g, msg: "console.log in production code" },
           { re: /:\s*any\b/g, msg: "TypeScript 'any' type" },
           { re: /\balert\s*\(/g, msg: "alert() call" },
           { re: /\bconfirm\s*\(/g, msg: "confirm() call" },
-          { re: /\/\/\s*TODO\b/gi, msg: "TODO comment" },
-          { re: /\/\/\s*HACK\b/gi, msg: "HACK comment" },
-          { re: /\/\/\s*FIXME\b/gi, msg: "FIXME comment" },
         ];
         const issues = [];
         for (const file of files) {
@@ -252,7 +251,8 @@
         }
         if (issues.length > 0) {
           const ctx = "QUALITY GATE — " + issues.length + " issue(s) in changed files:\n" + issues.slice(0, 10).join("\n");
-          // Advisory only — exit 0 with additionalContext (Stop does not support it, use stderr info)
+          // exit 2 BLOCKS the Stop and feeds stderr back to the model so it fixes
+          // the anti-patterns before finishing (Stop hooks have no additionalContext).
           process.stderr.write(ctx);
           process.exit(2);
         }
@@ -354,32 +354,23 @@
 
   # RTK transparent rewrite hook — intercepts Bash tool calls
   # Rewrites command to rtk <command> if rtk is available
-  # Claude never sees the rewrite, just gets compressed output
+  # Uses the documented PreToolUse protocol: hookSpecificOutput.updatedInput
+  # (echoing the whole modified input JSON is NOT a supported mechanism and
+  # was silently ignored). No rewrite → no stdout → no-op.
   hookRtkRewrite = ''
     #!/usr/bin/env bash
     INPUT=$(cat)
     TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
     COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
 
-    # Only act on Bash tool calls
-    if [ "$TOOL_NAME" != "Bash" ]; then
-      echo "$INPUT"
-      exit 0
-    fi
+    # Only act on Bash tool calls with rtk available
+    [ "$TOOL_NAME" = "Bash" ] || exit 0
+    command -v rtk >/dev/null 2>&1 || exit 0
 
-    # Check rtk available
-    if ! command -v rtk >/dev/null 2>&1; then
-      echo "$INPUT"
-      exit 0
-    fi
-
-    # Rewrite high-verbosity commands
+    # Rewrite high-verbosity commands (never double-wrap an existing rtk call)
     if echo "$COMMAND" | grep -qE "^(git |pnpm |npm |npx |wrangler |tsc |eslint |node |darwin-rebuild |nix build|nix flake)"; then
-      NEW_CMD="rtk $COMMAND"
-      echo "$INPUT" | jq --arg cmd "$NEW_CMD" '.tool_input.command = $cmd'
-      exit 0
+      echo "$INPUT" | jq '{hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: (.tool_input | .command = "rtk " + .command)}}'
     fi
-
-    echo "$INPUT"
+    exit 0
   '';
 }

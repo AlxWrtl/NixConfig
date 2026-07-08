@@ -9,12 +9,6 @@
       cleanup = "zap";
       autoUpdate = true;
       upgrade = true;
-      # Newer Homebrew refuses `brew bundle install --cleanup` without one of
-      # --force/--force-cleanup/$HOMEBREW_ASK. nix-darwin doesn't pass it yet
-      # (upstream PR #1774). --force-cleanup is the non-interactive-safe choice
-      # (HOMEBREW_ASK would prompt/hang). Drop once nix-darwin ships the fix.
-      extraFlags = [ "--force-cleanup" ];
-
       # brew bundle runs as root during activation; `brew trust` writes to the
       # user's $HOMEBREW_USER_CONFIG_HOME/trust.json, which root never reads, so
       # third-party taps (rtk-ai/tap) get refused. Disable the trust gate for

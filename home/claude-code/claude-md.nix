@@ -78,6 +78,7 @@
     - Blocked after 3 attempts → report findings + what was tried. Never fake success,
       never weaken a test/check to make it pass.
     - Lead with outcome: first sentence = result. Supporting detail after.
+    - Show evidence, not assertions: paste the exact test/command output that proves it.
     - Scope lock: fix what was asked. Adjacent problems → mention, don't touch.
 
     ## When Compacting
@@ -85,7 +86,6 @@
     - Discard: file contents already committed, redundant exploration.
 
     ## Style (FR)
-    - Reponses courtes et actionnables.
     - Quand tu modifies du code : quoi / pourquoi / comment verifier (3 bullets).
   '';
 }

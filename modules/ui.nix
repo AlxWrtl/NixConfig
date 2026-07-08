@@ -367,9 +367,9 @@ in
       # Siri disabled (using Raycast)
       "com.apple.assistant.support"."Assistant Enabled" = false;
 
-      # Screensaver: Fliqlo, 2 min idle, no clock overlay
+      # Screensaver: Fliqlo, 5 min idle, no clock overlay
       "com.apple.screensaver" = {
-        idleTime = 120;
+        idleTime = 300;
         showClock = false;
       };
 

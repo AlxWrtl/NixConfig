@@ -88,9 +88,12 @@ in
       defaultMode = "acceptEdits";
       # `ask` forces a confirmation box for matching commands, overriding
       # skipDangerousModePermissionPrompt and acceptEdits. Precedence: deny > ask > allow.
-      # Every sudo prompts for Yes/No; everything else stays auto-approved.
+      # Bare "Bash" is SKIPPED for sandboxed commands (they run free) but fires
+      # for anything that falls back OUTSIDE the sandbox (dangerouslyDisableSandbox
+      # retries, unsandboxable commands) → box de validation systématique hors sandbox.
       ask = [
         "Bash(sudo *)"
+        "Bash"
       ];
       allow = [
         "Read(*)"

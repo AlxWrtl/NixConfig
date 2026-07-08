@@ -351,4 +351,24 @@
       osascript -e '''display notification "Rate limit hit — pause recommended" with title "Claude Code" sound name "Basso"''' 2>/dev/null || true
     fi
   '';
+
+  # Complements the native `rtk hook claude`: the native hook only rewrites
+  # rtk's built-in command list, NOT commands covered by custom filters.toml
+  # entries (verified 2026-07). This rewrites the nix commands our user-global
+  # filters handle. Disjoint from the native list — no double-rewrite possible.
+  hookRtkNixRewrite = ''
+    #!/usr/bin/env bash
+    INPUT=$(cat)
+    TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
+    COMMAND=$(echo "$INPUT" | jq -r '.tool_input.command // ""')
+
+    [ "$TOOL_NAME" = "Bash" ] || exit 0
+    command -v rtk >/dev/null 2>&1 || exit 0
+
+    # Simple commands only (compound/for/pipe lines won't match) — never double-wrap
+    if echo "$COMMAND" | grep -qE '^(nix-instantiate|nixfmt) '; then
+      echo "$INPUT" | jq '{hookSpecificOutput: {hookEventName: "PreToolUse", updatedInput: (.tool_input | .command = "rtk " + .command)}}'
+    fi
+    exit 0
+  '';
 }

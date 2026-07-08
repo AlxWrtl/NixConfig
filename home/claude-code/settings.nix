@@ -238,6 +238,13 @@ in
               command = "/opt/homebrew/bin/rtk hook claude";
               timeout = 5;
             }
+            {
+              type = "command";
+              # Réécrit les commandes couvertes par filters.toml (nix) que le
+              # hook natif ignore — listes disjointes, pas de double-wrap.
+              command = "bash ~/.claude/hooks/rtk-nix-rewrite.sh";
+              timeout = 5;
+            }
           ];
         }
         {

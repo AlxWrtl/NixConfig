@@ -133,9 +133,11 @@ in
     subagent and keep only its summary — read [ORCHESTRATION.md](ORCHESTRATION.md)
     now and follow it for every phase. Under `-e`, run phases inline as before.
 
-    Privileged commands (`sudo`, `darwin-rebuild`, `git push`, installs, network):
-    never run them and never disable the sandbox — collect them into a "Run
-    yourself" list for the user. See the classification rule in ORCHESTRATION.md.
+    Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
+    list (long or password-interactive). Sandbox-blocked commands (`git push`
+    over SSH, docker, local DB): retry ONCE with dangerouslyDisableSandbox —
+    the permission box lets the user approve or refuse. Never weaken the
+    sandbox config itself. See the classification rule in ORCHESTRATION.md.
 
     ## Parse Flags
 
@@ -1464,7 +1466,7 @@ in
     it completes. The coordinator's live context holds only the summaries; the
     disk copy is the source of truth for `-r` resume.
 
-    ## Privileged commands — classify, then delegate (never disable the sandbox)
+    ## Privileged commands — classify, then escalate or delegate
 
     Before running ANY command (coordinator or phase agent), classify it. This is
     generalist: do not special-case nix — judge by capability, not by task.
@@ -1472,20 +1474,26 @@ in
     - **Safe** — read-only, parse, test, edit a file in the repo, `git status/add`,
       `nix-instantiate --parse`, grep, build steps that do not touch the system:
       execute directly.
-    - **Privileged or irreversible** — `sudo`, `darwin-rebuild build`/`switch`,
-      `git push`, `git commit` on a protected branch, package installs, network
-      egress, anything that mutates the OS, remote state, or another service:
-      DO NOT execute, and DO NOT try to bypass the sandbox. The sandbox is a
-      safety net, not an obstacle — a freshly written subagent must never gain
-      free system access. Instead, add the exact command to a **"Run yourself"
-      list** and surface it in the phase summary / final output for the user.
+    - **Long or password-interactive** — `sudo`, `darwin-rebuild build`/`switch`,
+      system package installs: DO NOT execute; add the exact command to a
+      **"Run yourself" list** in the phase summary / final output (a 10-15 min
+      build or a password prompt is better in the user's terminal).
+    - **Sandbox-blocked** — `git push` over SSH, docker, local DB sockets, or any
+      command that just failed with clear sandbox evidence (permission denied on
+      allowed work, socket/auth failure): retry ONCE with
+      `dangerouslyDisableSandbox: true`. The `ask` permission rule shows the user
+      a confirmation box — they approve or refuse; a refusal is an answer, not an
+      obstacle to work around. COORDINATOR ONLY: phase agents do not escalate;
+      they surface the command in their summary and the coordinator decides.
+      Never weaken the sandbox config itself and never touch secrets to make a
+      command pass.
     - **In doubt** — ask the user, unless already durably authorized this session.
 
-    Why: attempting a privileged command in the sandbox either fails (wasting a
-    long wait, e.g. a 10-15 min `darwin-rebuild build` that the sandbox throttles)
-    or would require unsafe escalation. Delegating is faster AND safer. Acceptance
-    criteria that need a privileged command (e.g. "build passes", "switch applied")
-    are marked **deferred to user** in the validate summary, not failed.
+    Why: the confirmation box keeps the user in control while avoiding dead-end
+    "Run yourself" lists for one-click approvals. Long builds stay delegated
+    (the sandbox throttles them and they may need a password). Acceptance
+    criteria that need a delegated command (e.g. "switch applied") are marked
+    **deferred to user** in the validate summary, not failed.
 
     ## Cost note
 

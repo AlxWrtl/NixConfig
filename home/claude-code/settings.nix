@@ -88,12 +88,10 @@ in
       defaultMode = "acceptEdits";
       # `ask` forces a confirmation box for matching commands, overriding
       # skipDangerousModePermissionPrompt and acceptEdits. Precedence: deny > ask > allow.
-      # Bare "Bash" is SKIPPED for sandboxed commands (they run free) but fires
-      # for anything that falls back OUTSIDE the sandbox (dangerouslyDisableSandbox
-      # retries, unsandboxable commands) → box de validation systématique hors sandbox.
+      # Box only for sudo (sudo git, sudo darwin-rebuild, …). A bare "Bash" rule
+      # here fires on every out-of-sandbox command → box spammée, don't add it.
       ask = [
         "Bash(sudo *)"
-        "Bash"
       ];
       allow = [
         "Read(*)"

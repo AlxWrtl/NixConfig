@@ -1,15 +1,16 @@
 # Agent definitions (10 specialized agents)
 # Description pattern: [What]. Use when [triggers].
 # Domain knowledge stays in project SKILL.md files — agents stay generic
-# Models: Haiku (quick-fix, git-ship, codebase-navigator, test-runner, security-auditor)
-#         Sonnet (frontend-expert, backend-expert, nix-expert, debugger)
-#         Opus (code-reviewer)
+# Models — Fable orchestrates (main session), Opus executes, Fable verifies:
+#         Haiku (quick-fix, git-ship, codebase-navigator, test-runner, security-auditor)
+#         Opus  (frontend-expert, backend-expert, nix-expert, debugger — executors)
+#         Fable (code-reviewer — verification stays on the orchestrator's model)
 # Removed in f98ef95 (do not reference): architecture-expert, performance-expert, team-lead
 {
   agentFrontend = ''
     ---
     name: frontend-expert
-    model: sonnet
+    model: opus
     description: "Implements UI components, styles, and client-side logic. Use proactively when editing .tsx/.jsx/.vue/.css files, or tasks mention component, layout, responsive, a11y, styling, or design tokens."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
@@ -51,7 +52,7 @@
   agentBackend = ''
     ---
     name: backend-expert
-    model: sonnet
+    model: opus
     description: "Implements API endpoints, server logic, and data access. Use proactively when editing .server.ts/.py/.sql files, or tasks mention endpoint, api, auth, middleware, query, migration, loader, or action."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
@@ -129,7 +130,7 @@
   agentReviewer = ''
     ---
     name: code-reviewer
-    model: opus
+    model: fable
     effort: max
     description: "Two-pass code review (spec compliance + quality). Use proactively when tasks say review, audit, verify, pre-merge, or before committing. Blocks on critical security issues."
     tools: Read, Grep, Glob, Bash, WebFetch, Write, Edit
@@ -252,7 +253,7 @@
   agentNix = ''
     ---
     name: nix-expert
-    model: sonnet
+    model: opus
     description: "Edits nix-darwin, flakes, and home-manager config. Use proactively when editing *.nix files or tasks mention nix, darwin-rebuild, flake, nixpkgs, home-manager, or module config."
     tools: Read, Edit, Bash, WebFetch, Write
     permissionMode: acceptEdits
@@ -434,7 +435,7 @@
   agentDebugger = ''
     ---
     name: debugger
-    model: sonnet
+    model: opus
     effort: high
     description: "Systematic debugging with code modification. Use when tasks mention bug, error, crash, broken, not working, or when a specific error message is provided."
     tools: Read, Write, Edit, Grep, Glob, Bash

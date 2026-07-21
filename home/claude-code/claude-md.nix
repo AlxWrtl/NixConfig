@@ -35,9 +35,13 @@
     home/claude-code/     — Claude Code declarative config
 
     ## Model Allocation
-    Main session: opus (4.8), effort xhigh, thinking ON. Escalate /effort max only
-    on frontier problems (diminishing returns elsewhere — burns 5h/7d quota).
-    Architecture/planning/review: opus | Implementation: sonnet | Exploration/tests: haiku
+    Main session: fable (orchestrateur + vérification), effort xhigh, thinking ON.
+    Fable commande + vérifie, Opus exécute. Subagents: JAMAIS inherit — model
+    explicite sur chaque spawn. Implémentation/debug: opus | Review/validation:
+    fable | Exploration/tests/mécanique: haiku.
+    Classifiers cyber/bio → fallback auto Fable→Opus 4.8 (attendu, /model fable
+    pour revenir). Escalate /effort max only on frontier problems (diminishing
+    returns elsewhere — burns 5h/7d quota).
 
     ## Verify Checklist
     - nix: `nix-instantiate --parse file.nix && sudo darwin-rebuild switch --flake .#alex-mbp`

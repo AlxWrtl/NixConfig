@@ -43,6 +43,8 @@ in
     - Consult `steps/ROUTING.md` for every transition so routing stays in one place.
     - Unless `-e`, act as COORDINATOR per `steps/ORCHESTRATION.md`: spawn each
       phase as a fresh subagent and keep only its summary, so context stays clean.
+    - Model routing (ORCHESTRATION.md): Fable orchestrates and verifies, Opus
+      implements — every spawn passes an explicit `model`, never inherit.
 
     ## Effort per step
 
@@ -1411,6 +1413,39 @@ in
     - **Phase agent** = a fresh subagent (Agent tool) per phase. Receives a
       self-contained brief, works in its own window, returns ONLY a bounded
       summary (~1-2k tokens). Its raw context is discarded after it returns.
+
+    ## Model routing — Fable commands, Opus executes, Fable verifies
+
+    NEVER let a phase spawn inherit the session model — ALWAYS pass an explicit
+    `model` parameter on every Agent call. Rationale: the session runs on Fable
+    (orchestrator); an inherited spawn silently burns Fable quota on execution
+    work that belongs to Opus.
+
+    | Phase | Agent | model |
+    |-------|-------|-------|
+    | Analyze fan-out | Explore / codebase-navigator | haiku (agent default) |
+    | Analyze synthesis | analyzer phase agent | `opus` |
+    | Plan | plan phase agent | `fable` — the plan IS the orders |
+    | Execute (incl. `-m` waves) | implementer agents | `opus` |
+    | Run tests | test-runner | haiku (agent default) |
+    | Validate + Examine (`-x`) | verifier phase agent | `fable` |
+
+    Fable phase agents (plan, validate, examine) may hit the cyber/bio safety
+    classifiers → automatic fallback to Opus 4.8. That is expected routing, not
+    an error; do not retry in a loop.
+
+    ## Verify loop (the Fable → Opus correction cycle)
+
+    After EVERY execute wave, the validate/examine phase (Fable) must:
+    1. Read the execute summary AND the actual diff (`git diff --stat` + the
+       diff of touched files). Never trust the summary alone.
+    2. Check each acceptance criterion from the plan against the real diff.
+    3. Issues found → return a CORRECTIONS list in the phase summary: one line
+       per issue — `file: problem → expected fix`.
+    4. The coordinator re-spawns an Opus implementer (`model: opus`) with the
+       CORRECTIONS list as its brief, then re-runs the verify phase.
+    5. Max 2 correction rounds. Still red → STOP, surface the remaining issues
+       to the user verbatim. Never weaken a check to make it pass.
 
     ## When this applies
 

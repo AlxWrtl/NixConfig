@@ -224,7 +224,10 @@
           // CLI scripts legitimately use console.log (progress output and
           // machine-readable results parsed by test harnesses). ESLint already
           // ignores scripts/** — keep the quality gate consistent.
-          .filter(f => !/(^|\/)scripts\//.test(f));
+          .filter(f => !/(^|\/)scripts\//.test(f))
+          // Generated declaration files (wrangler types → worker-configuration.d.ts,
+          // worker-secrets.d.ts) carry vendor console.log/any — not our code.
+          .filter(f => !/\.d\.ts$/.test(f));
         if (files.length === 0) { process.exit(0); return; }
         // Blocking anti-patterns only (CLAUDE.md non-negotiables). TODO/HACK/FIXME
         // are legitimate work markers — do NOT block the Stop on them.

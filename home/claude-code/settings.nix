@@ -27,10 +27,12 @@ in
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
     };
 
-    # Défaut déclaratif : Opus 4.8 + contexte 1M (alias → dernier Opus).
+    # Défaut déclaratif : Fable 5 = orchestrateur (1M natif sur l'API Anthropic,
+    # pas de suffixe [1m]). Rôles : Fable commande + vérifie, Opus exécute —
+    # voir apex ORCHESTRATION.md. Classifiers cyber/bio → fallback auto Opus 4.8.
     # NON force-overridden : /model et /fast restent des choix de session,
     # jamais écrasés au rebuild.
-    model = "opus[1m]";
+    model = "fable";
     voiceEnabled = true;
     skipDangerousModePermissionPrompt = true;
 

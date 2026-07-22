@@ -121,7 +121,7 @@ in
       "Diagnosis stays INSIDE apex — execute phase spawns the debugger agent (model: opus)."
       "If scope is unclear → run /discuss first, then return to apex."
       "After tests fail repeatedly → debugger agent (model: opus) inside the execute phase."
-      "After finish on L/XL changes → code-reviewer agent (model: fable) for the final pass."
+      "After finish on L/XL changes → code-reviewer agent with explicit model: opus override (quota rule); the coordinator (Fable) arbitrates its verdict."
     ]}
   '';
 
@@ -485,8 +485,10 @@ in
     YOU ARE A PLANNER, not an implementer. Do NOT write any code yet.
 
     Per ORCHESTRATION.md: unless `-e`, the coordinator spawns this as a fresh
-    planner agent whose input is the analyze phase summary (not the raw
-    transcript). Return the plan phase summary schema and persist the plan.
+    planner agent (`model: opus`) whose input is the analyze phase summary (not
+    the raw transcript). Return the plan phase summary schema and persist the
+    plan. The coordinator (Fable) then reviews the plan and approves or
+    re-briefs before execute — execute never starts on an unapproved plan.
 
     ## ULTRA THINK
 
@@ -715,9 +717,10 @@ in
 
     YOU ARE A VALIDATOR, not an implementer. Do NOT add new features.
 
-    Per ORCHESTRATION.md: unless `-e`, the coordinator spawns this as a fresh
-    validator agent whose input is the plan + execute phase summaries. Return the
-    validate phase summary schema.
+    Per ORCHESTRATION.md: the COORDINATOR (Fable) runs this step INLINE — never
+    as a subagent (quota rule: no fable subagents). Input: the plan + execute
+    phase summaries AND the real diff. Produce the validate phase summary
+    schema and persist it.
 
     ## Verification Checklist
 
@@ -760,7 +763,10 @@ in
 
     ## Adversarial Code Review
 
-    Launch 3 parallel code-reviewer agents, each with a different focus:
+    Launch 3 parallel code-reviewer agents, each with a different focus.
+    Spawn each with an explicit `model: opus` override (quota rule: no fable
+    subagents — the per-invocation param beats the agent frontmatter). The
+    coordinator (Fable) synthesizes and arbitrates their findings inline:
 
     ### Agent 1: Security Review
     - Authentication/authorization gaps
@@ -1431,23 +1437,32 @@ in
     |-------|-------|-------|
     | Analyze fan-out | Explore / codebase-navigator | haiku (agent default) |
     | Analyze synthesis | analyzer phase agent | `opus` |
-    | Plan | plan phase agent | `fable` — the plan IS the orders |
+    | Plan | plan phase agent | `opus` — Fable approves before execute |
     | Execute (incl. `-m` waves) | implementer agents | `opus` |
     | Run tests | test-runner | haiku (agent default) |
-    | Validate + Examine (`-x`) | verifier phase agent | `fable` |
+    | Validate + Examine (`-x`) | COORDINATOR inline (Fable) | none — no subagent |
 
-    Fable phase agents (plan, validate, examine) may hit the cyber/bio safety
-    classifiers → automatic fallback to Opus 4.8. That is expected routing, not
-    an error; do not retry in a loop.
+    Plan approval (the orders stay Fable's): the coordinator reads the returned
+    plan, checks it against the task + analyze summary, then approves it or
+    re-briefs the planner with what to change. Execute never starts on an
+    unapproved plan.
+
+    Quota rule: the session coordinator is the ONLY Fable consumer. NEVER spawn
+    a subagent with `model: fable` inside apex — Fable verification happens
+    inline in the coordinator. Examine's parallel reviewers spawn with an
+    explicit `model: opus` override (the per-invocation param beats the agent's
+    frontmatter). The session-level cyber/bio classifier fallback to Opus 4.8
+    remains expected behavior, not an error.
 
     ## Verify loop (the Fable → Opus correction cycle)
 
-    After EVERY execute wave, the validate/examine phase (Fable) must:
+    After EVERY execute wave, the COORDINATOR (Fable) verifies inline — no
+    verifier subagent:
     1. Read the execute summary AND the actual diff (`git diff --stat` + the
        diff of touched files). Never trust the summary alone.
     2. Check each acceptance criterion from the plan against the real diff.
-    3. Issues found → return a CORRECTIONS list in the phase summary: one line
-       per issue — `file: problem → expected fix`.
+    3. Issues found → write a CORRECTIONS list (persisted with the phase
+       outputs): one line per issue — `file: problem → expected fix`.
     4. The coordinator (Fable) re-briefs an Opus implementer (`model: opus`)
        with a SHARPER brief each round — never resend the same brief twice.
        A correction brief must contain: root cause of the miss, exact files

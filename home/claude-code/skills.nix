@@ -32,7 +32,7 @@ in
   skillApex = ''
     ---
     name: apex
-    description: "Systematic multi-step implementation workflow (APEX methodology). Use when asked to implement, build, add, or create a feature, endpoint, module, dashboard, export, or authentication flow that needs structured analyze → plan → execute → validate steps with quality gates. Not for one-line fixes, debugging, or pure research."
+    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts (economy inline for trivial, full analyze → plan → execute → validate otherwise). Fable plans and verifies, Opus executes. Not for pure questions or research with zero file modification."
     ---
 
     # APEX: Systematic Implementation Workflow
@@ -95,8 +95,8 @@ in
       sideEffects = "modifies source files, optionally creates tests, commits, creates PRs.";
     }}
     ${scope {
-      useWhen = "Implementing features, modules, or tasks that benefit from structured multi-step execution with quality gates.";
-      notFor = "Quick fixes (<20 lines) → use quick-fix. Debugging → use /debug. Research → use Explore agent.";
+      useWhen = "EVERY task that modifies files, in any project, any size — the mode gate adapts (economy inline for trivial, debugger-as-implementer for bugs, full orchestration otherwise).";
+      notFor = "Pure questions or research with zero file modification → answer directly, no workflow.";
     }}
 
     ## Error handling
@@ -118,10 +118,10 @@ in
     - **Compatibility**: minimum version is any model supporting the `effort` param.
 
     ${handoffs [
-      "If task is broken and needs diagnosis → use debug skill instead."
-      "If scope is unclear → run /discuss first."
-      "After tests fail repeatedly → hand off to debugger agent."
-      "After finish on L/XL changes → hand off to code-reviewer agent."
+      "Diagnosis stays INSIDE apex — execute phase spawns the debugger agent (model: opus)."
+      "If scope is unclear → run /discuss first, then return to apex."
+      "After tests fail repeatedly → debugger agent (model: opus) inside the execute phase."
+      "After finish on L/XL changes → code-reviewer agent (model: fable) for the final pass."
     ]}
   '';
 
@@ -148,23 +148,29 @@ in
     - If `-m` is set, auto-enable `-k` (tasks)
     - Uppercase flag disables (e.g., `-A` disables auto)
 
-    ## Complexity Gate (run BEFORE anything else)
+    ## Session model guard (run FIRST — the 1000% rule)
 
-    APEX is a heavy multi-step workflow. Do not run it on tasks it is wrong for.
-    Score the task, then route — unless `-a` (auto) is set, confirm the redirect
-    with the user first; with `-a`, redirect silently and state why.
+    The coordinator MUST run on Fable 5 — Fable writes the detailed briefs and
+    Fable verifies. Check the session model (system context states it). If the
+    session is NOT on Fable: STOP and tell the user to run `/model fable`, then
+    re-invoke apex. Sole approved fallback when Fable is unavailable on the
+    plan: `opus[1m]` — state the substitution explicitly, never substitute
+    silently.
 
-    Redirect OUT of APEX when:
-    - **Trivial** — describable in one sentence AND ≤ ~2 files AND < ~20 lines:
-      → stop, suggest `/quick-fix` (or just do it directly). "If you could
-      describe the diff in one sentence, skip the plan."
-    - **Diagnosis** — task says bug / error / crash / broken / not working, with
-      no clear fix yet: → stop, suggest `/debug`.
-    - **Pure research / "how does X work"** — no code change intended:
-      → stop, suggest the Explore agent.
+    ## Mode Gate (run BEFORE anything else — NEVER redirect out of APEX)
 
-    Proceed with APEX only if the task is a real implementation with ≥ 1 quality
-    gate worth running. If you proceed, record the gate decision in state below.
+    Every task runs through APEX. The gate picks the MODE, not whether:
+    - **Trivial** — one sentence, ≤ ~2 files, < ~20 lines: auto-enable `-e`
+      (economy). Fable still writes the precise brief and still verifies the
+      real diff before finishing — the verify duty NEVER drops.
+    - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
+      the error first; execute phase spawns the debugger agent (`model: opus`)
+      as implementer. Stays inside APEX.
+    - **Pure research / no file change**: analyze phase only (Explore fan-out),
+      report findings, skip execute/validate.
+    - **Standard / complex**: full orchestration per ORCHESTRATION.md.
+
+    State the chosen mode in the init summary and record it in state below.
 
     ## Force external memory (unless economy)
 
@@ -1442,10 +1448,15 @@ in
     2. Check each acceptance criterion from the plan against the real diff.
     3. Issues found → return a CORRECTIONS list in the phase summary: one line
        per issue — `file: problem → expected fix`.
-    4. The coordinator re-spawns an Opus implementer (`model: opus`) with the
-       CORRECTIONS list as its brief, then re-runs the verify phase.
-    5. Max 2 correction rounds. Still red → STOP, surface the remaining issues
-       to the user verbatim. Never weaken a check to make it pass.
+    4. The coordinator (Fable) re-briefs an Opus implementer (`model: opus`)
+       with a SHARPER brief each round — never resend the same brief twice.
+       A correction brief must contain: root cause of the miss, exact files
+       and lines, the expected end state, and the exact command(s) that must
+       pass. Then re-run the verify phase on the new diff.
+    5. Loop until every acceptance criterion is green. Max 3 correction rounds:
+       still red after 3 → STOP, surface the remaining issues to the user
+       verbatim with the failing output. Never weaken a check to make it pass,
+       never declare success on partial green.
 
     ## When this applies
 

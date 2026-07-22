@@ -66,12 +66,17 @@
     - < 80% → STOP, load nix-darwin skill, check docs via WebFetch before proceeding.
     - 80-95% → state assumptions inline, proceed with caution.
 
-    ## Delegation
-    - Specialist agents in ~/.claude/agents/. Delegate to matching agent.
+    ## Delegation — APEX universel (tous projets)
+    - TOUTE tâche qui modifie des fichiers passe par /apex, quel que soit le
+      projet ou la taille. Pas d'implémentation hors apex. Son mode gate adapte
+      (trivial → economy inline, bug → debugger en execute, sinon full).
+    - Process fixe : Fable écrit le plan détaillé → Opus exécute → Fable vérifie
+      le diff réel → si pas bon, Fable re-briefe Opus (brief plus précis à
+      chaque tour) jusqu'à vert. Coordinateur ≠ Fable → STOP, /model fable.
+    - Questions pures / recherche sans modification → réponse directe.
     - Read project skills before coding (auto-injected via agent frontmatter).
-    - Multi-domain or > 5 files → /apex (run /discuss first if scope unclear).
     - Repeated mechanical pattern (N >= 4 occurrences) → ralph-loop.
-    - Diagnosis (bug/error/crash) → debugger agent. Exploration → codebase-navigator.
+    - Specialist agents (~/.claude/agents/) = exécutants au service d'apex.
 
     ## Execution Discipline (all models)
     - Act on established facts. Never re-derive, re-explore, or re-litigate decisions.

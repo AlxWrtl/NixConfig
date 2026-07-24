@@ -37,8 +37,9 @@
     ## Model Allocation
     Main session: fable (orchestrateur + vérification), effort xhigh, thinking ON.
     Fable commande + vérifie, Opus exécute. Subagents: JAMAIS inherit — model
-    explicite sur chaque spawn. Implémentation/debug: opus | Review/validation:
-    fable | Exploration/tests/mécanique: haiku.
+    explicite sur chaque spawn. Implémentation/debug fin: opus | Exécution
+    volumineuse/gros contexte 1M: sonnet-5 (moins cher qu'opus) |
+    Review/validation: fable | Exploration/mécanique courte/tests: haiku.
     Classifiers cyber/bio → fallback auto Fable→Opus 4.8 (attendu, /model fable
     pour revenir). Escalate /effort max only on frontier problems (diminishing
     returns elsewhere — burns 5h/7d quota).
@@ -75,8 +76,12 @@
       chaque tour) jusqu'à vert. Coordinateur ≠ Fable → STOP, /model fable.
     - Questions pures / recherche sans modification → réponse directe.
     - Read project skills before coding (auto-injected via agent frontmatter).
-    - Repeated mechanical pattern (N >= 4 occurrences) → ralph-loop.
+    - Pattern répété N>=4 séquentiel mêmes fichiers → ralph-loop. Sous-tâches
+      indépendantes fichiers disjoints → /fork background. Combinables:
+      fork par module, ralph dedans.
     - Specialist agents (~/.claude/agents/) = exécutants au service d'apex.
+    - Review routine qualité → /code-review natif (subagent background, hors
+      contexte). Agent code-reviewer = spec compliance + sécu critique pre-merge.
 
     ## Execution Discipline (all models)
     - Act on established facts. Never re-derive, re-explore, or re-litigate decisions.

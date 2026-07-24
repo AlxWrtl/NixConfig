@@ -78,6 +78,9 @@ in
         denyRead = [
           "${homeDirectory}/.aws/credentials"
           "${homeDirectory}/.gnupg/private-keys-v1.d"
+          "**/.env"
+          "**/.env.*"
+          "**/secrets"
         ];
       };
       network = {

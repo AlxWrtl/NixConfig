@@ -132,7 +132,7 @@
     name: code-reviewer
     model: fable
     effort: max
-    description: "Two-pass code review (spec compliance + quality). Use proactively when tasks say review, audit, verify, pre-merge, or before committing. Blocks on critical security issues."
+    description: "Spec-compliance review (Pass 1) + critical-security gate, pre-merge only. Use proactively for spec/plan compliance and pre-merge security blocking. Routine quality review → native /code-review (background subagent). Blocks on critical security issues."
     tools: Read, Grep, Glob, Bash, WebFetch, Write, Edit
     permissionMode: acceptEdits
     memory: project

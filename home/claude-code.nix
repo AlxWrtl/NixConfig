@@ -74,6 +74,7 @@ let
     hookFormatTypescript
     hookBlockMainBash
     hookSessionStart
+    hookApexReminder
     hookSubagentStop
     hookTaskCompleted
     hookNotification
@@ -249,6 +250,10 @@ in
     };
     "${claudeDir}/hooks/session-start.sh" = {
       text = hookSessionStart;
+      executable = true;
+    };
+    "${claudeDir}/hooks/apex-reminder.sh" = {
+      text = hookApexReminder;
       executable = true;
     };
     "${claudeDir}/hooks/subagent-stop.js" = {

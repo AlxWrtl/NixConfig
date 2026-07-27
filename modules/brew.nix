@@ -52,6 +52,7 @@
       "raycast"
       "readdle-spark"
       "visual-studio-code"
+      "vivaldi"
       "microsoft-teams"
       "whatsapp"
 

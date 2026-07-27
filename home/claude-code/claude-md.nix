@@ -35,14 +35,17 @@
     home/claude-code/     — Claude Code declarative config
 
     ## Model Allocation
-    Main session: fable (orchestrateur + vérification), effort xhigh, thinking ON.
-    Fable commande + vérifie, Opus exécute. Subagents: JAMAIS inherit — model
-    explicite sur chaque spawn. Implémentation/debug fin: opus | Exécution
-    volumineuse/gros contexte 1M: sonnet-5 (moins cher qu'opus) |
-    Review/validation: fable | Exploration/mécanique courte/tests: haiku.
-    Classifiers cyber/bio → fallback auto Fable→Opus 4.8 (attendu, /model fable
-    pour revenir). Escalate /effort max only on frontier problems (diminishing
-    returns elsewhere — burns 5h/7d quota).
+    Défaut = opus 5 (workhorse full-loop: coordonne + plan + code + auto-verif
+    fresh-context), 1M ctx. Effort-tiering DANS opus 5 avant de switcher modèle
+    (switch = taxe subagent ~15×): low mécanique, high/max plan+verif. Subagents:
+    JAMAIS inherit — model explicite. Mécanique/explo/tests: haiku | Volumineux
+    gros contexte: sonnet-5 | Impl/debug: opus 5.
+    Fable = vérificateur INDÉPENDANT read-only, rationné haut-enjeu (irréversible/
+    sécu/archi/prod): lit diff réel + ACs → PASS ou fix-list bornée, ne code
+    JAMAIS. Quota 5h/7j rare → garder pour le diff critique. Opus 5 ≈ fable (bat
+    7 bench/12, moitié prix, meilleur auto-verif); edge fable réel = cyber
+    offensif/exploit + bio autonome. Fable invoqué → classifier cyber/bio peut
+    fallback Opus 4.8. /effort max = frontier only.
 
     ## Verify Checklist
     - nix: `nix-instantiate --parse file.nix && sudo darwin-rebuild switch --flake .#alex-mbp`
@@ -71,9 +74,12 @@
     - TOUTE tâche qui modifie des fichiers passe par /apex, quel que soit le
       projet ou la taille. Pas d'implémentation hors apex. Son mode gate adapte
       (trivial → economy inline, bug → debugger en execute, sinon full).
-    - Process fixe : Fable écrit le plan détaillé → Opus exécute → Fable vérifie
-      le diff réel → si pas bon, Fable re-briefe Opus (brief plus précis à
-      chaque tour) jusqu'à vert. Coordinateur ≠ Fable → STOP, /model fable.
+    - Process fixe : Opus 5 plan+code+auto-verif → gate machine (parse/lint/test,
+      gratuit) → sur haut-enjeu, Fable vérifie le diff réel (read-only, fix-list)
+      → si pas bon, Opus 5 corrige (brief plus précis à chaque tour) jusqu'à vert.
+    - Profondeur ∝ blast-radius : trivial → opus 5 solo + gate machine ; standard
+      → +auto-verif ACs ; dur/irréversible → grounding + Fable verify + adversarial
+      scalé.
     - Questions pures / recherche sans modification → réponse directe.
     - Read project skills before coding (auto-injected via agent frontmatter).
     - Pattern répété N>=4 séquentiel mêmes fichiers → ralph-loop. Sous-tâches

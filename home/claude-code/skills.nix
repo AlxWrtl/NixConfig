@@ -43,8 +43,9 @@ in
     - Consult `steps/ROUTING.md` for every transition so routing stays in one place.
     - Unless `-e`, act as COORDINATOR per `steps/ORCHESTRATION.md`: spawn each
       phase as a fresh subagent and keep only its summary, so context stays clean.
-    - Model routing (ORCHESTRATION.md): Fable orchestrates and verifies, Opus
-      implements — every spawn passes an explicit `model`, never inherit.
+    - Model routing (ORCHESTRATION.md): Opus 5 is the workhorse (coordinates,
+      plans, codes, self-verifies); Fable is an independent read-only verifier on
+      high-stakes diffs only — every spawn passes an explicit `model`, never inherit.
 
     ## Effort per step
 
@@ -121,7 +122,7 @@ in
       "Diagnosis stays INSIDE apex — execute phase spawns the debugger agent (model: opus)."
       "If scope is unclear → run /discuss first, then return to apex."
       "After tests fail repeatedly → debugger agent (model: opus) inside the execute phase."
-      "After finish on L/XL changes → code-reviewer agent with explicit model: opus override (quota rule); the coordinator (Fable) arbitrates its verdict."
+      "After finish on L/XL or high-stakes changes → spawn a Fable read-only verifier on the diff + ACs; the coordinator (Opus 5) applies its bounded fix-list. Routine/reversible → Opus 5 self-verify only."
     ]}
   '';
 
@@ -148,21 +149,22 @@ in
     - If `-m` is set, auto-enable `-k` (tasks)
     - Uppercase flag disables (e.g., `-A` disables auto)
 
-    ## Session model guard (run FIRST — the 1000% rule)
+    ## Session model guard (run FIRST)
 
-    The coordinator MUST run on Fable 5 — Fable writes the detailed briefs and
-    Fable verifies. Check the session model (system context states it). If the
-    session is NOT on Fable: STOP and tell the user to run `/model fable`, then
-    re-invoke apex. Sole approved fallback when Fable is unavailable on the
-    plan: `opus[1m]` — state the substitution explicitly, never substitute
-    silently.
+    The coordinator runs on Opus 5 (the workhorse: plans, codes, self-verifies).
+    It is the default session model — no model switch needed to start. Fable is
+    NOT the coordinator; it is invoked only as an independent read-only verifier
+    on high-stakes diffs (see ORCHESTRATION.md). A Fable session CAN coordinate,
+    but it burns the scarce 5h/7d quota on plumbing — prefer Opus 5 and keep
+    Fable for the high-stakes verify pass.
 
     ## Mode Gate (run BEFORE anything else — NEVER redirect out of APEX)
 
     Every task runs through APEX. The gate picks the MODE, not whether:
     - **Trivial** — one sentence, ≤ ~2 files, < ~20 lines: auto-enable `-e`
-      (economy). Fable still writes the precise brief and still verifies the
-      real diff before finishing — the verify duty NEVER drops.
+      (economy). Opus 5 still writes the precise brief and self-verifies the real
+      diff before finishing — the verify duty NEVER drops. Fable verify is
+      reserved for high-stakes, not trivial.
     - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
       the error first; execute phase spawns the debugger agent (`model: opus`)
       as implementer. Stays inside APEX.
@@ -487,7 +489,7 @@ in
     Per ORCHESTRATION.md: unless `-e`, the coordinator spawns this as a fresh
     planner agent (`model: opus`) whose input is the analyze phase summary (not
     the raw transcript). Return the plan phase summary schema and persist the
-    plan. The coordinator (Fable) then reviews the plan and approves or
+    plan. The coordinator (Opus 5) then reviews the plan and approves or
     re-briefs before execute — execute never starts on an unapproved plan.
 
     ## ULTRA THINK
@@ -717,10 +719,11 @@ in
 
     YOU ARE A VALIDATOR, not an implementer. Do NOT add new features.
 
-    Per ORCHESTRATION.md: the COORDINATOR (Fable) runs this step INLINE — never
-    as a subagent (quota rule: no fable subagents). Input: the plan + execute
-    phase summaries AND the real diff. Produce the validate phase summary
-    schema and persist it.
+    Per ORCHESTRATION.md: the COORDINATOR (Opus 5) runs this step INLINE. Machine
+    gate first (parse/typecheck/lint/tests — free), then Opus 5 self-verifies the
+    real diff against the ACs. On high-stakes diffs, ALSO spawn a Fable read-only
+    verifier. Input: the plan + execute phase summaries AND the real diff. Produce
+    the validate phase summary schema and persist it.
 
     ## Verification Checklist
 
@@ -764,9 +767,10 @@ in
     ## Adversarial Code Review
 
     Launch 3 parallel code-reviewer agents, each with a different focus.
-    Spawn each with an explicit `model: opus` override (quota rule: no fable
-    subagents — the per-invocation param beats the agent frontmatter). The
-    coordinator (Fable) synthesizes and arbitrates their findings inline:
+    Spawn each with an explicit `model: opus` override (Opus 5 is a strong
+    reviewer; the per-invocation param beats the agent frontmatter). The
+    coordinator (Opus 5) synthesizes and arbitrates their findings inline; on
+    high-stakes, add one Fable read-only verdict pass over the synthesis:
 
     ### Agent 1: Security Review
     - Authentication/authorization gaps
@@ -1426,52 +1430,61 @@ in
       self-contained brief, works in its own window, returns ONLY a bounded
       summary (~1-2k tokens). Its raw context is discarded after it returns.
 
-    ## Model routing — Fable commands, Opus executes, Fable verifies
+    ## Model routing — Opus 5 workhorse, Fable = independent high-stakes verifier
 
     NEVER let a phase spawn inherit the session model — ALWAYS pass an explicit
-    `model` parameter on every Agent call. Rationale: the session runs on Fable
-    (orchestrator); an inherited spawn silently burns Fable quota on execution
-    work that belongs to Opus.
+    `model` parameter on every Agent call. `opus` = Opus 5, the current workhorse.
 
     | Phase | Agent | model |
     |-------|-------|-------|
-    | Analyze fan-out | Explore / codebase-navigator | haiku (agent default) |
-    | Analyze synthesis | analyzer phase agent | `opus` |
-    | Plan | plan phase agent | `opus` — Fable approves before execute |
-    | Execute (incl. `-m` waves) | implementer agents | `opus` |
-    | Run tests | test-runner | haiku (agent default) |
-    | Validate + Examine (`-x`) | COORDINATOR inline (Fable) | none — no subagent |
+    | Analyze fan-out | Explore / codebase-navigator | haiku |
+    | Analyze synthesis | analyzer phase agent | `opus` (effort high) |
+    | Plan | plan phase agent | `opus` (effort high/max) |
+    | Execute (incl. `-m` waves) | implementer agents | `opus` (low effort mechanical) |
+    | Bulk / large-context execute | implementer agents | `sonnet` |
+    | Run tests | test-runner | haiku |
+    | Self-verify (every task) | COORDINATOR inline (Opus 5) | none — fresh-context adversarial pass |
+    | High-stakes verify | fable verifier subagent | `fable` — READ-ONLY, bounded verdict |
 
-    Plan approval (the orders stay Fable's): the coordinator reads the returned
-    plan, checks it against the task + analyze summary, then approves it or
-    re-briefs the planner with what to change. Execute never starts on an
-    unapproved plan.
+    Effort-tiering first: prefer dialing Opus 5 effort (low↔max) over switching
+    models — a model switch pays the ~15× subagent/context tax. Switch model only
+    when the tier gap is real (haiku mechanical, sonnet bulk).
 
-    Quota rule: the session coordinator is the ONLY Fable consumer. NEVER spawn
-    a subagent with `model: fable` inside apex — Fable verification happens
-    inline in the coordinator. Examine's parallel reviewers spawn with an
-    explicit `model: opus` override (the per-invocation param beats the agent's
-    frontmatter). The session-level cyber/bio classifier fallback to Opus 4.8
-    remains expected behavior, not an error.
+    Plan approval: the coordinator reads the returned plan, checks it against the
+    task + analyze summary, then approves it or re-briefs the planner. Execute
+    never starts on an unapproved plan.
 
-    ## Verify loop (the Fable → Opus correction cycle)
+    Fable rule (inverted from the prior design): Fable is NO LONGER the
+    coordinator. Spawn `model: fable` ONLY as a read-only verifier on high-stakes
+    diffs (irreversible / security / architecture / prod). It reads the real diff
+    + the plan's ACs (never the whole repo), returns PASS or a bounded fix-list
+    (`file:line → problem → expected fix`), and NEVER edits. On reversible/routine
+    work, skip Fable — the machine gate + Opus 5 fresh-context self-verify
+    suffice. Why rationed: the 5h/7d Fable quota is the scarce resource — keep it
+    for the diff where a missed bug is expensive. When invoked, Fable's cyber/bio
+    classifier may still fall back to Opus 4.8 (expected).
 
-    After EVERY execute wave, the COORDINATOR (Fable) verifies inline — no
-    verifier subagent:
-    1. Read the execute summary AND the actual diff (`git diff --stat` + the
-       diff of touched files). Never trust the summary alone.
-    2. Check each acceptance criterion from the plan against the real diff.
-    3. Issues found → write a CORRECTIONS list (persisted with the phase
-       outputs): one line per issue — `file: problem → expected fix`.
-    4. The coordinator (Fable) re-briefs an Opus implementer (`model: opus`)
-       with a SHARPER brief each round — never resend the same brief twice.
-       A correction brief must contain: root cause of the miss, exact files
-       and lines, the expected end state, and the exact command(s) that must
-       pass. Then re-run the verify phase on the new diff.
-    5. Loop until every acceptance criterion is green. Max 3 correction rounds:
-       still red after 3 → STOP, surface the remaining issues to the user
-       verbatim with the failing output. Never weaken a check to make it pass,
-       never declare success on partial green.
+    ## Verify loop (Opus 5 self-verify; Fable on high-stakes)
+
+    After EVERY execute wave, verify — depth scaled to blast-radius:
+    1. Machine gate FIRST (free): parse / typecheck / lint / tests. Never spend a
+       model to find what a compiler finds.
+    2. Read the execute summary AND the actual diff (`git diff --stat` + the diff
+       of touched files). Never trust the summary alone.
+    3. Opus 5 coordinator self-verifies each acceptance criterion against the real
+       diff (fresh-context adversarial pass — Opus 5's strength).
+    4. HIGH-STAKES ONLY (irreversible / security / architecture / prod): spawn a
+       Fable read-only verifier over the diff + ACs; it returns PASS or a bounded
+       fix-list and NEVER edits.
+    5. Issues found → CORRECTIONS list (persisted): one line per issue —
+       `file: problem → expected fix`. The coordinator re-briefs an Opus 5
+       implementer (`model: opus`) with a SHARPER brief each round (root cause,
+       exact files/lines, expected end state, exact command that must pass), then
+       re-verifies the new diff.
+    6. Loop until every acceptance criterion is green. Max 3 correction rounds:
+       still red after 3 → STOP, surface the remaining issues verbatim with the
+       failing output. Never weaken a check to make it pass, never declare success
+       on partial green.
 
     ## When this applies
 

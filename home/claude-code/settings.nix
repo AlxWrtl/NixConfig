@@ -358,6 +358,17 @@ in
           ];
         }
       ];
+      UserPromptSubmit = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/apex-reminder.sh";
+              timeout = 3;
+            }
+          ];
+        }
+      ];
       SessionStart = [
         {
           hooks = [

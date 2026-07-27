@@ -169,6 +169,17 @@
     echo "branch: $BRANCH | last: $LAST_COMMIT | modified: $MODIFIED files"
   '';
 
+  # UserPromptSubmit: stdout is injected into the turn's context. Kept to one
+  # short line because this cost is paid on EVERY prompt. Unconditional by
+  # design: keyword-matching the prompt would miss exactly the ambiguous cases
+  # where the reminder matters most, and a false negative is the failure mode
+  # that actually hurts (the rule silently not firing).
+  hookApexReminder = ''
+    #!/usr/bin/env bash
+    echo "Routage: tâche qui modifie des fichiers → /apex (son mode gate adapte l'effort : trivial = economy inline, sinon full). Question ou recherche sans modification → réponse directe, pas d'apex."
+    exit 0
+  '';
+
   hookSubagentStop = ''
     #!/usr/bin/env node
     let input = "";

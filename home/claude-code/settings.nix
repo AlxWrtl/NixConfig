@@ -27,12 +27,14 @@ in
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
     };
 
-    # Défaut déclaratif : Fable 5 = orchestrateur (1M natif sur l'API Anthropic,
-    # pas de suffixe [1m]). Rôles : Fable commande + vérifie, Opus exécute —
-    # voir apex ORCHESTRATION.md. Classifiers cyber/bio → fallback auto Opus 4.8.
-    # NON force-overridden : /model et /fast restent des choix de session,
-    # jamais écrasés au rebuild.
-    model = "fable";
+    # Défaut déclaratif : Opus 5 = workhorse full-loop (1M natif, pas de suffixe
+    # [1m]). Fable n'est plus coordinateur — il est spawné en vérificateur
+    # read-only sur diff haut-enjeu seulement, voir apex ORCHESTRATION.md.
+    # NON force-overridden dans la 2e passe jq, MAIS cette valeur re-seed le
+    # live quand la clé y est absente (le CLI la retire quand /model écrit son
+    # choix dans ~/.claude.json) — d'où l'obligation de la garder alignée sur
+    # le défaut voulu, sinon le rebuild fait régresser le modèle.
+    model = "claude-opus-5";
     voiceEnabled = true;
     skipDangerousModePermissionPrompt = true;
 

@@ -1,10 +1,11 @@
 # Agent definitions (10 specialized agents)
 # Description pattern: [What]. Use when [triggers].
 # Domain knowledge stays in project SKILL.md files — agents stay generic
-# Models — Fable orchestrates (main session), Opus executes, Fable verifies:
+# Models — Opus 5 is the workhorse (coordinates, plans, codes, self-verifies);
+#          Fable is an independent read-only verifier on high-stakes diffs only:
 #         Haiku (quick-fix, git-ship, codebase-navigator, test-runner, security-auditor)
 #         Opus  (frontend-expert, backend-expert, nix-expert, debugger — executors)
-#         Fable (code-reviewer — verification stays on the orchestrator's model)
+#         Fable (code-reviewer — spec compliance + critical security, pre-merge only)
 # Removed in f98ef95 (do not reference): architecture-expert, performance-expert, team-lead
 {
   agentFrontend = ''

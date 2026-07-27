@@ -32,7 +32,7 @@ in
   skillApex = ''
     ---
     name: apex
-    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts (economy inline for trivial, full analyze → plan → execute → validate otherwise). Fable plans and verifies, Opus executes. Not for pure questions or research with zero file modification."
+    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts (economy inline for trivial, full analyze → plan → execute → validate otherwise). Opus 5 plans, executes and self-verifies; Fable verifies high-stakes diffs read-only. Not for pure questions or research with zero file modification."
     ---
 
     # APEX: Systematic Implementation Workflow

@@ -2096,15 +2096,30 @@ in
   skillCodebaseAudit = ''
     ---
     name: codebase-audit
-    description: "Audit codebase health: dead code, unused deps, doc gaps, file bloat. Use when tasks mention audit, cleanup, inventory, drift, tech debt, or codebase health."
+    description: "Audit codebase health: dead code, unused deps, doc gaps, accretion. Use when tasks mention audit, cleanup, inventory, drift, tech debt, or codebase health."
     effort: high
     ---
 
     # Codebase Audit
 
-    Systematic 8-step audit producing a CODEBASE-STATUS.md report.
+    Systematic 9-step audit producing a CODEBASE-STATUS.md report.
 
     ## Audit Steps
+
+    ### 00 — Categorize (MANDATORY — run before any measurement)
+    Classify every path into 4 buckets and DISPLAY the mapping before measuring:
+
+    | Bucket | Contents |
+    |--------|----------|
+    | APP | application code (app/, src/, workers/, lib/ — adapt to the repo) |
+    | TEST | tests, e2e, test scripts |
+    | GENERATED | generated *.d.ts, migrations, snapshots (drizzle/meta), lockfiles, build/ |
+    | OTHER | docs, config, CI |
+
+    Without the displayed mapping the numbers are not auditable. Every later
+    step reports per bucket. A count that mixes buckets is noise, not a finding
+    — an uncategorized "biggest files" list leads with generated types and test
+    scripts every time.
 
     ### 01 — Dead Exports
     Find exported functions/types never imported elsewhere.
@@ -2132,9 +2147,17 @@ in
     - CLAUDE.md references files/paths that moved
     - Missing JSDoc on public API functions
 
-    ### 06 — File Bloat
-    Files over 300 lines — candidates for splitting.
-    Functions over 50 lines — candidates for extraction.
+    ### 06 — Accretion (trajectory, not size)
+    Size is not the signal — direction is. A large stable file is not a
+    problem; a mid-size file that has never shrunk is one.
+    ```bash
+    # per candidate file, 6-month trajectory
+    git log --follow --numstat --since='6 months ago' -- <file>
+    # count commits that grow it vs commits that shrink it
+    ```
+    0 shrinking commits over >= 10 commits = ACCRETION.
+    Exclude GENERATED — its growth is structural, not a choice.
+    Report per file: commits, +/-, grow/shrink split, verdict.
 
     ### 07 — Test Coverage Gaps
     Source files with no corresponding test file.
@@ -2151,23 +2174,34 @@ in
     ```markdown
     # Codebase Status — YYYY-MM-DD
 
+    ## Bucket mapping
+    [step 00 output — paths per bucket, displayed before any number]
+
     ## Summary
-    | Metric | Count | Status |
-    |--------|-------|--------|
-    | Dead exports | N | OK/WARN |
-    | Unused deps | N | OK/WARN |
-    | Orphan files | N | OK/WARN |
-    | Config drift | N | OK/WARN |
-    | Doc gaps | N | OK/WARN |
-    | Bloated files | N | OK/WARN |
-    | Untested files | N | OK/WARN |
-    | Security items | N | OK/WARN |
+    | Finding | lines | / APP total | share |
+    |---------|------:|------------:|------:|
+    | Dead exports | N | N | N % |
+    | Unused deps | N | — | — |
+    | Orphan files | N | N | N % |
+    | Config drift | N | — | — |
+    | Doc gaps | N | — | — |
+    | Accretion (redistributes, no line gain) | N | N | N % |
+    | Untested files | N | — | — |
+    | Security items | N | — | — |
+
+    ## Honesty clause — MANDATORY, never skip
+    Total fixable lines vs APP code. If < 5 %: say so plainly, declare the
+    thresholds miscalibrated for this repo, and name where the mass actually
+    is (generated? tests? comments? accretion?). Do NOT defend the threshold.
+    A "problem confirmed" verdict worth 2 % of savings is a false positive.
 
     ## Details
     [per-step findings with file paths and recommendations]
 
     ## Recommended Actions
-    [prioritized list of cleanup tasks]
+    [prioritized list — keep one-off fixes separate from accretion: accretion
+    redistributes rather than removes, so treating it as a fix is a category
+    error]
     ```
 
     ${contract {
@@ -2183,7 +2217,7 @@ in
       "Config drift → hand off to nix-expert or relevant specialist"
       "Test coverage gaps → hand off with testing-patterns skill for test creation"
       "Security items → hand off to security-auditor for deep analysis"
-      "Bloated files → run /discuss to produce a decomposition plan"
+      "Accretion → run /discuss to produce a decomposition plan (redistribution, not removal)"
     ]}
   '';
 

@@ -67,7 +67,8 @@
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
       const { execSync } = require("child_process");
-      try { execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" }); } catch { process.exit(0); }
+      const path = require("path");
+      const os = require("os");
       try {
         const data = JSON.parse(input);
         const cmd = (data.tool_input && data.tool_input.command) || "";
@@ -75,8 +76,35 @@
         // push that branch — never master/main. commit/push/merge/rebase while on
         // master/main are all hard-denied. Bringing code to master = a manual PR
         // step by the user on GitHub, never a Claude action.
-        if (!/git\s+(commit|push|merge|rebase)/.test(cmd)) process.exit(0);
-        const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
+        // Global options may sit between `git` and the verb, so `git -C <dir>
+        // commit` must match too — the narrower /git\s+(commit|...)/ let every
+        // `git -C ... commit` through, on master included. Requiring the verb
+        // to follow whitespace keeps `--grep=commit` from tripping it.
+        if (!/git(\s[^;&|]*)?\s(commit|push|merge|rebase)(\s|$)/.test(cmd)) process.exit(0);
+        // Check the branch of the repo the COMMAND targets, not the session cwd.
+        // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading
+        // the session cwd blocked legitimate commits in another repo, and let
+        // `cd /elsewhere && git commit` through when the cwd was not a repo.
+        // Unresolvable target falls back to cwd, so ambiguity fails closed.
+        let dir = process.cwd();
+        const viaC = cmd.match(/git\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
+        const viaCd = cmd.match(/(?:^|&&|;|\|\|)\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
+        const raw = (viaC && viaC[1]) || (viaCd && viaCd[1]);
+        if (raw) {
+          let p = raw.replace(/^["']/, "").replace(/["']$/, "");
+          if (p === "~" || p.startsWith("~/")) p = path.join(os.homedir(), p.slice(1));
+          const candidate = path.resolve(process.cwd(), p);
+          try {
+            execSync("git rev-parse --is-inside-work-tree",
+              { cwd: candidate, stdio: "pipe" });
+            dir = candidate;
+          } catch {}
+        }
+        try {
+          execSync("git rev-parse --is-inside-work-tree", { cwd: dir, stdio: "pipe" });
+        } catch { process.exit(0); }
+        const branch = execSync("git branch --show-current",
+          { cwd: dir, encoding: "utf8" }).trim();
         if (branch === "main" || branch === "master") {
           const reason = "BLOCKED: on " + branch + ". Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
           process.stdout.write(JSON.stringify({

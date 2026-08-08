@@ -130,8 +130,14 @@
         if (ti.skill !== "apex") process.exit(0);
 
         const args = typeof ti.args === "string" ? ti.args : "";
+        // `nix`, `flake` and `rebuild` were in STANDARD and had to go: in a
+        // nix-darwin config repo every task names a .nix file, so they matched
+        // everything and made the trivial tier unreachable. Measured against
+        // the real briefs of 2026-08-08 — a two-line CLAUDE.md edit escalated
+        // to -b -s -t -pr purely because the path contained "claude-md.nix".
+        // A signal that fires on every task is not a signal.
         const HIGH = /(hook|settings|permission|sandbox|deny|secret|credential)/i;
-        const STANDARD = /(supprime|delete|remove|\brm\b|migration|\bmaster\b|\bmain\b|\bprod\b|\bnix\b|flake|rebuild)/i;
+        const STANDARD = /(supprime|delete|remove|\brm\b|migration|\bmaster\b|\bmain\b|\bprod\b)/i;
 
         let target;
         if (HIGH.test(args)) target = ["-b", "-s", "-t", "-x", "-pr"];

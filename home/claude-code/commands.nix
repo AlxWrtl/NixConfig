@@ -62,8 +62,11 @@
     Analyze request and route to best workflow/agent:
 
     **APEX** (create|add|implement|build|new|feature):
-    - Route: `/apex -a -s -t "$ARGUMENTS"`
+    - Route: `/apex -a "$ARGUMENTS"`
     - Reason: "Detected feature implementation"
+    - Only `-a` is passed: apex's mode gate already resolves `-b -s -t -pr`
+      by default, and `-a` is never auto-enabled — so it is the one flag
+      this route still has to state.
 
     **DEBUG** (fix|bug|error|broken|failing|crash|why):
     - Route: `Task(subagent_type=debugger)` with the full task description
@@ -90,7 +93,7 @@
 
     Input: "create health check"
     → Routed to /apex because detected "create" keyword
-    → Execute: /apex -a -s -t "create health check"
+    → Execute: /apex -a "create health check"
 
     Input: "fix database timeout"
     → Routed to debugger agent because detected "fix" keyword

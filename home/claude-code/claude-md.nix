@@ -15,8 +15,10 @@
     - Repo file edits: proceed (acceptEdits + hooks gate them). Ask before: sudo,
       chmod, installs, deletes outside repo, large refactors, anything irreversible.
     - Never touch secrets: ~/.ssh, ~/.aws, ~/.gnupg, **/.env*, secrets/, *token*, *key*, *cert*.
-    - No git add/commit/push unless explicitly asked. Branch first: never commit
-      on main/master (hooks deny it) — `git checkout -b <type>/<desc>` BEFORE coding.
+    - Git: branch FIRST — `git checkout -b <type>/<desc>` BEFORE coding; never
+      commit on main/master (hooks deny it), master via PR only. End-of-run
+      commit+PR is pre-authorized by the apex `-pr` default; any other
+      add/commit/push still needs an explicit ask.
     - Keep diffs minimal. Small, reversible changes.
 
     ## Identity
@@ -72,8 +74,10 @@
 
     ## Delegation — APEX universel (tous projets)
     - TOUTE tâche qui modifie des fichiers passe par /apex, quel que soit le
-      projet ou la taille. Pas d'implémentation hors apex. Son mode gate adapte
-      (trivial → economy inline, bug → debugger en execute, sinon full).
+      projet ou la taille. Pas d'implémentation hors apex. Flags auto par mode :
+      trivial → -e | diagnosis → -b -s -x | standard → -b -s -t -pr |
+      haut-enjeu → -b -s -t -x -pr | recherche pure → aucun. Flag tapé prime,
+      majuscule désactive (-PR). Jamais auto : -a -k -m -o -v -n -i.
     - Process fixe : Opus 5 plan+code+auto-verif → gate machine (parse/lint/test,
       gratuit) → sur haut-enjeu, Fable vérifie le diff réel (read-only, fix-list)
       → si pas bon, Opus 5 corrige (brief plus précis à chaque tour) jusqu'à vert.

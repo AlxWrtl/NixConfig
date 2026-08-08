@@ -144,10 +144,20 @@ in
 
     ## Parse Flags
 
-    Extract flags from $ARGUMENTS. Default: all flags OFF.
-    - If `-pr` is set, auto-enable `-b` (branch)
-    - If `-m` is set, auto-enable `-k` (tasks)
-    - Uppercase flag disables (e.g., `-A` disables auto)
+    Extract flags from $ARGUMENTS, then resolve the rest from the Mode Gate
+    default set below (the gate runs first — a flag's default depends on the
+    chosen mode).
+
+    Precedence, highest first:
+    1. Flag typed by the user — lowercase forces ON, uppercase forces OFF.
+       `-PR` cancels an auto `-pr`, `-T` cancels an auto `-t`, and so on.
+    2. Mode default set.
+    3. OFF.
+
+    One exception to rule 1: `-s` outside economy — see "Force external memory".
+
+    Implications apply after resolution: `-pr` implies `-b`, `-m` implies `-k`.
+    Never auto-enabled — must be typed: `-a`, `-k`, `-m`, `-o`, `-v`, `-n`, `-i`.
 
     ## Session model guard (run FIRST)
 
@@ -160,26 +170,49 @@ in
 
     ## Mode Gate (run BEFORE anything else — NEVER redirect out of APEX)
 
-    Every task runs through APEX. The gate picks the MODE, not whether:
-    - **Trivial** — one sentence, ≤ ~2 files, < ~20 lines: auto-enable `-e`
-      (economy). Opus 5 still writes the precise brief and self-verifies the real
-      diff before finishing — the verify duty NEVER drops. Fable verify is
+    Every task runs through APEX. The gate picks the MODE, not whether. Each
+    mode carries a DEFAULT FLAG SET, applied to every flag the user did not
+    type (precedence in Parse Flags above):
+
+    | Mode | Default flags |
+    |------|---------------|
+    | Trivial | `-e` |
+    | Diagnosis | `-b -s -x` |
+    | Standard / complex | `-b -s -t -pr` |
+    | High-stakes | `-b -s -t -x -pr` |
+    | Pure research | none |
+
+    - **Trivial** — one sentence, ≤ ~2 files, < ~20 lines: economy inline, no
+      PR. `-b` is not in the set, but branch-first is a repo invariant, not a
+      flag: if the current branch is `main`/`master`, cut a branch anyway before
+      the first edit. Opus 5 still writes the precise brief and self-verifies the
+      real diff before finishing — the verify duty NEVER drops. Fable verify is
       reserved for high-stakes, not trivial.
     - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
       the error first; execute phase spawns the debugger agent (`model: opus`)
-      as implementer. Stays inside APEX.
-    - **Pure research / no file change**: analyze phase only (Explore fan-out),
-      report findings, skip execute/validate.
+      as implementer. Stays inside APEX. No `-pr`: a fix lands on its branch and
+      stops there — shipping it is a separate, explicit call.
     - **Standard / complex**: full orchestration per ORCHESTRATION.md.
+    - **High-stakes** — irreversible / security / architecture / prod: adds the
+      adversarial pass, plus the Fable read-only verify on the real diff.
+    - **Pure research / no file change**: analyze phase only (Explore fan-out),
+      report findings, skip execute/validate. No branch, no PR. A question with
+      zero file change should not reach APEX at all — answer it directly.
 
-    State the chosen mode in the init summary and record it in state below.
+    `-pr` ends the run with a commit + PR on the run's own branch; master is
+    never committed to directly. Opt out of a given run with `-PR`.
+
+    State the chosen mode AND the resolved flag set in the init summary, and
+    record both in state below.
 
     ## Force external memory (unless economy)
 
-    If NOT `-e`: enable `-s` automatically. Fresh-context-per-phase relies on the
-    on-disk summary chain to survive compaction and `-r` resume, so saving is not
-    optional here — run [step-00b-save.md](step-00b-save.md) even if `-s` was not
-    passed. This is the other half of the orchestration mechanism.
+    `-s` is already in every non-economy default set above, and it is the one
+    flag the typed-flag precedence does NOT override: if NOT `-e`, `-s` stays on
+    even when `-S` is typed. Fresh-context-per-phase relies on the on-disk
+    summary chain to survive compaction and `-r` resume, so saving is not
+    optional here — run [step-00b-save.md](step-00b-save.md) either way. This is
+    the other half of the orchestration mechanism.
 
     ## Initialize State
 

@@ -176,7 +176,7 @@
   # that actually hurts (the rule silently not firing).
   hookApexReminder = ''
     #!/usr/bin/env bash
-    echo "Routage: tâche qui modifie des fichiers → /apex (son mode gate adapte l'effort : trivial = economy inline, sinon full). Question ou recherche sans modification → réponse directe, pas d'apex."
+    echo "Routage: fichier modifié → /apex. Flags auto par mode: trivial=-e | diagnosis=-b -s -x | standard=-b -s -t -pr | haut-enjeu=-b -s -t -x -pr. Flag tapé prime, majuscule désactive (-PR). Question ou recherche sans modification → réponse directe, pas d'apex."
     exit 0
   '';
 

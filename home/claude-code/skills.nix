@@ -46,6 +46,14 @@ in
     - Model routing (ORCHESTRATION.md): Opus 5 is the workhorse (coordinates,
       plans, codes, self-verifies); Fable is an independent read-only verifier on
       high-stakes diffs only — every spawn passes an explicit `model`, never inherit.
+    - Process fixe : Opus 5 plan+code+auto-verif → gate machine (parse/lint/test,
+      gratuit) → sur haut-enjeu, Fable vérifie le diff réel (read-only, fix-list)
+      → si pas bon, Opus 5 corrige (brief plus précis à chaque tour) jusqu'à vert.
+    - Profondeur ∝ blast-radius : trivial → opus 5 solo + gate machine ; standard
+      → +auto-verif ACs ; dur/irréversible → grounding + Fable verify + adversarial
+      scalé.
+    - Les agents spécialisés de ~/.claude/agents/ sont des exécutants au service
+      d'apex, jamais des points d'entrée.
 
     ## Effort per step
 

@@ -1852,7 +1852,7 @@ in
     - `01-Inbox/` — Quick capture, unsorted
     - `02-Projets/` — Active projects
     - `03-Areas/` — Ongoing areas of responsibility
-    - `04-Resources/` — Reference material, veille-claude output
+    - `04-Resources/` — Reference material
 
     ## Guidelines
     - Grep before creating to avoid duplicates

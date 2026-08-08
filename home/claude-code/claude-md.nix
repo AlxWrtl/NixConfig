@@ -66,6 +66,8 @@
     - `grep`/`rg` → Grep tool | `find`/`ls -R` → Glob tool
     - `cat`/`head`/`tail` → Read tool | `sed`/`awk` → Edit tool
     - `echo >` / heredoc → Write tool | `curl` for docs → WebFetch tool
+    - Multi-line script → write to scratchpad, run the file. Never `node -e` /
+      `python3 -c` inline: operators in the body break the permission matcher.
 
     ## Confidence Gate (nix)
     - Before writing nix syntax: rate confidence 0-100.

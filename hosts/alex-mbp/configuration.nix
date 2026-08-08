@@ -20,7 +20,9 @@
   # direnv 2.37.1 test-zsh hangs on macOS sandbox (upstream flake).
   nixpkgs.overlays = [
     (final: prev: {
-      direnv = prev.direnv.overrideAttrs (_: { doCheck = false; });
+      direnv = prev.direnv.overrideAttrs (_: {
+        doCheck = false;
+      });
     })
   ];
 

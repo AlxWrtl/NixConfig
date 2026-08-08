@@ -44,9 +44,11 @@
           ${pkgs.nixfmt}/bin/nixfmt --check modules/*.nix
           ${pkgs.nixfmt}/bin/nixfmt --check home/*.nix
           ${pkgs.nixfmt}/bin/nixfmt --check hosts/alex-mbp/*.nix
+          ${pkgs.nixfmt}/bin/nixfmt --check checks/*.nix
           touch $out
         '';
         system-config = self.darwinConfigurations."alex-mbp".system;
+        apex-consistency = import ./checks/apex-consistency.nix { inherit pkgs; };
       };
 
       # System configuration

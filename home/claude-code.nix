@@ -71,6 +71,8 @@ let
   inherit (hooks)
     hookRtkNixRewrite
     hookProtectMain
+    hookRequireApex
+    hookApexFlags
     hookFormatTypescript
     hookBlockMainBash
     hookSessionStart
@@ -238,6 +240,14 @@ in
     # Hooks
     "${claudeDir}/hooks/protect-main.js" = {
       text = hookProtectMain;
+      executable = true;
+    };
+    "${claudeDir}/hooks/require-apex.js" = {
+      text = hookRequireApex;
+      executable = true;
+    };
+    "${claudeDir}/hooks/apex-flags.js" = {
+      text = hookApexFlags;
       executable = true;
     };
     "${claudeDir}/hooks/format-typescript.js" = {

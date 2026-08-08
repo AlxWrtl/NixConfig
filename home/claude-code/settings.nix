@@ -266,6 +266,31 @@ in
           ];
         }
         {
+          # Rewrites APEX flags from risk signals before the skill starts.
+          # A typed flag is a floor, never a ceiling: -e is stripped when the
+          # task text carries a risk signal, missing depth flags are added.
+          matcher = "Skill";
+          hooks = [
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/apex-flags.js";
+              timeout = 5;
+            }
+          ];
+        }
+        {
+          matcher = "Edit|Write|NotebookEdit";
+          hooks = [
+            {
+              type = "command";
+              # Enforces the APEX routing rule that apex-reminder only suggests.
+              # Fires at most once per session; fail-open on any error.
+              command = "${node} ~/.claude/hooks/require-apex.js";
+              timeout = 5;
+            }
+          ];
+        }
+        {
           matcher = "Bash";
           # `if` uses permission-rule syntax (single rule, no `|` alternation —
           # a composite pattern silently never matches and the hook never runs).

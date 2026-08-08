@@ -42,6 +42,139 @@
     });
   '';
 
+  # Turns the APEX routing rule from advice into enforcement. The
+  # UserPromptSubmit reminder is text: it is read and then skipped. Measured on
+  # 2026-08-08 — 6 file-modifying tasks in one session, APEX invoked on 2.
+  #
+  # Fires at most ONCE per session: after APEX runs, its Skill call is in the
+  # transcript and every later edit passes. That is what keeps the cost of a
+  # hard deny acceptable.
+  #
+  # FAIL-OPEN on any error, unlike protect-main and block-main-bash. This is a
+  # workflow hook, not a safety one: a missed APEX costs little, a session
+  # where no edit can land costs a lot.
+  hookRequireApex = ''
+    #!/usr/bin/env node
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const fs = require("fs");
+      const path = require("path");
+      const { execSync } = require("child_process");
+      try {
+        const data = JSON.parse(input);
+
+        // Plan mode never writes.
+        if (data.permission_mode === "plan") process.exit(0);
+
+        const filePath = data.tool_input && data.tool_input.file_path;
+        if (!filePath) process.exit(0);
+        const resolved = path.resolve(filePath);
+
+        // Memory writes are not project work.
+        if (/\/\.claude\/projects\/[^/]+\/memory\//.test(resolved)) process.exit(0);
+
+        // Outside any git repo — scratchpad, /tmp, $TMPDIR. Not project work.
+        try {
+          execSync("git rev-parse --is-inside-work-tree", {
+            cwd: path.dirname(resolved), stdio: "pipe"
+          });
+        } catch { process.exit(0); }
+
+        // Match the structured Skill call, never the word "apex": a
+        // conversation that merely discusses APEX would match a bare grep.
+        const t = data.transcript_path;
+        if (!t || !fs.existsSync(t)) process.exit(0);
+        const body = fs.readFileSync(t, "utf8");
+        if (body.indexOf("\"name\":\"Skill\",\"input\":{\"skill\":\"apex\"") !== -1) process.exit(0);
+
+        const reason = "BLOCKED: this edit modifies a project file and APEX has not run "
+          + "in this session. Invoke the apex skill first — use `-e` for a trivial change. "
+          + "Fires once per session; every edit after APEX starts passes.";
+        process.stdout.write(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "deny",
+            permissionDecisionReason: reason
+          }
+        }));
+      } catch (e) {}
+      process.exit(0);
+    });
+  '';
+
+  # Rewrites APEX's flags before it starts, from risk signals in the task text.
+  #
+  # The mode gate picks flags from prose, before anything is known about the
+  # change — and a typed flag wins over the mode default. Measured on
+  # 2026-08-08: `-e` was typed on 3 of 3 invocations, under-powering 2 of them
+  # (a 45-rule rewrite and a blocking hook both ran in economy).
+  #
+  # Rule: a typed flag is a FLOOR, never a ceiling. A risk signal can only
+  # raise the tier. `-e` is the one flag that lowers depth, so it is the one
+  # flag stripped. Uppercase disables the user typed on purpose are preserved.
+  #
+  # False positives are the intended failure direction: a task that merely
+  # mentions "settings" runs more thoroughly than needed. Cheap. The reverse
+  # is not.
+  #
+  # FAIL-OPEN: any error leaves the call untouched.
+  hookApexFlags = ''
+    #!/usr/bin/env node
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      try {
+        const data = JSON.parse(input);
+        const ti = data.tool_input || {};
+        if (ti.skill !== "apex") process.exit(0);
+
+        const args = typeof ti.args === "string" ? ti.args : "";
+        // `nix`, `flake` and `rebuild` were in STANDARD and had to go: in a
+        // nix-darwin config repo every task names a .nix file, so they matched
+        // everything and made the trivial tier unreachable. Measured against
+        // the real briefs of 2026-08-08 — a two-line CLAUDE.md edit escalated
+        // to -b -s -t -pr purely because the path contained "claude-md.nix".
+        // A signal that fires on every task is not a signal.
+        const HIGH = /(hook|settings|permission|sandbox|deny|secret|credential)/i;
+        const STANDARD = /(supprime|delete|remove|\brm\b|migration|\bmaster\b|\bmain\b|\bprod\b)/i;
+
+        let target;
+        if (HIGH.test(args)) target = ["-b", "-s", "-t", "-x", "-pr"];
+        else if (STANDARD.test(args)) target = ["-b", "-s", "-t", "-pr"];
+        else process.exit(0);
+
+        // Leading tokens that look like flags; everything after is the task.
+        const parts = args.trim().split(/\s+/);
+        let i = 0;
+        while (i < parts.length && /^-[a-zA-Z]+$/.test(parts[i])) i++;
+        const typed = parts.slice(0, i);
+        const rest = parts.slice(i).join(" ");
+
+        // Drop -e: it is the only flag that lowers depth.
+        const kept = typed.filter(f => f !== "-e");
+
+        // Add what is missing, but never override an explicit uppercase OFF.
+        for (const f of target) {
+          const off = "-" + f.slice(1).toUpperCase();
+          if (kept.indexOf(f) === -1 && kept.indexOf(off) === -1) kept.push(f);
+        }
+
+        const next = (kept.join(" ") + " " + rest).trim();
+        if (next === args.trim()) process.exit(0);
+
+        process.stdout.write(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: "PreToolUse",
+            permissionDecision: "allow",
+            updatedInput: { skill: ti.skill, args: next }
+          }
+        }));
+      } catch (e) {}
+      process.exit(0);
+    });
+  '';
+
   hookFormatTypescript = ''
     #!/usr/bin/env node
     let input = "";

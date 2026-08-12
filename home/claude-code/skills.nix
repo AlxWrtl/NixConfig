@@ -1,13 +1,19 @@
 # Skill definitions
 let
   # Shared template blocks for DRY skill authoring
-  contract = { expects, produces, sideEffects ? "none" }: ''
+  contract =
+    {
+      expects,
+      produces,
+      sideEffects ? "none",
+    }:
+    ''
 
-    ## Input/Output Contract
-    - **Expects:** ${expects}
-    - **Produces:** ${produces}
-    - **Side effects:** ${sideEffects}
-  '';
+      ## Input/Output Contract
+      - **Expects:** ${expects}
+      - **Produces:** ${produces}
+      - **Side effects:** ${sideEffects}
+    '';
 
   scope = { useWhen, notFor }: ''
 
@@ -16,10 +22,14 @@ let
     - **Do NOT use for:** ${notFor}
   '';
 
-  handoffs = items: ''
+  handoffs =
+    items:
+    ''
 
-    ## Handoffs
-'' + builtins.concatStringsSep "\n" (map (i: "    - ${i}") items) + "\n";
+      ## Handoffs
+    ''
+    + builtins.concatStringsSep "\n" (map (i: "    - ${i}") items)
+    + "\n";
 in
 {
   # =========================================================================
@@ -2342,84 +2352,90 @@ in
   # Declarative, zero npx daemon. Secrets read at runtime from ~/.config/secrets.
   # =========================================================================
   skillTrello = ''
-    ---
-    name: trello
-    description: "Pilot Trello from the shell via the REST API v1 (curl). Use when the user mentions Trello, a board, list, card, or kanban and wants to read or create/move cards. Replaces the former MCP server — there are no native Trello MCP tools."
-    ---
+        ---
+        name: trello
+        description: "Pilot Trello from the shell via the REST API v1 (curl). Use when the user mentions Trello, a board, list, card, or kanban and wants to read or create/move cards. Replaces the former MCP server — there are no native Trello MCP tools."
+        ---
 
-    # Trello — CLI (REST API v1)
+        # Trello — CLI (REST API v1)
 
-    Drive Trello with `curl` + `jq`. No MCP server, no npx. Auth via a personal
-    API key + token read at runtime from `~/.config/secrets` (never hardcode,
-    never echo the values).
+        Drive Trello with `curl` + `jq`. No MCP server, no npx. Auth via a personal
+        API key + token read at runtime from `~/.config/secrets` (never hardcode,
+        never echo the values).
 
-    ## Auth — load credentials first (every session that touches Trello)
+        ## Auth — load credentials first (every session that touches Trello)
 
-    ```bash
-    TRELLO_KEY=$(cat "$HOME/.config/secrets/trello-api-key")
-    TRELLO_TOKEN=$(cat "$HOME/.config/secrets/trello-token")
-    AUTH="key=$TRELLO_KEY&token=$TRELLO_TOKEN"
-    ```
+        ```bash
+        TRELLO_KEY=$(cat "$HOME/.config/secrets/trello-api-key")
+        TRELLO_TOKEN=$(cat "$HOME/.config/secrets/trello-token")
+        AUTH="key=$TRELLO_KEY&token=$TRELLO_TOKEN"
+        ```
 
-    If either file is missing, stop and tell the user to create it — do NOT
-    proceed with empty credentials.
+        If either file is missing, stop and tell the user to create it — do NOT
+        proceed with empty credentials.
 
-    ## Read operations
+        ## Read operations
 
-    ```bash
-    # List my boards (id  name)
-    curl -s "https://api.trello.com/1/members/me/boards?fields=name,id&$AUTH" \
-      | jq -r '.[] | "\(.id)  \(.name)"'
+        ```bash
+        # List my boards (id  name)
+        curl -s "https://api.trello.com/1/members/me/boards?fields=name,id&$AUTH" \
+          | jq -r '.[] | "\(.id)  \(.name)"'
 
-    # List lists of a board (id  name)
-    curl -s "https://api.trello.com/1/boards/<BOARD_ID>/lists?fields=name,id&$AUTH" \
-      | jq -r '.[] | "\(.id)  \(.name)"'
+        # List lists of a board (id  name)
+        curl -s "https://api.trello.com/1/boards/<BOARD_ID>/lists?fields=name,id&$AUTH" \
+          | jq -r '.[] | "\(.id)  \(.name)"'
 
-    # List cards of a list (id  name)
-    curl -s "https://api.trello.com/1/lists/<LIST_ID>/cards?fields=name,id&$AUTH" \
-      | jq -r '.[] | "\(.id)  \(.name)"'
-    ```
+        # List cards of a list (id  name)
+        curl -s "https://api.trello.com/1/lists/<LIST_ID>/cards?fields=name,id&$AUTH" \
+          | jq -r '.[] | "\(.id)  \(.name)"'
+        ```
 
-    ## Write operations
+        ## Write operations
 
-    ```bash
-    # Create a card in a list
-    curl -s -X POST "https://api.trello.com/1/cards?$AUTH" \
-      --data-urlencode "idList=<LIST_ID>" \
-      --data-urlencode "name=Card title" \
-      --data-urlencode "desc=Card description" \
-      | jq -r '"created: \(.id)  \(.shortUrl)"'
+        ```bash
+        # Create a card in a list
+        curl -s -X POST "https://api.trello.com/1/cards?$AUTH" \
+          --data-urlencode "idList=<LIST_ID>" \
+          --data-urlencode "name=Card title" \
+          --data-urlencode "desc=Card description" \
+          | jq -r '"created: \(.id)  \(.shortUrl)"'
 
-    # Move a card to another list
-    curl -s -X PUT "https://api.trello.com/1/cards/<CARD_ID>?$AUTH" \
-      --data-urlencode "idList=<DEST_LIST_ID>" >/dev/null
+        # Move a card to another list
+        curl -s -X PUT "https://api.trello.com/1/cards/<CARD_ID>?$AUTH" \
+          --data-urlencode "idList=<DEST_LIST_ID>" >/dev/null
 
-    # Comment on a card
-    curl -s -X POST "https://api.trello.com/1/cards/<CARD_ID>/actions/comments?$AUTH" \
-      --data-urlencode "text=Comment body" >/dev/null
-    ```
+        # Comment on a card
+        curl -s -X POST "https://api.trello.com/1/cards/<CARD_ID>/actions/comments?$AUTH" \
+          --data-urlencode "text=Comment body" >/dev/null
+        ```
 
-    ## Name → ID resolution
+        ## Name → ID resolution
 
-    The API works on IDs, not names. Resolve in order: board name → BOARD_ID →
-    list name → LIST_ID, then act. When the user gives a name, list first and
-    match (case-insensitive) before any write. Ask if the match is ambiguous.
+        The API works on IDs, not names. Resolve in order: board name → BOARD_ID →
+        list name → LIST_ID, then act. When the user gives a name, list first and
+        match (case-insensitive) before any write. Ask if the match is ambiguous.
 
-    ## Constraints
-    - Rate limits: 300 req/10s per key, 100 req/10s per token. Batch loops →
-      add a short sleep and retry on HTTP 429 with backoff.
-    - Never print the key/token. Confirm before any write (create/move/comment).
-    - This is a write-capable integration: treat create/move/delete as
-      outward-facing actions — confirm first unless told to proceed.
-${contract {
-  expects = "a Trello intent (read board/list/cards, or create/move/comment on a card), names or IDs";
-  produces = "the requested data (ids + names) or the result of a create/move/comment action";
-  sideEffects = "network calls to api.trello.com; writes create/modify Trello cards";
-}}${scope {
-  useWhen = "the user wants to read or modify Trello boards/lists/cards from the shell";
-  notFor = "non-Trello task trackers, or bulk migrations (use the API directly with proper backoff).";
-}}${handoffs [
-  "If credentials are missing → ask the user to populate ~/.config/secrets/trello-{api-key,token}."
-  "For complex automations → write a dedicated script rather than ad-hoc curl."
-]}  '';
+        ## Constraints
+        - Rate limits: 300 req/10s per key, 100 req/10s per token. Batch loops →
+          add a short sleep and retry on HTTP 429 with backoff.
+        - Never print the key/token. Confirm before any write (create/move/comment).
+        - This is a write-capable integration: treat create/move/delete as
+          outward-facing actions — confirm first unless told to proceed.
+    ${
+      contract {
+        expects = "a Trello intent (read board/list/cards, or create/move/comment on a card), names or IDs";
+        produces = "the requested data (ids + names) or the result of a create/move/comment action";
+        sideEffects = "network calls to api.trello.com; writes create/modify Trello cards";
+      }
+    }${
+      scope {
+        useWhen = "the user wants to read or modify Trello boards/lists/cards from the shell";
+        notFor = "non-Trello task trackers, or bulk migrations (use the API directly with proper backoff).";
+      }
+    }${
+      handoffs [
+        "If credentials are missing → ask the user to populate ~/.config/secrets/trello-{api-key,token}."
+        "For complex automations → write a dedicated script rather than ad-hoc curl."
+      ]
+    }  '';
 }

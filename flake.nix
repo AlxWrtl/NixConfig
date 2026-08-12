@@ -43,6 +43,12 @@
           ${pkgs.nixfmt}/bin/nixfmt --check flake.nix
           ${pkgs.nixfmt}/bin/nixfmt --check modules/*.nix
           ${pkgs.nixfmt}/bin/nixfmt --check home/*.nix
+          # The glob above does not descend, so the largest files in the repo
+          # sat unchecked. Reformatting them is safe: every one of the 35
+          # attributes skills.nix exports evaluates byte-identical before and
+          # after, verified — nixfmt does not shift the indentation that nix
+          # strips from multiline strings.
+          ${pkgs.nixfmt}/bin/nixfmt --check home/claude-code/*.nix
           ${pkgs.nixfmt}/bin/nixfmt --check hosts/alex-mbp/*.nix
           ${pkgs.nixfmt}/bin/nixfmt --check checks/*.nix
           touch $out

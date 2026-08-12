@@ -211,9 +211,20 @@
         // step by the user on GitHub, never a Claude action.
         // Global options may sit between `git` and the verb, so `git -C <dir>
         // commit` must match too — the narrower /git\s+(commit|...)/ let every
-        // `git -C ... commit` through, on master included. Requiring the verb
-        // to follow whitespace keeps `--grep=commit` from tripping it.
-        if (!/git(\s[^;&|]*)?\s(commit|push|merge|rebase)(\s|$)/.test(cmd)) process.exit(0);
+        // `git -C ... commit` through, on master included.
+        //
+        // The verb has to be the FIRST word after those options, not merely
+        // somewhere after `git`: a looser form read `git stash push` as a push
+        // and denied it on master. Any subcommand whose second word is a
+        // watched verb has the same shape (`git remote add`, `git bundle
+        // create`, ...).
+        //
+        // Alternation order is load-bearing: `-C <path>` and `-c <k=v>` take a
+        // separate argument, so they must be tried BEFORE the generic option
+        // branch — that branch would otherwise consume `-C` alone and leave the
+        // path sitting where the verb is expected, reopening the `git -C <dir>
+        // commit` hole.
+        if (!/\bgit(\s+(-[Cc]\s+\S+|--?[A-Za-z][\w-]*(=\S+)?))*\s+(commit|push|merge|rebase)\b/.test(cmd)) process.exit(0);
         // Check the branch of the repo the COMMAND targets, not the session cwd.
         // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading
         // the session cwd blocked legitimate commits in another repo, and let

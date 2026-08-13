@@ -98,6 +98,14 @@ let
       name = "orchestration: Fable reviews premises but never authors the plan";
       needle = "Fable NEVER writes the plan";
     }
+    {
+      name = "plan: a user-contradicted premise is persisted before execute";
+      needle = "persist the correction before execute";
+    }
+    {
+      name = "verify: the premises pass replays cited read-only evidence";
+      needle = "cited read-only commands";
+    }
   ];
 
   missingInvariants = builtins.filter (i: !(pkgs.lib.hasInfix i.needle corpus)) invariants;

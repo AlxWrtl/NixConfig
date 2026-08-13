@@ -42,7 +42,7 @@ in
   skillApex = ''
     ---
     name: apex
-    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts (economy inline for trivial, full analyze → plan → execute → validate otherwise). Opus 5 plans, executes and self-verifies; Fable read-only verifies high-stakes premises or diffs. Not for pure questions or research with zero file modification."
+    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts (economy inline for trivial, full analyze → plan → execute → validate otherwise). Opus 5 plans, executes and self-verifies; Fable read-only verifies the high-stakes diff by default, plus the plan's premises when the target itself is the risk. Not for pure questions or research with zero file modification."
     ---
 
     # APEX: Systematic Implementation Workflow
@@ -55,10 +55,12 @@ in
       phase as a fresh subagent and keep only its summary, so context stays clean.
     - Model routing (ORCHESTRATION.md): Opus 5 is the workhorse (coordinates,
       plans, codes, self-verifies); Fable is an independent read-only verifier on
-      high-stakes work only — the plan's premises or the real diff, never both by
-      default — every spawn passes an explicit `model`, never inherit.
+      high-stakes work only — the real diff by default, PLUS the plan's premises
+      when the target itself is the risk — every spawn passes an explicit
+      `model`, never inherit.
     - Process fixe : Opus 5 plan+code+auto-verif → gate machine (parse/lint/test,
-      gratuit) → sur haut-enjeu, Fable relit les prémisses du plan OU le diff réel
+      gratuit) → sur haut-enjeu, Fable relit le diff réel (défaut) et, quand la
+      cible elle-même est le risque, aussi les prémisses du plan
       (read-only, fix-list ; jamais rédacteur du plan)
       → si pas bon, Opus 5 corrige (brief plus précis à chaque tour) jusqu'à vert.
     - Profondeur ∝ blast-radius : trivial → opus 5 solo + gate machine ; standard
@@ -142,7 +144,7 @@ in
       "Diagnosis stays INSIDE apex — execute phase spawns the debugger agent (model: opus)."
       "If scope is unclear → run /discuss first, then return to apex."
       "After tests fail repeatedly → debugger agent (model: opus) inside the execute phase."
-      "After finish on L/XL or high-stakes changes → spawn a Fable read-only verifier on the diff + ACs; the coordinator (Opus 5) applies its bounded fix-list. Routine/reversible → Opus 5 self-verify only. When being wrong about the TARGET would cost more than a bad implementation, spend that same cartridge on the plan's premises instead — before any code exists."
+      "After finish on L/XL or high-stakes changes → spawn a Fable read-only verifier on the diff + ACs (the default pass); the coordinator (Opus 5) applies its bounded fix-list. Routine/reversible → Opus 5 self-verify only. When being wrong about the TARGET would cost more than a bad implementation, ALSO spawn a premises pass at plan approval — before any code exists; the two passes check different aspects."
     ]}
   '';
 
@@ -184,8 +186,8 @@ in
     The coordinator runs on Opus 5 (the workhorse: plans, codes, self-verifies).
     It is the default session model — no model switch needed to start. Fable is
     NOT the coordinator; it is invoked only as an independent read-only verifier
-    on high-stakes work — the plan's premises OR the real diff, one of the two
-    (see ORCHESTRATION.md). A Fable session CAN coordinate,
+    on high-stakes work — the real diff by default, plus the plan's premises when
+    the target itself is the risk (see ORCHESTRATION.md). A Fable session CAN coordinate,
     but it burns the scarce 5h/7d quota on plumbing — prefer Opus 5 and keep
     Fable for the high-stakes verify pass.
 
@@ -622,20 +624,44 @@ in
     - Then present the rest of the plan
     - Wait for approval before proceeding
 
+    **Whenever the user contradicts a premise — at plan approval or later, mid-run
+    — persist the correction before execute proceeds.** The rule holds at any
+    moment of the run: a contradiction raised while execute is already running is
+    persisted before the work resumes, not at the end. One line, minimal scope —
+    the correction as stated, never a generalization of it (inferring broader
+    scope from a single counter-example is the documented failure mode). Date it
+    and mark it `corrected by user`. Destination, exactly one of three:
+    - Rule true for the whole team → the project's `.claude/rules/*.md` (versioned, reviewed in PR).
+    - Project fact that does not generalize into a rule → the project `CLAUDE.md`.
+    - Personal preference of this user → their `~/.claude/CLAUDE.md`, never versioned in the repo.
+
+    A rule that must be IMPOSSIBLE to violate goes into a hook, not prose —
+    instruction files are context, not enforcement. This is what makes a
+    correction permanent: the same premise, re-corrected in a later session,
+    means this step was skipped.
+
     If auto mode (-a) IS active:
     - **Still print the Premises**, even though you do not wait for an answer.
       An unsourced premise must be visible in the transcript before the code
       that rests on it exists.
     - Display the rest of the plan briefly, proceed automatically
 
-    ## Fable cartridge — decide HERE, not at validate
+    ## Premises pass — decide HERE whether to ADD it
 
-    On high-stakes work, this is the moment to choose where the one Fable pass
-    goes (ORCHESTRATION.md): the Premises above, or the diff at validate. Choose
-    premises when being wrong about the target would cost more than a bad
-    implementation, or when a premise stayed unsourced. **Record the choice in
-    the plan** — step-04-validate reads it to know whether to spawn Fable, and
-    without it both passes run and the ration is blown.
+    On high-stakes work, the Fable diff pass at validate is NOT a decision of this
+    step: it is the default and step-04-validate spawns it regardless of what the
+    plan says (ORCHESTRATION.md). The only call to make here is whether to ADD a
+    premises pass on the Premises above, on either criterion: being wrong about
+    the target would cost more than a bad implementation, or a premise rests on
+    evidence nobody verified. The two passes check different aspects, so both are
+    legitimate on the same run. The premises pass is a spec check: it replays the
+    cited read-only commands, never a write-effect one, and never rewrites the
+    plan.
+
+    **Record in the plan which Fable passes will run** — the premises pass if you
+    add it, the default diff pass at validate, and the examine synthesis pass if
+    examine runs high-stakes. That record is the audit trail of every Fable spawn
+    in the run; it does not authorize the diff pass, which needs no record to run.
 
     ## Next Step
 
@@ -811,10 +837,15 @@ in
 
     Per ORCHESTRATION.md: the COORDINATOR (Opus 5) runs this step INLINE. Machine
     gate first (parse/typecheck/lint/tests — free), then Opus 5 self-verifies the
-    real diff against the ACs. On high-stakes diffs, ALSO spawn a Fable read-only
-    verifier — UNLESS the cartridge was already spent on the plan's premises (the
-    plan records which). Input: the plan + execute phase summaries AND the real diff. Produce
-    the validate phase summary schema and persist it.
+    real diff against the ACs. On high-stakes diffs, the Fable read-only diff
+    pass is the DEFAULT — spawn it whether or not a premises pass already ran at
+    plan approval; the two check different aspects (was the target right vs. was
+    it built right), so one does not consume the other. Before declaring green,
+    re-validate the premises whose truth can have DRIFTED since the plan
+    (environment state: rows in a table, deployed version, branch) — a cheap
+    re-read, never a write-effect command. Input: the plan + execute phase
+    summaries AND the real diff. Produce the validate phase summary schema and
+    persist it.
 
     ## Verification Checklist
 
@@ -861,7 +892,9 @@ in
     Spawn each with an explicit `model: opus` override (Opus 5 is a strong
     reviewer; the per-invocation param beats the agent frontmatter). The
     coordinator (Opus 5) synthesizes and arbitrates their findings inline; on
-    high-stakes, add one Fable read-only verdict pass over the synthesis:
+    high-stakes, add one Fable read-only verdict pass over the synthesis — a
+    third possible spend of the cartridge, recorded in the plan alongside the
+    other passes (step-02-plan), never spawned off the books:
 
     ### Agent 1: Security Review
     - Authentication/authorization gaps
@@ -1543,32 +1576,45 @@ in
 
     Plan approval: the coordinator reads the returned plan, checks it against the
     task + analyze summary, then approves it or re-briefs the planner. Execute
-    never starts on an unapproved plan.
+    never starts on an unapproved plan. The planner drafts the premises but never
+    talks to the user — it has no user channel. So it is the COORDINATOR that
+    presents the plan's Premises to the user at approval time, asks explicitly
+    whether any is wrong, and collects the contradiction. When one comes back, the
+    coordinator persists the correction itself, per the rule in step-02-plan, and
+    does so BEFORE spawning execute — the same applies to a contradiction raised
+    later, mid-run.
 
     Fable rule (inverted from the prior design): Fable is NO LONGER the
     coordinator. Spawn `model: fable` ONLY as a read-only verifier on high-stakes
-    work (irreversible / security / architecture / prod). It reads one bounded
-    artefact — the plan's premises, or the real diff + ACs — never the whole
-    repo, returns PASS or a bounded fix-list (`file:line → problem → expected
+    work (irreversible / security / architecture / prod). Each spawn reads ONE
+    bounded artefact — the plan's premises, the real diff + ACs, or the examine
+    synthesis — never the whole repo, returns PASS or a bounded fix-list (`file:line → problem → expected
     fix`), and NEVER edits. On reversible/routine work, skip Fable — the machine
     gate + Opus 5 fresh-context self-verify suffice. Why rationed: the 5h/7d
     Fable quota is the scarce resource — keep it for the check where a miss is
     expensive. When invoked, Fable's cyber/bio
     classifier may still fall back to Opus 4.8 (expected).
 
-    Where to spend the Fable cartridge — ONE of the two, decided at plan
-    approval, not both:
-    - **The plan's Premises**, when being wrong about the TARGET would cost more
-      than implementing it badly (architecture, data migration, anything hard to
-      walk back). Half a page to read, and it fires before any code exists —
-      the cheapest use of the quota, aimed at the failure that dominates in
-      practice.
-    - **The real diff + ACs**, when the target is obvious and the risk is in the
-      execution.
+    Where to spend the Fable cartridge — the diff pass is the default, the
+    premises pass is an addition, not an alternative:
+    - **The real diff + ACs at validate is the DEFAULT spend** on high-stakes
+      work. In code, the verification signal that measurably pays is anchored in
+      execution, and it only exists after the code does.
+    - **Additionally, spawn a premises pass at plan approval** when the TARGET
+      itself is the risk (architecture, data migration, effects that are hard to
+      walk back), or when a premise rests on evidence nobody verified. Both
+      passes are legitimate on the same run: they verify different aspects, and
+      stacking verifiers only stops paying when they check the SAME aspect.
+    - What the premises pass IS: a spec check, not a plan review. It re-runs the
+      cited read-only commands that the machine gate does not already cover,
+      compares the state that matters (tolerant to flaky output — byte-identical
+      is the wrong bar), checks the premises against each other, and lists every
+      premise left unsourced. It does NOT judge strategy or task ordering.
+    - What it is NOT allowed to do: write-effect commands are never re-run;
+      classify each cited command read vs write before replaying. Uncertain =
+      write — do not replay it; mark the premise as not re-verified instead.
 
-    Spending it on premises means step-04-validate does NOT also spawn Fable;
-    the machine gate plus Opus 5 self-verify carry that end. Record the choice in
-    the plan so validate can see it.
+    Record in the plan which passes will run, so validate knows.
 
     **Fable NEVER writes the plan** — it reads premises and returns PASS or a
     bounded list of premises to re-source. Authoring the plan would make its
@@ -1584,10 +1630,10 @@ in
        of touched files). Never trust the summary alone.
     3. Opus 5 coordinator self-verifies each acceptance criterion against the real
        diff (fresh-context adversarial pass — Opus 5's strength).
-    4. HIGH-STAKES ONLY (irreversible / security / architecture / prod), and only
-       if the cartridge was not already spent on the plan's premises: spawn a
-       Fable read-only verifier over the diff + ACs; it returns PASS or a bounded
-       fix-list and NEVER edits.
+    4. HIGH-STAKES ONLY (irreversible / security / architecture / prod): spawn a
+       Fable read-only verifier over the diff + ACs — the default spend, whether
+       or not a premises pass already ran at plan approval; it returns PASS or a
+       bounded fix-list and NEVER edits.
     5. Issues found → CORRECTIONS list (persisted): one line per issue —
        `file: problem → expected fix`. The coordinator re-briefs an Opus 5
        implementer (`model: opus`) with a SHARPER brief each round (root cause,

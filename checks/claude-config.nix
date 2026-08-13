@@ -133,6 +133,13 @@ let
       msg = "sandbox.filesystem.denyRead has no entry ending in /.ssh — the SSH private key becomes readable from inside the sandbox (verified: `wc -c < ~/.ssh/id_ed25519` returned 399, exit 0), i.e. one Bash call can exfiltrate it; denyWrite on ~/.ssh/id_* does not stop a read";
     }
     {
+      name = "A1b sandbox: the SSH PUBLIC key stays readable";
+      ok = builtins.any (e: builtins.isString e && hasSuffix ".pub" e) (
+        pkgs.lib.attrByPath [ "sandbox" "filesystem" "allowRead" ] [ ] settingsAttrs
+      );
+      msg = "sandbox.filesystem.allowRead has no *.pub entry — the denyRead on ~/.ssh also swallows the PUBLIC key, and git signs commits over SSH (gpg.format=ssh, signingkey ~/.ssh/id_ed25519.pub), so EVERY commit inside the sandbox fails with `Couldn't load public key`. This regressed once, in PR #101. A public key is public; only the private one must stay denied";
+    }
+    {
       name = "A2 sandbox: denyRead keeps its historic secret paths";
       ok =
         builtins.any (e: builtins.isString e && hasSuffix "/.aws/credentials" e) denyRead

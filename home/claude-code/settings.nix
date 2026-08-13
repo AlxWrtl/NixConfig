@@ -91,10 +91,18 @@ in
           "${homeDirectory}/.ssh"
           "${homeDirectory}/.aws/credentials"
           "${homeDirectory}/.gnupg/private-keys-v1.d"
+          # NOTE: la clé publique est ré-ouverte plus bas via allowRead.
           "**/.env"
           "**/.env.*"
           "**/secrets"
         ];
+        # Ré-ouvre la clé PUBLIQUE, que le denyRead sur ~/.ssh emportait aussi.
+        # git signe les commits en SSH (`gpg.format=ssh`, signingkey
+        # ~/.ssh/id_ed25519.pub) : sans ça, TOUT commit échoue dans le sandbox
+        # avec « Couldn't load public key ». Régression introduite par la PR
+        # #101 et constatée au premier commit suivant. Une clé publique est
+        # publique — la privée, elle, reste refusée.
+        allowRead = [ "${homeDirectory}/.ssh/id_ed25519.pub" ];
       };
       network = {
         # All domains allowed (web analysis, design, docs, APIs)

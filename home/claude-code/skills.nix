@@ -42,7 +42,7 @@ in
   skillApex = ''
     ---
     name: apex
-    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts (economy inline for trivial, full analyze → plan → execute → validate otherwise). Opus 5 plans, executes and self-verifies; Fable verifies high-stakes diffs read-only. Not for pure questions or research with zero file modification."
+    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts (economy inline for trivial, full analyze → plan → execute → validate otherwise). Opus 5 plans, executes and self-verifies; Fable read-only verifies high-stakes premises or diffs. Not for pure questions or research with zero file modification."
     ---
 
     # APEX: Systematic Implementation Workflow
@@ -55,9 +55,11 @@ in
       phase as a fresh subagent and keep only its summary, so context stays clean.
     - Model routing (ORCHESTRATION.md): Opus 5 is the workhorse (coordinates,
       plans, codes, self-verifies); Fable is an independent read-only verifier on
-      high-stakes diffs only — every spawn passes an explicit `model`, never inherit.
+      high-stakes work only — the plan's premises or the real diff, never both by
+      default — every spawn passes an explicit `model`, never inherit.
     - Process fixe : Opus 5 plan+code+auto-verif → gate machine (parse/lint/test,
-      gratuit) → sur haut-enjeu, Fable vérifie le diff réel (read-only, fix-list)
+      gratuit) → sur haut-enjeu, Fable relit les prémisses du plan OU le diff réel
+      (read-only, fix-list ; jamais rédacteur du plan)
       → si pas bon, Opus 5 corrige (brief plus précis à chaque tour) jusqu'à vert.
     - Profondeur ∝ blast-radius : trivial → opus 5 solo + gate machine ; standard
       → +auto-verif ACs ; dur/irréversible → grounding + Fable verify + adversarial
@@ -140,7 +142,7 @@ in
       "Diagnosis stays INSIDE apex — execute phase spawns the debugger agent (model: opus)."
       "If scope is unclear → run /discuss first, then return to apex."
       "After tests fail repeatedly → debugger agent (model: opus) inside the execute phase."
-      "After finish on L/XL or high-stakes changes → spawn a Fable read-only verifier on the diff + ACs; the coordinator (Opus 5) applies its bounded fix-list. Routine/reversible → Opus 5 self-verify only."
+      "After finish on L/XL or high-stakes changes → spawn a Fable read-only verifier on the diff + ACs; the coordinator (Opus 5) applies its bounded fix-list. Routine/reversible → Opus 5 self-verify only. When being wrong about the TARGET would cost more than a bad implementation, spend that same cartridge on the plan's premises instead — before any code exists."
     ]}
   '';
 
@@ -182,7 +184,8 @@ in
     The coordinator runs on Opus 5 (the workhorse: plans, codes, self-verifies).
     It is the default session model — no model switch needed to start. Fable is
     NOT the coordinator; it is invoked only as an independent read-only verifier
-    on high-stakes diffs (see ORCHESTRATION.md). A Fable session CAN coordinate,
+    on high-stakes work — the plan's premises OR the real diff, one of the two
+    (see ORCHESTRATION.md). A Fable session CAN coordinate,
     but it burns the scarce 5h/7d quota on plumbing — prefer Opus 5 and keep
     Fable for the high-stakes verify pass.
 
@@ -555,7 +558,31 @@ in
 
     Produce a structured plan with:
 
-    1. **Tasks** — numbered, ordered by dependency:
+    1. **Premises** — what you are taking as true, stated BEFORE any task.
+       A task list cannot show that you misunderstood the domain; this section
+       can. It is what the user must be able to contradict in ten seconds.
+       - **The target, restated** — what you believe is being asked, in your own
+         words. Misread intent is the most common premise error, and the one a
+         task list hides best.
+       - **Assumed business rules** — how the product actually behaves, stated
+         flatly: "a journalist can never see whether a car is available".
+       - **Assumed environment state** — what exists right now: rows in a table,
+         deployed version, accounts present, branch state.
+       - **Explicitly excluded scope** — nearby things this plan does NOT touch.
+
+       **Every premise carries its source.** Admissible: a command and its
+       output, a `file:line` you actually read, or a verbatim quote from the user
+       or a spec. Not admissible: recollection, or a truncated read presented as
+       exhaustive. When the analyze summary is your only input, say so and name
+       what that summary rested on — do not launder it into a fact. A premise you
+       cannot source is written as an open question; that is a valid outcome, not
+       a failure.
+
+       Premise and scope errors dominate user corrections, and most surface only
+       after code exists. A stronger planner does not fix this: reasoning models
+       rarely flag a false premise on their own.
+
+    2. **Tasks** — numbered, ordered by dependency:
        ```
        T1: Create types/interfaces in types.ts
        T2: Add database migration
@@ -564,21 +591,21 @@ in
        T5: Wire up route (depends on T3, T4)
        ```
 
-    2. **Acceptance Criteria** — specific, verifiable conditions:
+    3. **Acceptance Criteria** — specific, verifiable conditions:
        ```
        AC1: User can create a new item via the form
        AC2: Validation errors display inline
        AC3: Success redirects to the list page
        ```
 
-    3. **Testing Strategy** (if -t flag active):
+    4. **Testing Strategy** (if -t flag active):
        ```
        - Unit tests for validation logic
        - Integration test for API endpoint
        - Component test for form submission
        ```
 
-    4. **Risks & Mitigations**
+    5. **Risks & Mitigations**
 
     ## Create TodoWrite Checklist
 
@@ -590,13 +617,25 @@ in
     ## User Approval
 
     If auto mode (-a) is NOT active:
-    - Present the complete plan
-    - Ask the user if they want to modify anything
+    - **Present the Premises FIRST**, before the task list. Ask explicitly
+      whether any of them is wrong — that is the question worth a round trip.
+    - Then present the rest of the plan
     - Wait for approval before proceeding
 
     If auto mode (-a) IS active:
-    - Display the plan briefly
-    - Proceed automatically
+    - **Still print the Premises**, even though you do not wait for an answer.
+      An unsourced premise must be visible in the transcript before the code
+      that rests on it exists.
+    - Display the rest of the plan briefly, proceed automatically
+
+    ## Fable cartridge — decide HERE, not at validate
+
+    On high-stakes work, this is the moment to choose where the one Fable pass
+    goes (ORCHESTRATION.md): the Premises above, or the diff at validate. Choose
+    premises when being wrong about the target would cost more than a bad
+    implementation, or when a premise stayed unsourced. **Record the choice in
+    the plan** — step-04-validate reads it to know whether to spawn Fable, and
+    without it both passes run and the ration is blown.
 
     ## Next Step
 
@@ -773,7 +812,8 @@ in
     Per ORCHESTRATION.md: the COORDINATOR (Opus 5) runs this step INLINE. Machine
     gate first (parse/typecheck/lint/tests — free), then Opus 5 self-verifies the
     real diff against the ACs. On high-stakes diffs, ALSO spawn a Fable read-only
-    verifier. Input: the plan + execute phase summaries AND the real diff. Produce
+    verifier — UNLESS the cartridge was already spent on the plan's premises (the
+    plan records which). Input: the plan + execute phase summaries AND the real diff. Produce
     the validate phase summary schema and persist it.
 
     ## Verification Checklist
@@ -1507,13 +1547,33 @@ in
 
     Fable rule (inverted from the prior design): Fable is NO LONGER the
     coordinator. Spawn `model: fable` ONLY as a read-only verifier on high-stakes
-    diffs (irreversible / security / architecture / prod). It reads the real diff
-    + the plan's ACs (never the whole repo), returns PASS or a bounded fix-list
-    (`file:line → problem → expected fix`), and NEVER edits. On reversible/routine
-    work, skip Fable — the machine gate + Opus 5 fresh-context self-verify
-    suffice. Why rationed: the 5h/7d Fable quota is the scarce resource — keep it
-    for the diff where a missed bug is expensive. When invoked, Fable's cyber/bio
+    work (irreversible / security / architecture / prod). It reads one bounded
+    artefact — the plan's premises, or the real diff + ACs — never the whole
+    repo, returns PASS or a bounded fix-list (`file:line → problem → expected
+    fix`), and NEVER edits. On reversible/routine work, skip Fable — the machine
+    gate + Opus 5 fresh-context self-verify suffice. Why rationed: the 5h/7d
+    Fable quota is the scarce resource — keep it for the check where a miss is
+    expensive. When invoked, Fable's cyber/bio
     classifier may still fall back to Opus 4.8 (expected).
+
+    Where to spend the Fable cartridge — ONE of the two, decided at plan
+    approval, not both:
+    - **The plan's Premises**, when being wrong about the TARGET would cost more
+      than implementing it badly (architecture, data migration, anything hard to
+      walk back). Half a page to read, and it fires before any code exists —
+      the cheapest use of the quota, aimed at the failure that dominates in
+      practice.
+    - **The real diff + ACs**, when the target is obvious and the risk is in the
+      execution.
+
+    Spending it on premises means step-04-validate does NOT also spawn Fable;
+    the machine gate plus Opus 5 self-verify carry that end. Record the choice in
+    the plan so validate can see it.
+
+    **Fable NEVER writes the plan** — it reads premises and returns PASS or a
+    bounded list of premises to re-source. Authoring the plan would make its
+    later verdict a review of its own decision, and would cost the independence
+    that is the whole point of spending the cartridge.
 
     ## Verify loop (Opus 5 self-verify; Fable on high-stakes)
 
@@ -1524,7 +1584,8 @@ in
        of touched files). Never trust the summary alone.
     3. Opus 5 coordinator self-verifies each acceptance criterion against the real
        diff (fresh-context adversarial pass — Opus 5's strength).
-    4. HIGH-STAKES ONLY (irreversible / security / architecture / prod): spawn a
+    4. HIGH-STAKES ONLY (irreversible / security / architecture / prod), and only
+       if the cartridge was not already spent on the plan's premises: spawn a
        Fable read-only verifier over the diff + ACs; it returns PASS or a bounded
        fix-list and NEVER edits.
     5. Issues found → CORRECTIONS list (persisted): one line per issue —

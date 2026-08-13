@@ -86,6 +86,18 @@ let
       name = "summary: the phase schema is fixed";
       needle = "OBJECTIVE_MET";
     }
+    {
+      name = "plan: premises are stated before the task list";
+      needle = "Assumed business rules";
+    }
+    {
+      name = "plan: every factual premise is sourced, never recalled";
+      needle = "Every premise carries its source";
+    }
+    {
+      name = "orchestration: Fable reviews premises but never authors the plan";
+      needle = "Fable NEVER writes the plan";
+    }
   ];
 
   missingInvariants = builtins.filter (i: !(pkgs.lib.hasInfix i.needle corpus)) invariants;

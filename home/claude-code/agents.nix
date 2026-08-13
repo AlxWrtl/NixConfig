@@ -12,6 +12,7 @@
     ---
     name: frontend-expert
     model: opus
+    effort: high
     description: "Implements UI components, styles, and client-side logic. Use proactively when editing .tsx/.jsx/.vue/.css files, or tasks mention component, layout, responsive, a11y, styling, or design tokens."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
@@ -54,6 +55,7 @@
     ---
     name: backend-expert
     model: opus
+    effort: high
     description: "Implements API endpoints, server logic, and data access. Use proactively when editing .server.ts/.py/.sql files, or tasks mention endpoint, api, auth, middleware, query, migration, loader, or action."
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
@@ -100,6 +102,7 @@
     ---
     name: codebase-navigator
     model: haiku
+    effort: low
     description: "Explores and maps codebases without modifying files. Use proactively when tasks say where is, find, locate, how does X work, trace, entrypoint, audit, or when understanding structure before delegating."
     tools: Grep, Glob, Read, WebFetch
     permissionMode: default
@@ -255,6 +258,7 @@
     ---
     name: nix-expert
     model: opus
+    effort: high
     description: "Edits nix-darwin, flakes, and home-manager config. Use proactively when editing *.nix files or tasks mention nix, darwin-rebuild, flake, nixpkgs, home-manager, or module config."
     tools: Read, Edit, Bash, WebFetch, Write
     permissionMode: acceptEdits

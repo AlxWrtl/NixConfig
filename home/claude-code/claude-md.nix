@@ -20,7 +20,7 @@
 
     ## Identity
     - macOS with nix-darwin + flakes + home-manager (M1)
-    - Package manager: pnpm (never npm or yarn). WCAG AA accessibility minimum.
+    - Package manager: pnpm (never npm or yarn).
 
     ## Project Map (nix-darwin)
     modules/system.nix    — Core nix, env, security, shell
@@ -45,18 +45,13 @@
     fallback Opus 4.8. /effort max = frontier only.
 
     ## Verify Checklist
-    - nix: `nix-instantiate --parse file.nix && sudo darwin-rebuild switch --flake .#alex-mbp`
-    - ts: `pnpm typecheck && pnpm lint --max-warnings 0`
     - commit: English, imperative, type prefix (feat/fix/chore/refactor)
+    - nix / TS specifics: `~/.claude/rules/` — loaded on opening a matching file.
 
     ## Tool Selection (forbidden → required)
     - `echo >` / heredoc → Write tool | `curl` for docs → WebFetch tool
     - Multi-line script → write to scratchpad, run the file. Never `node -e` /
       `python3 -c` inline: operators in the body break the permission matcher.
-
-    ## Confidence Gate (nix)
-    - Rate confidence before writing nix. < 80% → STOP, load nix-darwin skill,
-      check docs first. 80-95% → state assumptions inline, proceed with caution.
 
     ## Delegation
     - Pattern répété N>=4 séquentiel mêmes fichiers → ralph-loop. Sous-tâches

@@ -16,9 +16,11 @@ let
   agents = import ./claude-code/agents.nix;
   shell = import ./claude-code/shell.nix;
   claudeMd = import ./claude-code/claude-md.nix;
+  rules = import ./claude-code/rules.nix;
   activationScripts = import ./claude-code/activation.nix { inherit pkgs lib; };
 
   inherit (claudeMd) claudeMdGlobal;
+  inherit (rules) ruleNix ruleTypescript;
   inherit (settings) settingsJson statuslineScript mcpServersJson;
   inherit (commands)
     cmdTdd
@@ -126,6 +128,10 @@ in
     "${claudeDir}/CLAUDE.md" = {
       text = claudeMdGlobal;
     };
+
+    # Rules (path-scoped, loaded on demand when a matching file is read)
+    "${claudeDir}/rules/nix.md".text = ruleNix;
+    "${claudeDir}/rules/typescript.md".text = ruleTypescript;
 
     # Commands
     "${claudeDir}/commands/tdd.md".text = cmdTdd;

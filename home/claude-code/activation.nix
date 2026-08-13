@@ -8,6 +8,7 @@
     mkdir -p "$HOME/.claude/commands"
     mkdir -p "$HOME/.claude/hooks"
     mkdir -p "$HOME/.claude/plugins"
+    mkdir -p "$HOME/.claude/rules"
     mkdir -p "$HOME/.claude/scripts"
     mkdir -p "$HOME/.claude/skills/apex"
     mkdir -p "$HOME/.claude/skills/apex/steps"

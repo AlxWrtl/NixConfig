@@ -35,6 +35,12 @@ in
     # choix dans ~/.claude.json) — d'où l'obligation de la garder alignée sur
     # le défaut voulu, sinon le rebuild fait régresser le modèle.
     model = "claude-opus-5";
+    # Chaîne de repli si Opus 5 est indisponible/surchargé : essayée dans
+    # l'ordre, uniquement en cas d'échec de requête. N'affecte pas le défaut.
+    fallbackModel = [
+      "claude-opus-4-8"
+      "claude-sonnet-5"
+    ];
     voiceEnabled = true;
     skipDangerousModePermissionPrompt = true;
 
@@ -78,6 +84,11 @@ in
           "${homeDirectory}/.config/secrets"
         ];
         denyRead = [
+          # Sans cette entrée, la clé privée était lisible depuis le sandbox :
+          # `wc -c < ~/.ssh/id_ed25519` → 399. denyRead accepte un répertoire et
+          # bloque son contenu récursivement (exemple officiel : `"denyRead": ["~/"]`).
+          # Le denyWrite sur ~/.ssh/id_* reste : écriture ≠ exfiltration.
+          "${homeDirectory}/.ssh"
           "${homeDirectory}/.aws/credentials"
           "${homeDirectory}/.gnupg/private-keys-v1.d"
           "**/.env"

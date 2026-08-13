@@ -1160,7 +1160,7 @@ in
     ---
     name: feature-workflow
     description: Feature development methodology — discuss→plan→verify cycle. Referenced by code-reviewer and the /discuss + /verify-feature commands.
-    globs: ["**/.claude/output/feature/**", "**/.claude/output/CONTEXT-*"]
+    paths: ["**/.claude/output/feature/**", "**/.claude/output/CONTEXT-*"]
     effort: high
     ---
 
@@ -1685,7 +1685,7 @@ in
     ---
     name: nix-darwin
     description: "nix-darwin + home-manager patterns for macOS. Use when editing *.nix files, or tasks involve module structure, system.defaults, launchd, or declarative macOS setup."
-    globs: ["**/*.nix", "**/flake.lock"]
+    paths: ["**/*.nix", "**/flake.lock"]
     ---
 
     # nix-darwin Patterns
@@ -1770,7 +1770,7 @@ in
     ---
     name: claude-code-meta
     description: "2026 best practices for Claude Code skill authoring, agent design, and hook patterns. Use when editing agents.nix, skills.nix, hooks.nix, claude-md.nix, or .claude/ config files."
-    globs: ["**/.claude/agents/*.md", "**/.claude/skills/**/SKILL.md", "**/.claude/hooks/**"]
+    paths: ["**/.claude/agents/*.md", "**/.claude/skills/**/SKILL.md", "**/.claude/hooks/**"]
     ---
 
     # Claude Code Meta — Authoring Best Practices
@@ -1782,7 +1782,7 @@ in
     - Estimated activation: 70-80% with good triggers
 
     ## Skill Triggering
-    - `globs:` in frontmatter for file-based activation
+    - `paths:` in frontmatter for file-based activation
     - `description:` with "Use when..." for keyword activation
     - Skills auto-load when matching files are in context
 
@@ -2046,7 +2046,7 @@ in
     ---
     name: testing-patterns
     description: "Testing methodology and patterns. Use when writing tests, designing test strategy, or tasks mention test, spec, coverage, TDD, or testing patterns."
-    globs: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**"]
+    paths: ["**/*.test.*", "**/*.spec.*", "**/__tests__/**"]
     effort: high
     ---
 

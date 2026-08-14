@@ -28,6 +28,11 @@
   # Remove read-only backups before linkGeneration to avoid interactive mv prompts
   claudeCodePreLink = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
     rm -f "$HOME/.claude/skills"/*/SKILL.md.backup
+    # keybindings.json est passé sous nix : la version manuelle pré-existante est
+    # déplacée en .backup par home-manager (backupFileExtension = "backup") au
+    # premier rebuild. On la purge ici pour ne pas accumuler, et pour éviter le
+    # "Existing file ... would be clobbered by backing up" si elle reste.
+    rm -f "$HOME/.claude/keybindings.json.backup"
   '';
 
   # Fix HM GC root when nix-store --add-root fails under sudo
@@ -87,6 +92,10 @@
       # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox,
       # effortLevel, alwaysThinkingEnabled. NEVER force .model: /model and /fast
       # are deliberate session choices that must survive rebuilds.
+      # `.voice` n'est PAS force-overridden : le deep merge `.[0] * .[1]` est
+      # récursif, donc toute sous-clé présente dans la base et absente du live
+      # (ex. autoSubmit) est injectée, tandis qu'un `mode` changé en session
+      # survit — même logique que .model.
       if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
         TMP=$(mktemp)
         BASE_SL=$(jq -c '.statusLine' "$BASE")
@@ -98,7 +107,11 @@
         BASE_THINK=$(jq -c '.alwaysThinkingEnabled' "$BASE")
         jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
           | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" \
-            '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th' \
+            '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th
+             # legacy: `voiceEnabled` (clé plate) est encore lue par le binaire
+             # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas
+             # garder deux sources de vérité qui peuvent diverger.
+             | del(.voiceEnabled)' \
           > "$TMP" && mv "$TMP" "$TARGET"
         chmod 600 "$TARGET"
       else

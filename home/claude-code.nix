@@ -21,7 +21,12 @@ let
 
   inherit (claudeMd) claudeMdGlobal;
   inherit (rules) ruleNix ruleTypescript;
-  inherit (settings) settingsJson statuslineScript mcpServersJson;
+  inherit (settings)
+    settingsJson
+    statuslineScript
+    mcpServersJson
+    keybindingsJson
+    ;
   inherit (commands)
     cmdTdd
     cmdOptimize
@@ -122,6 +127,13 @@ in
     # MCP servers base (merged into .claude.json by activation script)
     "${claudeDir}/mcp-servers-base.json" = {
       text = mcpServersJson;
+    };
+
+    # Keybindings (symlink store, comme les commands/agents : le CLI ne fait que
+    # LIRE ce fichier au démarrage, et son écriture de template est en flag "wx"
+    # → EEXIST géré, jamais d'écrasement). Modif = édition de settings.nix.
+    "${claudeDir}/keybindings.json" = {
+      text = keybindingsJson;
     };
 
     "${claudeDir}/CLAUDE.md" = {

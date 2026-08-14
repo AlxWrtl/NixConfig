@@ -41,7 +41,16 @@ in
       "claude-opus-4-8"
       "claude-sonnet-5"
     ];
-    voiceEnabled = true;
+    # Dictée vocale. Remplace l'ancienne clé plate `voiceEnabled` (legacy, encore
+    # lue par le binaire mais supprimée du live par la passe jq d'activation pour
+    # éviter deux sources de vérité). NON force-overridden : `mode` reste un choix
+    # de session modifiable par le CLI, et le deep merge `.[0] * .[1]` fait
+    # remonter dans le live toute sous-clé de la base absente côté live.
+    voice = {
+      enabled = true;
+      mode = "hold";
+      autoSubmit = false; # franglais : relecture avant envoi
+    };
     skipDangerousModePermissionPrompt = true;
 
     attribution = {
@@ -489,6 +498,31 @@ in
       ];
     };
   };
+
+  # ~/.claude/keybindings.json — déployé en symlink par home.file (claude-code.nix).
+  # Toute modification passe désormais par nix : le fichier live est un lien vers
+  # le store (lecture seule), une édition à la main échoue bruyamment (EROFS) au
+  # lieu d'être écrasée silencieusement au rebuild suivant.
+  #
+  # Rebind du push-to-talk vocal : la barre Espace (défaut) tape des espaces par
+  # key-repeat pendant qu'on la maintient. Cmd+K est inutilisable ici (Ghostty le
+  # consomme : `super+k = clear_screen`, vérifié via `ghostty +list-keybinds`) et
+  # Cmd+M appartient à macOS (minimize) → Cmd+U, libre des deux côtés.
+  #
+  # Littéral JSON (et non builtins.toJSON) pour rester octet-pour-octet identique
+  # au fichier que le CLI génère/attend, indentation comprise.
+  keybindingsJson = ''
+    {
+      "bindings": [
+        {
+          "context": "Chat",
+          "bindings": {
+            "meta+u": "voice:pushToTalk"
+          }
+        }
+      ]
+    }
+  '';
 
   # MCP servers merged into ~/.claude/.claude.json by activation script
   # Secrets (API keys) are injected at runtime by claudeCodeMcpMerge, not here

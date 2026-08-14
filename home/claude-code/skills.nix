@@ -79,27 +79,28 @@ in
 
     | Flag | Disable | Description |
     |------|---------|-------------|
-    | -a | -A | Auto — skip confirmations |
-    | -x | -X | Examine — adversarial review |
-    | -s | -S | Save — persist outputs |
-    | -t | -T | Test — create + run tests |
-    | -e | -E | Economy — no subagents |
-    | -b | -B | Branch — git branch |
-    | -pr | -PR | PR — commit + PR (implies -b) |
+    | -q | -Q | Clarify — detected ambiguities become targeted questions (3 max) before planning |
+    | -x | -X | Examine — adversarial review, checklist-driven |
+    | -t | -T | Test — create + run tests after implementation |
+    | -f | -F | Test-first — a SEPARATE agent writes failing tests from the ACs before execute; read-only for the implementer |
+    | -2 | | Divergence — second independent implementation of the core logic, behavioral diff; high-stakes logic only |
+    | -p | -P | Premises — force/forbid the Fable premises pass |
+    | -pr | -PR | PR — commit + PR |
     | -k | -K | Tasks — dependency breakdown |
-    | -m | -M | Teams — parallel exec (implies -k) |
-    | -v | -V | Verify — research plan online |
-    | -o | -O | Obsidian — load vault notes |
+    | -v | -V | Verify — research the plan online; must trace at least one query or state why none |
+    | -o | -O | Obsidian — load vault context; must cite the notes it read or state the vault is silent |
     | -n | -N | Note — session note at end |
-    | -i | | Interactive — flag menu |
-    | -r | | Resume — continue previous |
+
+    Branch-first and on-disk persistence are INVARIANTS of every mode, not
+    options; the depth of the run (economy or full orchestration) is decided by
+    the Mode Gate, not by a flag.
 
     ## Common Usage
 
     ```
-    /apex add feature              # Basic
-    /apex -a -t -pr add endpoint   # Auto + tests + PR
-    /apex -e simple fix            # Economy (save tokens)
+    /apex add feature              # Basic — the Mode Gate picks the depth
+    /apex -t -pr add endpoint      # Tests + PR
+    /apex -q -x migrate schema     # Clarify first, then adversarial review
     ```
 
     ## Execution
@@ -113,7 +114,7 @@ in
     ```
 
     ${contract {
-      expects = "task description with optional flags. Example: /apex -a -x implement user auth";
+      expects = "task description with optional flags. Example: /apex -q -t implement user auth";
       produces = "complete implementation through progressive steps: init → analyze → plan → execute → validate (+ optional: tests, examine, resolve, finish).";
       sideEffects = "modifies source files, optionally creates tests, commits, creates PRs.";
     }}
@@ -132,8 +133,9 @@ in
 
     ## Idempotency, deps & compatibility
 
-    - **Idempotent**: safe to re-run; `-r` resumes from the last incomplete step,
-      and git branch/commit steps are no-ops when already applied.
+    - **Idempotent**: safe to re-run; git branch/commit steps are no-ops when
+      already applied. Resume is not a flag: the phase summaries persisted under
+      `.claude/output/apex/` let a run be resumed manually by pointing APEX at them.
     - **Requires git** for branch/PR steps; needs node or python only when the
       target project does. Alternatively runs read-only if absent.
     - **Namespaced** under `apex/`: step files and `.claude/output/apex/` outputs;
@@ -176,10 +178,8 @@ in
     2. Mode default set.
     3. OFF.
 
-    One exception to rule 1: `-s` outside economy — see "Force external memory".
-
-    Implications apply after resolution: `-pr` implies `-b`, `-m` implies `-k`.
-    Never auto-enabled — must be typed: `-a`, `-k`, `-m`, `-o`, `-v`, `-n`, `-i`.
+    Never auto-enabled — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`,
+    `-o`, `-n`.
 
     ## Session model guard (run FIRST)
 
@@ -199,18 +199,21 @@ in
 
     | Mode | Default flags |
     |------|---------------|
-    | Trivial | `-e` |
-    | Diagnosis | `-b -s -x` |
-    | Standard / complex | `-b -s -t -pr` |
-    | High-stakes | `-b -s -t -x -pr` |
+    | Trivial | none — internal economy |
+    | Diagnosis | `-x` |
+    | Standard / complex | `-t -pr` |
+    | High-stakes | `-t -x -pr` |
     | Pure research | none |
 
+    Branch-first and the on-disk summary chain are NOT in these sets because
+    they are not flags: they are behaviours of the modes themselves, described
+    under "Invariants of every mode" below.
+
     - **Trivial** — one sentence, ≤ ~2 files, < ~20 lines: economy inline, no
-      PR. `-b` is not in the set, but branch-first is a repo invariant, not a
-      flag: if the current branch is `main`/`master`, cut a branch anyway before
-      the first edit. Opus 5 still writes the precise brief and self-verifies the
-      real diff before finishing — the verify duty NEVER drops. Fable verify is
-      reserved for high-stakes, not trivial.
+      PR. Economy is not a flag the user types; it is the internal marker (`-e`)
+      this mode sets on itself. Opus 5 still writes the precise brief and
+      self-verifies the real diff before finishing — the verify duty NEVER
+      drops. Fable verify is reserved for high-stakes, not trivial.
     - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
       the error first; execute phase spawns the debugger agent (`model: opus`)
       as implementer. Stays inside APEX. No `-pr`: a fix lands on its branch and
@@ -228,14 +231,13 @@ in
     State the chosen mode AND the resolved flag set in the init summary, and
     record both in state below.
 
-    ## Force external memory (unless economy)
+    ## Invariants of every mode (not flags)
 
-    `-s` is already in every non-economy default set above, and it is the one
-    flag the typed-flag precedence does NOT override: if NOT `-e`, `-s` stays on
-    even when `-S` is typed. Fresh-context-per-phase relies on the on-disk
-    summary chain to survive compaction and `-r` resume, so saving is not
-    optional here — run [step-00b-save.md](step-00b-save.md) either way. This is
-    the other half of the orchestration mechanism.
+    - **Branch first.** If the current branch is `main`/`master`, cut a branch
+      before the first edit. Every mode, no flag involved, nothing to disable.
+    - **Save.** Persisting each phase summary to disk is an orchestration
+      mechanism, not an option: fresh-context-per-phase relies on that chain to
+      survive compaction. Always active outside internal economy.
 
     ## Initialize State
 
@@ -256,17 +258,17 @@ in
     Status: {clean/dirty}
     ```
 
-    ## Conditional Sub-Steps
+    ## Sub-Steps
 
-    Execute these in order, ONLY if the corresponding flag is active:
+    Execute these in order:
 
-    1. If `-i` (interactive): Read [step-00b-interactive.md](step-00b-interactive.md) and execute it.
-    2. If `-b` or `-pr`: Read [step-00b-branch.md](step-00b-branch.md) and execute it.
-    3. If `-e` (economy): Read [step-00b-economy.md](step-00b-economy.md) and execute it.
-    4. If `-s` (save): Read [step-00b-save.md](step-00b-save.md) and execute it.
-    5. If `-r` (resume): Look for saved state in `.claude/output/apex/` and restore context. Skip to the last incomplete step.
-       If `-o` was active AND resumed step is >= 02 AND `-s` was set: re-read `.claude/output/apex/{task-id}/01b-obsidian-context.md` to restore vault context.
-       If `-o` was active but `-s` was not: warn the user that Obsidian context was lost and offer to re-run step-01b.
+    1. Read [step-00b-branch.md](step-00b-branch.md) and execute it —
+       unconditional, because branch-first is an invariant. It is a no-op when
+       the run is already on a feature branch.
+    2. Trivial mode only: read [step-00b-economy.md](step-00b-economy.md) and
+       execute it.
+    3. Outside internal economy: read [step-00b-save.md](step-00b-save.md) and
+       execute it.
 
     Note: `-o` and `-n` are NOT init-time sub-steps.
     - `-o` fires at end of step-01-analyze (loads vault BEFORE planning).
@@ -275,32 +277,6 @@ in
     ## Next Step
 
     Read [step-01-analyze.md](step-01-analyze.md) and execute it.
-  '';
-
-  # --- Step 00b: Interactive ---
-  apexStep00bInteractive = ''
-    # Step 00b: Interactive Configuration
-
-    Present all available flags to the user as a toggle menu.
-    Use AskUserQuestion to let them enable/disable each flag.
-
-    Display current flag state and let user toggle:
-    ```
-    Current flags:
-    [ ] -a  Auto (skip confirmations)
-    [ ] -x  Examine (adversarial review)
-    [ ] -s  Save (persist outputs)
-    [ ] -t  Test (create + run tests)
-    [ ] -e  Economy (no subagents)
-    [ ] -b  Branch (create git branch)
-    [ ] -pr Pull Request (commit + PR)
-    [ ] -k  Tasks (task breakdown)
-    [ ] -m  Teams (parallel execution)
-    [ ] -o  Obsidian context (load vault)
-    [ ] -n  Obsidian note (create session note)
-    ```
-
-    After user confirms, update the active flags and return to step-00-init flow.
   '';
 
   # --- Step 00b: Branch ---
@@ -433,10 +409,26 @@ in
     - **Divergences**: where the task as asked would break or contradict an
       existing pattern — name the file/pattern and the conflict.
     - **Decisions needed from user**: ambiguities that change the design and that
-      you cannot resolve from the codebase. If any exist and `-a` is NOT set,
-      surface them before planning.
+      you cannot resolve from the codebase. Surface them before planning; under
+      `-q` they are asked, not merely listed (see below).
     - **Out-of-scope temptations**: nearby things that look broken but are NOT
       this task — list them so the plan does not creep into them.
+
+    ## Clarify (`-q`)
+
+    If `-q` is active, close this phase by LISTING the ambiguities in your
+    SUMMARY. You have no user channel — you never ask them yourself. What
+    qualifies: the "Decisions needed from user" above, and every premise the plan
+    will not be able to source:
+    Unsourceable premises become questions, never silent assumptions.
+
+    The COORDINATOR owns the asking: it reads this list and puts it to the user
+    as a SINGLE AskUserQuestion — at most 3 questions, each with concrete options
+    — BEFORE spawning the planner, so no plan text exists yet when they are asked.
+
+    Three, not ten: asking upfront is the best-measured error reducer in the
+    literature, and the first question carries most of the gain. Nothing here
+    blocks a run without `-q` — it just plans on the safest reading and says so.
 
     ## If save mode (-s):
     Write findings to `.claude/output/apex/{task-id}/01-analyze.md`
@@ -521,6 +513,14 @@ in
     - If no project note exists, say so and suggest creating one via `-n` flag at the end.
     - Use full-path wikilinks always: `[[02-Projets/Project/Project]]`.
 
+    ## Trace or nothing (what makes `-o` real)
+
+    This step MUST end with a summary that cites every note it actually read as
+    a `[[wikilink]]`, or with the exact sentence `vault silent on this topic`.
+    A `-o` run that produces neither is a FAILED step, not a no-op: report it as
+    a failure and say what blocked it (vault unreachable, no match, empty note).
+    An `-o` that silently changes nothing is the whole reason this rule exists.
+
     ## If save mode (-s):
     Target file: `.claude/output/apex/{task-id}/01b-obsidian-context.md`.
     - If file absent → `Write` with the full context report.
@@ -547,6 +547,14 @@ in
     the raw transcript). Return the plan phase summary schema and persist the
     plan. The coordinator (Opus 5) then reviews the plan and approves or
     re-briefs before execute — execute never starts on an unapproved plan.
+
+    ## Clarify first (`-q`)
+
+    If `-q` is active and step-01 raised ambiguities, the coordinator has already
+    put them to the user — one AskUserQuestion, 3 questions maximum, concrete
+    options — before spawning you: the answers arrive in your brief and you plan
+    on them. A question asked after the plan is written is a question asked too
+    late — the plan has already committed.
 
     ## ULTRA THINK
 
@@ -613,14 +621,16 @@ in
 
     Convert tasks into a TodoWrite checklist. Only ONE todo can be in_progress at a time.
 
-    ## If tasks mode (-k) or teams mode (-m):
+    ## If tasks mode (-k):
     Read [step-02b-tasks.md](step-02b-tasks.md) and execute it before proceeding.
 
     ## User Approval
 
-    If auto mode (-a) is NOT active:
+    Always, no opt-out:
     - **Present the Premises FIRST**, before the task list. Ask explicitly
       whether any of them is wrong — that is the question worth a round trip.
+      An unsourced premise must be visible in the transcript before the code
+      that rests on it exists.
     - Then present the rest of the plan
     - Wait for approval before proceeding
 
@@ -640,13 +650,10 @@ in
     correction permanent: the same premise, re-corrected in a later session,
     means this step was skipped.
 
-    If auto mode (-a) IS active:
-    - **Still print the Premises**, even though you do not wait for an answer.
-      An unsourced premise must be visible in the transcript before the code
-      that rests on it exists.
-    - Display the rest of the plan briefly, proceed automatically
-
     ## Premises pass — decide HERE whether to ADD it
+
+    `-p` takes this decision in advance: `-p` forces the premises pass, `-P`
+    forbids it. With neither flag typed, decide contextually as follows.
 
     On high-stakes work, the Fable diff pass at validate is NOT a decision of this
     step: it is the default and step-04-validate spawns it regardless of what the
@@ -665,8 +672,8 @@ in
 
     ## Next Step
 
-    Consult [ROUTING.md](ROUTING.md): if `-v` go to 02c-verify, else apply the
-    EXECUTE selector (`-m` → 03-execute-teams, else → 03-execute).
+    Consult [ROUTING.md](ROUTING.md): if `-v` go to 02c-verify, else go to
+    03-execute.
   '';
 
   # --- Step 02c: Verify Plan ---
@@ -717,15 +724,23 @@ in
 
     ## If issues found:
     Update the plan and TodoWrite checklist to reflect corrections.
-    If not in auto mode (-a), present changes for user approval.
+    Present the changes for user approval, always — and wait for the answer.
+
+    ## Trace or nothing (what makes `-v` real)
+
+    This step MUST end with at least one web query traced — the query string and
+    the source URL, in the output — or with the explicit sentence `nothing to
+    verify online because` followed by the reason (nothing version-dependent, no
+    external API, offline). A `-v` run with neither is a FAILED step, not a
+    no-op: research nobody can trace is indistinguishable from research nobody
+    did.
 
     ## If save mode (-s):
     Write verification results to `.claude/output/apex/{task-id}/02c-verify.md`
 
     ## Next Step
 
-    Consult [ROUTING.md](ROUTING.md) → apply the EXECUTE selector
-    (`-m` → 03-execute-teams, else → 03-execute).
+    Consult [ROUTING.md](ROUTING.md) → 03-execute.
   '';
 
   # --- Step 02b: Tasks ---
@@ -765,9 +780,7 @@ in
     Do NOT deviate from the plan. Do NOT add features that weren't planned.
 
     Per ORCHESTRATION.md: unless `-e`, your input is the plan phase summary +
-    the persisted plan path. With `-m` (teams) the coordinator spawns the
-    implementer agents per wave directly (see step-03-execute-teams). Return the
-    execute phase summary schema.
+    the persisted plan path. Return the execute phase summary schema.
 
     Before the first edit, re-check the "Conflicts & Constraints" from step-01:
     if implementation reveals a conflict that was missed, STOP and revise the
@@ -792,37 +805,16 @@ in
     - If you encounter something unexpected, note it but stay on plan
     - If a task is blocked, skip it and note the blocker
 
+    ## If test-first (`-f`) is active
+
+    A separate test-author agent has already written failing tests from the ACs
+    (ORCHESTRATION.md). They are your spec and you may only READ them: make them
+    pass by changing the implementation, never by touching a test file. A test
+    that looks wrong goes into your summary as a blocker for validate to rule
+    on; editing it yourself is a finding, not an option.
+
     ## If save mode (-s):
     Update progress in `.claude/output/apex/{task-id}/00-context.md`
-
-    ## Next Step
-
-    Read [step-04-validate.md](step-04-validate.md) and execute it.
-  '';
-
-  # --- Step 03: Execute Teams ---
-  apexStep03ExecuteTeams = ''
-    # Step 03: Execute (Teams Mode)
-
-    YOU ARE A TEAM LEAD coordinating parallel implementation.
-
-    ## Agent Teams Execution
-
-    Using the wave structure from step-02b-tasks:
-
-    1. For each wave, spawn implementer subagents in parallel using the Agent tool
-    2. Each agent gets:
-       - The specific task(s) assigned to them
-       - Full context from step-01 analysis
-       - The conventions to follow
-    3. Wait for all agents in a wave to complete before starting the next wave
-    4. After each wave, verify integration between the pieces
-
-    ## Coordination Rules
-
-    - Each agent works on separate files — no conflicts
-    - If an agent encounters a blocker, it reports back
-    - After all waves complete, do a quick integration check
 
     ## Next Step
 
@@ -867,6 +859,20 @@ in
 
     4. **Quick Smoke Test**: if there's a dev server, verify it starts without errors
 
+    5. **Test-first integrity (`-f`)**: diff the test files against the version
+       the test-author agent produced. Any edit, deletion or weakened assertion
+       by the implementer is a finding — the tests were the spec, not a draft.
+
+    ## Divergence check (`-2`)
+
+    If `-2` ran, a second independent implementation of the core pure functions
+    exists (ORCHESTRATION.md). Execute BOTH over generated inputs — edge values,
+    empty, boundaries, a spread of random cases — and diff the behaviour. Any
+    divergence is a finding: name the input, both outputs, and which one the ACs
+    say is right. Never settle it by preferring the nicer code, and never call it
+    a tie. Once the diff is clean, discard the second implementation: it was a
+    check, never a deliverable.
+
     ## If any AC is not met:
     Go back and fix it. Do not proceed until all ACs pass.
 
@@ -894,33 +900,41 @@ in
     coordinator (Opus 5) synthesizes and arbitrates their findings inline; on
     high-stakes, add one Fable read-only verdict pass over the synthesis — a
     third possible spend of the cartridge, recorded in the plan alongside the
-    other passes (step-02-plan), never spawned off the books:
+    other passes (step-02-plan), never spawned off the books.
 
-    ### Agent 1: Security Review
-    - Authentication/authorization gaps
-    - Input validation missing
-    - Data exposure in responses
-    - SQL injection, XSS, CSRF risks
-    - Secrets or credentials in code
+    **Blind review.** Each reviewer receives the spec (task, ACs, the plan's
+    premises) and the real diff — and never the implementer's rationale. No
+    transcript, no execute summary, no "here is what I was going for". A
+    reviewer told why the code is right stops looking for the reason it is not.
 
-    ### Agent 2: Logic Review
-    - Race conditions
-    - Null/undefined edge cases
-    - Error handling gaps
-    - Off-by-one errors
-    - State management issues
-    - Missing error boundaries
+    **Checklist, not free reading.** Each agent works its boxes explicitly and
+    reports every one as pass / fail / not-applicable. Free-form review drifts
+    toward style; the checklist is what keeps the expensive categories covered.
 
-    ### Agent 3: Clean Code Review
-    - Naming consistency
-    - Dead code
-    - Unnecessary complexity
-    - Missing type safety
-    - Convention violations (from step-01 analysis)
+    ### Agent 1: Premise & scope, tests that lie
+    - [ ] Does the diff do what the ACs asked, or something adjacent to it?
+    - [ ] Any premise from the plan contradicted by the code as written?
+    - [ ] Scope creep: changes no AC asked for.
+    - [ ] Tests asserting nothing: no assertion, mocked subject, tautology.
+    - [ ] Tests that pass because the assertion was bent to fit the code.
+
+    ### Agent 2: Security & data integrity
+    - [ ] AuthN/authZ gaps; missing input validation; data exposed in responses.
+    - [ ] Injection surfaces: SQL, shell, template, XSS, CSRF.
+    - [ ] Secrets or credentials in code, logs, or error messages.
+    - [ ] Destructive or irreversible operations without a guard.
+    - [ ] Writes/migrations that can half-apply and leave broken state.
+
+    ### Agent 3: Concurrency & correctness
+    - [ ] Races: non-atomic read-modify-write, unawaited async, lost updates.
+    - [ ] Null/undefined, empty collections, off-by-one at the boundaries.
+    - [ ] Error handling: swallowed errors, missing boundaries, wrong fallback.
+    - [ ] State shared across requests/instances that should not be.
+    - [ ] Convention violations (step-01), dead code, needless complexity.
 
     ### If economy mode (-e):
-    Do NOT launch agents. Instead, go through each review dimension yourself
-    as a self-review checklist. Be thorough but use no subagents.
+    Do NOT launch agents. Instead, walk all three checklists yourself, box by
+    box. Be thorough but use no subagents.
 
     ## Collect Findings
 
@@ -943,12 +957,7 @@ in
 
     ## Process
 
-    ### If auto mode (-a):
-    Automatically fix all Critical and Important findings.
-    Skip Minor findings unless they're trivial to fix.
-
-    ### If NOT auto mode:
-    Present findings to the user grouped by severity.
+    Present findings to the user grouped by severity, always — then wait.
     For each finding, ask:
     - **Fix**: apply the fix
     - **Skip**: acknowledge but don't fix
@@ -992,6 +1001,17 @@ in
     3. Write component tests for UI (if applicable)
 
     Follow the EXISTING test patterns exactly. Don't introduce new testing paradigms.
+
+    ## If test-first (`-f`) already ran
+
+    A test-author agent wrote the AC tests before execute; those files stay
+    read-only for the implementer and step-04-validate checks their integrity.
+    Your job here is to EXTEND coverage — the cases the ACs did not spell out
+    (edge values, error paths, integration seams) — in files of your own. Never
+    rewrite, weaken, reorganize or duplicate a test-author file: a duplicate of
+    an AC test is coverage theatre, and an edit to one destroys the evidence
+    validate needs. A test-author file that looks wrong is a finding you report,
+    not a file you fix.
 
     ## Rules
 
@@ -1039,9 +1059,6 @@ in
   apexStep09Finish = ''
     # Step 09: Finish
 
-    ## If teams were used (-m):
-    Ensure all team agents have completed and shut down cleanly.
-
     ## Git Operations
 
     1. **Stage changes**: `git add` all modified/created files
@@ -1061,8 +1078,8 @@ in
       - ## Testing (how it was tested)
       - ## Acceptance Criteria (checklist from plan)
 
-    ## If NOT auto mode:
-    Show the PR title and body for approval before creating.
+    ## Before creating it
+    Show the PR title and body for approval, always — and wait for the answer.
 
     ## COMPLETE
 
@@ -1104,9 +1121,9 @@ in
       a. Explicit hint in task description (`project X`, `projet X`, `--project X`).
       b. cwd basename, normalized to kebab-case lowercase slug.
     - `Glob` `02-Projets/*/` (case-insensitive compare) to confirm the folder exists.
-    - If 0 folders match:
-      - In auto mode (-a): create `02-Projets/{display-name}/` and a minimal `{display-name}.md` stub.
-      - Otherwise: `AskUserQuestion` — pick an existing project from the list, or confirm creation of a new one.
+    - If 0 folders match: `AskUserQuestion` — pick an existing project from the
+      list, or confirm creation of a new one (`02-Projets/{display-name}/` plus a
+      minimal `{display-name}.md` stub). Never create one unasked.
     - If 2+ folders match (casing variants or aliases): `AskUserQuestion` to pick; do NOT silently pick the first.
 
     ### 2. Build the filename
@@ -1169,6 +1186,11 @@ in
     - [ ] {next action 1}
     - [ ] {next action 2}
 
+    ## Reste
+    - {ce qui n'est pas fini, une ligne par item — la session suivante lit cette
+      section en premier via -o ; section obligatoire, jamais omise : si rien ne
+      reste, ecrire « rien en suspens »}
+
     ## Liens
     - Branche : `{branch-name}`
     - Commit : `{hash}` (si -pr ou commit cree)
@@ -1196,9 +1218,9 @@ in
     - Obsidian Properties: https://help.obsidian.md/properties
     - Obsidian YAML: https://help.obsidian.md/Advanced+topics/YAML+front+matter
 
-    ### 6. Update the project note (optional, auto only)
+    ### 6. Update the project note (optional)
 
-    If in auto mode (-a), append a line to `02-Projets/{project}/{project}.md` under a
+    Append a line to `02-Projets/{project}/{project}.md` under a
     `## Sessions` section (create the section if missing) with the new wikilink:
 
     ```markdown
@@ -1245,7 +1267,7 @@ in
     |-----------|-------|----------|---------|
     | S (trivial) | < 5 | Single agent directly | quick-fix or specialist agent |
     | M (medium) | 5-15 | Discuss → plan → execute | /discuss → /apex |
-    | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh or /apex -m |
+    | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh or /apex -k |
     | XL (epic) | 30+ | Split into L milestones | Chain per milestone |
 
     ## The 5-Phase Cycle
@@ -1313,8 +1335,8 @@ in
         {"prompt": "implement this using apex methodology", "should_trigger": true},
         {"prompt": "use the apex framework for this feature", "should_trigger": true},
         {"prompt": "/apex add authentication to the app", "should_trigger": true},
-        {"prompt": "run apex with -a flag to auto-implement the payment module", "should_trigger": true},
-        {"prompt": "apex -s to save the output for the new dashboard feature", "should_trigger": true},
+        {"prompt": "run apex with -q to clarify before planning the payment module", "should_trigger": true},
+        {"prompt": "apex -k -v for the new dashboard feature", "should_trigger": true},
         {"prompt": "apex -x -t -pr build the export endpoint", "should_trigger": true},
         {"prompt": "fix this bug in the login form", "should_trigger": false},
         {"prompt": "what does this function do?", "should_trigger": false},
@@ -1336,7 +1358,7 @@ in
         },
         {
           "name": "complexity-gate-trivial",
-          "prompt": "apex -a rename the variable x to userId in one function in utils.ts",
+          "prompt": "apex rename the variable x to userId in one function in utils.ts",
           "assertions": [
             {"type": "pattern", "value": "[Gg]ate|[Tt]rivial|[Oo]verkill|one sentence", "description": "Must apply the complexity gate before any work"},
             {"type": "pattern", "value": "quick.fix|[Dd]irect", "description": "Must redirect a one-line rename out of APEX to quick-fix"},
@@ -1345,7 +1367,7 @@ in
         },
         {
           "name": "complexity-gate-debug",
-          "prompt": "apex -a the login button is broken and throws an error on click",
+          "prompt": "apex the login button is broken and throws an error on click",
           "assertions": [
             {"type": "pattern", "value": "[Gg]ate|[Dd]iagnos|[Dd]ebug", "description": "Must detect a diagnosis task at the complexity gate"},
             {"type": "pattern", "value": "/debug|debug", "description": "Must redirect bug/diagnosis tasks to /debug"}
@@ -1363,7 +1385,7 @@ in
         },
         {
           "name": "full-execution-flow",
-          "prompt": "Execute all apex steps (-a flag) for adding email notifications. Run every step.",
+          "prompt": "Execute all apex steps for adding email notifications. Run every step.",
           "assertions": [
             {"type": "contains", "value": "00", "description": "Must execute step 00 Initialize"},
             {"type": "contains", "value": "01", "description": "Must execute step 01 Analyze"},
@@ -1373,12 +1395,13 @@ in
           ]
         },
         {
-          "name": "apex-auto-flag",
-          "prompt": "apex -a implement the CSV export feature",
+          "name": "apex-clarify-flag",
+          "prompt": "apex -q implement the CSV export feature",
           "assertions": [
-            {"type": "contains", "value": "auto", "description": "Must acknowledge -a flag enables auto mode"},
+            {"type": "pattern", "value": "[Cc]larif|[Aa]mbigu|AskUserQuestion", "description": "Must acknowledge -q turns ambiguities into questions"},
             {"type": "pattern", "value": "[Ss]tep\\s*0[0-9]", "description": "Must reference step numbers during execution"},
-            {"type": "excludes", "value": "wait for approval", "description": "Auto mode must not pause for manual approval at each step"}
+            {"type": "pattern", "value": "3|three", "description": "Must cap the clarification round at 3 questions"},
+            {"type": "excludes", "value": "after the plan", "description": "Questions are asked before planning, never after"}
           ]
         },
         {
@@ -1404,7 +1427,7 @@ in
         {
           "name": "trivial-task-overkill",
           "category": "minimal",
-          "prompt": "apex -a add a missing semicolon in index.ts",
+          "prompt": "apex add a missing semicolon in index.ts",
           "expected_behavior": "Complexity gate flags APEX as overkill and redirects to quick-fix or a direct edit.",
           "assertions": [
             {"type": "pattern", "value": "[Oo]verkill|[Tt]rivial|[Gg]ate|quick.fix", "description": "Must flag APEX as inappropriate for a one-char change"},
@@ -1423,7 +1446,7 @@ in
         {
           "name": "missing-conventions",
           "category": "missing",
-          "prompt": "apex -a implement OAuth but this project has no documented conventions",
+          "prompt": "apex implement OAuth but this project has no documented conventions",
           "expected_behavior": "Analyze step documents the absence of conventions as a risk in Conflicts & Constraints and proceeds with explicit assumptions.",
           "assertions": [
             {"type": "pattern", "value": "[Cc]onvention|[Aa]ssumption|[Rr]isk", "description": "Must document missing conventions as a constraint/risk"},
@@ -1443,7 +1466,7 @@ in
         {
           "name": "huge-codebase",
           "category": "scale",
-          "prompt": "apex -a refactor the entire monorepo — 500+ files across 12 services",
+          "prompt": "apex refactor the entire monorepo — 500+ files across 12 services",
           "expected_behavior": "Recommends scoping into milestones before running APEX per milestone.",
           "assertions": [
             {"type": "pattern", "value": "[Ss]cope|[Ss]plit|[Mm]ilestone|[Pp]hase|[Ss]ub-task", "description": "Must recommend breaking the refactor into milestones"}
@@ -1474,7 +1497,7 @@ in
           "expected_behavior": "Rejects the unknown flag and lists the valid flags.",
           "assertions": [
             {"type": "pattern", "value": "[Uu]nknown|[Ii]nvalid|[Ff]lag|[Uu]sage", "description": "Must reject the unknown flag"},
-            {"type": "pattern", "value": "-a|-x|-s|-t", "description": "Must list valid flags"}
+            {"type": "pattern", "value": "-q|-x|-t|-pr", "description": "Must list valid flags"}
           ]
         }
       ]
@@ -1497,14 +1520,9 @@ in
     | 00-init | 01-analyze |
     | 01-analyze | 01b-obsidian IF `-o`, else 02-plan |
     | 01b-obsidian | 02-plan |
-    | 02-plan | 02c-verify IF `-v`, else EXECUTE (see below) |
-    | 02c-verify | EXECUTE (see below) |
-    | EXECUTE | 04-validate |
-
-    ## EXECUTE selector
-
-    - `-m` (teams) active → 03-execute-teams
-    - else → 03-execute
+    | 02-plan | 02c-verify IF `-v`, else 03-execute |
+    | 02c-verify | 03-execute |
+    | 03-execute | 04-validate |
 
     ## Post-validate / post-tests / post-resolve — shared terminal router
 
@@ -1564,7 +1582,7 @@ in
     | Analyze fan-out | Explore / codebase-navigator | haiku |
     | Analyze synthesis | analyzer phase agent | `opus` (effort high) |
     | Plan | plan phase agent | `opus` (effort high/max) |
-    | Execute (incl. `-m` waves) | implementer agents | `opus` (low effort mechanical) |
+    | Execute (parallel waves under `-k`, coordinator's call) | implementer agents | `opus` (low effort mechanical) |
     | Bulk / large-context execute | implementer agents | `sonnet` |
     | Run tests | test-runner | haiku |
     | Self-verify (every task) | COORDINATOR inline (Opus 5) | none — fresh-context adversarial pass |
@@ -1583,6 +1601,29 @@ in
     coordinator persists the correction itself, per the rule in step-02-plan, and
     does so BEFORE spawning execute — the same applies to a contradiction raised
     later, mid-run.
+
+    ## Test-first (`-f`) — a SEPARATE agent writes the failing tests
+
+    If `-f` is active, between plan approval and execute the coordinator spawns a
+    test-author agent (`model: opus`) whose only input is the ACs. It writes
+    tests that FAIL against the current code, and nothing else — no
+    implementation, no fixture that quietly makes them pass. The resulting files
+    are then read-only for the implementer: editing, deleting or weakening one is
+    a finding at validate, never an option on the table. The separation is the
+    point — the agent that writes the code cannot also be the agent that decides
+    what "passing" means.
+
+    ## Divergence (`-2`) — a second independent implementation
+
+    High-stakes logic only, and only the CORE: the pure functions the plan named,
+    never a whole feature. If `-2` is active, a second agent (`model: opus`,
+    fresh context, brief = the ACs and the signatures, never the first
+    implementation nor its rationale) writes its own version in a scratch file.
+    step-04-validate runs both over generated inputs and treats any behavioural
+    difference as a finding. Scope discipline matters: two full features diverge
+    everywhere and the signal drowns. Note the limit — two implementations built
+    from the same misread premise agree perfectly; this catches coding errors,
+    not wrong targets.
 
     Fable rule (inverted from the prior design): Fable is NO LONGER the
     coordinator. Spawn `model: fable` ONLY as a read-only verifier on high-stakes
@@ -1649,7 +1690,7 @@ in
     - Active when NOT economy mode (`-e`). Under `-e`, phases run inline in the
       coordinator (no subagents) — that is economy's whole point.
     - Forces `-s` (save) ON: the chain of summaries is also persisted to disk so
-      it survives compaction and enables `-r` resume. Fresh context + external
+      it survives compaction and enables manual resume from disk. Fresh context + external
       memory are two halves of the same mechanism; do not enable one without the other.
 
     ## Fan-out lives in the COORDINATOR, not the phase
@@ -1659,7 +1700,7 @@ in
     - **Analyze**: coordinator spawns the parallel Explore agents, collects their
       bounded summaries, THEN spawns the analyzer agent with those summaries as
       input. The analyzer produces the Conflicts & Constraints synthesis.
-    - **Execute (`-m` teams)**: coordinator spawns the implementer agents per wave
+    - **Execute (parallel waves)**: when `-k` produced independent waves, the coordinator spawns the implementer agents per wave
       directly; there is no separate "execute agent" wrapping them.
 
     ## Phase brief (what the coordinator passes IN)
@@ -1685,18 +1726,30 @@ in
     Target 1-2k tokens. Distilled, not raw. Over-compression loses subtle info
     whose importance only appears later — keep every decision and open risk.
 
+    ## BLOCKED is a valid result
+
+    Any phase agent may return `OBJECTIVE_MET: no` plus a `BLOCKED: {reason}`
+    line instead of forcing an answer it does not have. The coordinator treats
+    BLOCKED as a result, never as a failure to paper over: read the reason, then
+    re-brief with what was missing, change approach, or put the question to the
+    user. An agent that invents a plausible completion because "no" felt like
+    failing costs far more than one that stops and says why. Never re-spawn an
+    identical brief hoping for a different answer, and never restate a BLOCKED
+    phase as done in the run summary.
+
     ## Completeness check (mitigates path dependency)
 
     Before spawning phase N+1, the coordinator verifies phase N's summary has all
-    schema fields filled and OBJECTIVE_MET is yes/partial. If a field is empty or
-    OBJECTIVE_MET is no → re-spawn the phase with a sharper brief, or stop and ask
-    the user. An omission here propagates silently all the way to validate.
+    schema fields filled and OBJECTIVE_MET is yes/partial. An empty field →
+    re-spawn with a sharper brief. OBJECTIVE_MET no → handle the BLOCKED reason
+    per the rule above. An omission here propagates silently all the way to
+    validate.
 
     ## Persistence
 
     Write each phase summary to `.claude/output/apex/{task-id}/NN-{phase}.md` as
     it completes. The coordinator's live context holds only the summaries; the
-    disk copy is the source of truth for `-r` resume.
+    disk copy is the source of truth for manual resume.
 
     ## Privileged commands — classify, then escalate or delegate
 

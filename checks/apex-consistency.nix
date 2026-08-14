@@ -16,7 +16,6 @@ let
   # Step file basename -> the nix attribute holding its content.
   steps = {
     "step-00-init" = skills.apexStep00Init;
-    "step-00b-interactive" = skills.apexStep00bInteractive;
     "step-00b-branch" = skills.apexStep00bBranch;
     "step-00b-economy" = skills.apexStep00bEconomy;
     "step-00b-save" = skills.apexStep00bSave;
@@ -26,7 +25,6 @@ let
     "step-02b-tasks" = skills.apexStep02bTasks;
     "step-02c-verify" = skills.apexStep02cVerify;
     "step-03-execute" = skills.apexStep03Execute;
-    "step-03-execute-teams" = skills.apexStep03ExecuteTeams;
     "step-04-validate" = skills.apexStep04Validate;
     "step-05-examine" = skills.apexStep05Examine;
     "step-06-resolve" = skills.apexStep06Resolve;
@@ -105,6 +103,18 @@ let
     {
       name = "verify: the premises pass replays cited read-only evidence";
       needle = "cited read-only commands";
+    }
+    {
+      name = "flags: test-first tests are read-only for the implementer";
+      needle = "read-only for the implementer";
+    }
+    {
+      name = "examine: reviewers never see the implementer's rationale";
+      needle = "never the implementer's rationale";
+    }
+    {
+      name = "clarify: unsourceable premises become questions";
+      needle = "Unsourceable premises become questions";
     }
   ];
 

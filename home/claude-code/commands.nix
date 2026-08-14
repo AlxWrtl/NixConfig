@@ -289,6 +289,9 @@
       record the failure in `## Reste`.
     - Card not found or auth rejected → stop at that point, per sections 0 and 1.
     - Never delete a card, never edit its name or description.
+    - Test writes (throwaway cards, command validation, dry runs) go to the
+      no-stakes board **Tech & Pit** — never to the target board. Reading is fine
+      anywhere; only test WRITES are restricted. (User rule, 2026-08-14.)
   '';
 
   # ── Feature methodology commands ──

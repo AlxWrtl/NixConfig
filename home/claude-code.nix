@@ -29,6 +29,7 @@ let
     cmdAuto
     cmdRalphLoop
     cmdCancelRalph
+    cmdCard
     commandDiscuss
     commandVerifyFeature
     featureChainScript
@@ -36,7 +37,6 @@ let
   inherit (skills)
     skillApex
     apexStep00Init
-    apexStep00bInteractive
     apexStep00bBranch
     apexStep00bEconomy
     apexStep00bSave
@@ -46,7 +46,6 @@ let
     apexStep02cVerify
     apexStep02bTasks
     apexStep03Execute
-    apexStep03ExecuteTeams
     apexStep04Validate
     apexStep05Examine
     apexStep06Resolve
@@ -140,6 +139,7 @@ in
     "${claudeDir}/commands/auto.md".text = cmdAuto;
     "${claudeDir}/commands/ralph-loop.md".text = cmdRalphLoop;
     "${claudeDir}/commands/cancel-ralph.md".text = cmdCancelRalph;
+    "${claudeDir}/commands/card.md".text = cmdCard;
 
     # Feature methodology commands
     "${claudeDir}/commands/discuss.md".text = commandDiscuss;
@@ -174,7 +174,6 @@ in
       force = true;
     };
     "${claudeDir}/skills/apex/steps/step-00-init.md".text = apexStep00Init;
-    "${claudeDir}/skills/apex/steps/step-00b-interactive.md".text = apexStep00bInteractive;
     "${claudeDir}/skills/apex/steps/step-00b-branch.md".text = apexStep00bBranch;
     "${claudeDir}/skills/apex/steps/step-00b-economy.md".text = apexStep00bEconomy;
     "${claudeDir}/skills/apex/steps/step-00b-save.md".text = apexStep00bSave;
@@ -184,7 +183,6 @@ in
     "${claudeDir}/skills/apex/steps/step-02c-verify.md".text = apexStep02cVerify;
     "${claudeDir}/skills/apex/steps/step-02b-tasks.md".text = apexStep02bTasks;
     "${claudeDir}/skills/apex/steps/step-03-execute.md".text = apexStep03Execute;
-    "${claudeDir}/skills/apex/steps/step-03-execute-teams.md".text = apexStep03ExecuteTeams;
     "${claudeDir}/skills/apex/steps/step-04-validate.md".text = apexStep04Validate;
     "${claudeDir}/skills/apex/steps/step-05-examine.md".text = apexStep05Examine;
     "${claudeDir}/skills/apex/steps/step-06-resolve.md".text = apexStep06Resolve;

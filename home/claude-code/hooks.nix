@@ -89,7 +89,8 @@
         if (body.indexOf("\"name\":\"Skill\",\"input\":{\"skill\":\"apex\"") !== -1) process.exit(0);
 
         const reason = "BLOCKED: this edit modifies a project file and APEX has not run "
-          + "in this session. Invoke the apex skill first — use `-e` for a trivial change. "
+          + "in this session. Invoke the apex skill first — nothing to type: the Mode Gate "
+          + "routes a trivial change to economy on its own. "
           + "Fires once per session; every edit after APEX starts passes.";
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {
@@ -140,14 +141,16 @@
         const STANDARD = /(supprime|delete|remove|\brm\b|migration|\bmaster\b|\bmain\b|\bprod\b)/i;
 
         let target;
-        if (HIGH.test(args)) target = ["-b", "-s", "-t", "-x", "-pr"];
-        else if (STANDARD.test(args)) target = ["-b", "-s", "-t", "-pr"];
+        // Branch and save left the flag surface: both are mode invariants now,
+        // so the tiers only carry what is still a real flag.
+        if (HIGH.test(args)) target = ["-t", "-x", "-pr"];
+        else if (STANDARD.test(args)) target = ["-t", "-pr"];
         else process.exit(0);
 
         // Leading tokens that look like flags; everything after is the task.
         const parts = args.trim().split(/\s+/);
         let i = 0;
-        while (i < parts.length && /^-[a-zA-Z]+$/.test(parts[i])) i++;
+        while (i < parts.length && /^-[a-zA-Z0-9]+$/.test(parts[i])) i++;
         const typed = parts.slice(0, i);
         const rest = parts.slice(i).join(" ");
 
@@ -348,7 +351,7 @@
   # that actually hurts (the rule silently not firing).
   hookApexReminder = ''
     #!/usr/bin/env bash
-    echo "Routage: fichier modifié → /apex. Flags auto par mode: trivial=-e | diagnosis=-b -s -x | standard=-b -s -t -pr | haut-enjeu=-b -s -t -x -pr. Flag tapé prime, majuscule désactive (-PR). Question ou recherche sans modification → réponse directe, pas d'apex."
+    echo "Routage: fichier modifié → /apex. Modes: trivial=éco | diagnosis=-x | standard=-t -pr | haut-enjeu=-t -x -pr (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -o vault | -n note. Majuscule désactive. Question sans modification → réponse directe."
     exit 0
   '';
 

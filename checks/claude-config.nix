@@ -31,6 +31,17 @@ let
   denyRead = pkgs.lib.attrByPath [ "sandbox" "filesystem" "denyRead" ] [ ] settingsAttrs;
   fallbackModel = pkgs.lib.attrByPath [ "fallbackModel" ] null settingsAttrs;
 
+  voice = pkgs.lib.attrByPath [ "voice" ] null settingsAttrs;
+  voiceOk =
+    voice != null
+    && builtins.isAttrs voice
+    && (voice.enabled or null) == true
+    && builtins.elem (voice.mode or null) [
+      "hold"
+      "toggle"
+    ]
+    && builtins.isBool (voice.autoSubmit or null);
+
   # --- frontmatter --------------------------------------------------------
   # The lines between the opening `---` and the closing one. No takeWhile in
   # this nixpkgs lib, hence the fold.
@@ -203,6 +214,11 @@ let
         "rule(s) with no `paths:` in frontmatter: "
         + builtins.concatStringsSep ", " rulesWithoutPaths
         + " — without it the rule is either never loaded or loaded at every launch, which is exactly the context bloat rules/ exists to avoid";
+    }
+    {
+      name = "A8 settings: voice block is complete";
+      ok = voiceOk;
+      msg = "settings.nix `voice` is missing, or one of: enabled != true, mode not in {hold, toggle}, autoSubmit not a boolean — la dictée /voice dépend entièrement de ce bloc, et la clé legacy `voiceEnabled` est supprimée du live par la passe jq d'activation (del(.voiceEnabled)), donc il n'y a plus de filet : si ce bloc saute, la dictée meurt SILENCIEUSEMENT au prochain rebuild, sans erreur ni warning";
     }
   ];
 

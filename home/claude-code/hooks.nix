@@ -46,9 +46,19 @@
   # UserPromptSubmit reminder is text: it is read and then skipped. Measured on
   # 2026-08-08 — 6 file-modifying tasks in one session, APEX invoked on 2.
   #
-  # Fires at most ONCE per session: after APEX runs, its Skill call is in the
-  # transcript and every later edit passes. That is what keeps the cost of a
-  # hard deny acceptable.
+  # Fires ONCE PER TASK (2026-08-16). It used to fire once per SESSION: the
+  # check was a substring scan of the whole transcript, so the first APEX run
+  # cleared every later edit — a second request in the same conversation went
+  # through with no workflow at all. The scan now walks BACKWARDS from the end
+  # and stops at the last real user turn, so only an APEX invoked since that
+  # turn counts.
+  #
+  # "Real user turn" excludes tool_result blocks (138 of the 164 user-typed
+  # lines in a measured 937-line transcript) and `! command` lines, which are
+  # user input but not a new request.
+  #
+  # Cost of the change: one deny -> apex -> retry round trip per modifying
+  # task, instead of one per session. That is the point.
   #
   # FAIL-OPEN on any error, unlike protect-main and block-main-bash. This is a
   # workflow hook, not a safety one: a missed APEX costs little, a session
@@ -85,13 +95,56 @@
         // conversation that merely discusses APEX would match a bare grep.
         const t = data.transcript_path;
         if (!t || !fs.existsSync(t)) process.exit(0);
-        const body = fs.readFileSync(t, "utf8");
-        if (body.indexOf("\"name\":\"Skill\",\"input\":{\"skill\":\"apex\"") !== -1) process.exit(0);
+
+        const APEX = "\"name\":\"Skill\",\"input\":{\"skill\":\"apex\"";
+        const lines = fs.readFileSync(t, "utf8").split("\n");
+
+        // Walk backwards: whichever comes first decides. An APEX call before
+        // any user turn means APEX ran for THIS task -> pass. A user turn
+        // first means this is a new request with no APEX yet -> deny.
+        let ranForThisTask = false;
+        for (let i = lines.length - 1; i >= 0; i--) {
+          const line = lines[i];
+          if (!line) continue;
+
+          if (line.indexOf(APEX) !== -1) { ranForThisTask = true; break; }
+
+          // Cheap reject before the JSON.parse cost.
+          if (line.indexOf("\"type\":\"user\"") === -1) continue;
+
+          let msg;
+          try { msg = JSON.parse(line); } catch { continue; }
+          if (msg.type !== "user") continue;
+
+          // Harness-injected content, written with the user role but never
+          // typed by anyone. This one is load-bearing: invoking a Skill writes
+          // the skill's own body back as an isMeta user line, AFTER the Skill
+          // marker. Without this skip the backwards walk hits that line first
+          // and denies forever — apex plants a fresh one on every retry.
+          // Replayed over 4 real transcripts: 161/161 historical edits denied.
+          if (msg.isMeta === true) continue;
+
+          const c = msg.message && msg.message.content;
+
+          // Tool results are recorded as user messages. They are not turns.
+          if (Array.isArray(c) && c.some(b => b && b.type === "tool_result")) continue;
+
+          // Harness envelopes that carry no isMeta flag: `! command` lines,
+          // background-task completions, and slash-command markers. All are
+          // user-role lines, none is a new request.
+          const text = typeof c === "string"
+            ? c
+            : (Array.isArray(c) ? c.filter(b => b && b.type === "text").map(b => b.text || "").join("") : "");
+          if (/^\s*<(bash-(input|stdout|stderr)|task-notification|command-name|local-command-)/.test(text)) continue;
+
+          break; // a real user turn, reached before any APEX call
+        }
+        if (ranForThisTask) process.exit(0);
 
         const reason = "BLOCKED: this edit modifies a project file and APEX has not run "
-          + "in this session. Invoke the apex skill first — nothing to type: the Mode Gate "
+          + "for THIS request. Invoke the apex skill first — nothing to type: the Mode Gate "
           + "routes a trivial change to economy on its own. "
-          + "Fires once per session; every edit after APEX starts passes.";
+          + "Fires once per task; every edit after APEX starts passes until your next message.";
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
@@ -192,7 +245,8 @@
         let target;
         // Branch and save left the flag surface: both are mode invariants now,
         // so the tiers only carry what is still a real flag.
-        if (HIGH.test(args)) target = ["-t", "-x", "-pr"];
+        const isHigh = HIGH.test(args);
+        if (isHigh) target = ["-t", "-x", "-pr"];
         else if (STANDARD.test(args)) target = ["-t", "-pr"];
         else process.exit(0);
 
@@ -213,15 +267,41 @@
         }
 
         const next = (kept.join(" ") + " " + rest).trim();
-        if (next === args.trim()) process.exit(0);
 
-        process.stdout.write(JSON.stringify({
+        // The Fable spend is decided here, by regex, not by the coordinator's
+        // judgement mid-run — that judgement is exactly what kept getting
+        // skipped. HIGH only: the 5h/7d quota is the scarce resource, and
+        // ORCHESTRATION.md keeps it for the check where a miss is expensive.
+        const fable = isHigh
+          ? "HIGH risk signal in this brief (hook/settings/permission/sandbox/deny/secret/"
+            + "credential). The Fable read-only pass is MANDATORY for this run: once the "
+            + "machine gate is green, spawn a subagent with an explicit model: fable over "
+            + "the REAL diff plus the ACs, then apply its bounded fix-list. Fable is "
+            + "read-only — it returns PASS or a fix-list and never edits."
+          : null;
+
+        // Emit even when the flags are already right: without this the context
+        // is dropped whenever the user typed -t -x -pr themselves.
+        const unchanged = next === args.trim();
+        if (unchanged && !fable) process.exit(0);
+
+        // When there is nothing to rewrite, send the context ALONE. Adding
+        // permissionDecision "allow" here would auto-approve the Skill call and
+        // bypass every downstream check, to rewrite nothing.
+        if (unchanged) {
+          process.stdout.write(JSON.stringify({ additionalContext: fable }));
+          process.exit(0);
+        }
+
+        const out = {
           hookSpecificOutput: {
             hookEventName: "PreToolUse",
             permissionDecision: "allow",
             updatedInput: { skill: ti.skill, args: next }
           }
-        }));
+        };
+        if (fable) out.additionalContext = fable;
+        process.stdout.write(JSON.stringify(out));
       } catch (e) {}
       process.exit(0);
     });

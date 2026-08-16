@@ -314,7 +314,8 @@ in
             {
               type = "command";
               # Enforces the APEX routing rule that apex-reminder only suggests.
-              # Fires at most once per session; fail-open on any error.
+              # Fires at most once per TASK — once per real user turn, not once
+              # per session; fail-open on any error.
               command = "${node} ~/.claude/hooks/require-apex.js";
               timeout = 5;
             }

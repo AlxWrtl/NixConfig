@@ -141,7 +141,6 @@
       set -euo pipefail
       MCP_BASE="$HOME/.claude/mcp-servers-base.json"
       TARGET="$HOME/.claude.json"
-      SECRET_21ST="$HOME/.config/secrets/21st-dev-api-key"
 
       command -v jq >/dev/null 2>&1 || exit 0
       [ -f "$MCP_BASE" ] || exit 0
@@ -154,11 +153,9 @@
       trap 'rm -f "$TMP"' EXIT
       MCP_DATA=$(cat "$MCP_BASE")
 
-      # Inject secrets at runtime via jq (safe for special chars in keys)
-      if [ -f "$SECRET_21ST" ]; then
-        API_KEY=$(cat "$SECRET_21ST")
-        MCP_DATA=$(echo "$MCP_DATA" | jq --arg key "$API_KEY" 'walk(if . == "__SECRET_21ST_DEV__" then $key else . end)')
-      fi
+      # No runtime secret injection: since `magic` was removed (2026-08-16) no
+      # MCP server carries a `__SECRET_*__` placeholder. Restore the jq `walk`
+      # step here if one ever does again.
 
       jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP" \
         && mv "$TMP" "$TARGET"

@@ -135,7 +135,6 @@ in
         "Bash(npm run *)"
         "Bash(dev-browser *)"
         "Bash(npx dev-browser *)"
-        "Bash(npx @21st-dev/magic@*)"
         "Bash(npx -y @oomkapwn/enquire-mcp*)"
         "Bash(enquire-mcp *)"
         "Bash(npx ccusage@*)"
@@ -543,18 +542,12 @@ in
 
   # MCP servers merged into ~/.claude/.claude.json by activation script
   # Secrets (API keys) are injected at runtime by claudeCodeMcpMerge, not here
+  #
+  # `magic` (@21st-dev/magic) removed 2026-08-16: React UI component generation
+  # that went unused, and it was the only server needing an API key. The key
+  # file at ~/.config/secrets/21st-dev-api-key is left on disk — deleting a
+  # secret is the user's call, not the config's.
   mcpServersJson = builtins.toJSON {
-    magic = {
-      type = "stdio";
-      command = "npx";
-      args = [
-        "-y"
-        "@21st-dev/magic@0.1.0"
-      ];
-      env = {
-        API_KEY = "__SECRET_21ST_DEV__";
-      };
-    };
     playwright = {
       type = "stdio";
       command = "npx";

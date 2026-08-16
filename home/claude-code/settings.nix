@@ -135,7 +135,6 @@ in
         "Bash(npm run *)"
         "Bash(dev-browser *)"
         "Bash(npx dev-browser *)"
-        "Bash(npx @21st-dev/magic@*)"
         "Bash(npx -y @oomkapwn/enquire-mcp*)"
         "Bash(enquire-mcp *)"
         "Bash(npx ccusage@*)"
@@ -143,6 +142,9 @@ in
         "Bash(npx tsc *)"
         "Bash(bunx *)"
         "Bash(node *)"
+        # Library docs via the Context7 REST API. A narrow grant on purpose:
+        # the wrapper exists so this rule is not `Bash(curl *)`.
+        "Bash(libdocs *)"
         # Git — safe operations (granular, not blanket)
         "Bash(git status *)"
         "Bash(git diff *)"
@@ -343,6 +345,20 @@ in
             }
           ];
         }
+        {
+          matcher = "Edit|Write";
+          hooks = [
+            {
+              type = "command";
+              # Injects the React/RR7 docs reminder on the first .tsx/.jsx write
+              # of a session. Emits additionalContext only — never a permission
+              # decision — so require-apex and protect-main still run. NOT async:
+              # additionalContext must reach the model before the tool call.
+              command = "${node} ~/.claude/hooks/react-docs-gate.js";
+              timeout = 5;
+            }
+          ];
+        }
       ];
       PostToolUse = [
         {
@@ -526,18 +542,12 @@ in
 
   # MCP servers merged into ~/.claude/.claude.json by activation script
   # Secrets (API keys) are injected at runtime by claudeCodeMcpMerge, not here
+  #
+  # `magic` (@21st-dev/magic) removed 2026-08-16: React UI component generation
+  # that went unused, and it was the only server needing an API key. The key
+  # file at ~/.config/secrets/21st-dev-api-key is left on disk — deleting a
+  # secret is the user's call, not the config's.
   mcpServersJson = builtins.toJSON {
-    magic = {
-      type = "stdio";
-      command = "npx";
-      args = [
-        "-y"
-        "@21st-dev/magic@0.1.0"
-      ];
-      env = {
-        API_KEY = "__SECRET_21ST_DEV__";
-      };
-    };
     playwright = {
       type = "stdio";
       command = "npx";

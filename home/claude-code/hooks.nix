@@ -104,6 +104,55 @@
     });
   '';
 
+  # Turns the React Confidence Gate from advice into a delivered reminder.
+  #
+  # rules/react.md carries the same content, but a path-scoped rule loads only
+  # when a matching file is READ — an edit written from memory, with no prior
+  # read, never triggers it. This hook closes that hole: it fires on the write
+  # itself.
+  #
+  # Emits `additionalContext` ONLY, with no permissionDecision. Returning
+  # "allow" here would bypass every downstream check — require-apex,
+  # protect-main, block-main-bash — on any .tsx edit. Staying silent on the
+  # decision keeps the normal permission flow intact.
+  #
+  # Once per session, keyed on session_id: a React session edits many files and
+  # a per-edit reminder would be noise. FAIL-OPEN — a missed reminder costs a
+  # doc lookup, never an edit.
+  hookReactDocsGate = ''
+    #!/usr/bin/env node
+    let input = "";
+    process.stdin.on("data", c => input += c);
+    process.stdin.on("end", () => {
+      const fs = require("fs");
+      const os = require("os");
+      const path = require("path");
+      try {
+        const data = JSON.parse(input);
+        const filePath = data.tool_input && data.tool_input.file_path;
+        if (!filePath || !/\.(tsx|jsx)$/i.test(filePath)) process.exit(0);
+
+        const sid = String(data.session_id || "nosession").replace(/[^A-Za-z0-9_-]/g, "");
+        const stamp = path.join(os.tmpdir(), "claude-react-docs-gate-" + sid);
+        if (fs.existsSync(stamp)) process.exit(0);
+        try { fs.writeFileSync(stamp, ""); } catch {}
+
+        const ctx = [
+          "Stack: React 19 + React Router 7 + TypeScript.",
+          "Before writing an API you are not certain of, look it up:",
+          "`libdocs react \"<question>\"` or `libdocs rr \"<question>\"`.",
+          "The ids are pinned because a raw doc search ranks React Router v5 above v7.",
+          "Do not write `useFormState` (v18 name) and do not import from",
+          "`react-router-dom` (v7 ships `react-router`).",
+          "After writing: pnpm typecheck && pnpm lint --max-warnings 0."
+        ].join(" ");
+
+        process.stdout.write(JSON.stringify({ additionalContext: ctx }));
+      } catch (e) {}
+      process.exit(0);
+    });
+  '';
+
   # Rewrites APEX's flags before it starts, from risk signals in the task text.
   #
   # The mode gate picks flags from prose, before anything is known about the

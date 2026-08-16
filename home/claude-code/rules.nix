@@ -33,4 +33,41 @@
     ## Rules
     - Package manager: pnpm (never npm or yarn). WCAG AA accessibility minimum.
   '';
+
+  # Stack: React 19 + React Router 7 + TypeScript. Narrower `paths` than
+  # ruleTypescript on purpose — both load on a .tsx, and this one carries the
+  # cost only where React is actually written.
+  ruleReact = ''
+    ---
+    paths: ["**/*.{tsx,jsx}"]
+    ---
+
+    # React 19 + React Router 7
+
+    ## Confidence Gate — before writing, not after
+    - Rate confidence on any API, signature or version detail BEFORE writing.
+      < 80% → STOP, run `libdocs`, then write. Never guess a signature.
+      `libdocs react "<question>"` · `libdocs rr "<question>"` · `libdocs --list`
+    - Version trap: ranking doc hits by score or corpus size puts React Router
+      v5 ABOVE v7. Use the pinned names (`react`, `rr`), never a raw search hit.
+
+    ## Verify
+    - `pnpm typecheck && pnpm lint --max-warnings 0`
+    - `eslint-plugin-react-hooks` must be enabled: it machine-checks what the
+      docs only describe. Docs before writing, lint after — both, not either.
+
+    ## Anti-patterns (blocking)
+    - `useEffect` to derive state from props/state → compute during render.
+    - `useEffect` to notify a parent of a state change → call the handler in
+      the event, not in an effect.
+    - Index as list `key` on a reordered or filtered list → stable identity key.
+    - `react-router-dom` imports → in v7 the package is `react-router`.
+
+    ## React 19 / RR7 specifics
+    - Async form state: `useActionState`, `useOptimistic`, `use()`.
+      `useFormState` is the v18 name — do not write it.
+    - Server Components take no hooks and no browser APIs; the boundary is
+      explicit. Check it with `libdocs` before crossing it.
+    - Routes are declared in `routes.ts` (framework mode), loaders per route.
+  '';
 }

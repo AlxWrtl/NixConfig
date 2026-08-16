@@ -17,10 +17,12 @@ let
   shell = import ./claude-code/shell.nix;
   claudeMd = import ./claude-code/claude-md.nix;
   rules = import ./claude-code/rules.nix;
+  libdocs = import ./claude-code/libdocs.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix { inherit pkgs lib; };
 
   inherit (claudeMd) claudeMdGlobal;
-  inherit (rules) ruleNix ruleTypescript;
+  inherit (rules) ruleNix ruleTypescript ruleReact;
+  inherit (libdocs) libdocsPkg;
   inherit (settings)
     settingsJson
     statuslineScript
@@ -94,6 +96,7 @@ let
     hookPostCompactRestore
     hookQualityGate
     hookGovernanceAudit
+    hookReactDocsGate
     ;
   inherit (agents)
     agentFrontend
@@ -143,6 +146,7 @@ in
     # Rules (path-scoped, loaded on demand when a matching file is read)
     "${claudeDir}/rules/nix.md".text = ruleNix;
     "${claudeDir}/rules/typescript.md".text = ruleTypescript;
+    "${claudeDir}/rules/react.md".text = ruleReact;
 
     # Commands
     "${claudeDir}/commands/tdd.md".text = cmdTdd;
@@ -330,6 +334,10 @@ in
       text = hookRtkNixRewrite;
       executable = true;
     };
+    "${claudeDir}/hooks/react-docs-gate.js" = {
+      text = hookReactDocsGate;
+      executable = true;
+    };
 
     # Statusline script
     "${claudeDir}/statusline.sh" = {
@@ -337,6 +345,11 @@ in
       executable = true;
     };
   };
+
+  # `libdocs` on PATH — usable by Claude, by APEX and its subagents, and by the
+  # user in a plain terminal. home.packages is a list: this merges with the
+  # definitions in the other home modules.
+  home.packages = [ libdocsPkg ];
 
   # Activation scripts
   home.activation = activationScripts;

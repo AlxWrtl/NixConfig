@@ -32,6 +32,20 @@
 
     ## Rules
     - Package manager: pnpm (never npm or yarn). WCAG AA accessibility minimum.
+
+    ## Docs before writing
+    - Confidence < 80% on a library API → `libdocs <name> "<question>"` BEFORE
+      writing. `libdocs --list` shows the pinned names.
+    - Ids are pinned per MAJOR version because doc search ranks the OLD major
+      higher: Tailwind v3 outweighs v4, Zod v3 outweighs v4 by 4.5x. Never
+      resolve a library by raw search when a pin exists.
+
+    ## Version traps in this stack
+    - Tailwind v4 is CSS-first: `@import "tailwindcss"` + `@theme`. No
+      `tailwind.config.js`, no `@tailwind base/components/utilities`.
+    - Zod 4: top-level validators — `z.email()`, not `z.string().email()`.
+    - date-fns 4: `TZDate` from `@date-fns/tz`, not `utcToZonedTime`.
+    - Vite 7 here; upstream main is already v8 — check before using a new API.
   '';
 
   # Stack: React 19 + React Router 7 + TypeScript. Narrower `paths` than

@@ -1,11 +1,22 @@
 # libdocs — up-to-date library docs from the Context7 REST API. No MCP server.
 #
-# Why pinned ids instead of "best search hit": a search for "react router"
-# returns v5 (27195 snippets, trustScore 9.7) ABOVE v7. Ranking by score or
-# corpus size serves React Router v5 docs to someone writing v7. The ids below
-# were verified on 2026-08-16 to return v19 / v7 content:
-#   /reactjs/react.dev        -> useActionState, Server Components, no useFormState
-#   /remix-run/react-router   -> routes.ts, from "react-router", no react-router-dom
+# Why pinned ids instead of "best search hit": ranking by score or corpus size
+# systematically serves the PREVIOUS major version. Measured 2026-08-16:
+#   react-router  v5 corpus 27195 snippets vs v7 2407  -> v5 wins on size
+#   tailwind      v3 corpus  3071 snippets vs v4 2725  -> v3 wins on size
+#   zod           v3 corpus  3184 snippets vs v4  704  -> v3 wins 4.5x
+#   vite          /vitejs/vite main already ships v8   -> AHEAD of the 7.3 in use
+#
+# Each pin was verified on 2026-08-16 by querying it and grepping the answer for
+# version-distinctive tokens:
+#   react     -> useActionState, Server Components; no useFormState
+#   rr        -> routes.ts, from "react-router"; no react-router-dom
+#   tailwind  -> @theme x7, @import "tailwindcss" x6; not tailwind.config.js
+#   zod       -> z.email() x11 top-level; z.string().email() x1
+#   date-fns  -> TZDate x26 (v4); no utcToZonedTime (v2/v3)
+#
+# Deliberately NOT pinned: `wrangler` — the search returns an OpenGL binding in
+# second place and no usable Cloudflare result. The `cf` pin covers it.
 #
 # The API key is optional: without CONTEXT7_API_KEY requests use the anonymous
 # tier (rate-limited, no signup).
@@ -22,10 +33,7 @@ Usage:
   libdocs --search <term>        list candidate library ids with scores
   libdocs --list                 show pinned ids
 
-Pinned (stack: React 19 + React Router 7 + TypeScript):
-  react, reactjs           -> /reactjs/react.dev
-  react-router, rr, router -> /remix-run/react-router
-  typescript, ts           -> /microsoft/typescript-website
+Run `libdocs --list` for the pinned names.
 
 Any other name falls through to --search: candidates are listed, nothing is
 guessed. Pass a raw /org/project id to query it directly.
@@ -33,6 +41,8 @@ guessed. Pass a raw /org/project id to query it directly.
 Examples:
   libdocs react "useEffect pitfalls, when not to use it"
   libdocs rr "loader vs clientLoader, route config in routes.ts"
+  libdocs tw "container queries and @theme tokens"
+  libdocs drizzle "pgPolicy RLS and migration workflow"
   libdocs --search zustand
 
 Env:
@@ -43,9 +53,21 @@ EOF
 
 pins() {
   cat <<'EOF'
-react          /reactjs/react.dev         React 19 (main branch)
-react-router   /remix-run/react-router    React Router 7 (framework mode)
-typescript     /microsoft/typescript-website
+NAME (aliases)          ID                                        PINNED TO
+react                   /reactjs/react.dev                        React 19
+rr, react-router        /remix-run/react-router                   RR 7, framework mode
+ts, typescript          /microsoft/typescript-website             TS docs
+tw, tailwind            /tailwindlabs/tailwindcss.com             Tailwind v4
+zod                     /colinhacks/zod                           Zod 4
+drizzle                 /drizzle-team/drizzle-orm-docs            Drizzle ORM + kit
+auth, better-auth       /better-auth/better-auth                  Better Auth 1.6
+cf, cloudflare, workers /websites/developers_cloudflare_workers   Workers, R2/KV/DO/AI
+neon                    /websites/neon                            Neon serverless PG
+dates, date-fns         /date-fns/date-fns                        date-fns 4 (TZDate)
+vite                    /websites/v7_vite_dev                     Vite 7 (main is v8)
+ui, shadcn              /shadcn-ui/ui                             shadcn + Radix
+pw, playwright          /microsoft/playwright                     Playwright E2E
+sentry                  /websites/sentry_io_platforms_javascript  Sentry JS
 EOF
 }
 
@@ -54,6 +76,17 @@ resolve() {
   react | reactjs | react19) echo "/reactjs/react.dev" ;;
   react-router | reactrouter | router | rr | rr7) echo "/remix-run/react-router" ;;
   typescript | ts) echo "/microsoft/typescript-website" ;;
+  tailwind | tailwindcss | tw) echo "/tailwindlabs/tailwindcss.com" ;;
+  zod) echo "/colinhacks/zod" ;;
+  drizzle | drizzle-orm | drizzle-kit) echo "/drizzle-team/drizzle-orm-docs" ;;
+  better-auth | betterauth | auth) echo "/better-auth/better-auth" ;;
+  cloudflare | cf | workers | wrangler) echo "/websites/developers_cloudflare_workers" ;;
+  neon | neondb) echo "/websites/neon" ;;
+  date-fns | datefns | dates) echo "/date-fns/date-fns" ;;
+  vite) echo "/websites/v7_vite_dev" ;;
+  shadcn | shadcn-ui | radix | ui) echo "/shadcn-ui/ui" ;;
+  playwright | pw) echo "/microsoft/playwright" ;;
+  sentry) echo "/websites/sentry_io_platforms_javascript" ;;
   /*/*) echo "$1" ;;
   *) echo "" ;;
   esac

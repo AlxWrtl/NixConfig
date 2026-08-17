@@ -17,7 +17,6 @@ let
   steps = {
     "step-00-init" = skills.apexStep00Init;
     "step-00b-branch" = skills.apexStep00bBranch;
-    "step-00b-economy" = skills.apexStep00bEconomy;
     "step-00b-save" = skills.apexStep00bSave;
     "step-01-analyze" = skills.apexStep01Analyze;
     "step-01b-obsidian-context" = skills.apexStep01bObsidianContext;

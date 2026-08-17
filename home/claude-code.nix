@@ -45,7 +45,6 @@ let
     skillApex
     apexStep00Init
     apexStep00bBranch
-    apexStep00bEconomy
     apexStep00bSave
     apexStep01Analyze
     apexStep01bObsidianContext
@@ -191,7 +190,6 @@ in
     };
     "${claudeDir}/skills/apex/steps/step-00-init.md".text = apexStep00Init;
     "${claudeDir}/skills/apex/steps/step-00b-branch.md".text = apexStep00bBranch;
-    "${claudeDir}/skills/apex/steps/step-00b-economy.md".text = apexStep00bEconomy;
     "${claudeDir}/skills/apex/steps/step-00b-save.md".text = apexStep00bSave;
     "${claudeDir}/skills/apex/steps/step-01-analyze.md".text = apexStep01Analyze;
     "${claudeDir}/skills/apex/steps/step-01b-obsidian-context.md".text = apexStep01bObsidianContext;

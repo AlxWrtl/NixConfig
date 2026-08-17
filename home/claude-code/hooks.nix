@@ -143,7 +143,7 @@
 
         const reason = "BLOCKED: this edit modifies a project file and APEX has not run "
           + "for THIS request. Invoke the apex skill first — nothing to type: the Mode Gate "
-          + "routes a trivial change to economy on its own. "
+          + "picks the depth on its own. "
           + "Fires once per task; every edit after APEX starts passes until your next message.";
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {
@@ -211,11 +211,12 @@
   # The mode gate picks flags from prose, before anything is known about the
   # change — and a typed flag wins over the mode default. Measured on
   # 2026-08-08: `-e` was typed on 3 of 3 invocations, under-powering 2 of them
-  # (a 45-rule rewrite and a blocking hook both ran in economy).
+  # (a 45-rule rewrite and a blocking hook both ran in economy). That evidence
+  # is what eventually retired economy mode entirely on 2026-08-17.
   #
   # Rule: a typed flag is a FLOOR, never a ceiling. A risk signal can only
-  # raise the tier. `-e` is the one flag that lowers depth, so it is the one
-  # flag stripped. Uppercase disables the user typed on purpose are preserved.
+  # raise the tier. `-e` is stripped because it no longer exists — see the
+  # filter below. Uppercase disables the user typed on purpose are preserved.
   #
   # False positives are the intended failure direction: a task that merely
   # mentions "settings" runs more thoroughly than needed. Cheap. The reverse
@@ -235,21 +236,15 @@
         const args = typeof ti.args === "string" ? ti.args : "";
         // `nix`, `flake` and `rebuild` were in STANDARD and had to go: in a
         // nix-darwin config repo every task names a .nix file, so they matched
-        // everything and made the trivial tier unreachable. Measured against
-        // the real briefs of 2026-08-08 — a two-line CLAUDE.md edit escalated
-        // to -b -s -t -pr purely because the path contained "claude-md.nix".
+        // everything and made the trivial tier unreachable (that tier was itself
+        // removed on 2026-08-17). Measured against the real briefs of
+        // 2026-08-08 — a two-line CLAUDE.md edit escalated to -b -s -t -pr
+        // purely because the path contained "claude-md.nix".
         // A signal that fires on every task is not a signal.
         const HIGH = /(hook|settings|permission|sandbox|deny|secret|credential)/i;
         const STANDARD = /(supprime|delete|remove|\brm\b|migration|\bmaster\b|\bmain\b|\bprod\b)/i;
 
         let target;
-        // Branch and save left the flag surface: both are mode invariants now,
-        // so the tiers only carry what is still a real flag.
-        const isHigh = HIGH.test(args);
-        if (isHigh) target = ["-t", "-x", "-pr"];
-        else if (STANDARD.test(args)) target = ["-t", "-pr"];
-        else process.exit(0);
-
         // Leading tokens that look like flags; everything after is the task.
         const parts = args.trim().split(/\s+/);
         let i = 0;
@@ -257,11 +252,24 @@
         const typed = parts.slice(0, i);
         const rest = parts.slice(i).join(" ");
 
-        // Drop -e: it is the only flag that lowers depth.
+        // -e no longer exists (economy mode removed 2026-08-17), and APEX
+        // rejects an unknown flag by printing the valid list instead of running.
+        // Stripped BEFORE the risk gate on purpose: the briefs that historically
+        // carried -e are low-risk ones matching neither regex, so stripping it
+        // after an early exit would have left it in place for exactly the
+        // population it was meant to protect.
         const kept = typed.filter(f => f !== "-e");
+        const strippedE = kept.length !== typed.length;
+
+        // Branch and save left the flag surface: both are mode invariants now,
+        // so the tiers only carry what is still a real flag.
+        const isHigh = HIGH.test(args);
+        if (isHigh) target = ["-t", "-x", "-pr"];
+        else if (STANDARD.test(args)) target = ["-t", "-pr"];
+        else if (!strippedE) process.exit(0);
 
         // Add what is missing, but never override an explicit uppercase OFF.
-        for (const f of target) {
+        for (const f of (target || [])) {
           const off = "-" + f.slice(1).toUpperCase();
           if (kept.indexOf(f) === -1 && kept.indexOf(off) === -1) kept.push(f);
         }

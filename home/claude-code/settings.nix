@@ -309,7 +309,12 @@ in
           ];
         }
         {
-          matcher = "Edit|Write|NotebookEdit";
+          # Bash is in the matcher because Edit/Write are not the only way to
+          # write a file: `sed -i`, a heredoc and a plain redirection all do,
+          # and bypass-permissions mode actively steers toward them. Guarding
+          # only the Edit door left the main entrance open. The hook itself
+          # decides whether a given command actually writes into the repo.
+          matcher = "Edit|Write|NotebookEdit|Bash";
           hooks = [
             {
               type = "command";

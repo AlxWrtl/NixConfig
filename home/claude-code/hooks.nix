@@ -77,19 +77,95 @@
         // Plan mode never writes.
         if (data.permission_mode === "plan") process.exit(0);
 
-        const filePath = data.tool_input && data.tool_input.file_path;
-        if (!filePath) process.exit(0);
-        const resolved = path.resolve(filePath);
+        const ti = data.tool_input || {};
+        const command = typeof ti.command === "string" ? ti.command : null;
 
-        // Memory writes are not project work.
-        if (/\/\.claude\/projects\/[^/]+\/memory\//.test(resolved)) process.exit(0);
+        if (command !== null) {
+          // THE SECOND DOOR. Edit/Write are not the only way to change a file:
+          // `sed -i`, a heredoc or a plain redirection writes just as well, and
+          // under bypass-permissions the agent is actively instructed to prefer
+          // them over the dedicated tools. Guarding only the Edit door leaves
+          // the main entrance open.
+          //
+          // This is a heuristic and cannot be otherwise: no static check can
+          // know what an arbitrary binary writes. It narrows the surface, it
+          // does not seal it.
 
-        // Outside any git repo — scratchpad, /tmp, $TMPDIR. Not project work.
-        try {
-          execSync("git rev-parse --is-inside-work-tree", {
-            cwd: path.dirname(resolved), stdio: "pipe"
-          });
-        } catch { process.exit(0); }
+          // ORDER MATTERS. Non-repo targets are blanked FIRST, while their
+          // quotes are still attached: stripping quotes earlier turns
+          // `touch "$TMPDIR/marker"` into a bare `touch` and the target is lost.
+          // Covers $TMPDIR, /tmp, scratchpad, /dev/*, and the memory directory
+          // the Edit branch already excludes.
+          // No optional ['"] at the ends: an optional quote eats one half of a
+          // pair when a temp path sits INSIDE a larger quoted string, the prose
+          // pass then finds nothing to pair, and the surviving text re-fires the
+          // arrow FP. Real trigger: git commit -m "old -> new, log in /tmp/x".
+          const noTemp = command.replace(
+            /[^\s'"|;&)]*(\$\{?TMPDIR\}?|\/var\/folders\/|\/(private\/)?tmp\/|scratchpad|\/dev\/[a-z]+|\/\.claude\/projects\/[^\s'"|;&)]*\/memory\/)[^\s'"|;&)]*/g,
+            " "
+          );
+
+          // Quoted text is prose, not shell syntax. Without this pass a commit
+          // message reading "3.21.7 -> 3.21.8" is a redirection, and `gh pr
+          // create --body "... -> ..."` is a write. Both were REAL denies when
+          // replayed over 869 recorded Bash calls. A quoted redirect TARGET is
+          // unwrapped first, so `echo x > "src/f.ts"` still counts as a write.
+          const probe = noTemp
+            .replace(/(>>?\s*)['"]([^'"]+)['"]/g, "$1$2")
+            .replace(/'[^']*'/g, " ")
+            .replace(/"[^"]*"/g, " ")
+            .replace(/\d?>&\d/g, " ")
+            // Blanking a temp TARGET leaves its operator dangling, and `;`, `)`,
+            // `<` and a newline's first char all satisfy the redirect test — so
+            // `rebuild ... > /tmp/x.log 2>&1; echo` denied. That command is the
+            // repair path itself. A target-less redirect before a separator is a
+            // bash syntax error, so it can only be a blanking artifact.
+            // Must run AFTER the `\d?>&\d` blank above, and the `(?![|&])` is
+            // load-bearing: without it backtracking retries `>>?` once `>\|`
+            // fails its lookahead and eats the `>` of a legitimate `>| file`.
+            .replace(/\d?(>\||>&|>>?(?![|&]))\s*(?=$|[\n;)&|<])/g, " ");
+
+          // Word-shaped commands are anchored to command POSITION. Unanchored,
+          // JS `\b` is ASCII-only, so the French "touché" fired \btouch\b — a
+          // standing false positive given every reply here is in French.
+          // `\n` belongs in the separator class: these transcripts routinely
+          // send newline-joined compounds, and `^` is not multiline here.
+          const AT_CMD = "(^|[\\n|;&]\\s*|\\$\\(\\s*|&&\\s*|\\|\\|\\s*)";
+          const WRITES = [
+            /\b(sed|perl|ruby)\b[^|;&]*\s-[a-zA-Z]*i\b/,
+            // The argument class excludes separators, not just whitespace: once
+            // a temp target is blanked the word is bare (`tee   && echo`), and
+            // a plain \S would happily match the `&` of the next command.
+            new RegExp(AT_CMD + "(cp|mv|rsync|truncate|touch|tee|patch)\\s+[^\\s;&|)]"),
+            /\d?(>>?|>\||>&(?!\d))\s*[^\s>|&]/,
+            /(?:^|[^<])<<-?\s*['"]?[A-Za-z_]/,
+            /--(write|fix|in-place)\b/,
+            /\bgit\s+(apply|restore|checkout\s+--)/
+          ];
+          if (!WRITES.some(r => r.test(probe))) process.exit(0);
+
+          // Only guard writes aimed at a repo. The cwd is the best signal a
+          // hook has: it cannot resolve every target path in a shell string.
+          try {
+            execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" });
+          } catch { process.exit(0); }
+        } else {
+          // NotebookEdit sends notebook_path, not file_path. It has been in the
+          // matcher and unread the whole time — a dead letter until now.
+          const filePath = ti.file_path || ti.notebook_path;
+          if (!filePath) process.exit(0);
+          const resolved = path.resolve(filePath);
+
+          // Memory writes are not project work.
+          if (/\/\.claude\/projects\/[^/]+\/memory\//.test(resolved)) process.exit(0);
+
+          // Outside any git repo — scratchpad, /tmp, $TMPDIR. Not project work.
+          try {
+            execSync("git rev-parse --is-inside-work-tree", {
+              cwd: path.dirname(resolved), stdio: "pipe"
+            });
+          } catch { process.exit(0); }
+        }
 
         // Match the structured Skill call, never the word "apex": a
         // conversation that merely discusses APEX would match a bare grep.

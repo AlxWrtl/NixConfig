@@ -165,7 +165,6 @@ APEX is a structured, multi-step implementation workflow for Claude Code (`/apex
 | `-x` | `-X` | Examine — adversarial code review |
 | `-s` | `-S` | Save — persist outputs to files |
 | `-t` | `-T` | Test — create and run tests |
-| `-e` | `-E` | Economy — no subagents, direct tools only |
 | `-b` | `-B` | Branch — create git branch |
 | `-pr` | `-PR` | Pull request — commit + PR (implies `-b`) |
 | `-k` | `-K` | Tasks — task breakdown with dependency graph |
@@ -183,7 +182,6 @@ APEX is a structured, multi-step implementation workflow for Claude Code (`/apex
 /apex -a -s implement auth           # Autonomous + save
 /apex -a -x -s fix bug              # Full autonomous with review
 /apex -a -t -pr add endpoint        # Auto + tests + PR
-/apex -e simple fix                  # Economy mode (save tokens)
 /apex -a -o -n add feature           # With Obsidian context load + session note
 /apex -a -x -t -pr -o -n feature   # Everything enabled
 ```

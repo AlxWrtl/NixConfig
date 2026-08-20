@@ -77,19 +77,95 @@
         // Plan mode never writes.
         if (data.permission_mode === "plan") process.exit(0);
 
-        const filePath = data.tool_input && data.tool_input.file_path;
-        if (!filePath) process.exit(0);
-        const resolved = path.resolve(filePath);
+        const ti = data.tool_input || {};
+        const command = typeof ti.command === "string" ? ti.command : null;
 
-        // Memory writes are not project work.
-        if (/\/\.claude\/projects\/[^/]+\/memory\//.test(resolved)) process.exit(0);
+        if (command !== null) {
+          // THE SECOND DOOR. Edit/Write are not the only way to change a file:
+          // `sed -i`, a heredoc or a plain redirection writes just as well, and
+          // under bypass-permissions the agent is actively instructed to prefer
+          // them over the dedicated tools. Guarding only the Edit door leaves
+          // the main entrance open.
+          //
+          // This is a heuristic and cannot be otherwise: no static check can
+          // know what an arbitrary binary writes. It narrows the surface, it
+          // does not seal it.
 
-        // Outside any git repo — scratchpad, /tmp, $TMPDIR. Not project work.
-        try {
-          execSync("git rev-parse --is-inside-work-tree", {
-            cwd: path.dirname(resolved), stdio: "pipe"
-          });
-        } catch { process.exit(0); }
+          // ORDER MATTERS. Non-repo targets are blanked FIRST, while their
+          // quotes are still attached: stripping quotes earlier turns
+          // `touch "$TMPDIR/marker"` into a bare `touch` and the target is lost.
+          // Covers $TMPDIR, /tmp, scratchpad, /dev/*, and the memory directory
+          // the Edit branch already excludes.
+          // No optional ['"] at the ends: an optional quote eats one half of a
+          // pair when a temp path sits INSIDE a larger quoted string, the prose
+          // pass then finds nothing to pair, and the surviving text re-fires the
+          // arrow FP. Real trigger: git commit -m "old -> new, log in /tmp/x".
+          const noTemp = command.replace(
+            /[^\s'"|;&)]*(\$\{?TMPDIR\}?|\/var\/folders\/|\/(private\/)?tmp\/|scratchpad|\/dev\/[a-z]+|\/\.claude\/projects\/[^\s'"|;&)]*\/memory\/)[^\s'"|;&)]*/g,
+            " "
+          );
+
+          // Quoted text is prose, not shell syntax. Without this pass a commit
+          // message reading "3.21.7 -> 3.21.8" is a redirection, and `gh pr
+          // create --body "... -> ..."` is a write. Both were REAL denies when
+          // replayed over 869 recorded Bash calls. A quoted redirect TARGET is
+          // unwrapped first, so `echo x > "src/f.ts"` still counts as a write.
+          const probe = noTemp
+            .replace(/(>>?\s*)['"]([^'"]+)['"]/g, "$1$2")
+            .replace(/'[^']*'/g, " ")
+            .replace(/"[^"]*"/g, " ")
+            .replace(/\d?>&\d/g, " ")
+            // Blanking a temp TARGET leaves its operator dangling, and `;`, `)`,
+            // `<` and a newline's first char all satisfy the redirect test — so
+            // `rebuild ... > /tmp/x.log 2>&1; echo` denied. That command is the
+            // repair path itself. A target-less redirect before a separator is a
+            // bash syntax error, so it can only be a blanking artifact.
+            // Must run AFTER the `\d?>&\d` blank above, and the `(?![|&])` is
+            // load-bearing: without it backtracking retries `>>?` once `>\|`
+            // fails its lookahead and eats the `>` of a legitimate `>| file`.
+            .replace(/\d?(>\||>&|>>?(?![|&]))\s*(?=$|[\n;)&|<])/g, " ");
+
+          // Word-shaped commands are anchored to command POSITION. Unanchored,
+          // JS `\b` is ASCII-only, so the French "touché" fired \btouch\b — a
+          // standing false positive given every reply here is in French.
+          // `\n` belongs in the separator class: these transcripts routinely
+          // send newline-joined compounds, and `^` is not multiline here.
+          const AT_CMD = "(^|[\\n|;&]\\s*|\\$\\(\\s*|&&\\s*|\\|\\|\\s*)";
+          const WRITES = [
+            /\b(sed|perl|ruby)\b[^|;&]*\s-[a-zA-Z]*i\b/,
+            // The argument class excludes separators, not just whitespace: once
+            // a temp target is blanked the word is bare (`tee   && echo`), and
+            // a plain \S would happily match the `&` of the next command.
+            new RegExp(AT_CMD + "(cp|mv|rsync|truncate|touch|tee|patch)\\s+[^\\s;&|)]"),
+            /\d?(>>?|>\||>&(?!\d))\s*[^\s>|&]/,
+            /(?:^|[^<])<<-?\s*['"]?[A-Za-z_]/,
+            /--(write|fix|in-place)\b/,
+            /\bgit\s+(apply|restore|checkout\s+--)/
+          ];
+          if (!WRITES.some(r => r.test(probe))) process.exit(0);
+
+          // Only guard writes aimed at a repo. The cwd is the best signal a
+          // hook has: it cannot resolve every target path in a shell string.
+          try {
+            execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" });
+          } catch { process.exit(0); }
+        } else {
+          // NotebookEdit sends notebook_path, not file_path. It has been in the
+          // matcher and unread the whole time — a dead letter until now.
+          const filePath = ti.file_path || ti.notebook_path;
+          if (!filePath) process.exit(0);
+          const resolved = path.resolve(filePath);
+
+          // Memory writes are not project work.
+          if (/\/\.claude\/projects\/[^/]+\/memory\//.test(resolved)) process.exit(0);
+
+          // Outside any git repo — scratchpad, /tmp, $TMPDIR. Not project work.
+          try {
+            execSync("git rev-parse --is-inside-work-tree", {
+              cwd: path.dirname(resolved), stdio: "pipe"
+            });
+          } catch { process.exit(0); }
+        }
 
         // Match the structured Skill call, never the word "apex": a
         // conversation that merely discusses APEX would match a bare grep.
@@ -143,7 +219,7 @@
 
         const reason = "BLOCKED: this edit modifies a project file and APEX has not run "
           + "for THIS request. Invoke the apex skill first — nothing to type: the Mode Gate "
-          + "routes a trivial change to economy on its own. "
+          + "picks the depth on its own. "
           + "Fires once per task; every edit after APEX starts passes until your next message.";
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {
@@ -211,11 +287,12 @@
   # The mode gate picks flags from prose, before anything is known about the
   # change — and a typed flag wins over the mode default. Measured on
   # 2026-08-08: `-e` was typed on 3 of 3 invocations, under-powering 2 of them
-  # (a 45-rule rewrite and a blocking hook both ran in economy).
+  # (a 45-rule rewrite and a blocking hook both ran in economy). That evidence
+  # is what eventually retired economy mode entirely on 2026-08-17.
   #
   # Rule: a typed flag is a FLOOR, never a ceiling. A risk signal can only
-  # raise the tier. `-e` is the one flag that lowers depth, so it is the one
-  # flag stripped. Uppercase disables the user typed on purpose are preserved.
+  # raise the tier. `-e` is stripped because it no longer exists — see the
+  # filter below. Uppercase disables the user typed on purpose are preserved.
   #
   # False positives are the intended failure direction: a task that merely
   # mentions "settings" runs more thoroughly than needed. Cheap. The reverse
@@ -235,21 +312,15 @@
         const args = typeof ti.args === "string" ? ti.args : "";
         // `nix`, `flake` and `rebuild` were in STANDARD and had to go: in a
         // nix-darwin config repo every task names a .nix file, so they matched
-        // everything and made the trivial tier unreachable. Measured against
-        // the real briefs of 2026-08-08 — a two-line CLAUDE.md edit escalated
-        // to -b -s -t -pr purely because the path contained "claude-md.nix".
+        // everything and made the trivial tier unreachable (that tier was itself
+        // removed on 2026-08-17). Measured against the real briefs of
+        // 2026-08-08 — a two-line CLAUDE.md edit escalated to -b -s -t -pr
+        // purely because the path contained "claude-md.nix".
         // A signal that fires on every task is not a signal.
         const HIGH = /(hook|settings|permission|sandbox|deny|secret|credential)/i;
         const STANDARD = /(supprime|delete|remove|\brm\b|migration|\bmaster\b|\bmain\b|\bprod\b)/i;
 
         let target;
-        // Branch and save left the flag surface: both are mode invariants now,
-        // so the tiers only carry what is still a real flag.
-        const isHigh = HIGH.test(args);
-        if (isHigh) target = ["-t", "-x", "-pr"];
-        else if (STANDARD.test(args)) target = ["-t", "-pr"];
-        else process.exit(0);
-
         // Leading tokens that look like flags; everything after is the task.
         const parts = args.trim().split(/\s+/);
         let i = 0;
@@ -257,11 +328,24 @@
         const typed = parts.slice(0, i);
         const rest = parts.slice(i).join(" ");
 
-        // Drop -e: it is the only flag that lowers depth.
+        // -e no longer exists (economy mode removed 2026-08-17), and APEX
+        // rejects an unknown flag by printing the valid list instead of running.
+        // Stripped BEFORE the risk gate on purpose: the briefs that historically
+        // carried -e are low-risk ones matching neither regex, so stripping it
+        // after an early exit would have left it in place for exactly the
+        // population it was meant to protect.
         const kept = typed.filter(f => f !== "-e");
+        const strippedE = kept.length !== typed.length;
+
+        // Branch and save left the flag surface: both are mode invariants now,
+        // so the tiers only carry what is still a real flag.
+        const isHigh = HIGH.test(args);
+        if (isHigh) target = ["-t", "-x", "-pr"];
+        else if (STANDARD.test(args)) target = ["-t", "-pr"];
+        else if (!strippedE) process.exit(0);
 
         // Add what is missing, but never override an explicit uppercase OFF.
-        for (const f of target) {
+        for (const f of (target || [])) {
           const off = "-" + f.slice(1).toUpperCase();
           if (kept.indexOf(f) === -1 && kept.indexOf(off) === -1) kept.push(f);
         }

@@ -42,7 +42,7 @@ in
   skillApex = ''
     ---
     name: apex
-    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts (economy inline for trivial, full analyze → plan → execute → validate otherwise). Opus 5 plans, executes and self-verifies; Fable read-only verifies the high-stakes diff by default, plus the plan's premises when the target itself is the risk. Not for pure questions or research with zero file modification."
+    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts the depth (diagnosis, standard, high-stakes) but every task runs the full analyze → plan → execute → validate chain. Opus 5 plans, executes and self-verifies; Fable read-only verifies the high-stakes diff by default, plus the plan's premises when the target itself is the risk. Not for pure questions or research with zero file modification."
     ---
 
     # APEX: Systematic Implementation Workflow
@@ -51,8 +51,9 @@ in
     - Read each step's file ONLY when you reach it AND its flag is active.
     - Skip steps whose flags are off, because loading them wastes context.
     - Consult `steps/ROUTING.md` for every transition so routing stays in one place.
-    - Unless `-e`, act as COORDINATOR per `steps/ORCHESTRATION.md`: spawn each
-      phase as a fresh subagent and keep only its summary, so context stays clean.
+    - Act as COORDINATOR per `steps/ORCHESTRATION.md`: spawn each phase as a
+      fresh subagent and keep only its summary, so context stays clean. There
+      is no inline shortcut — every task is orchestrated.
     - Model routing (ORCHESTRATION.md): Opus 5 is the workhorse (coordinates,
       plans, codes, self-verifies); Fable is an independent read-only verifier on
       high-stakes work only — the real diff by default, PLUS the plan's premises
@@ -63,9 +64,9 @@ in
       cible elle-même est le risque, aussi les prémisses du plan
       (read-only, fix-list ; jamais rédacteur du plan)
       → si pas bon, Opus 5 corrige (brief plus précis à chaque tour) jusqu'à vert.
-    - Profondeur ∝ blast-radius : trivial → opus 5 solo + gate machine ; standard
-      → +auto-verif ACs ; dur/irréversible → grounding + Fable verify + adversarial
-      scalé.
+    - Profondeur ∝ blast-radius : standard → orchestration + gate machine +
+      auto-verif ACs ; dur/irréversible → grounding + Fable verify + adversarial
+      scalé. La profondeur varie, l'orchestration non.
     - Les agents spécialisés de ~/.claude/agents/ sont des exécutants au service
       d'apex, jamais des points d'entrée.
 
@@ -92,8 +93,7 @@ in
     | -n | -N | Note — session note at end |
 
     Branch-first and on-disk persistence are INVARIANTS of every mode, not
-    options; the depth of the run (economy or full orchestration) is decided by
-    the Mode Gate, not by a flag.
+    options; the depth of the run is decided by the Mode Gate, not by a flag.
 
     ## Common Usage
 
@@ -119,7 +119,7 @@ in
       sideEffects = "modifies source files, optionally creates tests, commits, creates PRs.";
     }}
     ${scope {
-      useWhen = "EVERY task that modifies files, in any project, any size — the mode gate adapts (economy inline for trivial, debugger-as-implementer for bugs, full orchestration otherwise).";
+      useWhen = "EVERY task that modifies files, in any project, any size — the mode gate adapts the depth (debugger-as-implementer for bugs, adversarial pass on high-stakes) but always orchestrates.";
       notFor = "Pure questions or research with zero file modification → answer directly, no workflow.";
     }}
 
@@ -156,9 +156,9 @@ in
     <!-- effort: medium -->
 
     YOU ARE THE COORDINATOR, not an executor. Do NOT do the analysis or coding
-    yourself. Unless `-e` (economy) is set, you spawn each phase as a fresh
-    subagent and keep only its summary — read [ORCHESTRATION.md](ORCHESTRATION.md)
-    now and follow it for every phase. Under `-e`, run phases inline as before.
+    yourself. You spawn each phase as a fresh subagent and keep only its
+    summary — read [ORCHESTRATION.md](ORCHESTRATION.md) now and follow it for
+    every phase. There is no inline mode to fall back on.
 
     Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
     list (long or password-interactive). Sandbox-blocked commands (`git push`
@@ -199,7 +199,6 @@ in
 
     | Mode | Default flags |
     |------|---------------|
-    | Trivial | none — internal economy |
     | Diagnosis | `-x` |
     | Standard / complex | `-t -pr` |
     | High-stakes | `-t -x -pr` |
@@ -209,11 +208,12 @@ in
     they are not flags: they are behaviours of the modes themselves, described
     under "Invariants of every mode" below.
 
-    - **Trivial** — one sentence, ≤ ~2 files, < ~20 lines: economy inline, no
-      PR. Economy is not a flag the user types; it is the internal marker (`-e`)
-      this mode sets on itself. Opus 5 still writes the precise brief and
-      self-verifies the real diff before finishing — the verify duty NEVER
-      drops. Fable verify is reserved for high-stakes, not trivial.
+    - There is NO trivial tier. It was removed on 2026-08-17: it was the only
+      mode that ran inline, and an inline run is one where the coordinator
+      grades its own work. A small diff is not a safe diff — the two smallest
+      changes measured (a 45-rule rewrite and a blocking hook) were also the
+      two that most needed the chain. Size picks the DEPTH, never whether to
+      orchestrate.
     - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
       the error first; execute phase spawns the debugger agent (`model: opus`)
       as implementer. Stays inside APEX. No `-pr`: a fix lands on its branch and
@@ -237,7 +237,7 @@ in
       before the first edit. Every mode, no flag involved, nothing to disable.
     - **Save.** Persisting each phase summary to disk is an orchestration
       mechanism, not an option: fresh-context-per-phase relies on that chain to
-      survive compaction. Always active outside internal economy.
+      survive compaction. Always active, every run.
 
     ## Initialize State
 
@@ -265,10 +265,8 @@ in
     1. Read [step-00b-branch.md](step-00b-branch.md) and execute it —
        unconditional, because branch-first is an invariant. It is a no-op when
        the run is already on a feature branch.
-    2. Trivial mode only: read [step-00b-economy.md](step-00b-economy.md) and
-       execute it.
-    3. Outside internal economy: read [step-00b-save.md](step-00b-save.md) and
-       execute it.
+    2. Read [step-00b-save.md](step-00b-save.md) and execute it —
+       unconditional, like branch-first.
 
     Note: `-o` and `-n` are NOT init-time sub-steps.
     - `-o` fires at end of step-01-analyze (loads vault BEFORE planning).
@@ -288,24 +286,6 @@ in
        - Name format: `feat/{task-id}` where task-id is a short slug from the task description
        - `git checkout -b feat/{task-id}`
     3. Confirm branch is ready.
-
-    Return to step-00-init flow.
-  '';
-
-  # --- Step 00b: Economy ---
-  apexStep00bEconomy = ''
-    # Step 00b: Economy Mode Override
-
-    ECONOMY MODE ACTIVE. These 6 rules override ALL subsequent steps:
-
-    1. **No subagents.** Never use the Agent tool. Use Glob, Grep, Read directly.
-    2. **No parallel exploration.** Explore sequentially, one file at a time.
-    3. **Minimal scope.** Read only files directly relevant to the task.
-    4. **Skip optional steps.** If examine (-x) is also set, do a self-review checklist instead of launching review agents.
-    5. **No TodoWrite.** Track progress mentally, don't create formal todo lists.
-    6. **Concise outputs.** Shorter summaries, no detailed analysis documents.
-
-    These rules save ~70% tokens. Apply them to every subsequent step.
 
     Return to step-00-init flow.
   '';
@@ -358,8 +338,7 @@ in
 
     ## Who runs this (per ORCHESTRATION.md)
 
-    - **Economy (`-e`)**: the coordinator runs this inline, no subagents.
-    - **Default**: the COORDINATOR does the parallel Explore fan-out itself
+    - The COORDINATOR does the parallel Explore fan-out itself
       (a phase agent cannot spawn — depth=1), collects the bounded Explore
       summaries, then either synthesizes directly or spawns one analyzer agent
       with those summaries as input. Return the analyze phase summary schema.
@@ -372,10 +351,6 @@ in
     - **Patterns**: existing conventions to follow?
     - **Uncertainty**: unclear requirements?
 
-    ### If economy mode is active:
-    Use Glob and Grep directly. Read only the most relevant files. No agents.
-
-    ### If economy mode is NOT active (coordinator-orchestrated):
     The coordinator launches parallel Explore agents, count scaled to scope:
     - 1-2 files: 1-2 agents
     - 3-5 files: 3-5 agents
@@ -542,7 +517,7 @@ in
 
     YOU ARE A PLANNER, not an implementer. Do NOT write any code yet.
 
-    Per ORCHESTRATION.md: unless `-e`, the coordinator spawns this as a fresh
+    Per ORCHESTRATION.md: the coordinator spawns this as a fresh
     planner agent (`model: opus`) whose input is the analyze phase summary (not
     the raw transcript). Return the plan phase summary schema and persist the
     plan. The coordinator (Opus 5) then reviews the plan and approves or
@@ -710,7 +685,7 @@ in
 
     - Use WebSearch for broad questions ("nextjs 15 best practices server actions 2026")
     - Use WebFetch for specific doc pages (official docs URLs)
-    - Launch parallel research agents if multiple topics need verification (unless economy mode)
+    - Launch parallel research agents if multiple topics need verification
     - Focus on OFFICIAL sources: framework docs, GitHub repos, RFCs — not Medium articles
 
     ## Output
@@ -779,8 +754,8 @@ in
     YOU ARE AN IMPLEMENTER following a plan, not a designer.
     Do NOT deviate from the plan. Do NOT add features that weren't planned.
 
-    Per ORCHESTRATION.md: unless `-e`, your input is the plan phase summary +
-    the persisted plan path. Return the execute phase summary schema.
+    Per ORCHESTRATION.md: your input is the plan phase summary + the persisted
+    plan path. Return the execute phase summary schema.
 
     Before the first edit, re-check the "Conflicts & Constraints" from step-01:
     if implementation reveals a conflict that was missed, STOP and revise the
@@ -931,10 +906,6 @@ in
     - [ ] Error handling: swallowed errors, missing boundaries, wrong fallback.
     - [ ] State shared across requests/instances that should not be.
     - [ ] Convention violations (step-01), dead code, needless complexity.
-
-    ### If economy mode (-e):
-    Do NOT launch agents. Instead, walk all three checklists yourself, box by
-    box. Be thorough but use no subagents.
 
     ## Collect Findings
 
@@ -1265,7 +1236,7 @@ in
 
     | Complexity | Files | Approach | Command |
     |-----------|-------|----------|---------|
-    | S (trivial) | < 5 | Single agent directly | quick-fix or specialist agent |
+    | S (small) | < 5 | APEX, minimum depth | /apex |
     | M (medium) | 5-15 | Discuss → plan → execute | /discuss → /apex |
     | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh or /apex -k |
     | XL (epic) | 30+ | Split into L milestones | Chain per milestone |
@@ -1320,7 +1291,7 @@ in
       notFor = "Quick fixes (<20 lines), pure debugging, single-file edits, or anything classified S complexity";
     }}
     ${handoffs [
-      "If task is S complexity → route directly to quick-fix or relevant specialist agent instead"
+      "If task is S complexity → /apex at minimum depth; APEX still owns it, specialist agents execute inside it, never instead of it"
       "After DISCUSS phase → hand off to the Plan agent (or /apex step 02) for PLAN creation"
       "After PLAN phase → hand off to code-reviewer for two-pass REVIEW before EXECUTE"
       "After EXECUTE phase → hand off to code-reviewer for VERIFY (6-layer check)"
@@ -1354,15 +1325,6 @@ in
             {"type": "contains", "value": "Flags", "description": "Step 00 must parse and record active flags"},
             {"type": "excludes", "value": "implement", "description": "Step 00 must not start implementing — only initialize"},
             {"type": "pattern", "value": "00|[Ii]nitializ", "description": "Must explicitly reference step 00 initialization"}
-          ]
-        },
-        {
-          "name": "complexity-gate-trivial",
-          "prompt": "apex rename the variable x to userId in one function in utils.ts",
-          "assertions": [
-            {"type": "pattern", "value": "[Gg]ate|[Tt]rivial|[Oo]verkill|one sentence", "description": "Must apply the complexity gate before any work"},
-            {"type": "pattern", "value": "quick.fix|[Dd]irect", "description": "Must redirect a one-line rename out of APEX to quick-fix"},
-            {"type": "excludes", "value": "step-02-plan", "description": "Must not proceed into planning for a trivial task"}
           ]
         },
         {
@@ -1425,13 +1387,16 @@ in
       ],
       "edge_cases": [
         {
-          "name": "trivial-task-overkill",
+          "name": "minimal-task-still-orchestrated",
           "category": "minimal",
           "prompt": "apex add a missing semicolon in index.ts",
-          "expected_behavior": "Complexity gate flags APEX as overkill and redirects to quick-fix or a direct edit.",
+          "expected_behavior": "APEX runs the full chain: no trivial tier exists and nothing is redirected out of APEX.",
           "assertions": [
-            {"type": "pattern", "value": "[Oo]verkill|[Tt]rivial|[Gg]ate|quick.fix", "description": "Must flag APEX as inappropriate for a one-char change"},
-            {"type": "pattern", "value": "[Rr]ecommend|[Ss]uggest|[Dd]irect", "description": "Must recommend a lighter-weight path"}
+            {"type": "pattern", "value": "step-00|[Ii]nitializ", "description": "Must initialize rather than shortcut"},
+            {"type": "pattern", "value": "ORCHESTRATION|subagent|spawn|phase", "description": "Must actually orchestrate, not merely announce initialization"},
+            {"type": "excludes", "value": "overkill", "description": "Must not decline the task as too big a hammer"},
+            {"type": "excludes", "value": "too small", "description": "Must not decline the task for its size"},
+            {"type": "excludes", "value": "quick-fix", "description": "Must not reroute to quick-fix — excludes is a literal substring test, so each phrasing needs its own entry"}
           ]
         },
         {
@@ -1687,8 +1652,9 @@ in
 
     ## When this applies
 
-    - Active when NOT economy mode (`-e`). Under `-e`, phases run inline in the
-      coordinator (no subagents) — that is economy's whole point.
+    - Always active. There is no inline mode to opt out into — the trivial tier
+      was removed on 2026-08-17 precisely because it let the coordinator grade
+      its own work.
     - Forces `-s` (save) ON: the chain of summaries is also persisted to disk so
       it survives compaction and enables manual resume from disk. Fresh context + external
       memory are two halves of the same mechanism; do not enable one without the other.

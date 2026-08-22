@@ -593,6 +593,25 @@ in
         "--watch"
       ];
     };
+    # graphify-mcp — knowledge-graph view over a notes dir (entities + relations
+    # + clusters), served from a pre-built JSON snapshot. Installed by the
+    # claudeCodeGraphify activation script (`uv tool install "graphifyy[ollama]"`),
+    # binaries land in ~/.local/bin.
+    # The graph is NOT built by this server; produce it out-of-band:
+    #   graphify extract <dir> --backend claude-cli --out <dir>
+    #   graphify cluster-only <dir> --backend claude-cli
+    # The snapshot path MUST be absolute and passed as an argument: serve.py
+    # otherwise resolves "graphify-out/graph.json" against the process CWD, and
+    # never reads CLAUDE_PROJECT_DIR — an MCP server spawned by Claude Code has
+    # no useful CWD. If the file doesn't exist yet, serve.py starts in degraded
+    # mode (empty graph) instead of crashing, so an unbuilt vault is harmless.
+    # Verify wired:  claude mcp list   (look for "graphify")
+    # Tools are exposed as mcp__graphify__*
+    graphify = {
+      type = "stdio";
+      command = "${homeDirectory}/.local/bin/graphify-mcp";
+      args = [ "${homeDirectory}/GraphVault/graphify-out/graph.json" ];
+    };
   };
 
   statuslineScript = ''

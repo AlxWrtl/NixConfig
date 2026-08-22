@@ -117,7 +117,11 @@ in
   programs.zsh.sessionVariables = sessionVars;
 
   # npm global prefix (nix store is immutable, npm install -g needs a writable prefix)
-  home.sessionPath = [ "$HOME/.npm-global/bin" ];
+  # ~/.local/bin = uv tool bin dir (`uv tool install` drops graphify/graphify-mcp there)
+  home.sessionPath = [
+    "$HOME/.npm-global/bin"
+    "$HOME/.local/bin"
+  ];
 
   # Write ~/.claude content declaratively
   home.file = {

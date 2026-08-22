@@ -348,4 +348,72 @@
       fi
     ) || true
   '';
+
+  # -------------------------
+  # Install graphify (uv tool) — knowledge-graph MCP server (idempotent)
+  # -------------------------
+  # `uv tool install` puts graphify + graphify-mcp in ~/.local/bin (added to
+  # home.sessionPath). The settings.nix `graphify` MCP entry points at
+  # $HOME/.local/bin/graphify-mcp.
+  #
+  # The [ollama] extra is MANDATORY, not cosmetic: without it every backend call
+  # dies with "the 'openai' package is required for this backend but is not
+  # installed" (verified by running it).
+  #
+  # NON-DESTRUCTIVE by design, same rule as claudeCodeEnquire above: this runs
+  # under `sudo darwin-rebuild`, where the network is restricted. `uv tool
+  # install --force` would DELETE the working install and then fail to re-fetch
+  # the wheels offline, leaving the user with no graphify at all. So: never
+  # --force, install only when the binary is genuinely missing or on the wrong
+  # version, and stamp the marker only once everything checks out — a partial
+  # state just retries on the next rebuild (or fix it by hand outside sudo,
+  # where the network works).
+  # Subshell-wrapped: a bare `exit 0` would abort the whole activation chain.
+  claudeCodeGraphify = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    (
+      GRAPHIFY_VERSION="0.9.48"
+      MARKER="$HOME/.claude/.graphify-installed-$GRAPHIFY_VERSION"
+
+      # Already fully set up → nothing to do.
+      [ -f "$MARKER" ] && exit 0
+
+      export PATH="${pkgs.uv}/bin:$HOME/.local/bin:$PATH"
+
+      BIN="$HOME/.local/bin/graphify"
+      MCP_BIN="$HOME/.local/bin/graphify-mcp"
+      TOOL_DIR="$HOME/.local/share/uv/tools/graphifyy"
+
+      # `graphify --version` prints "graphify <semver>" → keep the last field.
+      CURRENT_RAW="$("$BIN" --version 2>/dev/null || true)"
+      CURRENT="''${CURRENT_RAW##* }"
+
+      # 1. Install only if the binary is missing / wrong version. No --force.
+      if [ "$CURRENT" != "$GRAPHIFY_VERSION" ]; then
+        echo "Installing graphifyy[ollama]==$GRAPHIFY_VERSION (uv tool)..."
+        uv tool install "graphifyy[ollama]==$GRAPHIFY_VERSION" 2>&1 \
+          || { echo "graphify install failed (will retry next rebuild; run outside sudo for network)"; exit 0; }
+        CURRENT_RAW="$("$BIN" --version 2>/dev/null || true)"
+        CURRENT="''${CURRENT_RAW##* }"
+      fi
+
+      # 2. The [ollama] extra pulls in `openai`; check it offline in the tool venv.
+      if ls -d "$TOOL_DIR"/lib/python*/site-packages/openai >/dev/null 2>&1; then
+        OPENAI_OK=1
+      else
+        OPENAI_OK=0
+        echo "⚠ graphify installed without the [ollama] extra (openai missing) — run outside sudo:"
+        echo "    uv tool install --force \"graphifyy[ollama]==$GRAPHIFY_VERSION\""
+      fi
+
+      # Stamp the marker ONLY when every piece is in place; otherwise retry next time.
+      if [ -x "$BIN" ] && [ -x "$MCP_BIN" ] \
+         && [ "$CURRENT" = "$GRAPHIFY_VERSION" ] && [ "$OPENAI_OK" = "1" ]; then
+        rm -f "$HOME/.claude"/.graphify-installed-* 2>/dev/null || true
+        touch "$MARKER"
+        echo "✓ graphify@$GRAPHIFY_VERSION installed (ollama extra ready)"
+      else
+        echo "⚠ graphify not fully set up yet (binary/version/openai extra) — will retry"
+      fi
+    ) || true
+  '';
 }

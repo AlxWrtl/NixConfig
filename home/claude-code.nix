@@ -18,11 +18,13 @@ let
   claudeMd = import ./claude-code/claude-md.nix;
   rules = import ./claude-code/rules.nix;
   libdocs = import ./claude-code/libdocs.nix { inherit pkgs; };
+  graphifyReindex = import ./claude-code/graphify-reindex.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix { inherit pkgs lib; };
 
   inherit (claudeMd) claudeMdGlobal;
   inherit (rules) ruleNix ruleTypescript ruleReact;
   inherit (libdocs) libdocsPkg;
+  inherit (graphifyReindex) graphifyReindexPkg;
   inherit (settings)
     settingsJson
     statuslineScript
@@ -348,10 +350,13 @@ in
     };
   };
 
-  # `libdocs` on PATH — usable by Claude, by APEX and its subagents, and by the
-  # user in a plain terminal. home.packages is a list: this merges with the
-  # definitions in the other home modules.
-  home.packages = [ libdocsPkg ];
+  # `libdocs` + `graphify-reindex` on PATH — usable by Claude, by APEX and its
+  # subagents, and by the user in a plain terminal. home.packages is a list:
+  # this merges with the definitions in the other home modules.
+  home.packages = [
+    libdocsPkg
+    graphifyReindexPkg
+  ];
 
   # Activation scripts
   home.activation = activationScripts;

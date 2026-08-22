@@ -112,6 +112,14 @@ in
         # #101 et constatée au premier commit suivant. Une clé publique est
         # publique — la privée, elle, reste refusée.
         allowRead = [ "${homeDirectory}/.ssh/id_ed25519.pub" ];
+        # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
+        # the knowledge graph to ~/GraphVault — outside the session cwd, so the
+        # default sandbox write-set (cwd + tmp) would kill it with "operation
+        # not permitted" and force a dangerouslyDisableSandbox box at the end
+        # of every `-n` session. allowWrite EXTENDS the writable set; it never
+        # re-opens a denyWrite path. The vault itself stays Bash-unwritable
+        # (outside cwd): session notes go through the Write tool, as before.
+        allowWrite = [ "${homeDirectory}/GraphVault" ];
       };
       network = {
         # All domains allowed (web analysis, design, docs, APIs)
@@ -145,6 +153,9 @@ in
         # Library docs via the Context7 REST API. A narrow grant on purpose:
         # the wrapper exists so this rule is not `Bash(curl *)`.
         "Bash(libdocs *)"
+        # Knowledge-graph refresh wrapper (no args; writes only to ~/GraphVault
+        # — see sandbox allowWrite). Fired in background by APEX steps 01b/09b.
+        "Bash(graphify-reindex)"
         # Git — safe operations (granular, not blanket)
         "Bash(git status *)"
         "Bash(git diff *)"

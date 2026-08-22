@@ -458,6 +458,51 @@ in
     6. **Scan decisions** (if folder exists) — `Glob` pattern: `02-Projets/[project]/decisions/*.md`
        - Read titles + summaries only (do NOT modify files in `decisions/`)
 
+    7. **Graph relations (graphify)** — steps 4-6 cover the FRESH tail by
+       recency; this step recovers the OLD relational body: notes related to
+       the current task that recency retrieval is structurally blind to.
+
+       a. **Freshness probe** (cheap, no MCP): Bash
+          `ls -l ~/GraphVault/graphify-out/graph.json` and compare its mtime
+          to the newest note under `~/Documents/AlxVault/02-Projets`.
+          - File absent → graph status `absent`: skip the rest of this step
+            (recency-only report). Do NOT build the graph here — the initial
+            full build is manual and long.
+          - Older than the newest note → status `stale ({graph date})`:
+            STILL query it (relations are durable; only the freshest notes
+            are missing, and recency already covered those), and fire the
+            catch-up: Bash `graphify-reindex` with `run_in_background: true`.
+            NEVER wait for it, never poll it.
+          - Otherwise → status `fresh`.
+       b. ONE `mcp__graphify__query_graph` call: `question` = the task in one
+          sentence plus the project name, `token_budget` 1200. Budget honesty:
+          a response marked "complete" can overrun the requested budget 4-6x —
+          treat this call as costing up to ~5-7k tokens of context and NEVER
+          issue a second query_graph to "get more".
+       c. Optionally, at most TWO `mcp__graphify__get_neighbors` calls on the
+          1-2 returned entities most central to the task.
+       d. Keep only what recency did NOT already surface: related notes
+          outside {project note, 3 recent sessions, decisions read}. Read at
+          most 3 of them from the vault (Read tool) — the graph is the
+          pointer, the note is the truth. Cite them as `[[wikilinks]]` like
+          every other note read.
+       e. Any MCP error, timeout, or empty/degraded response → ONE attempt
+          only: set status `unavailable` and continue with recency alone.
+          This step NEVER blocks and NEVER fails the run — a missing graph
+          degrades to exactly the pre-graphify behavior.
+
+    ## Tool routing — enquire vs graphify (never double-query)
+
+    - `mcp__enquire__*` = what the vault WRITES: find/read notes, keyword +
+      semantic search, and the EXPLICIT wikilink graph (backlinks, note
+      neighbors, paths between notes).
+    - `mcp__graphify__*` = what the vault IMPLIES: LLM-extracted entities and
+      relations across note contents, thematic communities, hubs — links that
+      no wikilink materializes.
+    - Route: "find/read notes about X", "what links to note N" → enquire.
+      "how does concept X relate to concept Y", "what clusters around entity
+      X" → graphify. The same question never goes to both.
+
     ## Output — Context Report
 
     Produce a compact report:
@@ -475,6 +520,10 @@ in
     ### Relevant decisions
     - [[02-Projets/{project}/decisions/slug]] — {one-liner}
 
+    ### Graph relations (graphify)
+    - [[02-Projets/{project}/...]] — {relation to the task, per the graph}
+    - Graph status: fresh | stale ({graph date}) | absent | unavailable
+
     ### Implications for current task
     - {how this context changes/informs the plan}
     - {constraints or prior choices to respect}
@@ -484,6 +533,8 @@ in
     ## Rules
 
     - Read-only. Do NOT write to the vault in this step (that's step-09b).
+      The `graphify-reindex` catch-up writes only to `~/GraphVault`, never to
+      the vault — firing it does not break this rule.
     - Never modify `decisions/` files.
     - If no project note exists, say so and suggest creating one via `-n` flag at the end.
     - Use full-path wikilinks always: `[[02-Projets/Project/Project]]`.
@@ -1201,6 +1252,23 @@ in
     If the note is already up-to-date or the section structure differs, skip this step
     rather than forcing a structure the user didn't set up.
 
+    ### 7. Refresh the knowledge graph (fire-and-forget)
+
+    The graph that step-01b queries goes stale the moment this note lands.
+    AFTER the note is written (and ONLY if it was), launch:
+
+    - Bash `graphify-reindex` with `run_in_background: true`.
+    - Do NOT wait for it, do NOT poll it, do NOT read its result — the session
+      may end while it runs; that is fine. The script is lock-guarded,
+      incremental (claude-cli backend, zero API cost), refuses the initial
+      full build, and verifies the graph content itself because graphify's
+      exit code lies (0 even on total failure).
+    - If the spawn itself errors (binary missing, sandbox): report ONE warning
+      line in the Output and finish normally — the next session's step-01b
+      staleness probe catches up. NEVER retry, NEVER block this terminal step.
+    - This is the only graph write path in APEX. It writes to `~/GraphVault`
+      only, never into the vault.
+
     ## If save mode (-s):
     Also copy the note content to `.claude/output/apex/{task-id}/09b-obsidian-note.md`
     (local mirror for traceability).
@@ -1212,6 +1280,7 @@ in
     Obsidian session note created
     Path: 02-Projets/{project}/sessions/{filename}
     Wikilink: [[02-Projets/{project}/sessions/{filename-without-ext}]]
+    Graph reindex: launched | skipped ({reason})
     ```
 
     ## Next Step

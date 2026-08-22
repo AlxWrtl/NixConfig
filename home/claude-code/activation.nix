@@ -356,9 +356,21 @@
   # home.sessionPath). The settings.nix `graphify` MCP entry points at
   # $HOME/.local/bin/graphify-mcp.
   #
-  # The [ollama] extra is MANDATORY, not cosmetic: without it every backend call
-  # dies with "the 'openai' package is required for this backend but is not
-  # installed" (verified by running it).
+  # The extras are MANDATORY, not cosmetic (each verified by running the binary):
+  #   [mcp]    → the `mcp` module. WITHOUT IT THE SERVER NEVER STARTS: serve.py
+  #              dies at `from mcp.server.stdio import stdio_server`
+  #              (ModuleNotFoundError) and `claude mcp list` reports
+  #              "graphify: ✘ Failed to connect — CONNECTION_CLOSED".
+  #              [ollama] does NOT provide it — it is a separate extra.
+  #   [leiden] → community detection, i.e. the actual functional deliverable.
+  #   [ollama] → the `openai` module, kept to preserve the local-backend option.
+  #
+  # MARKER NAMING: the marker encodes the version AND the extra set. A
+  # version-only marker (the original bug) makes this block skip on a machine
+  # that already installed the same version with a narrower extra set, so the
+  # fix could never apply. Same reason claudeCodeEnquire suffixes its marker
+  # with `-hnsw`. The `.graphify-installed-*` wildcard cleanup below removes
+  # the stale un-suffixed marker too.
   #
   # NON-DESTRUCTIVE by design, same rule as claudeCodeEnquire above: this runs
   # under `sudo darwin-rebuild`, where the network is restricted. `uv tool
@@ -372,7 +384,8 @@
   claudeCodeGraphify = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     (
       GRAPHIFY_VERSION="0.9.48"
-      MARKER="$HOME/.claude/.graphify-installed-$GRAPHIFY_VERSION"
+      GRAPHIFY_EXTRAS="mcp,ollama,leiden"
+      MARKER="$HOME/.claude/.graphify-installed-$GRAPHIFY_VERSION-mcp"
 
       # Already fully set up → nothing to do.
       [ -f "$MARKER" ] && exit 0
@@ -389,30 +402,47 @@
 
       # 1. Install only if the binary is missing / wrong version. No --force.
       if [ "$CURRENT" != "$GRAPHIFY_VERSION" ]; then
-        echo "Installing graphifyy[ollama]==$GRAPHIFY_VERSION (uv tool)..."
-        uv tool install "graphifyy[ollama]==$GRAPHIFY_VERSION" 2>&1 \
+        echo "Installing graphifyy[$GRAPHIFY_EXTRAS]==$GRAPHIFY_VERSION (uv tool)..."
+        uv tool install "graphifyy[$GRAPHIFY_EXTRAS]==$GRAPHIFY_VERSION" 2>&1 \
           || { echo "graphify install failed (will retry next rebuild; run outside sudo for network)"; exit 0; }
         CURRENT_RAW="$("$BIN" --version 2>/dev/null || true)"
         CURRENT="''${CURRENT_RAW##* }"
       fi
 
-      # 2. The [ollama] extra pulls in `openai`; check it offline in the tool venv.
-      if ls -d "$TOOL_DIR"/lib/python*/site-packages/openai >/dev/null 2>&1; then
-        OPENAI_OK=1
-      else
-        OPENAI_OK=0
-        echo "⚠ graphify installed without the [ollama] extra (openai missing) — run outside sudo:"
-        echo "    uv tool install --force \"graphifyy[ollama]==$GRAPHIFY_VERSION\""
+      # 2. Probe the extras offline in the tool venv, naming the exact culprit.
+      #    [mcp] → `mcp` (its absence is what broke production: the server
+      #    aborted at import time and Claude saw CONNECTION_CLOSED).
+      #    [ollama] → `openai`.  [leiden] → `graspologic` (checked on the real
+      #    install: the extra resolves to graspologic, not leidenalg/igraph).
+      EXTRAS_OK=1
+      MISSING_EXTRAS=""
+      if ! ls -d "$TOOL_DIR"/lib/python*/site-packages/mcp >/dev/null 2>&1; then
+        EXTRAS_OK=0
+        MISSING_EXTRAS="$MISSING_EXTRAS [mcp](module 'mcp')"
+      fi
+      if ! ls -d "$TOOL_DIR"/lib/python*/site-packages/openai >/dev/null 2>&1; then
+        EXTRAS_OK=0
+        MISSING_EXTRAS="$MISSING_EXTRAS [ollama](module 'openai')"
+      fi
+      if ! ls -d "$TOOL_DIR"/lib/python*/site-packages/graspologic >/dev/null 2>&1; then
+        EXTRAS_OK=0
+        MISSING_EXTRAS="$MISSING_EXTRAS [leiden](module 'graspologic')"
+      fi
+      if [ "$EXTRAS_OK" = "0" ]; then
+        echo "⚠ graphify missing extra(s):$MISSING_EXTRAS — run outside sudo:"
+        echo "    uv tool install --force \"graphifyy[$GRAPHIFY_EXTRAS]==$GRAPHIFY_VERSION\""
       fi
 
       # Stamp the marker ONLY when every piece is in place; otherwise retry next time.
       if [ -x "$BIN" ] && [ -x "$MCP_BIN" ] \
-         && [ "$CURRENT" = "$GRAPHIFY_VERSION" ] && [ "$OPENAI_OK" = "1" ]; then
+         && [ "$CURRENT" = "$GRAPHIFY_VERSION" ] && [ "$EXTRAS_OK" = "1" ]; then
+        # Wildcard: also erases the legacy un-suffixed marker from the
+        # version-only naming scheme.
         rm -f "$HOME/.claude"/.graphify-installed-* 2>/dev/null || true
         touch "$MARKER"
-        echo "✓ graphify@$GRAPHIFY_VERSION installed (ollama extra ready)"
+        echo "✓ graphify@$GRAPHIFY_VERSION installed (extras: $GRAPHIFY_EXTRAS)"
       else
-        echo "⚠ graphify not fully set up yet (binary/version/openai extra) — will retry"
+        echo "⚠ graphify not fully set up yet (binary/version/extras) — will retry"
       fi
     ) || true
   '';

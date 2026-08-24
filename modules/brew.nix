@@ -55,6 +55,7 @@
       "vivaldi"
       "microsoft-teams"
       "whatsapp"
+      "jellyfin"
 
       # No auto-updater — greedy keeps them current
       {

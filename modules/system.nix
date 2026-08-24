@@ -82,12 +82,22 @@
 
   security.pam.services.sudo_local.touchIdAuth = true;
 
+  # Stealth mode OFF so the TV can find the Jellyfin server. Discovery is a
+  # local UDP broadcast (7359 Jellyfin, 1900 SSDP/DLNA); stealth silences the
+  # Mac against unsolicited probes, so the call arrived and nothing answered.
+  # Allow-listing Jellyfin was not enough — it already was, app and binary.
+  #
+  # This is NOT a weaker firewall: enable stays true, every unsolicited inbound
+  # connection is still blocked, and no port is opened. What changes is that the
+  # machine answers probes instead of ignoring them — so it becomes visible on
+  # any network it joins, public Wi-Fi included. Discretion traded for local
+  # discovery, deliberately.
   networking.applicationFirewall = {
     enable = true;
     blockAllIncoming = false;
     allowSigned = true;
     allowSignedApp = true;
-    enableStealthMode = true;
+    enableStealthMode = false;
   };
 
   environment.systemPackages = [

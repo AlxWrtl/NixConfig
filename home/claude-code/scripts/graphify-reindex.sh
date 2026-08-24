@@ -94,8 +94,19 @@ before_mtime="$(stat -c %Y "$GRAPH" 2>/dev/null || echo 0)"
   echo "=== graphify-reindex $(date '+%Y-%m-%dT%H:%M:%S') ==="
   # Incremental semantic extraction of new/changed notes only.
   "$GRAPHIFY" extract "$VAULT" --backend claude-cli --out "$OUT" || true
-  # Mandatory after extract: (re)name communities, else placeholders remain.
-  "$GRAPHIFY" cluster-only "$OUT" --backend claude-cli || true
+  # `label --missing-only`, NOT `cluster-only` — the distinction matters and was
+  # learned the hard way. `extract` already runs Leiden, so new nodes land in
+  # communities on their own, just under "Community N" placeholders; only the
+  # naming is missing. `cluster-only` RE-clusters and renames everything, so the
+  # community set shifts, the saved labels no longer match, and graphify falls
+  # back to naming each community after its hub node. Measured after adding a
+  # single note: "Preliz Business Strategy" and "Security Audit Findings" became
+  # "Session 2026-07-21 (soir) — Wizard ajout véhicule…" — 124 of 140 names lost
+  # in one run. cluster-only IS right for the initial build (see the message
+  # above); it is destructive on every incremental one. --missing-only keeps
+  # existing labels and names only the new placeholders, so the cost is a few
+  # calls instead of 140.
+  "$GRAPHIFY" label "$OUT" --missing-only --backend claude-cli || true
 } >>"$LOG" 2>&1
 
 # Belt-and-braces: GRAPHIFY_OUT above should make this impossible, so anything

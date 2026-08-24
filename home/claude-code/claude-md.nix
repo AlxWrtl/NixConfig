@@ -53,6 +53,16 @@
     - Multi-line script → write to scratchpad, run the file. Never `node -e` /
       `python3 -c` inline: operators in the body break the permission matcher.
 
+    ## Vault Retrieval (enquire vs graphify — never both on one question)
+    - `mcp__enquire__*` = what the vault WROTE: find/read notes, keyword +
+      semantic search, explicit wikilinks, backlinks. Default choice.
+    - `mcp__graphify__*` = what the vault IMPLIES: LLM-extracted entities and
+      relations across note CONTENTS, communities, hubs — links no wikilink
+      materializes. Use for "how does X relate to Y", "what clusters around X".
+    - graphify covers `02-Projets` ONLY (Preliz + nix-darwin). Silence there is
+      not absence — outside that scope, or graph absent/mute, fall back to
+      enquire. Never block on it.
+
     ## Delegation
     - Pattern répété N>=4 séquentiel mêmes fichiers → ralph-loop. Sous-tâches
       indépendantes fichiers disjoints → /fork background. Combinables:

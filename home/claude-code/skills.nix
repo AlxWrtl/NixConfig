@@ -2041,6 +2041,29 @@ in
 
     No MCP server needed — use native tools directly on the vault files.
 
+    ## Retrieval routing — three sources, one question each
+
+    Never send the same question to two of these. Picking wrong wastes context
+    and can read as a false absence.
+
+    - **Native tools** (Grep/Glob/Read) — you know the path or the exact string.
+    - **`mcp__enquire__*`** — what the vault WROTE: find/read notes by meaning,
+      keyword + semantic search, explicit wikilinks, backlinks, note neighbours.
+      The default when the question is "which note says X".
+    - **`mcp__graphify__*`** — what the vault IMPLIES: entities and relations
+      extracted from note CONTENTS, thematic communities, hubs — connections no
+      wikilink materializes. The default when the question is "how does X relate
+      to Y" or "what clusters around X".
+
+    Scope limit, and it matters: graphify indexes `02-Projets` ONLY (Preliz +
+    nix-darwin). A miss there is not proof of absence — anything under
+    `00-Meta/`, `01-Inbox/`, `03-Areas/`, `04-Resources/` or the vault root is
+    invisible to it. Graph absent, stale or mute → fall back to enquire and say
+    so; never block a run on it.
+
+    The graph is a POINTER, the note is the truth: graphify tells you which note
+    to open, you still read the note in AlxVault for the substance.
+
     ## Tool Mapping
     | Action | Tool | Example |
     |--------|------|---------|

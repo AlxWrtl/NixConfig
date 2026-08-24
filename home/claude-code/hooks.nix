@@ -465,6 +465,19 @@
         } catch { process.exit(0); }
         const branch = execSync("git branch --show-current",
           { cwd: dir, encoding: "utf8" }).trim();
+        // A repo with NO remote cannot receive a PR, so "merge via PR" has no
+        // meaning there and this rule would forbid committing at all. Concrete
+        // case: ~/Documents/AlxVault, the local-only git safety net for the
+        // Obsidian vault — this hook blocked three legitimate commits to it.
+        // Narrowed, not weakened: repos WITH a remote are still protected
+        // exactly as before. Fail-closed on doubt — if `git remote` errors we
+        // keep blocking, because a protection that guesses wrong must guess in
+        // the safe direction.
+        let hasRemote = true;
+        try {
+          hasRemote = execSync("git remote", { cwd: dir, encoding: "utf8" }).trim().length > 0;
+        } catch { hasRemote = true; }
+        if (!hasRemote) process.exit(0);
         if (branch === "main" || branch === "master") {
           const reason = "BLOCKED: on " + branch + ". Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
           process.stdout.write(JSON.stringify({

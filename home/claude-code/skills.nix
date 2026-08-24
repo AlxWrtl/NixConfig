@@ -457,7 +457,17 @@ in
     3. **Find the project note** (case-insensitive match):
        - `Glob` `02-Projets/*/*.md`, filter where folder-name matches slug (case-insensitive)
          OR file stem matches slug.
-       - 0 matches → report "no project note found for '{slug}'" and suggest creating it via `-n` at the end. Skip to step-02.
+       - 0 matches → report "no project note found for '{slug}'", suggest creating
+         it via `-n` at the end, then SKIP steps 4-6 and GO STRAIGHT TO STEP 7.
+         Do NOT skip to step-02: recency retrieval is keyed BY PROJECT and has
+         nothing to read, but the graph is keyed BY CONTENT — it ignores project
+         folders entirely and relates entities across all of `02-Projets`. A
+         missing project note does not make it mute.
+         The cwd basename is NOT a reliable key for the graph. A code repo can
+         carry a name that exists nowhere as a vault folder while its notes live
+         under another project: measured on `carpress-ai`, whose notes sit under
+         `Preliz/` — this early exit sent the run to step-02, and the graph,
+         which held the answer, was never asked.
        - 1 match → use it.
        - 2+ matches → use `AskUserQuestion` to let the user pick; do NOT silently pick a "closest match".
 
@@ -477,6 +487,11 @@ in
     7. **Graph relations (graphify)** — steps 4-6 cover the FRESH tail by
        recency; this step recovers the OLD relational body: notes related to
        the current task that recency retrieval is structurally blind to.
+
+       RUNS EVEN WITH NO PROJECT NOTE (step 3, 0 matches). The query is built
+       from the TASK, never from the project name — which the keyword rule in
+       (b) already bans — so an undetected project changes nothing about it.
+       When there is no project, this step IS the whole vault context.
 
        a. **Freshness probe** (cheap, no MCP): Bash
           `ls -l ~/GraphVault/graphify-out/graph.json` and compare its mtime
@@ -559,6 +574,8 @@ in
     ### Graph relations (graphify)
     - [[02-Projets/{project}/...]] — {relation to the task, per the graph}
     - Graph status: fresh | stale ({graph date}) | absent | unavailable
+      ALWAYS print this line, including when no project note was found — it is
+      the only way to tell "the graph said nothing" from "the graph was skipped".
 
     ### Implications for current task
     - {how this context changes/informs the plan}

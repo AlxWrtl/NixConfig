@@ -112,6 +112,14 @@ in
         # #101 et constatée au premier commit suivant. Une clé publique est
         # publique — la privée, elle, reste refusée.
         allowRead = [ "${homeDirectory}/.ssh/id_ed25519.pub" ];
+        # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
+        # the knowledge graph to ~/GraphVault — outside the session cwd, so the
+        # default sandbox write-set (cwd + tmp) would kill it with "operation
+        # not permitted" and force a dangerouslyDisableSandbox box at the end
+        # of every `-n` session. allowWrite EXTENDS the writable set; it never
+        # re-opens a denyWrite path. The vault itself stays Bash-unwritable
+        # (outside cwd): session notes go through the Write tool, as before.
+        allowWrite = [ "${homeDirectory}/GraphVault" ];
       };
       network = {
         # All domains allowed (web analysis, design, docs, APIs)
@@ -145,6 +153,9 @@ in
         # Library docs via the Context7 REST API. A narrow grant on purpose:
         # the wrapper exists so this rule is not `Bash(curl *)`.
         "Bash(libdocs *)"
+        # Knowledge-graph refresh wrapper (no args; writes only to ~/GraphVault
+        # — see sandbox allowWrite). Fired in background by APEX steps 01b/09b.
+        "Bash(graphify-reindex)"
         # Git — safe operations (granular, not blanket)
         "Bash(git status *)"
         "Bash(git diff *)"
@@ -592,6 +603,25 @@ in
         "--use-hnsw"
         "--watch"
       ];
+    };
+    # graphify-mcp — knowledge-graph view over a notes dir (entities + relations
+    # + clusters), served from a pre-built JSON snapshot. Installed by the
+    # claudeCodeGraphify activation script (`uv tool install "graphifyy[ollama]"`),
+    # binaries land in ~/.local/bin.
+    # The graph is NOT built by this server; produce it out-of-band:
+    #   graphify extract <dir> --backend claude-cli --out <dir>
+    #   graphify cluster-only <dir> --backend claude-cli
+    # The snapshot path MUST be absolute and passed as an argument: serve.py
+    # otherwise resolves "graphify-out/graph.json" against the process CWD, and
+    # never reads CLAUDE_PROJECT_DIR — an MCP server spawned by Claude Code has
+    # no useful CWD. If the file doesn't exist yet, serve.py starts in degraded
+    # mode (empty graph) instead of crashing, so an unbuilt vault is harmless.
+    # Verify wired:  claude mcp list   (look for "graphify")
+    # Tools are exposed as mcp__graphify__*
+    graphify = {
+      type = "stdio";
+      command = "${homeDirectory}/.local/bin/graphify-mcp";
+      args = [ "${homeDirectory}/GraphVault/graphify-out/graph.json" ];
     };
   };
 

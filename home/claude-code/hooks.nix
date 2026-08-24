@@ -465,6 +465,19 @@
         } catch { process.exit(0); }
         const branch = execSync("git branch --show-current",
           { cwd: dir, encoding: "utf8" }).trim();
+        // A repo with NO remote cannot receive a PR, so "merge via PR" has no
+        // meaning there and this rule would forbid committing at all. Concrete
+        // case: ~/Documents/AlxVault, the local-only git safety net for the
+        // Obsidian vault — this hook blocked three legitimate commits to it.
+        // Narrowed, not weakened: repos WITH a remote are still protected
+        // exactly as before. Fail-closed on doubt — if `git remote` errors we
+        // keep blocking, because a protection that guesses wrong must guess in
+        // the safe direction.
+        let hasRemote = true;
+        try {
+          hasRemote = execSync("git remote", { cwd: dir, encoding: "utf8" }).trim().length > 0;
+        } catch { hasRemote = true; }
+        if (!hasRemote) process.exit(0);
         if (branch === "main" || branch === "master") {
           const reason = "BLOCKED: on " + branch + ". Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
           process.stdout.write(JSON.stringify({
@@ -562,9 +575,16 @@
   # design: keyword-matching the prompt would miss exactly the ambiguous cases
   # where the reminder matters most, and a false negative is the failure mode
   # that actually hurts (the rule silently not firing).
+  # DUPLICATION: the mode table below is a hand-maintained COPY of the Mode
+  # Gate table in skills.nix (apexStep00Init -> step-00-init.md), not derived
+  # from it. Any change to that table MUST be mirrored here by hand. It has
+  # already drifted twice: (1) the trivial tier was removed on 2026-08-17 but
+  # this line kept advertising it for months; (2) -o/-n became mode defaults
+  # while this line still listed them as opt-in options. When editing the
+  # table over there, grep for this line.
   hookApexReminder = ''
     #!/usr/bin/env bash
-    echo "Routage: fichier modifié → /apex. Modes: trivial=éco | diagnosis=-x | standard=-t -pr | haut-enjeu=-t -x -pr (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -o vault | -n note. Majuscule désactive. Question sans modification → réponse directe."
+    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche. Majuscule désactive. Question sans modification → réponse directe."
     exit 0
   '';
 

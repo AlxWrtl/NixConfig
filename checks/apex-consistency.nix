@@ -12,6 +12,7 @@
 
 let
   skills = import ../home/claude-code/skills.nix;
+  hooks = import ../home/claude-code/hooks.nix;
 
   # Step file basename -> the nix attribute holding its content.
   steps = {
@@ -119,6 +120,80 @@ let
 
   missingInvariants = builtins.filter (i: !(pkgs.lib.hasInfix i.needle corpus)) invariants;
 
+  # ---------------------------------------------------------------------------
+  # Mode table vs the UserPromptSubmit reminder.
+  #
+  # hookApexReminder restates the Mode Gate table for the model on every prompt.
+  # It is a hand-maintained COPY, and it has drifted TWICE: the trivial tier was
+  # removed on 2026-08-17 and the line kept advertising it for months, then
+  # -o/-n became mode defaults while the line still listed them as opt-in.
+  # Deriving the line from a shared nix value was evaluated and rejected — only
+  # the three flag strings are genuinely shared, the rest (French labels, option
+  # glosses) is hook-only, so a "shared" file would become a third place to edit.
+  # A check is the cheaper answer: the table stays the single source of truth,
+  # the line stays free prose, and a third drift breaks `nix flake check`
+  # instead of lying silently.
+  #
+  # Flags are READ FROM THE TABLE, never restated here. The only thing this
+  # check owns is the EN->FR label mapping, which is small and stable.
+  reminder = hooks.hookApexReminder;
+
+  modeMap = [
+    {
+      en = "Diagnosis";
+      fr = "diagnosis";
+    }
+    {
+      en = "Standard / complex";
+      fr = "standard";
+    }
+    {
+      en = "High-stakes";
+      fr = "haut-enjeu";
+    }
+  ];
+
+  # A reformatted table is exactly the case to catch, so a null match throws
+  # rather than silently passing.
+  rowFlags =
+    label:
+    let
+      m = builtins.match ".*\\| ${label} \\| `([^`]*)` \\|.*" skills.apexStep00Init;
+    in
+    if m == null then
+      throw "apex-consistency: no Mode Gate row for '${label}' — the table in apexStep00Init was reformatted or renamed; this check reads flags from it and cannot guess."
+    else
+      builtins.head m;
+
+  modeDrift = builtins.filter (d: d != null) (
+    map (
+      m:
+      let
+        expected = "${m.fr}=${rowFlags m.en}";
+      in
+      if pkgs.lib.hasInfix expected reminder then null else expected
+    ) modeMap
+  );
+
+  # The trivial tier is gone; announcing it is a lie. Scoped to the hook SCRIPT,
+  # not the file — hooks.nix mentions "trivial" in legitimate comments.
+  trivialAdvertised = pkgs.lib.hasInfix "trivial" reminder;
+
+  # Opt-in flags must be listed as options; -o/-n must NOT be, they are defaults.
+  neverAuto = [
+    "-q"
+    "-f"
+    "-2"
+    "-p"
+    "-k"
+    "-v"
+  ];
+  missingOptions = builtins.filter (f: !(pkgs.lib.hasInfix "${f} " reminder)) neverAuto;
+  staleOptions = builtins.filter (f: pkgs.lib.hasInfix f reminder) [
+    "-o vault"
+    "-n note"
+  ];
+
   # Step files named in the corpus that do not exist as attributes.
   # The capture group is required: builtins.split yields an empty list for a
   # match with no groups, and head on it throws.
@@ -138,9 +213,29 @@ pkgs.runCommand "apex-consistency-check" { } (
     fail ("lost invariant(s): " + builtins.concatStringsSep "; " (map (i: i.name) missingInvariants))
   else if danglingSteps != [ ] then
     fail ("reference(s) to non-existent step file(s): " + builtins.concatStringsSep ", " danglingSteps)
+  else if modeDrift != [ ] then
+    fail (
+      "the UserPromptSubmit reminder no longer matches the Mode Gate table. Missing from hookApexReminder: "
+      + builtins.concatStringsSep "; " (map (d: "'${d}'") modeDrift)
+      + ". The table in apexStep00Init is the source of truth — update the hook line in hooks.nix to match it."
+    )
+  else if trivialAdvertised then
+    fail "the UserPromptSubmit reminder still advertises a 'trivial' mode. That tier was removed on 2026-08-17; remove it from the hook line in hooks.nix."
+  else if missingOptions != [ ] then
+    fail (
+      "opt-in flag(s) absent from the reminder's Options list: "
+      + builtins.concatStringsSep ", " missingOptions
+      + ". These are never auto-enabled, so the model has to be told they exist."
+    )
+  else if staleOptions != [ ] then
+    fail (
+      "the reminder still lists as opt-in: "
+      + builtins.concatStringsSep ", " staleOptions
+      + ". -o and -n are mode DEFAULTS now — listing them as options tells the model to type what it already gets."
+    )
   else
     ''
-      echo "apex-consistency: ${toString (builtins.length existing)} step files, ${toString (builtins.length invariants)} invariants — OK"
+      echo "apex-consistency: ${toString (builtins.length existing)} step files, ${toString (builtins.length invariants)} invariants, ${toString (builtins.length modeMap)} mode rows vs reminder — OK"
       touch $out
     ''
 )

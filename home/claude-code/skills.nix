@@ -178,8 +178,10 @@ in
     2. Mode default set.
     3. OFF.
 
-    Never auto-enabled — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`,
-    `-o`, `-n`.
+    Never auto-enabled — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`.
+    Each is expensive in its own way (a second implementation, a separate
+    test-author agent, the rationed Fable quota, a web search, a question put
+    to the user) — none belongs on a typo fix.
 
     ## Session model guard (run FIRST)
 
@@ -199,10 +201,19 @@ in
 
     | Mode | Default flags |
     |------|---------------|
-    | Diagnosis | `-x` |
-    | Standard / complex | `-t -pr` |
-    | High-stakes | `-t -x -pr` |
+    | Diagnosis | `-x -o -n` |
+    | Standard / complex | `-t -pr -o -n` |
+    | High-stakes | `-t -x -pr -o -n` |
     | Pure research | none |
+
+    `-o` and `-n` are defaults, not conveniences: they are the two ends of one
+    loop. `-o` reads the knowledge graph at the start (step-01b) to recover the
+    OLD relational body recency retrieval cannot see; `-n` writes the session
+    note at the end (step-09b) and fires the incremental reindex that feeds the
+    NEXT session. Drop `-n` and the loop stays open — no note, no reindex, and
+    the graph goes stale in silence, which is the failure you never notice.
+    Pure research keeps neither: it changes no file, so it has nothing to log.
+    Both stay cancellable per run with `-O` / `-N` (uppercase precedence above).
 
     Branch-first and the on-disk summary chain are NOT in these sets because
     they are not flags: they are behaviours of the modes themselves, described
@@ -268,9 +279,14 @@ in
     2. Read [step-00b-save.md](step-00b-save.md) and execute it —
        unconditional, like branch-first.
 
-    Note: `-o` and `-n` are NOT init-time sub-steps.
-    - `-o` fires at end of step-01-analyze (loads vault BEFORE planning).
-    - `-n` fires at terminal steps (04/05/06/08/09) to write a session note.
+    Note: `-o` and `-n` are on by default (see the mode table) but are NOT
+    init-time sub-steps — they fire later in the chain.
+    - `-o` fires at end of step-01-analyze (loads vault BEFORE planning, and
+      queries the knowledge graph for relations recency cannot reach).
+    - `-n` fires at terminal steps (04/05/06/08/09): writes the session note,
+      THEN fires `graphify-reindex` in the background. That reindex is the only
+      thing keeping the graph current, so a run that skips `-n` silently
+      degrades the next run's `-o`.
 
     ## Next Step
 
@@ -458,6 +474,71 @@ in
     6. **Scan decisions** (if folder exists) — `Glob` pattern: `02-Projets/[project]/decisions/*.md`
        - Read titles + summaries only (do NOT modify files in `decisions/`)
 
+    7. **Graph relations (graphify)** — steps 4-6 cover the FRESH tail by
+       recency; this step recovers the OLD relational body: notes related to
+       the current task that recency retrieval is structurally blind to.
+
+       a. **Freshness probe** (cheap, no MCP): Bash
+          `ls -l ~/GraphVault/graphify-out/graph.json` and compare its mtime
+          to the newest note under `~/Documents/AlxVault/02-Projets`.
+          - File absent → graph status `absent`: skip the rest of this step
+            (recency-only report). Do NOT build the graph here — the initial
+            full build is manual and long.
+          - Older than the newest note → status `stale ({graph date})`:
+            STILL query it (relations are durable; only the freshest notes
+            are missing, and recency already covered those), and fire the
+            catch-up: Bash `graphify-reindex` with `run_in_background: true`.
+            NEVER wait for it, never poll it.
+          - Otherwise → status `fresh`.
+       b. `mcp__graphify__query_graph` with `depth` 1 (the tool defaults to 3)
+          and `token_budget` 1200. `question` = 3-6 DOMAIN KEYWORDS, never a
+          sentence. Ban the meta-words `session`, `décision`, `projet`, `note`
+          and the project name: they match the hub notes and drag unrelated
+          seeds in. Measured on this vault, same graph, same budget:
+            "décisions et sessions liées au reset de mot de passe et à la
+             délivrabilité email, projet Preliz"  → 89 nodes, 22 shown, 0 EDGES
+            "reset mot de passe délivrabilité email invitation"
+                                                  → 16 nodes, all shown, 9 edges
+          The junk seeds appear in the `Start:` list itself, so this is seed
+          selection, not traversal — lowering `depth` alone does NOT fix it.
+
+          READ THE BANNER, it decides whether the call was worth anything:
+          - `[!] TRUNCATED` → the answer carries NO edges at all. Edges are only
+            emitted once every node fits ("Edges are never dropped once every
+            node fits"), so a truncated reply drops exactly what this step came
+            for. Treat it as a failed query, not a partial one: reformulate ONCE
+            with fewer, sharper keywords. Still truncated → drop the graph for
+            this run and say so in the status line.
+            (This supersedes the old "NEVER issue a second query_graph" rule,
+            written before that behaviour was measured. One reformulation is
+            cheaper than a relation-free answer; a third is not.)
+          - `[i] Complete answer over budget` → this is the GOOD outcome: every
+            node and edge is there. It may overrun the requested budget 4-6x
+            (~5-7k tokens of context). Accept it, do not try to shrink it.
+       c. Optionally, at most TWO `mcp__graphify__get_neighbors` calls on the
+          1-2 returned entities most central to the task.
+       d. Keep only what recency did NOT already surface: related notes
+          outside {project note, 3 recent sessions, decisions read}. Read at
+          most 3 of them from the vault (Read tool) — the graph is the
+          pointer, the note is the truth. Cite them as `[[wikilinks]]` like
+          every other note read.
+       e. Any MCP error, timeout, or empty/degraded response → ONE attempt
+          only: set status `unavailable` and continue with recency alone.
+          This step NEVER blocks and NEVER fails the run — a missing graph
+          degrades to exactly the pre-graphify behavior.
+
+    ## Tool routing — enquire vs graphify (never double-query)
+
+    - `mcp__enquire__*` = what the vault WRITES: find/read notes, keyword +
+      semantic search, and the EXPLICIT wikilink graph (backlinks, note
+      neighbors, paths between notes).
+    - `mcp__graphify__*` = what the vault IMPLIES: LLM-extracted entities and
+      relations across note contents, thematic communities, hubs — links that
+      no wikilink materializes.
+    - Route: "find/read notes about X", "what links to note N" → enquire.
+      "how does concept X relate to concept Y", "what clusters around entity
+      X" → graphify. The same question never goes to both.
+
     ## Output — Context Report
 
     Produce a compact report:
@@ -475,6 +556,10 @@ in
     ### Relevant decisions
     - [[02-Projets/{project}/decisions/slug]] — {one-liner}
 
+    ### Graph relations (graphify)
+    - [[02-Projets/{project}/...]] — {relation to the task, per the graph}
+    - Graph status: fresh | stale ({graph date}) | absent | unavailable
+
     ### Implications for current task
     - {how this context changes/informs the plan}
     - {constraints or prior choices to respect}
@@ -484,6 +569,8 @@ in
     ## Rules
 
     - Read-only. Do NOT write to the vault in this step (that's step-09b).
+      The `graphify-reindex` catch-up writes only to `~/GraphVault`, never to
+      the vault — firing it does not break this rule.
     - Never modify `decisions/` files.
     - If no project note exists, say so and suggest creating one via `-n` flag at the end.
     - Use full-path wikilinks always: `[[02-Projets/Project/Project]]`.
@@ -1201,6 +1288,23 @@ in
     If the note is already up-to-date or the section structure differs, skip this step
     rather than forcing a structure the user didn't set up.
 
+    ### 7. Refresh the knowledge graph (fire-and-forget)
+
+    The graph that step-01b queries goes stale the moment this note lands.
+    AFTER the note is written (and ONLY if it was), launch:
+
+    - Bash `graphify-reindex` with `run_in_background: true`.
+    - Do NOT wait for it, do NOT poll it, do NOT read its result — the session
+      may end while it runs; that is fine. The script is lock-guarded,
+      incremental (claude-cli backend, zero API cost), refuses the initial
+      full build, and verifies the graph content itself because graphify's
+      exit code lies (0 even on total failure).
+    - If the spawn itself errors (binary missing, sandbox): report ONE warning
+      line in the Output and finish normally — the next session's step-01b
+      staleness probe catches up. NEVER retry, NEVER block this terminal step.
+    - This is the only graph write path in APEX. It writes to `~/GraphVault`
+      only, never into the vault.
+
     ## If save mode (-s):
     Also copy the note content to `.claude/output/apex/{task-id}/09b-obsidian-note.md`
     (local mirror for traceability).
@@ -1212,6 +1316,7 @@ in
     Obsidian session note created
     Path: 02-Projets/{project}/sessions/{filename}
     Wikilink: [[02-Projets/{project}/sessions/{filename-without-ext}]]
+    Graph reindex: launched | skipped ({reason})
     ```
 
     ## Next Step
@@ -1971,6 +2076,29 @@ in
     Vault path: `~/Documents/AlxVault`
 
     No MCP server needed — use native tools directly on the vault files.
+
+    ## Retrieval routing — three sources, one question each
+
+    Never send the same question to two of these. Picking wrong wastes context
+    and can read as a false absence.
+
+    - **Native tools** (Grep/Glob/Read) — you know the path or the exact string.
+    - **`mcp__enquire__*`** — what the vault WROTE: find/read notes by meaning,
+      keyword + semantic search, explicit wikilinks, backlinks, note neighbours.
+      The default when the question is "which note says X".
+    - **`mcp__graphify__*`** — what the vault IMPLIES: entities and relations
+      extracted from note CONTENTS, thematic communities, hubs — connections no
+      wikilink materializes. The default when the question is "how does X relate
+      to Y" or "what clusters around X".
+
+    Scope limit, and it matters: graphify indexes `02-Projets` ONLY (Preliz +
+    nix-darwin). A miss there is not proof of absence — anything under
+    `00-Meta/`, `01-Inbox/`, `03-Areas/`, `04-Resources/` or the vault root is
+    invisible to it. Graph absent, stale or mute → fall back to enquire and say
+    so; never block a run on it.
+
+    The graph is a POINTER, the note is the truth: graphify tells you which note
+    to open, you still read the note in AlxVault for the substance.
 
     ## Tool Mapping
     | Action | Tool | Example |

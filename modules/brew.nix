@@ -103,10 +103,6 @@
         greedy = true;
       }
       {
-        name = "plex-media-server";
-        greedy = true;
-      }
-      {
         name = "tailscale-app";
         greedy = true;
       }

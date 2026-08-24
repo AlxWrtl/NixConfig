@@ -2,6 +2,7 @@
 # All command hooks: read JSON from stdin, exit 0 + JSON stdout
 # permissionDecision: "allow" | "deny" | "ask"
 # In Nix '' strings: escape single quotes as ''' (two apostrophes + the quote)
+{ graphifyReindexPkg }:
 {
   hookProtectMain = ''
     #!/usr/bin/env node
@@ -568,6 +569,99 @@
     LAST_COMMIT=$(git log --oneline -1 2>/dev/null || echo "no commits")
     MODIFIED=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
     echo "branch: $BRANCH | last: $LAST_COMMIT | modified: $MODIFIED files"
+  '';
+
+  # SessionEnd: refresh the AlxVault knowledge graph. Reason for existing: the
+  # APEX step-09b text instruction only fires when the model remembers it —
+  # measured 2026-08-24, session notes written at 23:09, reindex never launched.
+  # A hook fires whether or not the model thinks of it.
+  # SessionEnd hooks share a 1.5 s budget, raised to the declared `timeout`
+  # (60 s ceiling), so everything here must be a few milliseconds of shell and
+  # the real work must leave. `async` detaches the hook from Claude Code's
+  # lifecycle; `nohup` is what makes the GRANDCHILD (the reindex itself, minutes
+  # long) survive the hook's own death, while the `( … & )` around it double-forks
+  # out of the process group, which `nohup` alone does not cover — it only blocks
+  # SIGHUP, and a group kill would still take the reindex with it. No matcher on
+  # purpose: a malformed matcher silently never matches and the hook never runs —
+  # the trap already measured in settings.nix (see the Stop/Bash `if` comment).
+  # All five `reason` values mean the same thing here, so `reason` is logged as a
+  # trace and never used as logic.
+  # No jq, no `stat -c`: this file is deployed by home.file, NOT by
+  # writeShellApplication, so it has none of the GNU runtimeInputs. A `stat -c`
+  # would produce a rotation that never rotates — a silent failure.
+  # Child output goes to this hook's own log deliberately: reindex.log stays
+  # empty when the graph is already fresh, so without it nothing would prove the
+  # hook ever fired.
+  # The order below is the whole point, and each step earns its place. The
+  # recursion guard reads only the environment, so it stays first and costs
+  # nothing. The log directory is then created, and the log falls back to
+  # /dev/null if it still cannot be opened: measured, a missing ~/GraphVault made
+  # the `>>` redirection fail, and bash then skips the command entirely — the
+  # reindex never left, and nothing recorded that it hadn't. Being unable to
+  # trace must never be able to stop the work. Rotation copies and truncates in
+  # place instead of renaming, because a `mv` unlinks the inode that the still
+  # running `nohup` child holds open in O_APPEND, and every line it would emit —
+  # including the `OK — N nodes` verdict that is the only evidence of a real run
+  # — disappears with it; the temporary carries `.$$` so two sessions rotating at
+  # once cannot clobber each other. The occupancy guard matches `graphify
+  # extract` and never `graphify` alone, which would hit the always alive
+  # graphify-mcp server and leave the hook permanently mute; if pgrep is missing
+  # the hook proceeds rather than fail closed. Finally the work is launched
+  # BEFORE stdin is read: everything used to sit downstream of `INPUT=$(cat)`, so
+  # an unclosed stdin got the hook killed at the declared timeout and the
+  # timeout mitigation turned into a silent no-fire. Reading stdin last means a
+  # hanging stdin costs the trace line, not the trigger — and the child's own
+  # output into this same log remains proof either way.
+  hookGraphifyReindex = ''
+    #!/usr/bin/env bash
+    if [ -n "''${GRAPHIFY_REINDEX_ACTIVE:-}" ]; then
+      SKIP=recursion
+    else
+      SKIP=
+    fi
+
+    HOOKLOG="$HOME/GraphVault/reindex-hook.log"
+    mkdir -p "$HOME/GraphVault" 2>/dev/null
+    if ! ( : >>"$HOOKLOG" ) 2>/dev/null; then
+      HOOKLOG=/dev/null
+    fi
+
+    REINDEX="${graphifyReindexPkg}/bin/graphify-reindex"
+    TS=$(date '+%Y-%m-%dT%H:%M:%S')
+
+    if [ -f "$HOOKLOG" ]; then
+      SIZE=$(wc -c <"$HOOKLOG" 2>/dev/null | tr -d ' ')
+      if [ "''${SIZE:-0}" -gt 65536 ] 2>/dev/null; then
+        ROTTMP="$HOOKLOG.$$"
+        if cp "$HOOKLOG" "$ROTTMP" 2>/dev/null; then
+          : >"$HOOKLOG"
+          tail -c 32768 "$ROTTMP" >>"$HOOKLOG" 2>/dev/null
+        fi
+        rm -f "$ROTTMP" 2>/dev/null
+      fi
+    fi
+
+    if [ -n "$SKIP" ]; then
+      printf '%s event=SessionEnd skip=recursion cwd=%s\n' "$TS" "$PWD" >>"$HOOKLOG"
+      exit 0
+    fi
+
+    if command -v pgrep >/dev/null 2>&1; then
+      if pgrep -f 'graphify extract' >/dev/null 2>&1; then
+        printf '%s event=SessionEnd skip=busy cwd=%s\n' "$TS" "$PWD" >>"$HOOKLOG"
+        exit 0
+      fi
+    fi
+
+    ( nohup "$REINDEX" >>"$HOOKLOG" 2>&1 </dev/null & )
+
+    INPUT=$(cat)
+    REASON=$(printf '%s' "$INPUT" | sed -n 's/.*"reason"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    SESSION=$(printf '%s' "$INPUT" | sed -n 's/.*"session_id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
+    printf '%s event=SessionEnd fire reason=%s session=%s cwd=%s\n' \
+      "$TS" "$REASON" "$SESSION" "$PWD" >>"$HOOKLOG"
+
+    exit 0
   '';
 
   # UserPromptSubmit: stdout is injected into the turn's context. Kept to one

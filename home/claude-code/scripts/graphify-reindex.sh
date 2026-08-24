@@ -40,6 +40,31 @@ export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
 # guard in case a future writer regresses.
 export GRAPHIFY_OUT="$HOME/GraphVault/graphify-out"
 
+# NUMBA CACHE — the clustering step depended on a directory the sandbox denies.
+# graphify pulls graspologic, which pulls hyppo, whose dcorr.py carries
+# `@jit(nopython=True, cache=True)`. numba writes that cache NEXT TO the .py
+# source, i.e. under ~/.local/share/uv/tools/graphifyy/... — a 755 directory
+# owned by the user, yet Claude's Bash sandbox refuses to write there
+# (`touch .../hyppo/independence/.sandbox-write-test` -> Operation not
+# permitted). With nowhere to write, numba raises
+# `RuntimeError: cannot cache function '_center_distmat': no locator available`.
+# Measured 2026-08-24: extraction of the two new notes succeeded, clustering
+# crashed, graph.json was never rewritten — 1506 nodes in, 1506 out, caught by
+# this script's own WARN because it never trusts graphify's exit code. $OUT is
+# already in sandbox.allowWrite (settings.nix), so pointing numba there makes
+# the failure unrepresentable instead of merely unlikely.
+# MPLCONFIGDIR is slowness only, never a failure: without it matplotlib rebuilds
+# its font cache on every run.
+export NUMBA_CACHE_DIR="$OUT/.numba-cache"
+export MPLCONFIGDIR="$OUT/.mpl-cache"
+mkdir -p "$NUMBA_CACHE_DIR" "$MPLCONFIGDIR"
+
+# RECURSION MARKER — inherited by the nested `claude` the claude-cli backend
+# spawns. The SessionEnd hook tests it and refuses to fire again, so a reindex
+# can never trigger the reindex of its own child session. The mkdir lock and the
+# freshness gate already bound that loop; this marker cuts it outright.
+export GRAPHIFY_REINDEX_ACTIVE=1
+
 # NO model pinned on purpose. claude-cli defaults to Opus, and the whole 164-note
 # corpus was extracted with Opus for uniformity. Pinning haiku/sonnet here would
 # extract each NEW note with a different model than the corpus it joins,

@@ -476,6 +476,23 @@ in
           ];
         }
       ];
+      # Knowledge-graph refresh. No matcher on purpose: all five `reason` values
+      # mean "the session stopped", and a malformed matcher silently never
+      # matches (see the `if = "Bash(git *)"` comment above). `async` detaches
+      # the reindex from Claude Code's lifecycle; `timeout` only bounds the
+      # stdin read, the work itself has already left via nohup.
+      SessionEnd = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/graphify-reindex.sh";
+              timeout = 5;
+              async = true;
+            }
+          ];
+        }
+      ];
       SubagentStop = [
         {
           hooks = [

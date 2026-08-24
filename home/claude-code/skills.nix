@@ -474,11 +474,31 @@ in
             catch-up: Bash `graphify-reindex` with `run_in_background: true`.
             NEVER wait for it, never poll it.
           - Otherwise → status `fresh`.
-       b. ONE `mcp__graphify__query_graph` call: `question` = the task in one
-          sentence plus the project name, `token_budget` 1200. Budget honesty:
-          a response marked "complete" can overrun the requested budget 4-6x —
-          treat this call as costing up to ~5-7k tokens of context and NEVER
-          issue a second query_graph to "get more".
+       b. `mcp__graphify__query_graph` with `depth` 1 (the tool defaults to 3)
+          and `token_budget` 1200. `question` = 3-6 DOMAIN KEYWORDS, never a
+          sentence. Ban the meta-words `session`, `décision`, `projet`, `note`
+          and the project name: they match the hub notes and drag unrelated
+          seeds in. Measured on this vault, same graph, same budget:
+            "décisions et sessions liées au reset de mot de passe et à la
+             délivrabilité email, projet Preliz"  → 89 nodes, 22 shown, 0 EDGES
+            "reset mot de passe délivrabilité email invitation"
+                                                  → 16 nodes, all shown, 9 edges
+          The junk seeds appear in the `Start:` list itself, so this is seed
+          selection, not traversal — lowering `depth` alone does NOT fix it.
+
+          READ THE BANNER, it decides whether the call was worth anything:
+          - `[!] TRUNCATED` → the answer carries NO edges at all. Edges are only
+            emitted once every node fits ("Edges are never dropped once every
+            node fits"), so a truncated reply drops exactly what this step came
+            for. Treat it as a failed query, not a partial one: reformulate ONCE
+            with fewer, sharper keywords. Still truncated → drop the graph for
+            this run and say so in the status line.
+            (This supersedes the old "NEVER issue a second query_graph" rule,
+            written before that behaviour was measured. One reformulation is
+            cheaper than a relation-free answer; a third is not.)
+          - `[i] Complete answer over budget` → this is the GOOD outcome: every
+            node and edge is there. It may overrun the requested budget 4-6x
+            (~5-7k tokens of context). Accept it, do not try to shrink it.
        c. Optionally, at most TWO `mcp__graphify__get_neighbors` calls on the
           1-2 returned entities most central to the task.
        d. Keep only what recency did NOT already surface: related notes

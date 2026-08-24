@@ -25,8 +25,26 @@ GRAPHIFY="$HOME/.local/bin/graphify"
 
 # The claude-cli backend shells out to `claude` (homebrew). Make it reachable
 # even from a minimal PATH (sandboxed Bash, hooks). Serial on purpose: do NOT
-# set GRAPHIFY_CLAUDE_CLI_PARALLEL.
+# set GRAPHIFY_CLAUDE_CLI_PARALLEL — parallel subprocesses conflict over
+# Claude Code session state, it is not merely a rate-limit guard.
 export PATH="/opt/homebrew/bin:$HOME/.local/bin:$PATH"
+
+# LEAK FIX — the root cause, not a workaround.
+# `--out` does not cover every writer: on 2026-08-24 a run with --out still
+# created <VAULT>/graphify-out/cache/ INSIDE the scanned vault. graphify/paths.py
+# is the single source of truth for that directory and reads GRAPHIFY_OUT once at
+# import time; it accepts an ABSOLUTE path and is the upstream-documented
+# mechanism for shared-output setups (#686, #1423 centralised it so every reader
+# honours it). Exporting it absolute makes a vault-relative cache path
+# unrepresentable. The check after the extraction stays as a belt-and-braces
+# guard in case a future writer regresses.
+export GRAPHIFY_OUT="$HOME/GraphVault/graphify-out"
+
+# NO model pinned on purpose. claude-cli defaults to Opus, and the whole 164-note
+# corpus was extracted with Opus for uniformity. Pinning haiku/sonnet here would
+# extract each NEW note with a different model than the corpus it joins,
+# recreating the two-speed graph the rebuild was done to eliminate. At one or two
+# notes per session the cost is negligible. This is a decision, not an omission.
 
 if [ ! -d "$VAULT" ]; then
   echo "graphify-reindex: vault dir missing ($VAULT) — skip"
@@ -79,6 +97,21 @@ before_mtime="$(stat -c %Y "$GRAPH" 2>/dev/null || echo 0)"
   # Mandatory after extract: (re)name communities, else placeholders remain.
   "$GRAPHIFY" cluster-only "$OUT" --backend claude-cli || true
 } >>"$LOG" 2>&1
+
+# Belt-and-braces: GRAPHIFY_OUT above should make this impossible, so anything
+# found here is a NEW upstream regression and must be loud, never swallowed.
+# Strictly bounded to that one path — no recursive delete anywhere else.
+LEAK="$VAULT/graphify-out"
+if [ -d "$LEAK" ]; then
+  if [ -n "$(find "$LEAK" -name '*.md' -print -quit 2>/dev/null)" ]; then
+    echo "graphify-reindex: !! $LEAK contains .md files — NOT removing it."
+    echo "   This is a different, worse regression than the cache leak: inspect by hand."
+  else
+    rm -rf "$LEAK"
+    echo "graphify-reindex: !! graphify wrote $LEAK despite GRAPHIFY_OUT — removed (cache only)."
+    echo "   The GRAPHIFY_OUT override no longer covers every writer: report upstream."
+  fi
+fi
 
 after_nodes="$(jq -r '(.nodes // []) | length' "$GRAPH" 2>/dev/null || echo 0)"
 after_mtime="$(stat -c %Y "$GRAPH" 2>/dev/null || echo 0)"

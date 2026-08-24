@@ -575,9 +575,16 @@
   # design: keyword-matching the prompt would miss exactly the ambiguous cases
   # where the reminder matters most, and a false negative is the failure mode
   # that actually hurts (the rule silently not firing).
+  # DUPLICATION: the mode table below is a hand-maintained COPY of the Mode
+  # Gate table in skills.nix (apexStep00Init -> step-00-init.md), not derived
+  # from it. Any change to that table MUST be mirrored here by hand. It has
+  # already drifted twice: (1) the trivial tier was removed on 2026-08-17 but
+  # this line kept advertising it for months; (2) -o/-n became mode defaults
+  # while this line still listed them as opt-in options. When editing the
+  # table over there, grep for this line.
   hookApexReminder = ''
     #!/usr/bin/env bash
-    echo "Routage: fichier modifié → /apex. Modes: trivial=éco | diagnosis=-x | standard=-t -pr | haut-enjeu=-t -x -pr (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -o vault | -n note. Majuscule désactive. Question sans modification → réponse directe."
+    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche. Majuscule désactive. Question sans modification → réponse directe."
     exit 0
   '';
 

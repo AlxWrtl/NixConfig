@@ -178,8 +178,10 @@ in
     2. Mode default set.
     3. OFF.
 
-    Never auto-enabled — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`,
-    `-o`, `-n`.
+    Never auto-enabled — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`.
+    Each is expensive in its own way (a second implementation, a separate
+    test-author agent, the rationed Fable quota, a web search, a question put
+    to the user) — none belongs on a typo fix.
 
     ## Session model guard (run FIRST)
 
@@ -199,10 +201,19 @@ in
 
     | Mode | Default flags |
     |------|---------------|
-    | Diagnosis | `-x` |
-    | Standard / complex | `-t -pr` |
-    | High-stakes | `-t -x -pr` |
+    | Diagnosis | `-x -o -n` |
+    | Standard / complex | `-t -pr -o -n` |
+    | High-stakes | `-t -x -pr -o -n` |
     | Pure research | none |
+
+    `-o` and `-n` are defaults, not conveniences: they are the two ends of one
+    loop. `-o` reads the knowledge graph at the start (step-01b) to recover the
+    OLD relational body recency retrieval cannot see; `-n` writes the session
+    note at the end (step-09b) and fires the incremental reindex that feeds the
+    NEXT session. Drop `-n` and the loop stays open — no note, no reindex, and
+    the graph goes stale in silence, which is the failure you never notice.
+    Pure research keeps neither: it changes no file, so it has nothing to log.
+    Both stay cancellable per run with `-O` / `-N` (uppercase precedence above).
 
     Branch-first and the on-disk summary chain are NOT in these sets because
     they are not flags: they are behaviours of the modes themselves, described
@@ -268,9 +279,14 @@ in
     2. Read [step-00b-save.md](step-00b-save.md) and execute it —
        unconditional, like branch-first.
 
-    Note: `-o` and `-n` are NOT init-time sub-steps.
-    - `-o` fires at end of step-01-analyze (loads vault BEFORE planning).
-    - `-n` fires at terminal steps (04/05/06/08/09) to write a session note.
+    Note: `-o` and `-n` are on by default (see the mode table) but are NOT
+    init-time sub-steps — they fire later in the chain.
+    - `-o` fires at end of step-01-analyze (loads vault BEFORE planning, and
+      queries the knowledge graph for relations recency cannot reach).
+    - `-n` fires at terminal steps (04/05/06/08/09): writes the session note,
+      THEN fires `graphify-reindex` in the background. That reindex is the only
+      thing keeping the graph current, so a run that skips `-n` silently
+      degrades the next run's `-o`.
 
     ## Next Step
 

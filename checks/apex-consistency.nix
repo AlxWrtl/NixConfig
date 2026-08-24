@@ -12,7 +12,14 @@
 
 let
   skills = import ../home/claude-code/skills.nix;
-  hooks = import ../home/claude-code/hooks.nix;
+  # Stub, not a default argument in hooks.nix: this check only ever reads hook
+  # TEXT, so any store path does. Making the argument optional over there would
+  # let a missing wiring in claude-code.nix pass in silence and ship a hook whose
+  # binary path points nowhere — precisely the mute failure this hook exists to
+  # remove.
+  hooks = import ../home/claude-code/hooks.nix {
+    graphifyReindexPkg = "/nix/store/00000000000000000000000000000000-stub";
+  };
 
   # Step file basename -> the nix attribute holding its content.
   steps = {

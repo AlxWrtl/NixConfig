@@ -12,13 +12,13 @@ let
   settings = import ./claude-code/settings.nix { homeDirectory = config.home.homeDirectory; };
   commands = import ./claude-code/commands.nix;
   skills = import ./claude-code/skills.nix;
-  hooks = import ./claude-code/hooks.nix;
+  graphifyReindex = import ./claude-code/graphify-reindex.nix { inherit pkgs; };
+  hooks = import ./claude-code/hooks.nix { inherit (graphifyReindex) graphifyReindexPkg; };
   agents = import ./claude-code/agents.nix;
   shell = import ./claude-code/shell.nix;
   claudeMd = import ./claude-code/claude-md.nix;
   rules = import ./claude-code/rules.nix;
   libdocs = import ./claude-code/libdocs.nix { inherit pkgs; };
-  graphifyReindex = import ./claude-code/graphify-reindex.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix { inherit pkgs lib; };
 
   inherit (claudeMd) claudeMdGlobal;
@@ -85,6 +85,7 @@ let
     hookFormatTypescript
     hookBlockMainBash
     hookSessionStart
+    hookGraphifyReindex
     hookApexReminder
     hookSubagentStop
     hookTaskCompleted
@@ -284,6 +285,10 @@ in
     };
     "${claudeDir}/hooks/session-start.sh" = {
       text = hookSessionStart;
+      executable = true;
+    };
+    "${claudeDir}/hooks/graphify-reindex.sh" = {
+      text = hookGraphifyReindex;
       executable = true;
     };
     "${claudeDir}/hooks/apex-reminder.sh" = {

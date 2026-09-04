@@ -108,7 +108,8 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   └── claude-code/             # settings, hooks, agents, skills, commands, rules…
 ├── checks/                      # Flake checks (see Quality Gates)
 │   ├── apex-consistency.nix
-│   └── claude-config.nix
+│   ├── claude-config.nix
+│   └── readme-consistency.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
 ├── wallpapers/                  # Desktop wallpaper
 ├── secrets.nix                  # 🔒 Encrypted (git-crypt) — emails, IPs, usernames
@@ -158,8 +159,9 @@ darwin-rebuild switch --flake .#alex-mbp --show-trace -v  # Debug
 
 ## Quality Gates
 
-`nix flake check` runs four checks. They are the reason a broken module or a
-drifted Claude Code config fails before it reaches the system.
+`nix flake check` runs every check below. They are the reason a broken module,
+a drifted Claude Code config or a stale README fails before it reaches the
+system.
 
 | Check | What it enforces |
 |-------|------------------|
@@ -167,9 +169,16 @@ drifted Claude Code config fails before it reaches the system.
 | `system-config` | The whole `alex-mbp` darwin configuration actually builds |
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
+| `readme-consistency` | This file against the repo: the APEX flag table vs the skill, `/apex` examples typing only live flags, every `.nix` in `modules/` `home/` `checks/` `hosts/` present in the Structure tree, every check listed above, no dangling path, no alias documented that no attrset declares, no hard count |
 
 Run them before every commit that touches `.nix` files — `format-check` in
 particular fails on formatting alone.
+
+`readme-consistency` compares this document against live sources rather than
+against a copy of its own expectations: a check holding its own copy of the
+truth rots at the same rate as the thing it checks. It deliberately does not
+require the eleven modules inside `home/claude-code/` to be listed
+individually — that directory is documented as one unit.
 
 ## Maintenance / Cleanup
 

@@ -56,6 +56,7 @@
         system-config = self.darwinConfigurations."alex-mbp".system;
         apex-consistency = import ./checks/apex-consistency.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
+        readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };
       };
 
       # System configuration

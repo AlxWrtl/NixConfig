@@ -289,6 +289,52 @@ Not flags, nothing to disable:
 resolve, finish, note). Validate runs the machine gate first — parse, lint,
 typecheck, tests — because a compiler finds compiler bugs for free.
 
+### How it actually runs
+
+The skill is only one third of the system. It describes what should happen;
+on its own it is prose the model may or may not follow. Two other layers
+declared in this repo decide what actually happens.
+
+| Layer | Where | Can it be ignored? |
+|-------|-------|--------------------|
+| Skill | `home/claude-code/skills.nix` | Yes — it is context the model reads |
+| Hooks | `home/claude-code/hooks.nix`, wired in `home/claude-code/settings.nix` | No — the harness executes them |
+| Checks | `checks/` via `nix flake check` | No — they block the merge |
+
+The lifecycle of one request, in order:
+
+1. **Session opens** — `SessionStart` prints the branch and last commit.
+2. **You type** — `UserPromptSubmit` injects the routing line naming the
+   modes and their default flags. This is context, not enforcement.
+3. **The model tries to edit** — `PreToolUse` on `Edit|Write` and `Bash`
+   refuses until the APEX skill has been invoked for that request, and
+   re-arms on your next message. This is enforcement.
+4. **The model tries to commit** — the same event refuses any write to
+   `main`/`master`. Master moves through pull requests only.
+5. **APEX runs** its chain, each phase in a subagent with a fresh context,
+   phase summaries persisted under `.claude/output/apex/`.
+6. **`-o` reads the vault** before planning, through one of two MCP servers,
+   never both on the same question: `enquire` for what the vault *wrote*
+   (notes, wikilinks, backlinks, semantic search), `graphify` for what it
+   *implies* (entities and relations extracted across note contents, links no
+   wikilink materialises).
+7. **`-n` writes** the session note into the vault.
+8. **Session ends** — `SessionEnd` fires
+   `home/claude-code/scripts/graphify-reindex.sh`, which extracts the new
+   notes into the knowledge graph that feeds the *next* session's `-o`.
+
+Step 8 is the design lesson worth keeping. The reindex used to be a sentence
+inside the skill, so it only ran when the model remembered; notes were
+written and never indexed. Moving it to a hook made it unconditional. **A
+rule that must be impossible to violate belongs in a hook, not in prose** —
+instruction files are context, hooks are execution.
+
+The third layer closes the loop on the first two: `checks/apex-consistency.nix`
+asserts that the skill still refers only to parts of itself that exist, that
+it has not lost the clauses it must never lose, and that the mode table and
+the injected routing line still agree. Both had drifted silently before it
+existed — exactly as this README did.
+
 ### Usage
 
 ```

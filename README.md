@@ -145,10 +145,6 @@ secrets.nix  filter=git-crypt diff=git-crypt
 backups/**   filter=git-crypt diff=git-crypt
 ```
 
-> **Note:** a `.sops.yaml` sits at the root but is **not wired up** — its age
-> key is still the placeholder and its `path_regex` points at a `secrets/`
-> directory that does not exist. git-crypt is the mechanism in use.
-
 ## Commands
 
 ```bash

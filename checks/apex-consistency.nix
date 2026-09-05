@@ -207,6 +207,36 @@ let
       scope = skills.apexStep04Validate;
     }
     {
+      # apex-consistency proves a clause is PRESENT. Three rules shipped in one
+      # day that were present and did nothing. Presence is not effect, and this
+      # is the only clause in the skill that tests effect.
+      name = "orchestration: a rule that governs future runs is pressure-tested";
+      needle = "Pressure-test";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # The predicate is where the previous behavioural runner died: its
+      # assertions matched free-form prose, so the words the model happened to
+      # use counted as the result. 4/4, 2/4, 3/4, 3/4 on one identical case.
+      name = "orchestration: the pressure-test predicate is mechanical, declared first";
+      needle = "Declare the predicate FIRST";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Without the flip requirement the probe reports "the rule ran" rather
+      # than "the rule changed something", which is the same nothing.
+      name = "orchestration: the rule passes only if the predicate flips";
+      needle = "passes only if the predicate FLIPS";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Measured on this very rule: one control run said clean flip, the second
+      # said the opposite. A single run would have shipped a false claim.
+      name = "orchestration: two runs per arm, and inconclusive is a result";
+      needle = "INCONCLUSIVE is a result";
+      scope = skills.apexOrchestration;
+    }
+    {
       name = "orchestration: Fable reviews premises but never authors the plan";
       needle = "Fable NEVER writes the plan";
     }

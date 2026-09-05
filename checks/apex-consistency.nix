@@ -138,6 +138,75 @@ let
       needle = "A drop the user cannot see at approval";
     }
     {
+      # Dependency-independent is not the same as file-disjoint. Two tasks in
+      # one wave writing the same file lose one edit silently, and the
+      # coordinator schedules the concurrency, so it owns the collision.
+      name = "tasks: a wave is file-disjoint, not merely dependency-independent";
+      needle = "FILE-DISJOINT, not merely dependency-independent";
+      scope = skills.apexStep02bTasks;
+    }
+    {
+      # The heading above is satisfied by a section with no test under it.
+      # This is the operative sentence, and it is pairwise on purpose: a union
+      # deduplicates, so it hides exactly the repeat being looked for.
+      name = "tasks: the disjointness test is pairwise and voids the wave";
+      needle = "If one path is named by more than one task, the wave is";
+      scope = skills.apexStep02bTasks;
+    }
+    {
+      # A planner-declared partition binds nothing unless the implementer is
+      # told the list is a boundary it may not widen.
+      name = "execute: the task's Files list is a boundary, not a hint";
+      needle = "is a BOUNDARY, not a hint";
+      scope = skills.apexStep03Execute;
+    }
+    {
+      name = "orchestration: a worktree is not the fix for a colliding wave";
+      needle = "Do NOT reach for a worktree to make a wave safe";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # The reason, not just the prohibition. Without it the rule reads as
+      # arbitrary and gets waived by the next reader.
+      name = "orchestration: why not — isolation does not integrate";
+      needle = "Isolation buys separation, not integration";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Worktree commits are invisible to the coordinator's git diff and to
+      # step-09's add/push. Unowned, the work reaches neither commit nor PR.
+      name = "orchestration: whoever spawns a worktree owns the merge";
+      needle = "owns the merge";
+      scope = skills.apexOrchestration;
+    }
+    {
+      name = "orchestration: a fresh worktree has no dependencies";
+      needle = "A new worktree has no `node_modules`";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Guarded separately from the dependency bullet: one needle covering a
+      # two-part clause leaves half of it free to disappear.
+      name = "orchestration: a fresh worktree's baseline is unproven";
+      needle = "The baseline is unproven";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Taken after the first edit, the reading cannot separate "I broke it"
+      # from "it was already broken". Scoped to step-00 because moving the
+      # clause to step-04 is precisely the failure the name forbids.
+      name = "init: the gate is read before the first edit, not after";
+      needle = "run BEFORE the first edit";
+      scope = skills.apexStep00Init;
+    }
+    {
+      # Recorded and never read is the same as not recorded. This is the only
+      # clause that makes the baseline do anything.
+      name = "validate: the baseline verdict is consumed, not just stored";
+      needle = "Baseline comparison";
+      scope = skills.apexStep04Validate;
+    }
+    {
       name = "orchestration: Fable reviews premises but never authors the plan";
       needle = "Fable NEVER writes the plan";
     }
@@ -163,7 +232,18 @@ let
     }
   ];
 
-  missingInvariants = builtins.filter (i: !(pkgs.lib.hasInfix i.needle corpus)) invariants;
+  # An invariant may pin itself to ONE step instead of the whole corpus.
+  # hasInfix over the concatenated corpus cannot tell "in step-00" from "moved
+  # into step-04" — and for a clause whose whole point is WHERE it runs, that
+  # distinction IS the rule. Measured 2026-09-05: relocating the baseline
+  # clause from apexStep00Init into apexStep04Validate left the derivation
+  # byte-identical, while the invariant guarding it is named "before the first
+  # edit, not after".
+  invariantScope = i: if i ? scope then i.scope else corpus;
+
+  missingInvariants = builtins.filter (
+    i: !(pkgs.lib.hasInfix i.needle (invariantScope i))
+  ) invariants;
 
   # ---------------------------------------------------------------------------
   # Mode table vs the UserPromptSubmit reminder.

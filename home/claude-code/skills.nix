@@ -257,6 +257,23 @@ in
     - **Flags**: which flags are active
     - **Working directory**: current project path
     - **Git status**: current branch, clean/dirty, uncommitted changes
+    - **Baseline**: the project's own gate, run BEFORE the first edit, and its
+      verdict recorded. Use the cheapest gate that still discriminates, and
+      use the SAME commands step-04 will run — a gate compared against a
+      different gate proves nothing. `pnpm typecheck && pnpm lint`,
+      `nix flake check --no-build`, `cargo check`.
+      - **Already red.** Name the failing check verbatim. The run continues,
+        and at validate ONLY that named failure may be attributed to the
+        baseline — every other red is this run's.
+      - **Dirty tree.** A baseline taken on a dirty tree measures someone
+        else's uncommitted work. Record the tree as dirty beside the verdict.
+      - **Too slow or privileged.** `nix flake check` builds the whole system
+        here. Do NOT run it: put the exact command on the "Run yourself" list
+        per ORCHESTRATION.md and record `baseline: skipped — {command} —
+        {reason}`. A skipped baseline is an unknown one: nothing at validate
+        may then be dismissed as pre-existing.
+      - **Diagnosis mode.** The red baseline IS the subject of the run.
+        Record it as the reproduction target, never as an excuse.
 
     ## Present Summary
 
@@ -267,6 +284,7 @@ in
     Flags: {active flags}
     Branch: {current branch}
     Status: {clean/dirty}
+    Baseline: {gate} -> {green | red: check | skipped: reason}
     ```
 
     ## Sub-Steps
@@ -328,6 +346,7 @@ in
     Date: {current date}
     Flags: {active flags}
     Branch: {branch name}
+    Baseline: {gate} -> {green | red: check | skipped: reason}
 
     ## Progress
     | Step | Status | Notes |
@@ -887,6 +906,48 @@ in
     Wave 3: T5 (depends on wave 2)
     ```
 
+    ## A wave is FILE-DISJOINT, not merely dependency-independent
+
+    Two tasks with no dependency on each other can still write the same file,
+    and the coordinator runs a wave's implementers concurrently. The second
+    writer wins, silently, and the loss surfaces later as a change that
+    "reverted itself".
+
+    So the `Files:` field above is not documentation, it is the partition key:
+
+    - Take the `Files:` lists of the tasks in the wave and compare them
+      PAIRWISE. If one path is named by more than one task, the wave is
+      INVALID. Do not deduplicate first: a union hides exactly the repeat you
+      are looking for.
+    - Fix it by splitting, never by hoping: move one of the colliding tasks
+      into a later wave, or merge the two tasks into one that owns the file.
+      A collision is never a blocker — the wave just gets narrower, and a wave
+      of width 1 is a correct answer, not a failure.
+    - Two tasks editing different regions of one large file still collide.
+      This repo's `home/claude-code/skills.nix` holds every skill, so any two
+      skill tasks serialise. Barrel files are the common case: the task that
+      adds a module also owns its `index.ts` re-export, and no other task in
+      that wave may name `index.ts`.
+    - `Files:` must be concrete repository paths, comma-separated. A
+      directory, a glob, `(various)`, `TBD` or "the auth module" is NOT a
+      `Files:` value — it is an admission the task is not ready to be
+      scheduled. Give it its own wave, or send it back to step-02-plan. "It
+      might touch a few things" is how a collision gets planned in.
+
+    State the disjointness check per wave, so the coordinator can see it held
+    rather than assume it:
+
+    ```
+    Wave 1: T1, T2 — pairwise disjoint
+            T1: src/types.ts, src/index.ts   T2: migrations/003.sql
+    Wave 2: T3, T4 — pairwise disjoint
+            T3: src/api/user.ts              T4: src/ui/Form.tsx
+    ```
+
+    This is cheaper than isolating the agents from each other, and it removes
+    the collision at the source rather than containing it. Isolation is the
+    answer to a DIFFERENT problem — see the worktree rule in ORCHESTRATION.md.
+
     Return to step-02-plan flow.
   '';
 
@@ -923,6 +984,12 @@ in
     - Reuse existing utilities and patterns — don't reinvent
     - If you encounter something unexpected, note it but stay on plan
     - If a task is blocked, skip it and note the blocker
+    - Your task's `Files:` list is a BOUNDARY, not a hint. Editing a file it
+      does not name breaks the wave's disjointness and can silently overwrite
+      a concurrent implementer. If the work needs a file outside the list — a
+      barrel `index.ts`, a snapshot, a lockfile — STOP, do not edit it, and
+      return it in your summary as `OUT_OF_SCOPE_FILE: {path} — {why}`. The
+      coordinator re-plans; you do not widen your own scope.
 
     ## If test-first (`-f`) is active
 
@@ -963,7 +1030,8 @@ in
     1. **Acceptance Criteria**: go through each AC from the plan.
        For each one, verify it is actually implemented. Check the code.
 
-    2. **Build Check**: run only the SAFE checks (see ORCHESTRATION.md):
+    2. **Build Check**: run only the SAFE checks (see ORCHESTRATION.md), and
+       run the SAME commands step-00 recorded as the baseline:
        - TypeScript: typecheck (`pnpm typecheck` or `npx tsc --noEmit`)
        - Lint: `pnpm lint` or equivalent
        - Build: `pnpm build` or equivalent
@@ -981,6 +1049,12 @@ in
     5. **Test-first integrity (`-f`)**: diff the test files against the version
        the test-author agent produced. Any edit, deletion or weakened assertion
        by the implementer is a finding — the tests were the spec, not a draft.
+
+    6. **Baseline comparison**: compare every result to the step-00 baseline
+       verdict, before opening a correction round. Red at init and red now →
+       report `pre-existing (baseline red at init)`. Green at init and red now
+       → finding. Baseline recorded as skipped → no red may be dismissed at
+       all; say so explicitly rather than guessing which side it came from.
 
     ## Divergence check (`-2`)
 
@@ -1831,6 +1905,54 @@ in
     - **Execute (parallel waves)**: when `-k` produced independent waves, the coordinator spawns the implementer agents per wave
       directly; there is no separate "execute agent" wrapping them.
 
+    Before spawning a wave, re-check its file-disjointness (step-02b) by
+    re-reading the persisted task list at the plan path — the phase summary is
+    bounded and does not carry the per-task `Files:` lists. The coordinator
+    schedules the concurrency, so it owns the collision.
+
+    ## Worktree isolation — for a different problem than collisions
+
+    The harness already provides isolation, so nothing here builds it: an
+    `Agent` spawn takes `isolation: "worktree"` and gets its own git worktree,
+    auto-cleaned when it changed nothing. `EnterWorktree` moves the WHOLE
+    session's working directory and refuses to create a second one from
+    inside a worktree, so it is the wrong instrument for parallel subagents.
+
+    Do NOT reach for a worktree to make a wave safe. File-disjoint waves solve
+    that at the source, and isolating implementers creates a worse problem:
+    their edits land in another directory on another branch, and someone has
+    to merge them back. Isolation buys separation, not integration.
+
+    Whoever spawns the worktree owns the merge, and owes three things before
+    the run can close: the worktree's branch name recorded in the phase
+    summary, its diff read explicitly (`git -C {worktree} diff`) because the
+    coordinator's `git diff` cannot see it, and that branch merged into the
+    run's own branch BEFORE step-09 — otherwise the work reaches neither the
+    commit nor the PR.
+
+    Spawn WITH `isolation: "worktree"` when the work itself is hostile to the
+    checkout you are standing in:
+    - it installs, upgrades or removes dependencies
+    - it runs a destructive or long migration you may want to abandon whole
+    - it is an experiment whose likeliest outcome is `git checkout .`
+    - two whole builds cannot share one checkout. Note this is NOT `-2`,
+      which stays scoped to the core pure functions in a scratch file and
+      needs no worktree.
+
+    The test is the WORK, not the situation. Work hostile to this checkout
+    earns a worktree even when it sits inside a wave; a collision never earns
+    one, and is still fixed by splitting the wave. When both descriptions fit,
+    split the wave first, then decide the worktree on the work alone.
+
+    Two things the harness does NOT do inside a fresh worktree, both of which
+    have to be in the brief or the agent starts on sand:
+    - **Dependencies are absent.** A new worktree has no `node_modules`, no
+      `target/`, no `.venv`. Name the install command explicitly — `pnpm
+      install`, `cargo build`, `uv sync` — and expect it to cost minutes.
+    - **The baseline is unproven.** Run the project's own gate there before
+      the first edit, and record the result. Without it, a red check at the
+      end cannot be told apart from a red check that was already there.
+
     ## Phase brief (what the coordinator passes IN)
 
     Every spawn must include, per Anthropic's worker-brief contract:
@@ -1838,7 +1960,9 @@ in
     2. **Output format** — the exact summary schema below (mandatory).
     3. **Context** — the task + the PRECEDING phase summaries (distilled), plus
        the on-disk plan path. Never the raw transcript.
-    4. **Tools & boundaries** — which tools to use, what NOT to touch.
+    4. **Tools & boundaries** — which tools to use, what NOT to touch. For an
+       implementer in a `-k` wave, "what NOT to touch" is literal: pass the
+       task's `Files:` list verbatim as the only paths it may write.
 
     ## Phase summary (what each phase returns OUT — fixed schema)
 

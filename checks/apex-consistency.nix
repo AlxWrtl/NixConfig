@@ -237,6 +237,15 @@ let
       scope = skills.apexOrchestration;
     }
     {
+      # The predicate the eval-suite routing guard depends on. Reword it and
+      # that guard goes quiet, letting the suite claim /debug again. Measured
+      # 2026-09-05: "INSIDE apex" -> "inside APEX" left the derivation
+      # byte-identical while the suite was free to drift.
+      name = "handoffs: diagnosis is a mode, not an exit";
+      needle = "Diagnosis stays INSIDE apex";
+      scope = skills.skillApex;
+    }
+    {
       name = "orchestration: Fable reviews premises but never authors the plan";
       needle = "Fable NEVER writes the plan";
     }
@@ -386,12 +395,80 @@ let
   ladderMisplaced =
     !(idxOf "**Premises**" < idxOf "**Scope ladder**" && idxOf "**Scope ladder**" < idxOf "**Tasks**");
 
+  # ---------------------------------------------------------------------------
+  # The eval-suite drifted for months while nothing looked at it. schliff reads
+  # it and scores 91/100, but schliff scores the SHAPE — how many triggers, how
+  # many typed assertions — and cannot know that a case asserts behaviour the
+  # skill stopped having. It happily graded a suite claiming diagnosis exits to
+  # /debug, months after diagnosis became a mode of APEX.
+  #
+  # fromJSON rather than string matching: it inspects the structure, and a
+  # malformed suite becomes an eval error instead of a file nobody parses.
+  evalSuite = builtins.fromJSON skills.apexEvalSuite;
+
+  # EVERY prompt, not just the triggers. Measured 2026-09-05: a dead flag
+  # planted in a test_case prompt left the derivation byte-identical while the
+  # same flag in a trigger went red — the guard covered a third of its target.
+  suitePrompts = builtins.concatStringsSep "\n" (
+    map (c: c.prompt) (evalSuite.triggers ++ evalSuite.test_cases ++ evalSuite.edge_cases)
+  );
+
+  # Flags typed in a prompt must be flags the skill still declares. This is the
+  # drift that recurs — the suite outlived -a and -s by months. The rows of the
+  # skill's own table are the source; nothing is restated here.
+  suiteFlags = pkgs.lib.unique (
+    map (m: "-" + builtins.head m) (
+      builtins.filter builtins.isList (builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" suitePrompts)
+    )
+  );
+  unknownSuiteFlags = builtins.filter (
+    f: !(pkgs.lib.hasInfix "| ${f} |" skills.skillApex)
+  ) suiteFlags;
+
+  # The section sizes schliff scores, verified against its own cliffs:
+  # triggers < 8 caps the sub-score at 60, quality wants 3+ test_cases, edges
+  # wants 5+. schliff counts WELL-FORMED cases, so three assertion-less stubs
+  # would satisfy a length check here and score zero there.
+  wellFormedCases = builtins.filter (c: (c.assertions or [ ]) != [ ]) evalSuite.test_cases;
+  suiteTooThin =
+    builtins.length evalSuite.triggers < 8
+    || builtins.length wellFormedCases < 3
+    || builtins.length evalSuite.edge_cases < 5;
+
+  # Conditional on the skill's own clause: this only fires while the skill says
+  # diagnosis is internal, so changing the routing changes the check with it.
+  #
+  # Scoped to the NARRATIVE fields. Searching the whole suite banned the string
+  # everywhere, including inside an assertion whose job is to forbid /debug at
+  # runtime — the guard was rejecting the strongest possible defence against
+  # the regression it exists to catch.
+  #
+  # Honest limit: this catches the literal path, not a paraphrase. "hands it to
+  # the debug command" passes. The predicate below is guarded as an invariant
+  # so at least the clause it depends on cannot be reworded into silence.
+  diagnosisIsInternal = pkgs.lib.hasInfix "Diagnosis stays INSIDE apex" corpus;
+  suiteNarrative = builtins.concatStringsSep "\n" (
+    map (c: c.expected_behavior or "") evalSuite.edge_cases
+    ++ map (a: a.description) (builtins.concatMap (c: c.assertions) evalSuite.test_cases)
+  );
+  suiteContradictsRouting = diagnosisIsInternal && pkgs.lib.hasInfix "/debug" suiteNarrative;
+
   fail = msg: throw "apex-consistency: ${msg}";
 
 in
 pkgs.runCommand "apex-consistency-check" { } (
   if missingInvariants != [ ] then
     fail ("lost invariant(s): " + builtins.concatStringsSep "; " (map (i: i.name) missingInvariants))
+  else if unknownSuiteFlags != [ ] then
+    fail (
+      "the eval-suite types flag(s) the skill no longer declares: "
+      + builtins.concatStringsSep ", " unknownSuiteFlags
+      + ". schliff scores the suite's shape and cannot see this — a trigger prompt for a removed flag grades as well as a correct one."
+    )
+  else if suiteContradictsRouting then
+    fail "the eval-suite still routes diagnosis to /debug while the skill says diagnosis stays INSIDE apex. It graded 91/100 in that state for months, because schliff counts cases and cannot read them against the skill."
+  else if suiteTooThin then
+    fail "the eval-suite lost a section: schliff scores triggers, test_cases (3+) and edge_cases (5+), so gutting one costs skill score silently. It fails here instead."
   else if ladderMisplaced then
     fail "the scope ladder is no longer between Premises and Tasks in step-02-plan. It needs the restated target to judge against and it decides which tasks exist, so it runs after the first and before the second."
   else if danglingSteps != [ ] then

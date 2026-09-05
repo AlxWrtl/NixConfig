@@ -1545,12 +1545,12 @@ in
         {"prompt": "run apex with -q to clarify before planning the payment module", "should_trigger": true},
         {"prompt": "apex -k -v for the new dashboard feature", "should_trigger": true},
         {"prompt": "apex -x -t -pr build the export endpoint", "should_trigger": true},
-        {"prompt": "fix this bug in the login form", "should_trigger": false},
+        {"prompt": "fix this bug in the login form", "should_trigger": true},
+        {"prompt": "rename a single variable in utils.ts", "should_trigger": true},
         {"prompt": "what does this function do?", "should_trigger": false},
         {"prompt": "run the tests and tell me what fails", "should_trigger": false},
         {"prompt": "review this PR for code quality", "should_trigger": false},
-        {"prompt": "explain how the caching layer works", "should_trigger": false},
-        {"prompt": "rename a single variable in utils.ts", "should_trigger": false}
+        {"prompt": "explain how the caching layer works", "should_trigger": false}
       ],
       "test_cases": [
         {
@@ -1559,16 +1559,19 @@ in
           "assertions": [
             {"type": "contains", "value": "git status", "description": "Step 00 must check git status before starting"},
             {"type": "contains", "value": "Flags", "description": "Step 00 must parse and record active flags"},
-            {"type": "excludes", "value": "implement", "description": "Step 00 must not start implementing — only initialize"},
+            {"type": "pattern", "value": "[Bb]aseline", "description": "Step 00 records the project gate before the first edit"},
+            {"type": "excludes", "value": "I wrote the", "description": "Step 00 initializes; it does not start writing code"},
             {"type": "pattern", "value": "00|[Ii]nitializ", "description": "Must explicitly reference step 00 initialization"}
           ]
         },
         {
-          "name": "complexity-gate-debug",
+          "name": "mode-gate-diagnosis",
           "prompt": "apex the login button is broken and throws an error on click",
           "assertions": [
-            {"type": "pattern", "value": "[Gg]ate|[Dd]iagnos|[Dd]ebug", "description": "Must detect a diagnosis task at the complexity gate"},
-            {"type": "pattern", "value": "/debug|debug", "description": "Must redirect bug/diagnosis tasks to /debug"}
+            {"type": "pattern", "value": "[Gg]ate|[Dd]iagnos", "description": "Mode Gate must pick the diagnosis mode"},
+            {"type": "pattern", "value": "[Rr]eproduc", "description": "Diagnosis analyze reproduces the error before planning a fix"},
+            {"type": "pattern", "value": "debugger agent", "description": "Execute phase spawns the debugger agent as implementer"},
+            {"type": "excludes", "value": "open a pull request", "description": "Diagnosis mode ships nothing: the fix stops on its branch"}
           ]
         },
         {
@@ -1612,6 +1615,25 @@ in
           ]
         },
         {
+          "name": "plan-scope-ladder",
+          "prompt": "apex add a retry helper around the existing fetch wrapper. We are at step 02.",
+          "assertions": [
+            {"type": "pattern", "value": "[Ll]adder|[Rr]ung", "description": "The plan must walk the scope ladder before proposing to create anything"},
+            {"type": "pattern", "value": "file:line", "description": "Rung 2 is a claim about the codebase and carries its file:line"},
+            {"type": "excludes", "value": "not explicitly requested", "description": "The ladder questions the solution, never the request"}
+          ]
+        },
+        {
+          "name": "wave-file-disjoint",
+          "prompt": "apex -k build the export feature: types, endpoint, UI form and route wiring",
+          "assertions": [
+            {"type": "pattern", "value": "[Ww]ave", "description": "-k must group tasks into waves"},
+            {"type": "pattern", "value": "Files:", "description": "Each task must carry its Files: list"},
+            {"type": "pattern", "value": "disjoint|[Pp]airwise", "description": "A wave must be file-disjoint, checked pairwise"},
+            {"type": "excludes", "value": "combined file list", "description": "A deduplicated list hides the repeat being looked for"}
+          ]
+        },
+        {
           "name": "per-step-effort",
           "prompt": "Which apex steps use high reasoning effort and which use low?",
           "assertions": [
@@ -1637,11 +1659,13 @@ in
         },
         {
           "name": "diagnosis-task",
-          "category": "redirect",
+          "category": "mode",
           "prompt": "apex why is the app crashing on startup?",
-          "expected_behavior": "Complexity gate detects a diagnosis task and redirects to /debug instead of running the workflow.",
+          "expected_behavior": "The Mode Gate selects diagnosis mode and runs the chain inside APEX; the debugger agent implements from the execute phase.",
           "assertions": [
-            {"type": "pattern", "value": "[Dd]iagnos|[Dd]ebug|crash", "description": "Must detect diagnosis and redirect to /debug"}
+            {"type": "pattern", "value": "[Mm]ode [Gg]ate", "description": "Must name the gate that selects the mode"},
+            {"type": "pattern", "value": "debugger agent|execute phase", "description": "The chain runs inside APEX, implemented by the debugger agent"},
+            {"type": "excludes", "value": "instead of apex", "description": "Nothing runs in place of the chain"}
           ]
         },
         {
@@ -1668,9 +1692,11 @@ in
           "name": "huge-codebase",
           "category": "scale",
           "prompt": "apex refactor the entire monorepo — 500+ files across 12 services",
-          "expected_behavior": "Recommends scoping into milestones before running APEX per milestone.",
+          "expected_behavior": "APEX runs; the Mode Gate picks high-stakes depth. No pre-APEX triage exists — the plan's Tasks section carries the breakdown, and -k groups it into file-disjoint waves.",
           "assertions": [
-            {"type": "pattern", "value": "[Ss]cope|[Ss]plit|[Mm]ilestone|[Pp]hase|[Ss]ub-task", "description": "Must recommend breaking the refactor into milestones"}
+            {"type": "pattern", "value": "[Mm]ode [Gg]ate|high-stakes", "description": "Depth is chosen by the Mode Gate, not by declining the task"},
+            {"type": "pattern", "value": "[Ww]ave|[Tt]ask|-k", "description": "The breakdown lives in the plan's tasks, not in a pre-APEX step"},
+            {"type": "excludes", "value": "before running apex", "description": "Nothing runs before APEX — the gate picks depth, never whether"}
           ]
         },
         {
@@ -1680,6 +1706,17 @@ in
           "expected_behavior": "Warns that executing without analysis/planning risks untested, convention-violating code and recommends the linear spine.",
           "assertions": [
             {"type": "pattern", "value": "[Ww]arn|[Rr]isk|[Ss]kip|[Ss]equen|[Ss]pine", "description": "Must warn about skipping analysis/planning"}
+          ]
+        },
+        {
+          "name": "baseline-already-red",
+          "category": "missing",
+          "prompt": "apex add a health endpoint, but the test suite is already failing before I start",
+          "expected_behavior": "step-00 records the red baseline and names the failing check; the run proceeds, and at validate only that named failure may be attributed to the baseline.",
+          "assertions": [
+            {"type": "pattern", "value": "[Bb]aseline", "description": "Must record a baseline at init"},
+            {"type": "pattern", "value": "[Bb]efore the first edit", "description": "The gate is read before the first edit, not after"},
+            {"type": "excludes", "value": "pre-existing", "description": "Only the NAMED baseline failure may be excused at validate; a blanket 'pre-existing' is the failure mode"}
           ]
         },
         {

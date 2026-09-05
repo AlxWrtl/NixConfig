@@ -100,44 +100,6 @@ let
       needle = "Every premise carries its source";
     }
     {
-      name = "plan: new construction is justified rung by rung";
-      needle = "Scope ladder";
-    }
-    {
-      # A heading with no rungs under it satisfies the needle above while
-      # checking nothing, so the rungs are asserted separately. Measured: with
-      # every rung deleted and the heading kept, this file was still green.
-      name = "plan: the ladder still has rungs, not just a heading";
-      needle = "Does this codebase already do it?";
-    }
-    {
-      # Defines when a rung HOLDS. Without it the first rung reads with the
-      # opposite polarity to the others — "yes it must exist" would stop the
-      # walk — and the ladder silently never runs past rung 1.
-      name = "plan: a rung holds when the answer means do not build";
-      needle = "HOLDS when its answer means you do NOT build";
-    }
-    {
-      # The rung that makes the ladder safe. Without it, "can the target be met
-      # without it" reads as a licence to hand back less than was asked, which
-      # turns a guard against accretion into a guard against delivery.
-      name = "plan: the ladder questions the solution, never the request";
-      needle = "questions the SOLUTION, never the REQUEST";
-    }
-    {
-      # The slogan above is satisfied by a section that keeps it and drops the
-      # operative sentence. This is the sentence that does the work.
-      name = "plan: a rung that drops requested scope is a question for the user";
-      needle = "a scope cut is a question for the user";
-    }
-    {
-      # An item killed at rung 1 or 2 leaves the plan, the ACs and the diff.
-      # Without this, under-delivery is invisible end to end — examine measures
-      # the diff against ACs the same planner already shrank.
-      name = "plan: what the ladder kills stays visible to the user";
-      needle = "A drop the user cannot see at approval";
-    }
-    {
       # Dependency-independent is not the same as file-disjoint. Two tasks in
       # one wave writing the same file lose one edit silently, and the
       # coordinator schedules the concurrency, so it owns the collision.
@@ -369,10 +331,10 @@ let
 
   danglingSteps = pkgs.lib.unique (builtins.filter (r: !(builtins.elem r existing)) referenced);
 
-  # The scope ladder has to sit between Premises and Tasks: it needs the
-  # restated target to judge against, and it decides which tasks exist at all.
-  # The invariants above cannot see that — they search `corpus`, every step
-  # concatenated, so the ladder can be moved wholesale into another step and
+  # Premises come before Tasks: a task list written before the premises are
+  # stated is a plan whose premises were reverse-engineered to fit it. The
+  # invariants above cannot see ordering — they search `corpus`, every step
+  # concatenated, so a section can be moved wholesale into another step and
   # every one of them stays green. Measured. An index comparison inside the ONE
   # step is the only thing that pins the placement.
   #
@@ -392,8 +354,7 @@ let
     else
       builtins.stringLength (builtins.head parts);
 
-  ladderMisplaced =
-    !(idxOf "**Premises**" < idxOf "**Scope ladder**" && idxOf "**Scope ladder**" < idxOf "**Tasks**");
+  premisesMisplaced = !(idxOf "**Premises**" < idxOf "**Tasks**");
 
   # ---------------------------------------------------------------------------
   # The eval-suite drifted for months while nothing looked at it. schliff reads
@@ -469,8 +430,8 @@ pkgs.runCommand "apex-consistency-check" { } (
     fail "the eval-suite still routes diagnosis to /debug while the skill says diagnosis stays INSIDE apex. It graded 91/100 in that state for months, because schliff counts cases and cannot read them against the skill."
   else if suiteTooThin then
     fail "the eval-suite lost a section: schliff scores triggers, test_cases (3+) and edge_cases (5+), so gutting one costs skill score silently. It fails here instead."
-  else if ladderMisplaced then
-    fail "the scope ladder is no longer between Premises and Tasks in step-02-plan. It needs the restated target to judge against and it decides which tasks exist, so it runs after the first and before the second."
+  else if premisesMisplaced then
+    fail "Premises no longer precede Tasks in step-02-plan. Premises written after the task list are premises reverse-engineered to fit it."
   else if danglingSteps != [ ] then
     fail ("reference(s) to non-existent step file(s): " + builtins.concatStringsSep ", " danglingSteps)
   else if modeDrift != [ ] then

@@ -335,6 +335,40 @@ it has not lost the clauses it must never lose, and that the mode table and
 the injected routing line still agree. Both had drifted silently before it
 existed — exactly as this README did.
 
+### Rules are measured, not argued
+
+A clause in the skill is prose the model reads. `apex-consistency` asserts it
+is still present. Neither shows it changes behaviour — a rule can read well,
+pass review, and do nothing.
+
+So a rule that governs every future run earns its place by flipping a
+mechanical predicate in a paired probe: K distinct tasks, each played in two
+arms, identical but for the rule. The predicate is declared before any run,
+in a rubric that also lists what may not be written afterwards.
+
+| Rule | Control | Treatment | Verdict |
+|------|---------|-----------|---------|
+| `Files:` is a boundary | 3/6 edited outside the list | 0/6 | kept |
+| Baseline read before the first edit | 0/2 ran the gate | 2/2 | kept |
+| Scope ladder | 8/8 already correct | 8/8 | **removed** |
+
+The ladder was five rungs interrogating anything a plan proposed to build. It
+read well and survived review. Across three benches and 40 paired runs it
+never changed an outcome once, and it was removed rather than kept on the
+argument that it surely helps somewhere.
+
+Two of those three benches were thrown away as invalid: one leaked the answer
+through the working directory, the other measured a failure mode the models do
+not have — the control arm found every existing helper without being told to.
+A fourth, aimed at fresh-context isolation, failed its own pre-declared gate
+before a single arm ran: zero defects in eight implementations, so there was
+nothing for either arm to find. Budget for the probe being wrong before the
+rule is.
+
+Fresh context per phase therefore stands as **unmeasured, not validated** —
+kept because context hygiene is arithmetic rather than a claim, and because
+independent review has repeatedly caught in this repo what self-review missed.
+
 ### Usage
 
 ```

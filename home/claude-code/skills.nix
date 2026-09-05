@@ -1886,6 +1886,46 @@ in
        failing output. Never weaken a check to make it pass, never declare success
        on partial green.
 
+    ## Pressure-test — when the diff changes APEX's own rules
+
+    `apex-consistency` asserts a clause is PRESENT. Presence is not effect. On
+    2026-09-05 three rules shipped in one session that read well and did
+    nothing: a test written over a set union, which deduplicates and so could
+    never fire; a first rung phrased with the opposite polarity to the rest,
+    which stopped the walk before it began; a baseline clause that forbade the
+    one use it existed for. Independent review caught all three. The author
+    caught none.
+
+    So a diff that changes text governing future runs — a step file, a rule
+    file, a hook's prose — earns its merge by changing BEHAVIOUR in a paired
+    probe:
+
+    1. **Declare the predicate FIRST**, before running anything, as something
+       a grep decides: a named token appears in the output, a specific file
+       was written, a specific file was NOT written. Never "the answer is
+       better". A behavioural runner was built here before and measured 4/4,
+       2/4, 3/4, 3/4 on one identical case — it drowned because its assertions
+       matched free-form prose, so the words the model happened to use counted
+       as the result.
+    2. **One fixture, two arms.** Same prompt, same model, fresh context each
+       time: once with the rule absent from the brief, once with it present.
+       Change nothing else between the arms.
+    3. **The rule passes only if the predicate FLIPS** — false in the without
+       arm, true in the with arm. True in both means the model already did it
+       and the rule buys nothing. False in both means the rule never reaches
+       behaviour. Both outcomes are findings about the rule, not about the
+       probe.
+    4. **Two runs per arm, minimum.** Pairing cancels common-mode noise; it
+       does not abolish variance. Disagreement inside an arm is the signal
+       that one run would have lied.
+    5. **INCONCLUSIVE is a result.** Arms that disagree run-to-run mean the
+       probe cannot decide. Say so. It does not block the merge — it withdraws
+       the claim that the rule was tested, which is the only honest thing a
+       noisy probe can report.
+
+    Cost is four subagents. Spend it on rules that govern every future run,
+    not on wording.
+
     ## When this applies
 
     - Always active. There is no inline mode to opt out into — the trivial tier

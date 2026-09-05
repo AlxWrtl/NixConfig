@@ -690,47 +690,7 @@ in
        after code exists. A stronger planner does not fix this: reasoning models
        rarely flag a false premise on their own.
 
-    2. **Scope ladder** — for every thing this plan proposes to CREATE — a
-       file, a module, a function, an abstraction, a dependency, or a new block
-       inside a file that already exists — walk these rungs in order. A rung
-       HOLDS when its answer means you do NOT build the thing. Stop at the
-       first that holds and record it on the task that would have created it
-       (section 3). An item with no rung recorded has not been through the
-       ladder, and the plan is not ready to present.
-
-       1. Can the target be met without it existing at all?
-       2. Does this codebase already do it? — name the `file:line`
-       3. Does something already available do it — the standard library, the
-          framework or platform in use, or a dependency already installed?
-       4. Is it one line at the call site?
-       5. Only then: the smallest implementation that meets the target
-          restated above.
-
-       A rung that cannot apply to the artefact — a standard library says
-       nothing about prose — is recorded `n/a`, never answered for the sake of
-       answering.
-
-       **The ladder questions the SOLUTION, never the REQUEST.** The scope the
-       user asked for is the deliverable. This exists to stop the plan from
-       inventing machinery around that scope — not to hand back less than was
-       asked. A rung that would drop something the user asked for, or anything
-       the request cannot be correct, safe or complete without, is not a rung:
-       it is a scope cut, and a scope cut is a question for the user, never a
-       planner's decision.
-
-       Every item the ladder KILLS is listed under **Explicitly excluded
-       scope** above, with the rung that killed it and its `file:line` when it
-       has one. A drop the user cannot see at approval is a drop nobody agreed
-       to.
-
-       Lazy about the solution, never about reading: the ladder runs AFTER the
-       premises above, never instead of understanding the problem. Rung 2 is a
-       claim about the codebase, so it obeys the sourcing rule — "already
-       handled" without a `file:line` is not rung 2, it is a guess. And no rung
-       overrides a Constraining pattern from step-01: the smaller shape still
-       goes through the layer the codebase mandates.
-
-    3. **Tasks** — numbered, ordered by dependency:
+    2. **Tasks** — numbered, ordered by dependency:
        ```
        T1: Create types/interfaces in types.ts
        T2: Add database migration
@@ -739,21 +699,21 @@ in
        T5: Wire up route (depends on T3, T4)
        ```
 
-    4. **Acceptance Criteria** — specific, verifiable conditions:
+    3. **Acceptance Criteria** — specific, verifiable conditions:
        ```
        AC1: User can create a new item via the form
        AC2: Validation errors display inline
        AC3: Success redirects to the list page
        ```
 
-    5. **Testing Strategy** (if -t flag active):
+    4. **Testing Strategy** (if -t flag active):
        ```
        - Unit tests for validation logic
        - Integration test for API endpoint
        - Component test for form submission
        ```
 
-    6. **Risks & Mitigations**
+    5. **Risks & Mitigations**
 
     ## Create TodoWrite Checklist
 
@@ -1615,12 +1575,12 @@ in
           ]
         },
         {
-          "name": "plan-scope-ladder",
+          "name": "plan-premises-sourced",
           "prompt": "apex add a retry helper around the existing fetch wrapper. We are at step 02.",
           "assertions": [
-            {"type": "pattern", "value": "[Ll]adder|[Rr]ung", "description": "The plan must walk the scope ladder before proposing to create anything"},
-            {"type": "pattern", "value": "file:line", "description": "Rung 2 is a claim about the codebase and carries its file:line"},
-            {"type": "excludes", "value": "not explicitly requested", "description": "The ladder questions the solution, never the request"}
+            {"type": "pattern", "value": "file:line", "description": "A claim about the codebase carries its file:line, never recollection"},
+            {"type": "pattern", "value": "[Pp]remise", "description": "The plan states its premises before any task"},
+            {"type": "excludes", "value": "not explicitly requested", "description": "The planner narrows the solution, never the request"}
           ]
         },
         {
@@ -1928,10 +1888,10 @@ in
     `apex-consistency` asserts a clause is PRESENT. Presence is not effect. On
     2026-09-05 three rules shipped in one session that read well and did
     nothing: a test written over a set union, which deduplicates and so could
-    never fire; a first rung phrased with the opposite polarity to the rest,
-    which stopped the walk before it began; a baseline clause that forbade the
-    one use it existed for. Independent review caught all three. The author
-    caught none.
+    never fire; a checklist whose first item was phrased with the opposite
+    polarity to the rest, which stopped the walk before it began; a baseline
+    clause that forbade the one use it existed for. Independent review caught
+    all three. The author caught none.
 
     So a diff that changes text governing future runs — a step file, a rule
     file, a hook's prose — earns its merge by changing BEHAVIOUR in a paired
@@ -1962,6 +1922,21 @@ in
 
     Cost is four subagents. Spend it on rules that govern every future run,
     not on wording.
+
+    A rule that survives review can still fail the probe, and then it goes.
+    The scope ladder — five rungs interrogating anything the plan proposed to
+    build — read well, passed review, and was carried by this file for weeks.
+    Measured on 2026-09-05 across three benches and 40 paired runs: 14 valid
+    pairs, ONE discordant, none at significance. The control arm — a planner
+    given sourced premises and `Files:` boundaries and nothing else — already
+    found the existing helper, reused it, declined the adjacent defect and
+    stayed in one file. The ladder was removed rather than kept on the
+    argument that it surely helps somewhere.
+
+    Two of the three benches were also thrown away as invalid, and the last
+    one's expected answer was wrong twice: the fixture named a helper whose
+    tie-break reintroduced the very bug the task reported, and both arms were
+    right to refuse it. Budget for the probe being wrong before the rule is.
 
     ## When this applies
 

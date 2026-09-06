@@ -108,6 +108,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   └── claude-code/             # settings, hooks, agents, skills, commands, rules…
 ├── checks/                      # Flake checks (see Quality Gates)
 │   ├── apex-consistency.nix
+│   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
 │   ├── claude-config.nix
 │   └── readme-consistency.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
@@ -368,6 +369,29 @@ rule is.
 Fresh context per phase therefore stands as **unmeasured, not validated** —
 kept because context hygiene is arithmetic rather than a claim, and because
 independent review has repeatedly caught in this repo what self-review missed.
+
+The same discipline was then turned on `apex-consistency` itself, and it did
+not survive either. A mutation harness was built to answer "does each invariant
+go red when what it guards disappears?" — and the check is a substring test,
+so deleting a needle turns it red *always* (33/33, a tautology) while keeping
+the needle means the invariant can never fire at all (0/33, every red traced to
+a neighbour). **A substring test cannot verify that a rule survived, only that
+its own needle did.** The harness was deleted rather than shipped looking
+useful; `nix flake check` already turns red on a vanished needle unaided.
+
+What is decidable without building anything is the SHAPE of the needle:
+
+```
+"Max 3 correction rounds"   deleting the rule deletes the needle  -> red
+"Scope ladder"              deleting the rungs leaves the heading -> green
+```
+
+The second is the September failure verbatim — the ladder invariant stayed
+green after all five rungs were deleted, and had looked healthy for weeks.
+`checks/audit-apex-needles.py` sorts every needle into SENTENCE / SHORT /
+HEADING so the question takes one command. It is advisory, needs a reader, and
+is deliberately not wired into `nix flake check`: a heuristic that blocks a
+merge only teaches people to route around it.
 
 ### Usage
 

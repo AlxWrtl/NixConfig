@@ -119,7 +119,21 @@ in
         # of every `-n` session. allowWrite EXTENDS the writable set; it never
         # re-opens a denyWrite path. The vault itself stays Bash-unwritable
         # (outside cwd): session notes go through the Write tool, as before.
-        allowWrite = [ "${homeDirectory}/GraphVault" ];
+        # rtk keeps its trust store, command history and tee logs under its
+        # data dir. Inside the sandbox those writes fail, and rtk does NOT
+        # error — it falls back to unfiltered pass-through, silently. Measured
+        # on 2026-09-05, same command, same second, only the sandbox differing:
+        #   rtk nix-instantiate --parse modules/packages.nix
+        #   inside  -> 1045 bytes (raw)
+        #   outside ->  211 bytes (filtered)
+        # So every output filter was dead in-session while looking configured:
+        # `rtk trust --list` showed the file trusted and `rtk hook check` showed
+        # the rewrite. Only a byte count caught it.
+        # Scope is the data dir alone — no credentials live there.
+        allowWrite = [
+          "${homeDirectory}/GraphVault"
+          "${homeDirectory}/Library/Application Support/rtk"
+        ];
       };
       network = {
         # All domains allowed (web analysis, design, docs, APIs)

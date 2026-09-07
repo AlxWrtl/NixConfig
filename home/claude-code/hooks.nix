@@ -413,6 +413,126 @@
 
   hookBlockMainBash = ''
     #!/usr/bin/env node
+
+    // Branch-per-change workflow: create a branch BEFORE editing code, then
+    // push that branch — never master/main. commit/push/merge/rebase while on
+    // master/main are all hard-denied. Bringing code to master = a manual PR
+    // step by the user on GitHub, never a Claude action.
+    //
+    // The guard is a TABLE: one rule per family of commands, each rule readable
+    // on its own line, each carrying the WHY that put it there. A command is
+    // denied as soon as ONE rule matches ANYWHERE in it — inside a quoted
+    // string included, which is a deliberate over-approximation.
+
+    // Shared prefix, `git` plus its global options: they may sit between `git`
+    // and the verb, so `git -C <dir> commit` has to match too — the narrower
+    // /git\s+(commit|...)/ let every `git -C ... commit` through, on master
+    // included. Alternation order is load-bearing: `-C <path>` and `-c <k=v>`
+    // take a SEPARATE argument, so they must be tried BEFORE the generic option
+    // branch — that branch would otherwise consume `-C` alone and leave the
+    // path sitting where the verb is expected, reopening the hole.
+    const GIT = /\bgit(?:\s+(?:-[Cc]\s+\S+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
+
+    // End of a verb, or of a short-option cluster. NOT `\b`: `\b` only asks for
+    // a word/non-word boundary, and `-` is a non-word char, so it cannot tell
+    // the end of a verb from the start of a compound subcommand. Concrete case:
+    // `git merge-base HEAD origin/master` — a pure read — was denied because
+    // `\b` matched inside `merge-base`. Same for `merge-tree`, `commit-tree`
+    // and `commit-graph`: they read, or at most write an object, and none of
+    // them moves a ref. `commit-tree` opens no hole either — publishing that
+    // object needs `update-ref`, denied below, or `reset`, left open on purpose.
+    const EOW = /(?![\w-])/;
+
+    // The run of option tokens a rule skips over between the verb and the flag
+    // it is looking for: `git branch -q -f master`.
+    const OPTS = /(?:\s+-\S+)*\s+/;
+
+    // One positional argument. Counting positionals is the whole difficulty and
+    // a naive `\S+` gets it wrong twice: it reads `--short` as a positional, and
+    // it reads the `|` of `... | grep master` as one too. So an argument may not
+    // start with `-`, contains no shell word terminator, and must END on one —
+    // or `-q HEAD 2>/dev/null` would count `2` as the second argument. `$(cat
+    // f)` still counts, so a substituted ref fails closed, while pipes,
+    // redirections and `&&`/`;` chains after a read stay transparent.
+    const ARG = /[^-\s;&|<>()][^\s;&|<>()]*(?=[\s;&|()]|$)/;
+
+    const src = (x) => (typeof x === "string" ? x : x.source);
+    const seq = (...parts) => parts.map(src).join("");
+    const oneOf = (...alts) => "(?:" + alts.map(src).join("|") + ")";
+    // A short flag can hide inside a single-dash cluster (`-qf`, `-qB`), so it
+    // is matched as "one dash, that letter anywhere in the cluster"; long
+    // options are matched literally, or `git branch --format=%(refname)` would
+    // read as `-f`. Case IS the distinction and nothing here carries an `i`
+    // flag: `-b` creates a branch and must pass, `-B` resets one and must deny.
+    const cluster = (letters) => "-[A-Za-z]*[" + letters + "][A-Za-z]*";
+    // Shape of every rule gated on a FLAG: `<verb> [options] <flag>`.
+    const flagged = (verb, ...flags) =>
+      seq(oneOf(verb), EOW, OPTS, oneOf(...flags), EOW);
+
+    const RULES = [
+      // Verbs that commit, publish or move a ref on their own. The verb IS the
+      // decision here, there is no flag to inspect.
+      { id: "write-verb",
+        why: "authors a commit, publishes, or moves a ref outright",
+        pat: seq(oneOf(/commit|push|merge|rebase|update-ref/), EOW) },
+
+      // Three verbs put commits on the current branch without being spelled
+      // `commit`: cherry-pick, revert and am each REPLAY work onto HEAD, so on
+      // master they land code that never passed through a PR. `--abort` and
+      // `--quit` are exempt: they end an in-flight operation and create
+      // nothing, and a conflict state inherited from before this hook still
+      // needs a way out. `--continue` and `--skip` stay denied — they finish
+      // applying the commits, which is precisely what is being prevented, and
+      // `git rebase --continue` was already denied, so this stays consistent.
+      { id: "replay-verb",
+        why: "replays commits onto HEAD, unless it is aborting one",
+        pat: seq(oneOf(/cherry-pick|revert|am/), EOW,
+                 /(?!\s+--(?:abort|quit)(?![\w-]))/) },
+
+      // symbolic-ref is gated on its SHAPE, not on the verb: `symbolic-ref
+      // HEAD`, `--short HEAD` and `-q HEAD` are pure reads — the standard way
+      // to ask which branch HEAD points at. Only two forms move a ref: the
+      // delete form, and the write form, recognised by its TWO positionals.
+      { id: "symbolic-ref-delete",
+        why: "-d/--delete drops the ref HEAD points through",
+        pat: flagged(/symbolic-ref/, /-d/, /--delete/) },
+      { id: "symbolic-ref-write",
+        why: "two positionals = repointing HEAD at another branch",
+        pat: seq(oneOf(/symbolic-ref/), EOW, OPTS, ARG, OPTS, ARG) },
+
+      // branch, checkout and switch are gated on the FLAG, not on the verb:
+      // they are daily read/create commands, and denying them wholesale would
+      // break the very workflow this hook exists to enforce — its own error
+      // message tells the user to run `git checkout -b <type>/<desc>`.
+      //
+      // The branch cluster is [fMC], three letters, all uppercase-or-`f`:
+      // `-f`/`--force`, `-M` (force-rename) and `-C` (force-copy) all overwrite
+      // an existing ref, so `git branch -C master abc` moves master exactly
+      // like `-f` does. The long form `--copy --force` was already caught by
+      // `--force`; the short form was the hole. Their lowercase twins stay OUT
+      // of the class on purpose: `-c old new` and `-m old new` are the
+      // NON-forced copy/rename, they refuse to clobber an existing master, and
+      // `git branch -m old new` is common enough that denying it would be a
+      // false positive of the same kind as `merge-base`.
+      { id: "branch-force",
+        why: "-f / --force / -M / -C overwrite an existing branch ref",
+        pat: flagged(/branch/, /--force/, cluster("fMC")) },
+      { id: "checkout-force",
+        why: "-B resets an existing branch onto HEAD, where -b only creates",
+        pat: flagged(/checkout/, cluster("B")) },
+      { id: "switch-force",
+        why: "-C / --force-create is the switch spelling of checkout -B",
+        pat: flagged(/switch/, /--force-create/, cluster("C")) },
+
+      // `reset` is deliberately NOT in this table: `git reset --hard
+      // origin/master` is the normal resync gesture and reset authors no new
+      // commit. Accepted residual hole — `git reset --hard <feature-branch>` on
+      // master still drags master onto that branch's tip.
+    ];
+
+    const GUARD = RULES.map((r) => new RegExp(src(GIT) + r.pat));
+    const movesRefOnCurrentBranch = (c) => GUARD.some((re) => re.test(c));
+
     let input = "";
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
@@ -422,26 +542,7 @@
       try {
         const data = JSON.parse(input);
         const cmd = (data.tool_input && data.tool_input.command) || "";
-        // Branch-per-change workflow: create a branch BEFORE editing code, then
-        // push that branch — never master/main. commit/push/merge/rebase while on
-        // master/main are all hard-denied. Bringing code to master = a manual PR
-        // step by the user on GitHub, never a Claude action.
-        // Global options may sit between `git` and the verb, so `git -C <dir>
-        // commit` must match too — the narrower /git\s+(commit|...)/ let every
-        // `git -C ... commit` through, on master included.
-        //
-        // The verb has to be the FIRST word after those options, not merely
-        // somewhere after `git`: a looser form read `git stash push` as a push
-        // and denied it on master. Any subcommand whose second word is a
-        // watched verb has the same shape (`git remote add`, `git bundle
-        // create`, ...).
-        //
-        // Alternation order is load-bearing: `-C <path>` and `-c <k=v>` take a
-        // separate argument, so they must be tried BEFORE the generic option
-        // branch — that branch would otherwise consume `-C` alone and leave the
-        // path sitting where the verb is expected, reopening the `git -C <dir>
-        // commit` hole.
-        if (!/\bgit(\s+(-[Cc]\s+\S+|--?[A-Za-z][\w-]*(=\S+)?))*\s+(commit|push|merge|rebase)\b/.test(cmd)) process.exit(0);
+        if (!movesRefOnCurrentBranch(cmd)) process.exit(0);
         // Check the branch of the repo the COMMAND targets, not the session cwd.
         // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading
         // the session cwd blocked legitimate commits in another repo, and let

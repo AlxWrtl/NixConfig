@@ -370,6 +370,19 @@ Fresh context per phase therefore stands as **unmeasured, not validated** —
 kept because context hygiene is arithmetic rather than a claim, and because
 independent review has repeatedly caught in this repo what self-review missed.
 
+The one route left ran through real work rather than constructed tasks: count
+the defects that reached master and were fixed later. A retroactive probe —
+its population, exclusions and gate written down before a single number was
+read — found 19 of them across 383 commits and 447 days. Accumulating the 32
+paired events the fourth bench needed would take about 19 months even at the
+fastest rate this repo has sustained, against a six-month horizon fixed in
+advance, so the route is closed rather than left standing as future work.
+
+The APEX-era window is 29 days old and observed detection latency runs to 122
+days, so its commits are censored on the right. Zero defects traced into it is
+not evidence that APEX prevents defects — it is evidence that the window is
+younger than its own latency, which pushes the horizon out rather than in.
+
 The same discipline was then turned on `apex-consistency` itself, and it did
 not survive either. A mutation harness was built to answer "does each invariant
 go red when what it guards disappears?" — and the check is a substring test,

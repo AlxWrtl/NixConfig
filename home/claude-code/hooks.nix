@@ -449,9 +449,67 @@
         // denied on master because `\b` matched inside `merge-base`. Same for
         // `merge-tree`, `commit-tree` and `commit-graph`: they read, or at
         // most write an object, and none of them moves a ref. `commit-tree`
-        // opens no hole either — publishing that object needs `update-ref` or
-        // `reset`, and neither is blocked here in the first place.
-        if (!/\bgit(\s+(-[Cc]\s+\S+|--?[A-Za-z][\w-]*(=\S+)?))*\s+(commit|push|merge|rebase)(?![\w-])/.test(cmd)) process.exit(0);
+        // opens no hole either — publishing that object needs `update-ref`,
+        // which the next paragraph closes, or `reset`, deliberately left open.
+        //
+        // Three verbs put commits on the current branch without being spelled
+        // `commit`: `cherry-pick`, `revert` and `am` each replay work onto
+        // HEAD, so on master they land code that never passed through a PR. A
+        // second family never commits but MOVES master's ref onto an arbitrary
+        // object, which is the same outcome one step later: `update-ref
+        // refs/heads/master <sha>`, `symbolic-ref HEAD refs/heads/other`,
+        // `branch -f|--force|-M master`, `checkout -B master`, `switch -C
+        // master`. All of them sailed past the commit|push|merge|rebase list.
+        //
+        // `branch`, `checkout` and `switch` are gated on the FLAG, not on the
+        // verb: they are daily read/create commands, and denying them wholesale
+        // would break the workflow this hook exists to enforce — its own error
+        // message tells the user to run `git checkout -b <type>/<desc>`. Case
+        // IS the distinction: `-b` creates a branch and must pass, `-B` resets
+        // an existing one and must deny. The regex carries no `i` flag and must
+        // never gain one. The short forms match a single-dash cluster
+        // containing the letter (`-qf`, `-qB`) so bundles cannot slip past,
+        // while long options are matched literally — otherwise `git branch
+        // --format=...` would read as `-f`.
+        //
+        // The `branch` cluster is `[fMC]`, three letters, all uppercase-or-`f`:
+        // `-f`/`--force`, `-M` (force-rename) and `-C` (force-copy) all
+        // overwrite an existing ref, so `git branch -C master abc` moves master
+        // exactly like `-f` does. The long form `--copy --force` was already
+        // caught by `--force`; the short form was the hole. Their lowercase
+        // twins stay OUT of the class on purpose: `-c old new` and `-m old new`
+        // are the NON-forced copy/rename, they refuse to clobber an existing
+        // master, and `git branch -m old new` is common enough that denying it
+        // would be a false positive of the same kind as `merge-base`.
+        //
+        // `symbolic-ref` is gated on its SHAPE, not on the verb, for the same
+        // reason: `symbolic-ref HEAD`, `--short HEAD`, `-q HEAD` are pure reads
+        // — the standard way to ask which branch HEAD points at — while the
+        // write form takes two positional arguments (`symbolic-ref HEAD
+        // refs/heads/x`) and the delete form takes `-d`/`--delete`. Only those
+        // two move a ref. Counting positionals is the whole difficulty, and a
+        // naive `\S+` gets it wrong twice: it reads `--short` as a positional
+        // (denying the read), and it reads the `|` of `symbolic-ref --short
+        // HEAD | grep master` as one too. So a positional is
+        // `[^-\s;&|<>()][^\s;&|<>()]*` — it may not start with `-`, and it
+        // contains no shell word terminator — and it must END on one,
+        // `(?=[\s;&|()]|$)`, or `-q HEAD 2>/dev/null` would count `2` as the
+        // second argument. `$(cat f)` still counts, so a substituted ref fails
+        // closed. Pipes, redirections and `&&`/`;` chains after a read are
+        // therefore transparent, which is how the read is normally written.
+        //
+        // `--abort` and `--quit` are exempt for cherry-pick/revert/am: they end
+        // an in-flight operation and create nothing, and a conflict state
+        // inherited from before this hook still needs a way out. `--continue`
+        // and `--skip` stay denied — they finish applying the commits, which is
+        // precisely what is being prevented, and `git rebase --continue` was
+        // already denied, so this stays consistent.
+        //
+        // `reset` is deliberately NOT on the list: `git reset --hard
+        // origin/master` is the normal resync gesture and reset authors no new
+        // commit. Accepted residual hole — `git reset --hard <feature-branch>`
+        // on master still drags master onto that branch's tip.
+        if (!/\bgit(\s+(-[Cc]\s+\S+|--?[A-Za-z][\w-]*(=\S+)?))*\s+(?:(?:commit|push|merge|rebase|update-ref)(?![\w-])|(?:cherry-pick|revert|am)(?![\w-])(?!\s+--(?:abort|quit)(?![\w-]))|symbolic-ref(?![\w-])(?:(?:\s+-\S+)*\s+(?:-d|--delete)(?![\w-])|(?:\s+-\S+)*\s+[^-\s;&|<>()][^\s;&|<>()]*(?=[\s;&|()]|$)(?:\s+-\S+)*\s+[^-\s;&|<>()][^\s;&|<>()]*(?=[\s;&|()]|$))|branch(?![\w-])(?:\s+-\S+)*\s+(?:--force(?![\w-])|-[A-Za-z]*[fMC][A-Za-z]*(?![\w-]))|checkout(?![\w-])(?:\s+-\S+)*\s+-[A-Za-z]*B[A-Za-z]*(?![\w-])|switch(?![\w-])(?:\s+-\S+)*\s+(?:--force-create(?![\w-])|-[A-Za-z]*C[A-Za-z]*(?![\w-])))/.test(cmd)) process.exit(0);
         // Check the branch of the repo the COMMAND targets, not the session cwd.
         // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading
         // the session cwd blocked legitimate commits in another repo, and let

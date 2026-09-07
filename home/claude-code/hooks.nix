@@ -441,7 +441,17 @@
         // branch — that branch would otherwise consume `-C` alone and leave the
         // path sitting where the verb is expected, reopening the `git -C <dir>
         // commit` hole.
-        if (!/\bgit(\s+(-[Cc]\s+\S+|--?[A-Za-z][\w-]*(=\S+)?))*\s+(commit|push|merge|rebase)\b/.test(cmd)) process.exit(0);
+        //
+        // The verb ends with `(?![\w-])`, not `\b`: `\b` only asks for a
+        // word/non-word boundary, and `-` is a non-word char, so it cannot
+        // tell the end of a verb from the start of a compound subcommand.
+        // Concrete case: `git merge-base HEAD origin/master` — a pure read —
+        // denied on master because `\b` matched inside `merge-base`. Same for
+        // `merge-tree`, `commit-tree` and `commit-graph`: they read, or at
+        // most write an object, and none of them moves a ref. `commit-tree`
+        // opens no hole either — publishing that object needs `update-ref` or
+        // `reset`, and neither is blocked here in the first place.
+        if (!/\bgit(\s+(-[Cc]\s+\S+|--?[A-Za-z][\w-]*(=\S+)?))*\s+(commit|push|merge|rebase)(?![\w-])/.test(cmd)) process.exit(0);
         // Check the branch of the repo the COMMAND targets, not the session cwd.
         // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading
         // the session cwd blocked legitimate commits in another repo, and let

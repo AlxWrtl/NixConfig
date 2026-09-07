@@ -69,6 +69,26 @@ in
     # effortLevel). Force-overridden par le merge activation.
     alwaysThinkingEnabled = true;
 
+    # Le style de sortie modifie le PROMPT SYSTÈME ; CLAUDE.md, lui, n'ajoute
+    # qu'un message utilisateur après coup. C'est toute la différence : la
+    # consigne « caveman full mode: terse prose, no filler » vit dans CLAUDE.md
+    # et a été ignorée toute la session du 2026-09-05 — des réponses de
+    # plusieurs écrans, sans que rien ne le signale.
+    #
+    # Concise mène par le résultat, coupe le préambule et la narration, et garde
+    # court par défaut sans rien retirer au travail d'ingénierie. Il conserve
+    # toujours EN ENTIER les rapports d'erreur, les avertissements de sécurité
+    # et les confirmations d'action destructrice — raison de le préférer à un
+    # style maison qui raccourcirait tout uniformément. Demander une explication
+    # rend la réponse longue à nouveau.
+    #
+    # Requiert Claude Code >= 2.1.237. Ne s'applique QU'À la conversation
+    # principale : un subagent tourne avec son propre prompt système.
+    # Hors de la liste force-override du merge d'activation, donc un choix fait
+    # en session via /config survit au rebuild — même logique que .model.
+    # Prend effet au /clear ou à la session suivante, jamais immédiatement.
+    outputStyle = "Concise";
+
     includeGitInstructions = false;
 
     sandbox = {

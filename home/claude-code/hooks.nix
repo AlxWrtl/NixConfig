@@ -531,7 +531,126 @@
     ];
 
     const GUARD = RULES.map((r) => new RegExp(src(GIT) + r.pat));
-    const movesRefOnCurrentBranch = (c) => GUARD.some((re) => re.test(c));
+
+    // The rules above test the WHOLE command string. That over-approximation
+    // is right for CODE, but it also fires on TEXT. Real case, hit three times
+    // today on master: a PR description piped through a heredoc whose body
+    // merely MENTIONS cherry-pick and rebase --
+    //     gh pr edit 133 --body-file - <<BODY   (delimiter quoted)
+    //     ... prose about git rebase ...
+    //     BODY
+    // -> BLOCKED, with not one byte of git about to run. The watched list
+    // going from 4 to 12 verbs turned this into a daily event.
+    //
+    // Anchoring the verb at the START of the command was considered and
+    // rejected: `sudo git commit`, `env X=1 git commit` and `for f in x; do
+    // git commit; done` would all stop being seen -- a benign false positive
+    // traded for real false negatives.
+    //
+    // Retained instead: blank out the text the shell CANNOT execute, then run
+    // the unchanged rules on what is left. Inert = single quotes and
+    // quoted-delimiter heredocs (no substitution happens there at all), plus
+    // double quotes and bare-delimiter heredocs ONLY when they hold no $ and
+    // no backtick -- those two DO run command substitutions, and a
+    // substitution is never masked: --body "$(git commit -m x)" stays DENY.
+    //
+    // Masking rewrites every non-space run as _ and keeps the whitespace, so
+    // token structure survives: no match can be forged by closing a gap (an
+    // emptied "x y" must not turn `git -c k=v <arg> commit` into a hit).
+    //
+    // Shell quoting is a minefield, so DOUBT RETURNS THE RAW STRING, i.e.
+    // exactly today's verdict. Three ways in:
+    //   1. unbalanced quotes or an unterminated heredoc -> raw;
+    //   2. a quoted token sitting where the git VERB goes -> raw, because
+    //      text and verb are indistinguishable there;
+    //   3. a command word that EXECUTES its argument (sh -c, eval, xargs,
+    //      sudo, ssh...) -> raw, the quoted string is code there, not text.
+    const mask = (s) => s.replace(/\S+/g, "_");
+    // Only COMMAND position counts -- start of line, or right after ; | & or (
+    // -- so the word `find` inside a PR body disarms nothing.
+    const EXECUTOR =
+      /(?:^|[\n;|&(])\s*(?:sh|bash|zsh|dash|ksh|fish|eval|exec|source|\.|sudo|doas|su|env|nohup|timeout|watch|nice|stdbuf|script|xargs|find|parallel|ssh|nix-shell|node|deno|bun|python3?|perl|ruby|awk)(?![\w-])/;
+    const QUOTED_VERB = new RegExp(src(GIT) + src(/["']/));
+
+    const stripInertText = (cmd) => {
+      if (EXECUTOR.test(cmd) || QUOTED_VERB.test(cmd)) return cmd;
+      let out = "";
+      let i = 0;
+      const n = cmd.length;
+      const pending = [];
+      while (i < n) {
+        const ch = cmd[i];
+        // Outside quotes a backslash escapes the next char, apostrophes and
+        // double quotes included: it must never be read as a quote opener.
+        if (ch === "\\") { out += cmd.slice(i, i + 2); i += 2; continue; }
+        if (ch === "'") {
+          const j = cmd.indexOf("'", i + 1);
+          if (j < 0) return cmd;
+          out += mask(cmd.slice(i, j + 1)); i = j + 1; continue;
+        }
+        if (ch === '"') {
+          // Inside double quotes only a backslash can hide the closing quote.
+          let j = i + 1;
+          while (j < n && cmd[j] !== '"') j += cmd[j] === "\\" ? 2 : 1;
+          if (j >= n) return cmd;
+          const region = cmd.slice(i, j + 1);
+          out += /[$`]/.test(region) ? region : mask(region);
+          i = j + 1; continue;
+        }
+        if (ch === "`") {
+          const j = cmd.indexOf("`", i + 1);
+          if (j < 0) return cmd;
+          out += cmd.slice(i, j + 1); i = j + 1; continue;
+        }
+        // Heredoc operator. Three `<` is a here-STRING, whose operand is an
+        // ordinary word and is scanned as one.
+        if (ch === "<" && cmd[i + 1] === "<" && cmd[i + 2] !== "<") {
+          let k = i + 2;
+          if (cmd[k] === "-") k++;
+          while (cmd[k] === " " || cmd[k] === "\t") k++;
+          let quoted = false;
+          let delim = "";
+          if (cmd[k] === "'" || cmd[k] === '"') {
+            const q = cmd[k];
+            const e = cmd.indexOf(q, k + 1);
+            if (e < 0) return cmd;
+            quoted = true; delim = cmd.slice(k + 1, e); k = e + 1;
+          } else {
+            const m = /^[A-Za-z0-9_.-]+/.exec(cmd.slice(k));
+            if (!m) return cmd;
+            delim = m[0]; k += m[0].length;
+          }
+          pending.push([delim, quoted]);
+          out += mask(cmd.slice(i, k)); i = k; continue;
+        }
+        // Bodies start at the next newline, in the order the operators came.
+        if (ch === "\n" && pending.length) {
+          out += "\n"; i++;
+          while (pending.length) {
+            const h = pending.shift();
+            let body = "";
+            let closed = false;
+            while (i <= n) {
+              let e = cmd.indexOf("\n", i);
+              if (e < 0) e = n;
+              const line = cmd.slice(i, e);
+              if (line.trim() === h[0]) { i = e < n ? e + 1 : n; closed = true; break; }
+              body += line + "\n";
+              if (e >= n) { i = n; break; }
+              i = e + 1;
+            }
+            if (!closed) return cmd;
+            out += (h[1] || !/[$`]/.test(body)) ? mask(body) : body;
+          }
+          continue;
+        }
+        out += ch; i++;
+      }
+      if (pending.length) return cmd;
+      return out;
+    };
+
+    const movesRefOnCurrentBranch = (c) => GUARD.some((re) => re.test(stripInertText(c)));
 
     let input = "";
     process.stdin.on("data", c => input += c);

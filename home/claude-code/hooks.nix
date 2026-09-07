@@ -440,7 +440,22 @@
     // take a SEPARATE argument, so they must be tried BEFORE the generic option
     // branch — that branch would otherwise consume `-C` alone and leave the
     // path sitting where the verb is expected, reopening the hole.
-    const GIT = /\bgit(?:\s+(?:-[Cc]\s+\S+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
+    // The value of `-c` / `-C` may be QUOTED, and a quoted value may hold the
+    // space `\S+` stopped at. `git -c user.name='x y' commit` left `y'` sitting
+    // where the verb is expected, so the prefix never reached `commit` and the
+    // command committed on master unseen. A value is therefore a RUN of quoted
+    // regions and plain characters.
+    //
+    // The five alternatives are mutually exclusive on purpose, and that is not
+    // cosmetic: the first shape tried here was (?:'[^']*'|"[^"]*"|\S)+, where
+    // `\S` also matches a quote, so a value like a'b'a'b'... could be cut in
+    // exponentially many ways and a FAILING match never came back --
+    // `git -c 'x'"y"` repeated 50 times already blew past five seconds. Each
+    // character now has exactly one branch: a quote with a later twin opens a
+    // region, a quote without one is a literal (that is the `(?![^']*')`
+    // guard, which also keeps an UNBALANCED quote consuming exactly what the
+    // old `\S+` consumed, so no denial is lost), anything else is itself.
+    const GIT = /\bgit(?:\s+(?:-[Cc]\s+(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
 
     // End of a verb, or of a short-option cluster. NOT `\b`: `\b` only asks for
     // a word/non-word boundary, and `-` is a non-word char, so it cannot tell
@@ -449,7 +464,7 @@
     // `\b` matched inside `merge-base`. Same for `merge-tree`, `commit-tree`
     // and `commit-graph`: they read, or at most write an object, and none of
     // them moves a ref. `commit-tree` opens no hole either — publishing that
-    // object needs `update-ref`, denied below, or `reset`, left open on purpose.
+    // object needs `update-ref` or a `reset` onto it, both denied below.
     const EOW = /(?![\w-])/;
 
     // The run of option tokens a rule skips over between the verb and the flag
@@ -477,6 +492,16 @@
     // Shape of every rule gated on a FLAG: `<verb> [options] <flag>`.
     const flagged = (verb, ...flags) =>
       seq(oneOf(verb), EOW, OPTS, oneOf(...flags), EOW);
+    // Reset targets that cannot put foreign code on the current branch: HEAD
+    // and its ancestors (the branch is already there, or is being moved BACK,
+    // which only removes commits), the upstream shorthands, and an
+    // `origin/`/`upstream/` remote-tracking ref — the resync gesture
+    // `git reset --hard origin/master` that kept reset out of the table in the
+    // first place. Anything else is an arbitrary commit-ish. The trailing
+    // lookahead makes the name END here, or `HEADX` and `originals/x` would
+    // read as safe.
+    const RESET_SAFE =
+      /(?:HEAD(?:[~^][0-9]*)*|@\{u(?:pstream)?\}|(?:origin|upstream)\/(?:master|main|HEAD))(?=[\s;&|()]|$)/;
 
     const RULES = [
       // Verbs that commit, publish or move a ref on their own. The verb IS the
@@ -533,10 +558,22 @@
         why: "-C / --force-create is the switch spelling of checkout -B",
         pat: flagged(/switch/, /--force-create/, cluster("C")) },
 
-      // `reset` is deliberately NOT in this table: `git reset --hard
-      // origin/master` is the normal resync gesture and reset authors no new
-      // commit. Accepted residual hole — `git reset --hard <feature-branch>` on
-      // master still drags master onto that branch's tip.
+      // `reset` was kept out of this table because `git reset --hard
+      // origin/master` is the normal resync gesture. That exemption was the
+      // whole rule, and it left `git reset --hard <feature-branch>` open: on
+      // master that drags master onto arbitrary code, authoring no commit and
+      // passing through no PR — precisely what this hook exists to stop.
+      // Closed on the SHAPE instead of the verb: a mode flag FOLLOWED BY a
+      // target, and only when that target is not one of the safe ones. The
+      // daily gestures keep passing, each for its own reason: no mode flag
+      // (`git reset`, `git reset HEAD file`) is an unstage and moves no ref; a
+      // mode flag with NO target (`git reset --hard`) throws away local edits
+      // and leaves the ref where it is; HEAD~n only ever removes commits; and
+      // origin/* is the resync above.
+      { id: "reset-arbitrary-target",
+        why: "a mode flag aimed at an arbitrary commit-ish moves the branch there",
+        pat: seq(flagged(/reset/, /--hard/, /--merge/, /--keep/, /--soft/, /--mixed/),
+                 /\s+/, "(?!" + src(RESET_SAFE) + ")", ARG) },
     ];
 
     const GUARD = RULES.map((r) => new RegExp(src(GIT) + r.pat));
@@ -580,9 +617,17 @@
     const EXECUTOR =
       /(?:^|[\n;|&(])\s*(?:sh|bash|zsh|dash|ksh|fish|eval|exec|source|\.|sudo|doas|su|env|nohup|timeout|watch|nice|stdbuf|script|xargs|find|parallel|ssh|nix-shell|node|deno|bun|python3?|perl|ruby|awk)(?![\w-])/;
     const QUOTED_VERB = new RegExp(src(GIT) + src(/["']/));
+    // The same doubt one slot earlier: a quote INSIDE a `-c` / `-C` value.
+    // Masking there is what hid `git -c user.name='x y' commit` even after the
+    // prefix was widened — the mask keeps the whitespace, so the value came
+    // back as two tokens and the verb slot landed on the second one. Testing
+    // the raw string instead is the same fail-closed answer as case 2, and the
+    // widened `-c` value above then swallows the quoted region whole.
+    const QUOTED_GIT_OPT = new RegExp(src(GIT) + src(/-[Cc]\s+[^\s'"]*["']/));
 
     const stripInertText = (cmd) => {
-      if (EXECUTOR.test(cmd) || QUOTED_VERB.test(cmd)) return cmd;
+      if (EXECUTOR.test(cmd) || QUOTED_VERB.test(cmd) || QUOTED_GIT_OPT.test(cmd))
+        return cmd;
       let out = "";
       let i = 0;
       const n = cmd.length;
@@ -659,7 +704,35 @@
       return out;
     };
 
-    const movesRefOnCurrentBranch = (c) => GUARD.some((re) => re.test(stripInertText(c)));
+    // SECOND VIEW, tested IN ADDITION to the one above and never instead: a
+    // command is denied as soon as either view matches, so this can only ever
+    // ADD denials. Quoting is invisible to the shell but not to a regex, and
+    // three real bypasses lived exactly there — `git 'commit' -m x`,
+    // `git "commit" -m x`, and an empty apostrophe pair dropped inside the
+    // command word itself (g, i, two apostrophes, t, then a bare `commit`),
+    // where the quotes cut the word in half while the shell still ran a
+    // commit on master.
+    //
+    // The view drops the quote CHARACTERS, but only around a region whose
+    // content holds no whitespace. That condition is the entire safety of it,
+    // and it is what keeps this morning's inert-text fix intact: a PR body such
+    // as --body "git rebase sur master" holds spaces, keeps its quotes, stays
+    // inert text and stays allowed, while `commit` or an emptied pair does not
+    // survive as text in the first place.
+    //
+    // Two regions are skipped. A heredoc delimiter: turning <<'B' into <<B
+    // would stop masking a body that merely contains a `$`, inventing a false
+    // positive of the very kind that was just removed. And a quote preceded by
+    // a backslash: it is a literal character, and removing it unbalances the
+    // rest of the string, which then falls back to the raw text.
+    //
+    // Known, accepted side effect: `echo 'git' commit` becomes a denial. The
+    // string is artificial and the direction is the safe one.
+    const dequoteTight = (s) =>
+      s.replace(/(<<-?[ \t]*|\\)?(?:'([^'\s\\]*)'|"([^"\s\\]*)")/g,
+                (m, keep, a, b) => (keep ? m : a === undefined ? b : a));
+    const hits = (c) => GUARD.some((re) => re.test(stripInertText(c)));
+    const movesRefOnCurrentBranch = (c) => hits(c) || hits(dequoteTight(c));
 
     let input = "";
     process.stdin.on("data", c => input += c);

@@ -218,9 +218,18 @@
         }
         if (ranForThisTask) process.exit(0);
 
-        const reason = "BLOCKED: this edit modifies a project file and APEX has not run "
-          + "for THIS request. Invoke the apex skill first — nothing to type: the Mode Gate "
-          + "picks the depth on its own. "
+        // The message says "can write", not "writes". WRITES matches SHAPES —
+        // a redirect, an in-place edit, a heredoc, cp/mv/tee — because a hook
+        // cannot resolve a shell string into an actual target. `cat <<EOF`
+        // with no redirect writes nothing and still trips it; saying "this
+        // edit modifies a project file" there is simply false, and it sent a
+        // reader hunting for a file that was never touched.
+        const reason = "BLOCKED: this command has a file-writing SHAPE (redirect, in-place "
+          + "edit, heredoc, cp/mv/tee) inside a repo, and APEX has not run for THIS request. "
+          + "The gate matches shapes, not proven writes — a heredoc trips it even with no "
+          + "redirect, so prefer the Write tool. "
+          + "Invoke the apex skill first — nothing to type: the Mode Gate picks the depth on "
+          + "its own. "
           + "Fires once per task; every edit after APEX starts passes until your next message.";
         process.stdout.write(JSON.stringify({
           hookSpecificOutput: {

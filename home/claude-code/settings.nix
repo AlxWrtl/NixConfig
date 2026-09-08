@@ -150,6 +150,21 @@ in
         # `rtk trust --list` showed the file trusted and `rtk hook check` showed
         # the rewrite. Only a byte count caught it.
         # Scope is the data dir alone — no credentials live there.
+        # NOT here, deliberately: Chromium's profile dir for Scrapling's browser
+        # rungs (`extract fetch` / `stealthy-fetch`). It was added on
+        # 2026-09-08, rebuilt, and MEASURED to buy nothing. The path entry does
+        # work — the Crashpad "Operation not permitted" line disappeared and the
+        # profile dir got created — but the browser still aborts with no output
+        # file on things a path allowlist cannot reach:
+        #   bootstrap_check_in org.chromium.crashpad...: Permission denied (1100)
+        #   process_singleton_posix.cc: Failed to create socket directory.
+        #   exception while trying to kill process: Error: kill EPERM
+        # Mach IPC registration, a unix socket dir, and process signalling. The
+        # CLI offers no `--user-data-dir` to relocate the profile either, so
+        # there is no lever. Reverted rather than kept: an allowlist entry that
+        # widens the sandbox while implying a capability that does not exist is
+        # worse than none. The browser rungs run with the sandbox disabled —
+        # verified working, one confirmation box.
         allowWrite = [
           "${homeDirectory}/GraphVault"
           "${homeDirectory}/Library/Application Support/rtk"
@@ -326,6 +341,14 @@ in
               # Réécrit les commandes couvertes par filters.toml (nix) que le
               # hook natif ignore — listes disjointes, pas de double-wrap.
               command = "bash ~/.claude/hooks/rtk-nix-rewrite.sh";
+              timeout = 5;
+            }
+            {
+              type = "command";
+              # Impose --ai-targeted sur `scrapling extract` : flag déclaré
+              # obligatoire en amont contre l'injection de prompt via la page
+              # récupérée. Hook de sécurité → il REFUSE, il ne réécrit pas.
+              command = "bash ~/.claude/hooks/scrapling-ai-targeted.sh";
               timeout = 5;
             }
           ];

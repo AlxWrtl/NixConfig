@@ -3070,30 +3070,60 @@ in
 
     Which command to use:
     - **`get`** — simple sites, blogs, news articles.
-    - **`fetch`** — modern web apps, dynamic content.
-    - **`stealthy-fetch`** — protected sites, Cloudflare, anti-bot systems.
+    - **`fetch --network-idle`** — modern web apps, dynamic content. Always with
+      the flag: without it the browser leaves before the content arrives.
+    - **`stealthy-fetch --solve-cloudflare`** — protected sites, Cloudflare,
+      anti-bot systems.
 
-    Escalation ladder: start with `get`. If it fails or returns empty content,
-    escalate to `fetch`, then to `stealthy-fetch`. `fetch` and `stealthy-fetch`
-    are nearly the same speed, so escalating costs almost nothing.
+    Escalation ladder, in order — **403 is the signal to move up**:
 
-    **403 is the signal to escalate**, and on `stealthy-fetch` you must pass
-    `--solve-cloudflare` — it is OFF by default, so forgetting it wastes the
-    whole escalation. Measured 2026-09-08 on three protected pages where plain
-    `get` returned 403:
+    1. `get`
+    2. `fetch --network-idle`
+    3. `stealthy-fetch --solve-cloudflare`
 
-    | target | `get` | `stealthy-fetch --solve-cloudflare` |
-    |---|---|---|
-    | crunchbase.com/organization/anthropic | 403 | 33 052 B, real funding data |
-    | indeed.com/q-software-engineer-jobs | 403 | 36 438 B, real listings |
-    | g2.com/products/notion/reviews | 403 | **still blocked, 0 B** |
+    **Two flags carry the whole ladder, and both are OFF by default.** Leaving
+    either out wastes the rung. Measured on trustpilot.com/review/www.booking.com,
+    same page, same minute:
 
-    So the escalation is worth trying and is not a guarantee. Two of three, on a
-    sample of three: do not promise a user it will work before it has.
+    ```
+    fetch                    403,    197 B
+    fetch --network-idle     200, 41 259 B   real data
+    stealthy-fetch --solve-cloudflare
+                             200, 41 261 B   real data
+    ```
 
-    **A 403 can carry a non-empty body** — 938 B and 43 B on two of those
-    targets. Size proves nothing, exactly as the exit code proves nothing.
-    Read the content before reporting success.
+    `fetch` alone failed and `fetch --network-idle` matched the stealth rung.
+    The page loads its content asynchronously: without waiting for the network
+    the fetcher leaves with a shell and takes the 403. That is a TIMING failure
+    wearing a 403's clothes — nothing to do with anti-bot — so try rung 2 with
+    the flag before assuming you need rung 3.
+
+    Measured across seven protected pages where `get` returned 403 or empty:
+
+    | target | outcome |
+    |---|---|
+    | crunchbase.com/organization/anthropic | 33 052 B, funding data |
+    | indeed.com/q-software-engineer-jobs | 36 438 B, listings and salaries |
+    | similarweb.com/website/github.com | 31 823 B, ranks and traffic figures |
+    | glassdoor.com/Reviews | 33 010 B, real page |
+    | trustpilot.com/review/www.booking.com | 41 259 B, TrustScore and ratings |
+    | zillow.com/homes/for_sale | not retried past `get` |
+    | **g2.com** | **blocked on every rung** |
+
+    Five of seven. Do not promise a user it will work before it has.
+
+    g2 is not a technical loss and no rung will change it: it 403s every HTML
+    page — homepage, category, product, reviews — while serving robots.txt, and
+    that robots.txt names `ClaudeBot`, `GPTBot`, `CCBot` and others under
+    `Disallow: /`. That is a stated policy, enforced. Report it as such and stop;
+    do not hunt for a way through. The clean route to that data is their API.
+
+    **Judge on CONTENT, never on status, size, or a keyword.** A 403 can carry a
+    body — 938 B, 43 B, and once 75 KB that was a Cloudflare "Humans only" page.
+    And the mirror mistake, made here: a crude scan called 41 KB of genuine
+    Trustpilot data a "challenge page" because the word CAPTCHA appeared once in
+    the footer, so a working rung was reported as blocked. Open the file and look
+    for the thing you actually asked for — a company name, a figure, a heading.
 
     **If a browser rung aborts with no output file, read the error before
     escalating.** These rungs launch a real browser, which must write a
@@ -3211,20 +3241,21 @@ in
     # Wait for JavaScript to load content and finish network activity
     scrapling extract fetch --ai-targeted "https://scrapling.requestcatcher.com/" content.md --network-idle
 
-    # Wait for specific content to appear
+    # Wait for one known element — stronger than --network-idle when you can
+    # name the selector, so no --network-idle here on purpose
     scrapling extract fetch --ai-targeted "https://scrapling.requestcatcher.com/" data.txt --wait-selector ".content-loaded"
 
     # Run in visible browser mode (helpful for debugging)
-    scrapling extract fetch --ai-targeted "https://scrapling.requestcatcher.com/" page.html --no-headless --disable-resources
+    scrapling extract fetch --ai-targeted --network-idle "https://scrapling.requestcatcher.com/" page.html --no-headless --disable-resources
 
     # Bypass basic protection
-    scrapling extract stealthy-fetch --ai-targeted "https://scrapling.requestcatcher.com" content.md
+    scrapling extract stealthy-fetch --ai-targeted --solve-cloudflare "https://scrapling.requestcatcher.com" content.md
 
     # Solve Cloudflare challenges
     scrapling extract stealthy-fetch --ai-targeted "https://nopecha.com/demo/cloudflare" data.txt --solve-cloudflare --css-selector "#padded_content a"
 
     # Use a proxy for anonymity
-    scrapling extract stealthy-fetch --ai-targeted "https://site.com" content.md --proxy "http://proxy-server:8080"
+    scrapling extract stealthy-fetch --ai-targeted --solve-cloudflare "https://site.com" content.md --proxy "http://proxy-server:8080"
     ```
 
     ### Notes

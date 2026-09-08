@@ -25,35 +25,53 @@ if [ ! -x "$REAL" ]; then
 fi
 
 # Only `extract <subcommand>` accepts --ai-targeted. `install`, `shell`,
-# `--version` and anything else are passed through untouched.
+# `--version` and anything else pass through untouched.
+#
+# `--` is the end-of-options marker and is transparent here: `extract -- get`
+# runs `get` exactly like `extract get`. Missing that, the first version read
+# `--` as the subcommand, injected nothing, and the fetch ran unsanitized.
+if [ "${2:-}" = "--" ]; then
+  sub_pos=3
+  sub="${3:-}"
+  next="${4:-}"
+else
+  sub_pos=2
+  sub="${2:-}"
+  next="${3:-}"
+fi
+
 inject=0
 if [ "${1:-}" = "extract" ]; then
-  case "${2:-}" in
+  case "$sub" in
     get | post | put | delete | fetch | stealthy-fetch) inject=1 ;;
     *) ;;
   esac
 fi
 
-# Two reasons not to inject, both checked against the PARSED arguments rather
-# than a text match, so neither can be forged by quoting:
-#   --help    prints usage and fetches nothing
-#   the flag  is already there (harmless to repeat, but keep the argv clean)
-if [ "$inject" = 1 ]; then
-  for arg in "$@"; do
-    case "$arg" in
-      --help | --ai-targeted)
-        inject=0
-        break
-        ;;
-      *) ;;
-    esac
-  done
+# ONE reason not to inject, and it is checked at ONE position: the token
+# immediately after the subcommand being `--help`.
+#
+# The first version scanned the WHOLE argv for `--help` or an existing
+# `--ai-targeted`, and that was the same defect the replaced hook had — a token
+# Click consumes as an option VALUE is not an option. `-s --help`,
+# `--proxy --help`, `-H --help` and `-s --ai-targeted` all suppressed injection
+# while the fetch went ahead unsanitized. Position, not presence.
+#
+# No check for an existing `--ai-targeted` either: the flag is idempotent
+# (measured — `--ai-targeted --ai-targeted` exits 0 with identical output), so
+# injecting unconditionally is both simpler and impossible to trick.
+if [ "$inject" = 1 ] && [ "$next" = "--help" ]; then
+  inject=0
 fi
 
 if [ "$inject" = 1 ]; then
-  # Insert right after the subcommand, where it belongs to the subcommand and
-  # not to the `extract` group.
-  set -- "$1" "$2" --ai-targeted "${@:3}"
+  # Right after the subcommand, so Click binds it to the subcommand rather than
+  # to the `extract` group or to a preceding option.
+  if [ "$sub_pos" = 3 ]; then
+    set -- "$1" "$2" "$3" --ai-targeted "${@:4}"
+  else
+    set -- "$1" "$2" --ai-targeted "${@:3}"
+  fi
 fi
 
 exec "$REAL" "$@"

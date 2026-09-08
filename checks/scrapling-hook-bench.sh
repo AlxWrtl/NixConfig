@@ -73,10 +73,26 @@ run allow "prose mentioning it" 'echo "scrapling extract get is documented"'
 run allow "unrelated command" 'ls -la /tmp'
 
 echo
-echo "--- must ALLOW: reading the file is not running it ---"
-run allow "cat the real binary" "cat $REAL"
-run allow "ls the tool dir" "ls -l $REAL"
-run allow "readlink" "readlink $REAL"
+echo "--- must DENY: other ways to the same binary, all found by review ---"
+# The first version matched one spelling of the path, so every one of these
+# walked past it. They all name the tool directory, or reach it through uv.
+run deny "relative after cd" 'cd ~/.local/share/uv/tools/scrapling/bin && ./scrapling extract get https://x o.md'
+run deny "PATH prefix" 'PATH=/Users/alx/.local/share/uv/tools/scrapling/bin scrapling extract get https://x o.md'
+run deny "dir in a variable" 'D=/Users/alx/.local/share/uv/tools/scrapling/bin; $D/scrapling extract get https://x o.md'
+run deny "redundant slashes" '/Users/alx/.local/share/uv/tools/scrapling/bin/./scrapling extract get https://x o.md'
+run deny "uvx" 'uvx scrapling extract get https://x o.md'
+run deny "uv tool run" 'uv tool run scrapling extract get https://x o.md'
+run deny "the venv python" '/Users/alx/.local/share/uv/tools/scrapling/bin/python -c "from scrapling.cli import main; main()"'
+
+echo
+echo "--- accepted FALSE POSITIVES: denied although nothing would run ---"
+# The read-only exemption that used to allow these matched cat/ls/head ANYWHERE
+# on the line, so `cat /dev/null; $REAL extract get U o` was exempted too — it
+# let running through, which is the opposite of its purpose. Scoping it needs
+# per-segment shell parsing, the guessing this design exists to avoid. Denying
+# `cat` on one nix-managed path is the cheaper mistake; use the Read tool.
+run deny "cat the real binary" "cat $REAL"
+run deny "ls the tool dir" "ls -l $REAL"
 
 echo
 echo "--- must ALLOW: wrong tool, and malformed payloads must not deny-all ---"

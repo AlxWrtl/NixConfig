@@ -406,15 +406,29 @@ round had closed. The mind that writes a matcher enumerates the shapes it
 already handles.
 
 A shim on PATH replaced it: it is executed by the shell, so it receives the
-parsed argument vector and predicts nothing. The fuzz harness generates shell
-compositions around a real call, swaps the binary for a recorder, and asserts
-the flag reached it — shapes nobody chose. Run it against the built package,
-and confirm it can fail: with the injection line commented out it drops from
-48/48 to 5/43.
+parsed argument vector and predicts nothing. That closes the shell-composition
+class entirely — but not argv itself. Review then found three more, all in the
+shim's own argument handling: `extract -- get` hid the subcommand behind the
+end-of-options marker, and scanning the whole argv for `--help` or an existing
+flag meant a token Click consumes as an option VALUE (`-s --help`,
+`-s --ai-targeted`) suppressed injection. The fix is positional: look only at
+the slot after the subcommand, and inject unconditionally, since the flag is
+idempotent.
 
-`checks/scrapling-hook-bench.sh` covers what is left of the hook — 20 cases on
-one narrow job, refusing the real binary when it is reached by its full path,
-the only route around the shim. With no argument it extracts the hook out of
+The harness generates shell compositions around a real call, swaps the binary
+for a recorder, and asserts the flag arrived **at argv[3]** — presence alone
+scored `-s --ai-targeted` as a pass. It refuses to run unless it can install
+the shim under test and a tripwire proves it can still detect a missing flag:
+the first version reported 48/48 and exit 0 for `/nonexistent/path/scrapling`,
+because `cp` failed unchecked and PATH fell through to the live system. It was
+grading the machine while claiming to grade its argument. Confirm it can fail —
+comment out the injection and it drops from 55/55 to 5/50.
+
+`checks/scrapling-hook-bench.sh` covers what is left of the hook — 26 cases on
+one narrow job, refusing the real binary when it is reached around the shim: a
+full or relative path, a `PATH=` prefix, a variable holding the directory,
+`uvx`, `uv tool run`, the venv's python. It is a backstop, not a wall, and the
+skill says so. With no argument it extracts the hook out of
 `home/claude-code/hooks.nix` through `checks/scrapling-hook-extract.sh`, so it
 tests the string Nix will write rather than a copy that may have drifted, and
 works before any rebuild.

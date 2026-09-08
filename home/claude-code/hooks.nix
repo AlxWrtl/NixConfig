@@ -1231,7 +1231,7 @@
     # Cheapest possible bail FIRST: this runs on every Bash call of every
     # session, so the ~100% case must cost zero subprocesses.
     case "$INPUT" in
-      *uv/tools/scrapling*) ;;
+      *uv/tools/scrapling* | *uvx* | *"uv tool run"*) ;;
       *) exit 0 ;;
     esac
 
@@ -1242,18 +1242,27 @@
 
     COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) || exit 0
 
-    # Fixed string, not a regex: the path is the path.
-    printf '%s\n' "$COMMAND" | grep -q -F -e 'share/uv/tools/scrapling/bin/scrapling' || exit 0
+    # Match the TOOL DIRECTORY, not one spelling of the binary path. The first
+    # version matched only `share/uv/tools/scrapling/bin/scrapling`, so
+    # `cd .../uv/tools/scrapling/bin && ./scrapling`, a `PATH=` prefix, a
+    # variable holding the directory, `/./`, `//` and `../bin/` all walked past
+    # it. Every one of those still names the directory somewhere on the line.
+    # `uvx` and `uv tool run` reach the same binary without naming it at all.
+    printf '%s\n' "$COMMAND" | grep -qE 'uv/tools/scrapling|uvx[[:space:]]+scrapling|uv[[:space:]]+tool[[:space:]]+run[[:space:]]+scrapling' || exit 0
 
-    # Reading the file (cat/ls/head/stat/realpath) is not running it.
-    printf '%s\n' "$COMMAND" | grep -qE '(^|[[:space:]])(cat|ls|head|tail|stat|realpath|file|wc|readlink|grep)([[:space:]]|$)' && exit 0
+    # No read-only exemption. There was one — cat/ls/head/... — and it matched
+    # those words ANYWHERE on the line, so `cat /dev/null; $REAL extract get U o`
+    # sailed through: the exemption meant to allow reading the file also allowed
+    # running it. Scoping it properly needs per-segment shell parsing, which is
+    # exactly the guessing this whole design moved away from. Denying `cat` on
+    # one nix-managed path costs nothing — read it with the Read tool.
 
-    REASON="DENIED: that is the real scrapling binary, reached by its full path, which bypasses the shim on PATH that guarantees --ai-targeted.
+    REASON="DENIED: that reaches scrapling around the shim on PATH, which is what injects --ai-targeted.
 
     Use the plain command instead — the shim adds the flag for you:
         scrapling extract <get|fetch|stealthy-fetch> URL out.md
 
-    --ai-targeted is upstream's mandatory protection against prompt injection embedded in the page it fetches. If you genuinely need the raw, unsanitized document, run it yourself in a terminal rather than routing around the shim here."
+    --ai-targeted is upstream's mandatory protection against prompt injection embedded in the page being fetched. If you only wanted to READ a file under that directory, use the Read tool. If you genuinely need the raw unsanitized document, that is a human task: run it yourself in a terminal rather than routing around the shim here."
 
     jq -n --arg reason "$REASON" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
     exit 0

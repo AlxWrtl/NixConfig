@@ -47,10 +47,46 @@ for a in "$@"; do printf '%s\n' "$a" >> "$ARGV_OUT"; done
 REC
 chmod +x "$REAL_DIR/scrapling"
 
-cp "$SHIM" "$WORK/bin/scrapling"
+# Install the shim under test, and REFUSE TO RUN if that did not work.
+# Without these checks the harness reported "48 passed, 0 failed" and exit 0
+# for the argument /nonexistent/path/scrapling: `cp` failed, nothing landed in
+# $WORK/bin, and PATH fell through to the shim already installed on the
+# machine. It graded the live system while claiming to grade its argument.
+[ -f "$SHIM" ] && [ -r "$SHIM" ] || {
+  echo "fuzz: shim not found or not readable: $SHIM" >&2
+  exit 2
+}
+cp "$SHIM" "$WORK/bin/scrapling" || {
+  echo "fuzz: cannot install the shim under test" >&2
+  exit 2
+}
 chmod +x "$WORK/bin/scrapling"
+[ -x "$WORK/bin/scrapling" ] || {
+  echo "fuzz: installed shim is not executable" >&2
+  exit 2
+}
 export PATH="$WORK/bin:$PATH"
 export ARGV_OUT="$WORK/argv.txt"
+
+# TRIPWIRE: prove the harness can SEE a missing flag before trusting anything
+# it says. A pass-through shim must be scored as not-injecting; if it is not,
+# the instrument is blind and every number below is decoration.
+cat > "$WORK/_tripwire" <<TW
+#!/usr/bin/env bash
+exec "$REAL_DIR/scrapling" "\$@"
+TW
+chmod +x "$WORK/_tripwire"
+rm -f "$ARGV_OUT"
+"$WORK/_tripwire" extract get https://x o.md >/dev/null 2>&1
+if [ ! -f "$ARGV_OUT" ]; then
+  echo "fuzz: tripwire never reached the recorder — harness is broken" >&2
+  exit 2
+fi
+if grep -qx -- '--ai-targeted' "$ARGV_OUT"; then
+  echo "fuzz: tripwire scored a pass-through shim as injecting the flag." >&2
+  echo "fuzz: the harness cannot detect a missing flag; refusing to report." >&2
+  exit 2
+fi
 
 SUBS=(get post put delete fetch stealthy-fetch)
 PASS=0; FAIL=0
@@ -81,12 +117,19 @@ run_case() {  # run_case <shell-line> <label>
   if [ ! -f "$ARGV_OUT" ]; then
     FAIL=$((FAIL+1)); printf 'FAIL  %-30s real binary never ran\n      %s\n' "$2" "$1"; return
   fi
-  if grep -qx -- '--ai-targeted' "$ARGV_OUT"; then
+  # POSITION, not presence. `-s --ai-targeted` puts the literal string in argv
+  # as the css-selector VALUE while ai_targeted stays False — presence alone
+  # scored that as a pass. Whatever shell wrapper was used, the real binary's
+  # argv is always `extract <sub> --ai-targeted …`, so the flag belongs at
+  # index 3 — or 4 when `--` sits between `extract` and the subcommand.
+  local want=3
+  [ "$(sed -n 2p "$ARGV_OUT")" = "--" ] && want=4
+  if [ "$(sed -n "${want}p" "$ARGV_OUT")" = "--ai-targeted" ]; then
     PASS=$((PASS+1))
   else
     FAIL=$((FAIL+1))
-    printf 'FAIL  %-30s flag missing\n      cmd:  %s\n      argv: %s\n' \
-      "$2" "$1" "$(tr '\n' ' ' < "$ARGV_OUT")"
+    printf 'FAIL  %-30s flag not at argv[%s]\n      cmd:  %s\n      argv: %s\n' \
+      "$2" "$want" "$1" "$(tr '\n' ' ' < "$ARGV_OUT")"
   fi
 }
 
@@ -119,6 +162,32 @@ run_case 'S=scrapling; $S extract get https://x o.md'  "variable indirection"
 run_case 'scrapling extract "get" https://x o.md'      "quoted subcommand"
 
 echo
+echo "=== argv shapes, where the shim broke ==="
+# None of these were covered by the templates above, and all three reached the
+# real binary unflagged. `--` hid the subcommand; the other two exploited that
+# suppression scanned the WHOLE argv, so a token consumed by Click as an option
+# VALUE was mistaken for the user asking for help or already passing the flag.
+run_case 'scrapling extract -- get https://x o.md'            "-- before subcommand"
+run_case 'scrapling extract get https://x o.md -s --help'     "--help as -s value"
+run_case 'scrapling extract get https://x o.md --proxy --help' "--help as --proxy value"
+run_case 'scrapling extract get https://x o.md -H --help'     "--help as -H value"
+run_case 'scrapling extract get https://x o.md -s --ai-targeted' "flag as -s value"
+run_case 'scrapling extract get https://x -- --help'          "--help as positional"
+
+echo
+echo "=== the flag must land right after the subcommand, not merely somewhere ==="
+# Presence is not placement: Click binds a value to the option before it, so a
+# flag inserted in the wrong slot can be swallowed as somebody's argument.
+rm -f "$ARGV_OUT"
+bash -c 'scrapling extract get https://x o.md -s article' >/dev/null 2>&1
+if [ -f "$ARGV_OUT" ] && [ "$(sed -n 3p "$ARGV_OUT")" = "--ai-targeted" ]; then
+  PASS=$((PASS+1)); printf 'ok    %-30s argv[3] == --ai-targeted\n' "flag position"
+else
+  FAIL=$((FAIL+1))
+  printf 'FAIL  %-30s argv: %s\n' "flag position" "$(tr '\n' ' ' < "$ARGV_OUT" 2>/dev/null)"
+fi
+
+echo
 echo "=== must NOT inject: --help, and non-extract subcommands ==="
 neg() { # neg <line> <label> <token-that-must-be-absent>
   rm -f "$ARGV_OUT"; bash -c "$1" >/dev/null 2>&1
@@ -134,12 +203,20 @@ neg 'scrapling shell'                 "shell"                 '--ai-targeted'
 neg 'scrapling --version'             "--version"             '--ai-targeted'
 
 echo
-echo "=== idempotent: an explicit flag is not duplicated ==="
+echo "=== an explicit flag is injected over, on purpose ==="
+# The shim does NOT look for an existing --ai-targeted before injecting. That
+# search is what let `-s --ai-targeted` disarm it: a token Click consumes as an
+# option value is not an option. Injecting unconditionally cannot be tricked,
+# and the duplicate is free — measured on 0.4.15, `--ai-targeted --ai-targeted`
+# exits 0 with byte-identical output. What matters is the flag at argv[3].
 rm -f "$ARGV_OUT"
 bash -c 'scrapling extract get https://x o.md --ai-targeted' >/dev/null 2>&1
-n=$(grep -cx -- '--ai-targeted' "$ARGV_OUT" 2>/dev/null || echo 0)
-if [ "$n" = "1" ]; then PASS=$((PASS+1)); printf 'ok    %-30s appears once\n' "explicit flag"
-else FAIL=$((FAIL+1)); printf 'FAIL  %-30s appears %s times\n' "explicit flag" "$n"; fi
+if [ "$(sed -n 3p "$ARGV_OUT" 2>/dev/null)" = "--ai-targeted" ]; then
+  PASS=$((PASS+1)); printf 'ok    %-30s injected at argv[3] regardless\n' "explicit flag"
+else
+  FAIL=$((FAIL+1)); printf 'FAIL  %-30s argv: %s\n' "explicit flag" \
+    "$(tr '\n' ' ' < "$ARGV_OUT" 2>/dev/null)"
+fi
 
 echo
 echo "=== $PASS passed, $FAIL failed ==="

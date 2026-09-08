@@ -463,6 +463,19 @@
       # a version-only marker turns any later capability fix into a no-op.
       MARKER="$HOME/.claude/.scrapling-installed-$SCRAPLING_VERSION-shell-browsers"
 
+      # Drop the MCP entrypoint. BEFORE the marker check, on purpose.
+      # `uv tool install` creates EVERY [project.scripts] entry regardless of
+      # extras, so `scrapling-mcp` lands on PATH even with only [shell] —
+      # verified after the first rebuild: the binary existed and `--help`
+      # worked while the `mcp` package was absent from the tool venv, so the
+      # server would die at import. This install is deliberately MCP-less.
+      # Placed AFTER the guard first, this line never ran: the marker was
+      # already stamped, so the entry exited above it and the fix was inert.
+      # Caught by checking the live binary rather than trusting the diff.
+      # Cheap and idempotent, so it belongs before the guard, where it also
+      # self-heals if uv recreates the entrypoint outside a rebuild.
+      rm -f "$HOME/.local/bin/scrapling-mcp" 2>/dev/null || true
+
       # Already fully set up → nothing to do.
       [ -f "$MARKER" ] && exit 0
 
@@ -490,17 +503,6 @@
           || { echo "scrapling install failed (will retry next rebuild; run outside sudo for network)"; exit 0; }
         probe_version
       fi
-
-      # 1b. Drop the MCP entrypoint. `uv tool install` creates EVERY
-      #     [project.scripts] entry regardless of extras, so `scrapling-mcp`
-      #     lands on PATH even with only [shell] installed — verified after the
-      #     first rebuild: the binary existed and `--help` worked, while the
-      #     `mcp` package was absent from the tool venv, so starting the server
-      #     would fail at import. This install is deliberately MCP-less; leaving
-      #     a half-working server entrypoint on PATH invites exactly the
-      #     confusion the choice was meant to avoid. Unconditional, because uv
-      #     re-creates it on every reinstall.
-      rm -f "$HOME/.local/bin/scrapling-mcp" 2>/dev/null || true
 
       # 2. Fetch the browser stack (Playwright/Camoufox + deps). This is a heavy,
       #    network-bound download and it commonly fails under `sudo

@@ -89,6 +89,9 @@ echo
 echo "--- must ALLOW: false denials fixed by quote-blanking ---"
 run allow "quoted # after real flag" 'scrapling extract get "https://x/a #b" o.md --ai-targeted'
 run allow "prose in a commit msg"    'git commit -m "fix: scrapling extract get denies"'
+# --help prints usage and fetches nothing; denying it was a pure false positive.
+run allow "subcommand --help"        'scrapling extract fetch --help'
+run allow "subcommand -h"            'scrapling extract get -h'
 
 echo
 echo "--- KNOWN GAPS: unclosable by text matching, asserted so they stay visible ---"

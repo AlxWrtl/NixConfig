@@ -1275,6 +1275,10 @@
     UNPROTECTED=""
     while IFS= read -r SEG; do
       printf '%s\n' "$SEG" | grep -qE "$SCRAPLING_RE" || continue
+      # `--help` / `-h` prints usage and fetches nothing, so gating it is a
+      # pure false positive. Measured: `scrapling extract fetch --help` was
+      # denied, which is how this was found.
+      printf '%s\n' "$SEG" | grep -qE '(^|[[:space:]])(--help|-h)([[:space:]]|$)' && continue
       # Standalone token, not a substring: `--ai-targeted-later` or a fragment
       # glued to something else must not count as the flag.
       printf '%s\n' "$SEG" | grep -qE "$FLAG_RE" && continue

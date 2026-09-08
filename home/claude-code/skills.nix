@@ -3080,12 +3080,15 @@ in
     ERROR:...process_singleton_posix.cc: Failed to create socket directory.
     ```
 
-    Chromium's profile dir (`~/Library/Application Support/Google/Chrome for
-    Testing`, used by `fetch`) is allow-listed in the sandbox, so that one
-    works. `stealthy-fetch` drives Camoufox instead and its data dir has NOT
-    been verified — if it aborts with the signature above, that is the sandbox,
-    not the target site. Re-run with the sandbox disabled (one confirmation
-    box) and report the path it was refused, so it can be allow-listed too.
+    **Both browser rungs need the sandbox disabled. This is settled, not a
+    guess** — allow-listing the profile directory was tried, rebuilt and
+    measured: the browser still aborts, because what it is refused is Mach IPC
+    registration, a unix socket directory and process signalling, none of which
+    a path allowlist reaches. There is no `--user-data-dir` on the CLI either.
+
+    So: do not try to fix this, and do not ask for a path to be allow-listed.
+    Re-run the same command with the sandbox disabled — the user gets one
+    confirmation box, and it works (verified: HTTP 200, correct output).
 
     Never conclude a site is unscrapable, and never escalate a rung, on the
     strength of that error: nothing was ever sent to the site.

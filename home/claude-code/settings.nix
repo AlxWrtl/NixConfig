@@ -150,24 +150,24 @@ in
         # `rtk trust --list` showed the file trusted and `rtk hook check` showed
         # the rewrite. Only a byte count caught it.
         # Scope is the data dir alone — no credentials live there.
-        # Scrapling's browser rungs (`extract fetch` / `stealthy-fetch`) launch
-        # Chromium, which insists on writing a persistent profile. Refused, it
-        # does not degrade — it ABORTS and writes no output file. Measured on
-        # 2026-09-08, same command, same minute, only the sandbox differing:
-        #   scrapling extract fetch --ai-targeted https://example.com out.md
-        #   inside  -> no file. "Failed to create a ProcessSingleton for your
-        #              profile directory", "Failed to create socket directory",
-        #              Crashpad settings.dat: Operation not permitted (1)
-        #   outside -> HTTP 200, 180 bytes of correct markdown
-        # Those rungs are the anti-bot capability Scrapling was chosen for, so
-        # without this the tool is a plain HTTP fetcher. Scope is a browser
-        # profile directory: no credentials of the user's own live there, and it
-        # is NOT the real Chrome profile — "Chrome for Testing" is the throwaway
-        # build Playwright drives.
+        # NOT here, deliberately: Chromium's profile dir for Scrapling's browser
+        # rungs (`extract fetch` / `stealthy-fetch`). It was added on
+        # 2026-09-08, rebuilt, and MEASURED to buy nothing. The path entry does
+        # work — the Crashpad "Operation not permitted" line disappeared and the
+        # profile dir got created — but the browser still aborts with no output
+        # file on things a path allowlist cannot reach:
+        #   bootstrap_check_in org.chromium.crashpad...: Permission denied (1100)
+        #   process_singleton_posix.cc: Failed to create socket directory.
+        #   exception while trying to kill process: Error: kill EPERM
+        # Mach IPC registration, a unix socket dir, and process signalling. The
+        # CLI offers no `--user-data-dir` to relocate the profile either, so
+        # there is no lever. Reverted rather than kept: an allowlist entry that
+        # widens the sandbox while implying a capability that does not exist is
+        # worse than none. The browser rungs run with the sandbox disabled —
+        # verified working, one confirmation box.
         allowWrite = [
           "${homeDirectory}/GraphVault"
           "${homeDirectory}/Library/Application Support/rtk"
-          "${homeDirectory}/Library/Application Support/Google/Chrome for Testing"
         ];
       };
       network = {

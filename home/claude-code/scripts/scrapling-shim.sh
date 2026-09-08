@@ -27,21 +27,26 @@ fi
 # Only `extract <subcommand>` accepts --ai-targeted. `install`, `shell`,
 # `--version` and anything else pass through untouched.
 #
-# `--` is the end-of-options marker and is transparent here: `extract -- get`
-# runs `get` exactly like `extract get`. Missing that, the first version read
-# `--` as the subcommand, injected nothing, and the fetch ran unsanitized.
-if [ "${2:-}" = "--" ]; then
-  sub_pos=3
-  sub="${3:-}"
-  next="${4:-}"
-else
-  sub_pos=2
-  sub="${2:-}"
-  next="${3:-}"
-fi
+# `--` is the end-of-options marker and Click treats it as transparent, so it
+# may sit before `extract`, before the subcommand, or both. Locate each word by
+# stepping over one rather than hard-coding an index — hard-coding produced two
+# bypasses, the second found only after the first was fixed:
+#   scrapling extract -- get URL out    `--` read as the subcommand
+#   scrapling -- extract get URL out    `extract` assumed to be argv[1]
+# Both fetched the page unsanitized: measured live at 196 bytes against the 180
+# a flagged run produces.
+cmd_pos=1
+[ "${1:-}" = "--" ] && cmd_pos=2
+sub_pos=$((cmd_pos + 1))
+[ "${!sub_pos-}" = "--" ] && sub_pos=$((sub_pos + 1))
+next_pos=$((sub_pos + 1))
+
+cmd="${!cmd_pos-}"
+sub="${!sub_pos-}"
+next="${!next_pos-}"
 
 inject=0
-if [ "${1:-}" = "extract" ]; then
+if [ "$cmd" = "extract" ]; then
   case "$sub" in
     get | post | put | delete | fetch | stealthy-fetch) inject=1 ;;
     *) ;;
@@ -66,12 +71,8 @@ fi
 
 if [ "$inject" = 1 ]; then
   # Right after the subcommand, so Click binds it to the subcommand rather than
-  # to the `extract` group or to a preceding option.
-  if [ "$sub_pos" = 3 ]; then
-    set -- "$1" "$2" "$3" --ai-targeted "${@:4}"
-  else
-    set -- "$1" "$2" --ai-targeted "${@:3}"
-  fi
+  # to the `extract` group or to whatever option happens to precede it.
+  set -- "${@:1:sub_pos}" --ai-targeted "${@:sub_pos+1}"
 fi
 
 exec "$REAL" "$@"

@@ -118,18 +118,24 @@ run_case() {  # run_case <shell-line> <label>
     FAIL=$((FAIL+1)); printf 'FAIL  %-30s real binary never ran\n      %s\n' "$2" "$1"; return
   fi
   # POSITION, not presence. `-s --ai-targeted` puts the literal string in argv
-  # as the css-selector VALUE while ai_targeted stays False — presence alone
-  # scored that as a pass. Whatever shell wrapper was used, the real binary's
-  # argv is always `extract <sub> --ai-targeted …`, so the flag belongs at
-  # index 3 — or 4 when `--` sits between `extract` and the subcommand.
-  local want=3
-  [ "$(sed -n 2p "$ARGV_OUT")" = "--" ] && want=4
-  if [ "$(sed -n "${want}p" "$ARGV_OUT")" = "--ai-targeted" ]; then
+  # as the css-selector VALUE while ai_targeted stays False, and presence alone
+  # scored that as a pass.
+  #
+  # The rule is relational, not a fixed index: the flag must sit IMMEDIATELY
+  # AFTER the subcommand token. Indexing by number broke as soon as `--` could
+  # appear before `extract` as well as before the subcommand — the assertion
+  # would then have failed a correct shim, which is how a harness starts lying
+  # in the other direction.
+  if awk '
+      /^(get|post|put|delete|fetch|stealthy-fetch)$/ && !seen { seen=NR; next }
+      seen && NR==seen+1 && $0=="--ai-targeted" { ok=1 }
+      END { exit(ok?0:1) }
+    ' "$ARGV_OUT"; then
     PASS=$((PASS+1))
   else
     FAIL=$((FAIL+1))
-    printf 'FAIL  %-30s flag not at argv[%s]\n      cmd:  %s\n      argv: %s\n' \
-      "$2" "$want" "$1" "$(tr '\n' ' ' < "$ARGV_OUT")"
+    printf "FAIL  %-30s flag not right after the subcommand\n      cmd:  %s\n      argv: %s\n" \
+      "$2" "$1" "$(tr "\n" " " < "$ARGV_OUT")"
   fi
 }
 
@@ -168,6 +174,10 @@ echo "=== argv shapes, where the shim broke ==="
 # suppression scanned the WHOLE argv, so a token consumed by Click as an option
 # VALUE was mistaken for the user asking for help or already passing the flag.
 run_case 'scrapling extract -- get https://x o.md'            "-- before subcommand"
+# Click accepts the end-of-options marker before `extract` too, and the shim
+# assumed `extract` was argv[1]. Measured live before the fix: 196 bytes, i.e.
+# the page was fetched unsanitized.
+run_case 'scrapling -- extract get https://x o.md'            "-- before extract"
 run_case 'scrapling extract get https://x o.md -s --help'     "--help as -s value"
 run_case 'scrapling extract get https://x o.md --proxy --help' "--help as --proxy value"
 run_case 'scrapling extract get https://x o.md -H --help'     "--help as -H value"

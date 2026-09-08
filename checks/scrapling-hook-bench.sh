@@ -90,8 +90,26 @@ echo "--- must ALLOW: false denials fixed by quote-blanking ---"
 run allow "quoted # after real flag" 'scrapling extract get "https://x/a #b" o.md --ai-targeted'
 run allow "prose in a commit msg"    'git commit -m "fix: scrapling extract get denies"'
 # --help prints usage and fetches nothing; denying it was a pure false positive.
-run allow "subcommand --help"        'scrapling extract fetch --help'
-run allow "subcommand -h"            'scrapling extract get -h'
+# It must sit DIRECTLY after the subcommand: anywhere else, Click swallows it as
+# an option VALUE and a real extract runs. `-h` is NOT a scrapling option at all
+# (`scrapling extract get -h` -> "Error: No such option '-h'"), so exempting it
+# was pure attack surface — it excused nothing legitimate.
+run allow "--help after subcommand"  'scrapling extract fetch --help'
+
+echo
+echo "--- must DENY: --help swallowed as an option value (a real extract runs) ---"
+run deny "--help as -s value"        'scrapling extract get https://x o.md -s --help'
+run deny "--help as -H value"        'scrapling extract get https://x o.md -H --help'
+run deny "--help as --proxy value"   'scrapling extract get https://x o.md --proxy --help'
+run deny "-h as -s value"            'scrapling extract get https://x o.md -s -h'
+run deny "-h as a redirect target"   'scrapling extract get https://x o.md > -h'
+
+echo
+echo "--- must DENY: quote pairing the shell would not do (C1 regression, round 2) ---"
+# Two sequential gsubs (double-quotes, then single) pair a `"` inside '...' with
+# a later `"`, swallowing the real call between them. One alternation fixes it.
+run deny "double quote inside single" \
+  $'echo \x27a\x22\x27 ; scrapling extract get https://x o.md ; echo \x27\x22\x27'
 
 echo
 echo "--- KNOWN GAPS: unclosable by text matching, asserted so they stay visible ---"
@@ -104,6 +122,22 @@ run allow "command substitution"     'echo $(scrapling extract get https://x o.m
 run allow "quoted subcommand"        'scrapling extract "get" https://x o.md'
 run allow "variable indirection"     'S=scrapling; $S extract get https://x o.md'
 run allow "eval + detached comment"  'eval "scrapling extract get https://x o.md" "#" --ai-targeted'
+# Both need a real tokenizer, not a regex: a backslash-escaped quote makes the
+# flag look present while it is really part of the output filename, and a quote
+# opened on one line and closed on another hides the call from any per-line scan.
+run allow "escaped quote forges flag" \
+  $'scrapling extract get https://x \x22o\\\x22 --ai-targeted .md\x22'
+
+echo
+echo "--- accepted FALSE POSITIVE: denied though nothing would run ---"
+# awk scans line by line, so a quoted string spanning newlines is not seen as
+# quoted and its contents read as a command. Here the call is inside an echo and
+# no extract ever runs, yet it is denied. Kept as-is deliberately: this is the
+# fail-closed direction. Denying a harmless echo costs a turn; allowing a real
+# call costs the protection. Asserted so the behaviour stays known, not silent.
+run deny "call quoted across lines"  'echo "start
+scrapling extract get https://x o.md
+end"'
 
 echo
 echo "--- must ALLOW (flag present) ---"

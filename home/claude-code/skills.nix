@@ -3077,9 +3077,9 @@ in
 
     | target | `get` | `stealthy-fetch --solve-cloudflare` |
     |---|---|---|
-    | crunchbase.com/organization/anthropic | 403 | 307, 33 052 B, real funding data |
-    | indeed.com/q-software-engineer-jobs | 403 | 200, 36 438 B, real listings |
-    | g2.com/products/notion/reviews | 403 | **403 — still blocked** |
+    | crunchbase.com/organization/anthropic | 403 | 33 052 B, real funding data |
+    | indeed.com/q-software-engineer-jobs | 403 | 36 438 B, real listings |
+    | g2.com/products/notion/reviews | 403 | **still blocked, 0 B** |
 
     So the escalation is worth trying and is not a guarantee. Two of three, on a
     sample of three: do not promise a user it will work before it has.

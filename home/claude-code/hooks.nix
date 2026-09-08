@@ -1246,7 +1246,13 @@
     # got it wrong; none is precautionary.
     #   a. Join `\`+newline continuations, or `scrapling \<nl>extract get` reads
     #      as two harmless lines.
-    #   b. Blank the CONTENTS of quoted strings. Without this, a literal in a
+    #   b. Blank quoted strings — ONE alternation, never two sequential gsubs.
+    #      Blanking double quotes first and single quotes after pairs quotes the
+    #      shell never pairs: a `"` inside '...' then matched a later `"` and
+    #      swallowed the real call between them, so
+    #        echo 'a"' ; scrapling extract get U o.md ; echo '"'
+    #      passed — a REGRESSION the two-pass version introduced.
+    #      Without blanking at all, a literal in a
     #      URL or a header value disarmed the check —
     #        scrapling extract get "https://x/?q=--ai-targeted" o.md
     #        scrapling extract get https://x o.md -H "X: --ai-targeted"
@@ -1263,7 +1269,7 @@
     SEGMENTS=$(printf '%s\n' "$COMMAND" \
       | sed -e :a -e '/\\$/{N;s/\\\n//;ba' -e '}' \
       | awk '
-          { gsub(/"[^"]*"/, "\"Q\""); gsub(/'"'"'[^'"'"']*'"'"'/, "'"'"'Q'"'"'");
+          { gsub(/"[^"]*"|'"'"'[^'"'"']*'"'"'/, "Q");
             sub(/[[:space:]]#.*$/, "");
             gsub(/&&|\|\||;|\||&/, "\n");
             print }
@@ -1275,10 +1281,14 @@
     UNPROTECTED=""
     while IFS= read -r SEG; do
       printf '%s\n' "$SEG" | grep -qE "$SCRAPLING_RE" || continue
-      # `--help` / `-h` prints usage and fetches nothing, so gating it is a
-      # pure false positive. Measured: `scrapling extract fetch --help` was
-      # denied, which is how this was found.
-      printf '%s\n' "$SEG" | grep -qE '(^|[[:space:]])(--help|-h)([[:space:]]|$)' && continue
+      # `--help` DIRECTLY after the subcommand prints usage and fetches
+      # nothing, so gating that is a pure false positive. It must be anchored
+      # there: anywhere else on the line Click swallows it as an option VALUE
+      # and a real extract runs — `-s --help`, `-H --help`, `--proxy --help`
+      # and even `> -h` all did. `-h` is not a scrapling option at all
+      # (`Error: No such option '-h'`), so it excused nothing legitimate and
+      # was pure attack surface; it is gone.
+      printf '%s\n' "$SEG" | grep -qE "$SCRAPLING_RE"'[[:space:]]*--help([[:space:]]|$)' && continue
       # Standalone token, not a substring: `--ai-targeted-later` or a fragment
       # glued to something else must not count as the flag.
       printf '%s\n' "$SEG" | grep -qE "$FLAG_RE" && continue

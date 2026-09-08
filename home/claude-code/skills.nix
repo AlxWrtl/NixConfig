@@ -3070,6 +3070,24 @@ in
     escalate to `fetch`, then to `stealthy-fetch`. `fetch` and `stealthy-fetch`
     are nearly the same speed, so escalating costs almost nothing.
 
+    **403 is the signal to escalate**, and on `stealthy-fetch` you must pass
+    `--solve-cloudflare` — it is OFF by default, so forgetting it wastes the
+    whole escalation. Measured 2026-09-08 on three protected pages where plain
+    `get` returned 403:
+
+    | target | `get` | `stealthy-fetch --solve-cloudflare` |
+    |---|---|---|
+    | crunchbase.com/organization/anthropic | 403 | 307, 33 052 B, real funding data |
+    | indeed.com/q-software-engineer-jobs | 403 | 200, 36 438 B, real listings |
+    | g2.com/products/notion/reviews | 403 | **403 — still blocked** |
+
+    So the escalation is worth trying and is not a guarantee. Two of three, on a
+    sample of three: do not promise a user it will work before it has.
+
+    **A 403 can carry a non-empty body** — 938 B and 43 B on two of those
+    targets. Size proves nothing, exactly as the exit code proves nothing.
+    Read the content before reporting success.
+
     **If a browser rung aborts with no output file, read the error before
     escalating.** These rungs launch a real browser, which must write a
     persistent profile. A sandbox refusal looks nothing like a site defence:

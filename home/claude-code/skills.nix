@@ -3070,11 +3070,9 @@ in
     escalate to `fetch`, then to `stealthy-fetch`. `fetch` and `stealthy-fetch`
     are nearly the same speed, so escalating costs almost nothing.
 
-    **The browser rungs need the sandbox off.** `fetch` and `stealthy-fetch`
-    launch Chromium, which must write its profile under
-    `~/Library/Application Support/Google/Chrome for Testing`. Inside the
-    default Claude Code sandbox that write is refused and the browser aborts —
-    measured signature, and it writes NO output file:
+    **If a browser rung aborts with no output file, read the error before
+    escalating.** These rungs launch a real browser, which must write a
+    persistent profile. A sandbox refusal looks nothing like a site defence:
 
     ```
     playwright._impl._errors.Error: BrowserType.launch_persistent_context:
@@ -3082,11 +3080,15 @@ in
     ERROR:...process_singleton_posix.cc: Failed to create socket directory.
     ```
 
-    That is a sandbox refusal, not a broken install and not a site defence — do
-    not escalate to `stealthy-fetch` or conclude the site is unscrapable on the
-    strength of it. `get` works inside the sandbox and covers most pages. When a
-    page genuinely needs a browser, re-run the same command with the sandbox
-    disabled; the user gets one confirmation box.
+    Chromium's profile dir (`~/Library/Application Support/Google/Chrome for
+    Testing`, used by `fetch`) is allow-listed in the sandbox, so that one
+    works. `stealthy-fetch` drives Camoufox instead and its data dir has NOT
+    been verified — if it aborts with the signature above, that is the sandbox,
+    not the target site. Re-run with the sandbox disabled (one confirmation
+    box) and report the path it was refused, so it can be allow-listed too.
+
+    Never conclude a site is unscrapable, and never escalate a rung, on the
+    strength of that error: nothing was ever sent to the site.
 
     Exit code is NOT a success signal: an HTTP 404 exits **0** and writes a
     13-byte error page. Always check the file you got before trusting it.

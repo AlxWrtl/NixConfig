@@ -446,4 +446,74 @@
       fi
     ) || true
   '';
+
+  # Scrapling — web scraping CLI, pinned. Same shape as claudeCodeGraphify:
+  # subshell-wrapped (`( … ) || true`) because home-manager concatenates every
+  # activation entry into ONE `set -eu` shell, so a bare `exit` here would kill
+  # every later DAG entry.
+  # `[shell]`, not `[all]`: `[all]` = `[ai,shell]` and `ai`'s only unique dep is
+  # `mcp>=2.0.0` — dead weight, the MCP server is deliberately not installed.
+  # `[shell]` already carries the fetchers, markdownify (required for .md
+  # output) and IPython.
+  claudeCodeScrapling = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    (
+      SCRAPLING_VERSION="0.4.15"
+      SCRAPLING_EXTRAS="shell"
+      # Marker carries the extras AND the browser step, not just the version:
+      # a version-only marker turns any later capability fix into a no-op.
+      MARKER="$HOME/.claude/.scrapling-installed-$SCRAPLING_VERSION-shell-browsers"
+
+      # Already fully set up → nothing to do.
+      [ -f "$MARKER" ] && exit 0
+
+      export PATH="${pkgs.uv}/bin:$HOME/.local/bin:$PATH"
+
+      BIN="$HOME/.local/bin/scrapling"
+
+      # The exact shape of `scrapling --version` is not contractual, so derive
+      # the version defensively: keep the last whitespace-separated field, then
+      # require it to look like a version. No probe → "not ready", never stamp.
+      probe_version() {
+        RAW="$("$BIN" --version 2>/dev/null || true)"
+        CURRENT="''${RAW##* }"
+        case "$CURRENT" in
+          [0-9]*.[0-9]*) : ;;
+          *) CURRENT="" ;;
+        esac
+      }
+
+      # 1. Install only if the binary is missing / wrong version. No --force.
+      probe_version
+      if [ "$CURRENT" != "$SCRAPLING_VERSION" ]; then
+        echo "Installing scrapling[$SCRAPLING_EXTRAS]==$SCRAPLING_VERSION (uv tool)..."
+        uv tool install "scrapling[$SCRAPLING_EXTRAS]==$SCRAPLING_VERSION" 2>&1 \
+          || { echo "scrapling install failed (will retry next rebuild; run outside sudo for network)"; exit 0; }
+        probe_version
+      fi
+
+      # 2. Fetch the browser stack (Playwright/Camoufox + deps). This is a heavy,
+      #    network-bound download and it commonly fails under `sudo
+      #    darwin-rebuild` where the network is unavailable to the activation
+      #    shell — non-blocking by construction, exactly like graphify's install.
+      BROWSERS_OK=0
+      if [ -x "$BIN" ]; then
+        if "$BIN" install 2>&1; then
+          BROWSERS_OK=1
+        else
+          echo "⚠ scrapling install (browsers) failed — run outside sudo:"
+          echo "    scrapling install"
+        fi
+      fi
+
+      # Stamp the marker ONLY when binary + version + browsers all check out;
+      # a partial state just retries on the next rebuild.
+      if [ -x "$BIN" ] && [ "$CURRENT" = "$SCRAPLING_VERSION" ] && [ "$BROWSERS_OK" = "1" ]; then
+        rm -f "$HOME/.claude"/.scrapling-installed-* 2>/dev/null || true
+        touch "$MARKER"
+        echo "✓ scrapling@$SCRAPLING_VERSION installed (extras: $SCRAPLING_EXTRAS, browsers ready)"
+      else
+        echo "⚠ scrapling not fully set up yet (binary/version/browsers) — will retry"
+      fi
+    ) || true
+  '';
 }

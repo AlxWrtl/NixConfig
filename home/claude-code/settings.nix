@@ -328,6 +328,14 @@ in
               command = "bash ~/.claude/hooks/rtk-nix-rewrite.sh";
               timeout = 5;
             }
+            {
+              type = "command";
+              # Impose --ai-targeted sur `scrapling extract` : flag déclaré
+              # obligatoire en amont contre l'injection de prompt via la page
+              # récupérée. Hook de sécurité → il REFUSE, il ne réécrit pas.
+              command = "bash ~/.claude/hooks/scrapling-ai-targeted.sh";
+              timeout = 5;
+            }
           ];
         }
         {

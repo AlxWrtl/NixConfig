@@ -131,6 +131,35 @@ let
   # --- skills -------------------------------------------------------------
   skillsCorpus = builtins.concatStringsSep "\n" (builtins.attrValues (textAttrs skills));
 
+  # --- scrapling: one version, pinned in two files -------------------------
+  # activation.nix installs an exact pin; the skill TEXT repeats that version
+  # in its install instructions and states its measurements were taken on it.
+  # Bump one and forget the other and the skill teaches a wrong command with a
+  # green build — the silent-failure class this file exists to close.
+  # Plain string ops only — no regex. `builtins.split` on a bracketed literal
+  # is not portable here (nix rejected `scrapling\[shell\]==...` outright).
+  activationSrc = builtins.readFile ../home/claude-code/activation.nix;
+  afterMarker =
+    marker: text:
+    let
+      parts = pkgs.lib.splitString marker text;
+    in
+    if builtins.length parts < 2 then [ ] else builtins.tail parts;
+
+  # activation.nix:  SCRAPLING_VERSION="0.4.15"
+  scraplingPin =
+    let
+      tails = afterMarker ''SCRAPLING_VERSION="'' activationSrc;
+    in
+    if tails == [ ] then null else builtins.head (pkgs.lib.splitString ''"'' (builtins.head tails));
+
+  # skill text:  uv tool install "scrapling[shell]==0.4.15"
+  scraplingSkill = skills.skillScrapling or "";
+  scraplingSkillPins = map (
+    t: builtins.head (pkgs.lib.splitString ''"'' (builtins.head (pkgs.lib.splitString " " t)))
+  ) (afterMarker "scrapling[shell]==" scraplingSkill);
+  scraplingDrift = builtins.filter (v: v != scraplingPin) scraplingSkillPins;
+
   # Each entry fails on its own, with what broke and why it matters.
   assertions = [
     {
@@ -219,6 +248,21 @@ let
       name = "A8 settings: voice block is complete";
       ok = voiceOk;
       msg = "settings.nix `voice` is missing, or one of: enabled != true, mode not in {hold, toggle}, autoSubmit not a boolean — la dictée /voice dépend entièrement de ce bloc, et la clé legacy `voiceEnabled` est supprimée du live par la passe jq d'activation (del(.voiceEnabled)), donc il n'y a plus de filet : si ce bloc saute, la dictée meurt SILENCIEUSEMENT au prochain rebuild, sans erreur ni warning";
+    }
+    {
+      name = "A9 scrapling: skill version matches the activation pin";
+      ok = scraplingPin != null && scraplingSkillPins != [ ] && scraplingDrift == [ ];
+      msg =
+        "activation.nix pins SCRAPLING_VERSION="
+        + (if scraplingPin == null then "<not found>" else scraplingPin)
+        + " but the scrapling skill instructs "
+        + (
+          if scraplingSkillPins == [ ] then
+            "<no scrapling[shell]==X.Y.Z found in the skill>"
+          else
+            builtins.concatStringsSep ", " (map (v: "scrapling[shell]==" + v) scraplingSkillPins)
+        )
+        + " — the skill tells the agent which command to run and claims its measurements were taken on that version; bump one without the other and it teaches a wrong install with a green build and no signal";
     }
   ];
 

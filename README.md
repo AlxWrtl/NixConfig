@@ -396,6 +396,16 @@ HEADING so the question takes one command. It is advisory, needs a reader, and
 is deliberately not wired into `nix flake check`: a heuristic that blocks a
 merge only teaches people to route around it.
 
+`checks/scrapling-hook-bench.sh` is the same kind of tool for the
+`--ai-targeted` hook: 30 cases, run with no argument. It extracts the hook out
+of `home/claude-code/hooks.nix` through `checks/scrapling-hook-extract.sh` and tests the string
+Nix will actually write, not a copy that may have drifted — so it works before
+any rebuild has installed the hook. Twelve of its cases are shell-composition
+bypasses (`cd x &&`, `;`, `|`, env prefix, subshell, absolute path, embedded
+newline) and four assert that a `--ai-targeted` mention elsewhere on the line
+does not disarm an unflagged call. It closes with a timing probe: a
+PreToolUse hook that backtracks blocks every Bash call of the session.
+
 ### Usage
 
 ```

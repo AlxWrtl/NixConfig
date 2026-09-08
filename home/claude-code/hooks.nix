@@ -1189,4 +1189,85 @@
     fi
     exit 0
   '';
+
+  # SECURITY hook (prompt-injection), therefore FAIL-CLOSED: it DENIES, it never
+  # rewrites. The deny payload shape is the one proven in production here
+  # (hookBlockMainBash); a bare `updatedInput` without permissionDecision has no
+  # observable effect on Bash, and adding permissionDecision:"allow" would
+  # auto-approve every scrapling call — wrong for a security hook.
+  #
+  # Detection is deliberately NOT anchored at ^: `hookRtkNixRewrite` above uses
+  # `^(nix-instantiate|nixfmt) ` and that shape was MEASURED to be bypassed by
+  # compound lines (`cd /tmp && …`, `FOO=1 …`, `…; …`). Harmless for a workflow
+  # hook, disqualifying for this one. We match `scrapling extract <subcommand>`
+  # anywhere in the line instead, so prefixes, pipes, subshells and absolute
+  # paths are all caught.
+  # The subcommand list is what keeps it from over-matching: prose mentioning
+  # the two words (`grep -r "scrapling extract" home/`) passes, and
+  # `scrapling install|shell|mcp|--version` pass untouched — none of them is
+  # followed by get/post/put/delete/fetch/stealthy-fetch.
+  # Regex is a flat alternation of literals: linear, no nested quantifier, no
+  # backtracking (a PreToolUse hook that blows up blocks every Bash call).
+  hookScraplingAiTargeted = ''
+    #!/usr/bin/env bash
+    # Fail-closed on policy, fail-OPEN on plumbing: if jq is missing or the
+    # payload is unparseable we exit 0 rather than deny every Bash call.
+    INPUT=$(cat)
+
+    # Cheapest possible bail FIRST. This hook runs on every single Bash call of
+    # every session, so the ~100% case (nothing to do with scrapling) must cost
+    # zero subprocesses — no `command -v`, no jq. Measured: the jq-first version
+    # cost 20.4 ms per Bash call.
+    case "$INPUT" in
+      *scrapling*) ;;
+      *) exit 0 ;;
+    esac
+
+    command -v jq >/dev/null 2>&1 || exit 0
+
+    TOOL_NAME=$(printf '%s' "$INPUT" | jq -r '.tool_name // ""' 2>/dev/null) || exit 0
+    [ "$TOOL_NAME" = "Bash" ] || exit 0
+
+    COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) || exit 0
+
+    SCRAPLING_RE='scrapling[[:space:]]+extract[[:space:]]+(get|post|put|delete|fetch|stealthy-fetch)([[:space:]]|$)'
+
+    # 1. Not an actual `scrapling extract <subcommand>` invocation → pass.
+    printf '%s\n' "$COMMAND" | grep -qE "$SCRAPLING_RE" || exit 0
+
+    # 2. The flag must be on the SAME shell segment as the extract call, not
+    #    merely somewhere on the line. A whole-line search was measurably
+    #    bypassable: `echo "use --ai-targeted" && scrapling extract get U o.md`
+    #    passed, and so did `... get A a.md && ... get B b.md --ai-targeted`
+    #    where only the second call carried it. So: drop trailing shell
+    #    comments, split on && || ; | and newline, and require the flag inside
+    #    every segment that actually invokes extract.
+    SEGMENTS=$(printf '%s\n' "$COMMAND" | awk '
+      { sub(/[[:space:]]#.*$/, ""); gsub(/&&|\|\||;|\|/, "\n"); print }
+    ')
+
+    UNPROTECTED=""
+    while IFS= read -r SEG; do
+      printf '%s\n' "$SEG" | grep -qE "$SCRAPLING_RE" || continue
+      printf '%s\n' "$SEG" | grep -q -F -e '--ai-targeted' && continue
+      UNPROTECTED="$SEG"
+      break
+    done < <(printf '%s\n' "$SEGMENTS")
+
+    # Every extract call on the line is already flagged → pass. Click booleans
+    # are idempotent, so a duplicate flag is harmless.
+    [ -n "$UNPROTECTED" ] || exit 0
+
+    # 3. Deny, and hand back the exact corrected command so the retry costs one
+    #    round-trip. The flag belongs to the subcommand, not to the `extract`
+    #    group, so it is inserted right after get/post/put/delete/fetch/…
+    FIXED=$(printf '%s\n' "$COMMAND" | sed -E 's/(scrapling[[:space:]]+extract[[:space:]]+(get|post|put|delete|fetch|stealthy-fetch))/\1 --ai-targeted/g')
+
+    REASON="DENIED: scrapling extract requires --ai-targeted. Upstream declares it MANDATORY protection against prompt injection embedded in the fetched page (it strips head/script/style and hidden elements, and enables ad blocking). Run this instead:
+    $FIXED
+    Only scrapling extract is gated: scrapling install / shell / --version pass through. Raw, unsanitized full-document output is not reachable from Claude Code by design — run it yourself in a terminal if you need it."
+
+    jq -n --arg reason "$REASON" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
+    exit 0
+  '';
 }

@@ -19,7 +19,11 @@ let
   claudeMd = import ./claude-code/claude-md.nix;
   rules = import ./claude-code/rules.nix;
   libdocs = import ./claude-code/libdocs.nix { inherit pkgs; };
-  activationScripts = import ./claude-code/activation.nix { inherit pkgs lib; };
+  scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
+  activationScripts = import ./claude-code/activation.nix {
+    inherit pkgs lib;
+    inherit (scraplingShim) scraplingShimPkg;
+  };
 
   inherit (claudeMd) claudeMdGlobal;
   inherit (rules) ruleNix ruleTypescript ruleReact;

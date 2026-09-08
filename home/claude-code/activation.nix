@@ -1,5 +1,9 @@
 # Home Manager activation scripts
-{ pkgs, lib }:
+{
+  pkgs,
+  lib,
+  scraplingShimPkg,
+}:
 {
   claudeCodeDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
     set -euo pipefail
@@ -476,12 +480,27 @@
       # self-heals if uv recreates the entrypoint outside a rebuild.
       rm -f "$HOME/.local/bin/scrapling-mcp" 2>/dev/null || true
 
+      # Put the SHIM on PATH in place of uv's own symlink, so that every
+      # `scrapling extract <sub>` gets --ai-targeted no matter how the call is
+      # written. BEFORE the marker guard, and unconditional, for two reasons:
+      # `uv tool install` recreates its symlink on every reinstall and would
+      # silently take the name back, and the marker is stamped on first success
+      # so anything below the guard never runs again (that is exactly how the
+      # scrapling-mcp removal above sat inert for a whole rebuild).
+      # ~/.local/bin is position 2 in PATH, ahead of the nix profile dirs, which
+      # is why home.packages cannot be used for this.
+      mkdir -p "$HOME/.local/bin"
+      ln -sfn "${scraplingShimPkg}/bin/scrapling" "$HOME/.local/bin/scrapling"
+
       # Already fully set up → nothing to do.
       [ -f "$MARKER" ] && exit 0
 
       export PATH="${pkgs.uv}/bin:$HOME/.local/bin:$PATH"
 
-      BIN="$HOME/.local/bin/scrapling"
+      # Probe the REAL binary, never the shim: the shim refuses to run when the
+      # real one is missing, so probing through it would report "no version" for
+      # two different reasons and the retry logic could not tell them apart.
+      BIN="$HOME/.local/share/uv/tools/scrapling/bin/scrapling"
 
       # The exact shape of `scrapling --version` is not contractual, so derive
       # the version defensively: keep the last whitespace-separated field, then
@@ -501,6 +520,11 @@
         echo "Installing scrapling[$SCRAPLING_EXTRAS]==$SCRAPLING_VERSION (uv tool)..."
         uv tool install "scrapling[$SCRAPLING_EXTRAS]==$SCRAPLING_VERSION" 2>&1 \
           || { echo "scrapling install failed (will retry next rebuild; run outside sudo for network)"; exit 0; }
+        # uv just recreated its own ~/.local/bin/scrapling symlink and took the
+        # name back from the shim. Re-link, or the guarantee lasts exactly until
+        # the first install.
+        rm -f "$HOME/.local/bin/scrapling-mcp" 2>/dev/null || true
+        ln -sfn "${scraplingShimPkg}/bin/scrapling" "$HOME/.local/bin/scrapling"
         probe_version
       fi
 
@@ -518,14 +542,19 @@
         fi
       fi
 
-      # Stamp the marker ONLY when binary + version + browsers all check out;
-      # a partial state just retries on the next rebuild.
-      if [ -x "$BIN" ] && [ "$CURRENT" = "$SCRAPLING_VERSION" ] && [ "$BROWSERS_OK" = "1" ]; then
+      # Stamp the marker ONLY when binary + version + browsers + SHIM all check
+      # out; a partial state just retries on the next rebuild. The shim is part
+      # of the condition on purpose: stamping while ~/.local/bin/scrapling still
+      # points at uv's binary would record "done" for an install whose flag
+      # guarantee is not actually in place.
+      SHIM_OK=0
+      [ "$(readlink "$HOME/.local/bin/scrapling" 2>/dev/null)" = "${scraplingShimPkg}/bin/scrapling" ] && SHIM_OK=1
+      if [ -x "$BIN" ] && [ "$CURRENT" = "$SCRAPLING_VERSION" ] && [ "$BROWSERS_OK" = "1" ] && [ "$SHIM_OK" = "1" ]; then
         rm -f "$HOME/.claude"/.scrapling-installed-* 2>/dev/null || true
         touch "$MARKER"
-        echo "✓ scrapling@$SCRAPLING_VERSION installed (extras: $SCRAPLING_EXTRAS, browsers ready)"
+        echo "✓ scrapling@$SCRAPLING_VERSION installed (extras: $SCRAPLING_EXTRAS, browsers ready, shim on PATH)"
       else
-        echo "⚠ scrapling not fully set up yet (binary/version/browsers) — will retry"
+        echo "⚠ scrapling not fully set up yet (binary/version/browsers/shim) — will retry"
       fi
     ) || true
   '';

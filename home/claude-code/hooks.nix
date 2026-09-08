@@ -1210,25 +1210,28 @@
   # backtracking (a PreToolUse hook that blows up blocks every Bash call).
   hookScraplingAiTargeted = ''
     #!/usr/bin/env bash
-    # A GUARDRAIL against accidentally omitting --ai-targeted, NOT a security
-    # boundary against deliberate evasion. Independent review found shapes that
-    # no text matcher can close, because closing them needs real shell
-    # semantics: command substitution `$(scrapling extract get U o)` and
-    # backticks, `eval`, variable indirection (`S=scrapling; $S extract get`),
-    # a function wrapper, and a quoted command word (`scrapling extract "get"`).
-    # Those are documented known-gaps in checks/scrapling-hook-bench.sh. What
-    # this DOES close is every shape an agent hits by accident.
+    # Covers the ONE case the scrapling shim cannot: calling the real binary by
+    # its full path, which skips ~/.local/bin/scrapling and therefore skips the
+    # --ai-targeted injection.
     #
-    # Fail-closed on policy, fail-OPEN on plumbing: if jq is missing or the
-    # payload is unparseable we exit 0 rather than deny every Bash call.
+    # This hook used to do far more, and that was the mistake. It tried to
+    # decide, from the raw command line as TEXT, whether a `scrapling extract`
+    # would run without the flag — which means predicting what the shell will do
+    # with quotes, `$(...)`, `eval` and variable indirection. Seven defects came
+    # out of that, four of them unclosable by construction, and two rounds of
+    # "fixes" each reopened something the previous round had closed. The shim
+    # replaced all of it by acting AFTER the shell has parsed, where there is
+    # nothing left to predict.
+    #
+    # What is left here is deliberately dumb: one fixed string, no shell
+    # semantics, no false positives on ordinary commands. It is a backstop, not
+    # the guarantee — the guarantee is the shim.
     INPUT=$(cat)
 
-    # Cheapest possible bail FIRST. This hook runs on every single Bash call of
-    # every session, so the ~100% case (nothing to do with scrapling) must cost
-    # zero subprocesses — no `command -v`, no jq. Measured: the jq-first version
-    # cost 20.4 ms per Bash call.
+    # Cheapest possible bail FIRST: this runs on every Bash call of every
+    # session, so the ~100% case must cost zero subprocesses.
     case "$INPUT" in
-      *scrapling*) ;;
+      *uv/tools/scrapling*) ;;
       *) exit 0 ;;
     esac
 
@@ -1239,75 +1242,18 @@
 
     COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) || exit 0
 
-    SCRAPLING_RE='scrapling[[:space:]]+extract[[:space:]]+(get|post|put|delete|fetch|stealthy-fetch)([[:space:]]|$)'
-    FLAG_RE='(^|[[:space:]])--ai-targeted([[:space:]]|$)'
+    # Fixed string, not a regex: the path is the path.
+    printf '%s\n' "$COMMAND" | grep -q -F -e 'share/uv/tools/scrapling/bin/scrapling' || exit 0
 
-    # Build the DECISION COPY. Every step below exists because a measured case
-    # got it wrong; none is precautionary.
-    #   a. Join `\`+newline continuations, or `scrapling \<nl>extract get` reads
-    #      as two harmless lines.
-    #   b. Blank quoted strings — ONE alternation, never two sequential gsubs.
-    #      Blanking double quotes first and single quotes after pairs quotes the
-    #      shell never pairs: a `"` inside '...' then matched a later `"` and
-    #      swallowed the real call between them, so
-    #        echo 'a"' ; scrapling extract get U o.md ; echo '"'
-    #      passed — a REGRESSION the two-pass version introduced.
-    #      Without blanking at all, a literal in a
-    #      URL or a header value disarmed the check —
-    #        scrapling extract get "https://x/?q=--ai-targeted" o.md
-    #        scrapling extract get https://x o.md -H "X: --ai-targeted"
-    #      both passed. Blanking also removes two false DENIES for free, since
-    #      the words then stop existing inside quotes:
-    #        git commit -m "fix: scrapling extract get denies"   (was denied)
-    #        scrapling extract get "https://x/a #b" o.md --ai-targeted
-    #      The original COMMAND is kept intact for the deny message.
-    #   c. Only NOW strip a trailing comment: a `#` inside quotes is gone, so
-    #      `echo " #" && scrapling extract get U o.md` no longer truncates the
-    #      line before the real call.
-    #   d. Split on every shell separator. Single `&` was missing, so
-    #      `scrapling extract get U o.md & echo --ai-targeted` passed.
-    SEGMENTS=$(printf '%s\n' "$COMMAND" \
-      | sed -e :a -e '/\\$/{N;s/\\\n//;ba' -e '}' \
-      | awk '
-          { gsub(/"[^"]*"|'"'"'[^'"'"']*'"'"'/, "Q");
-            sub(/[[:space:]]#.*$/, "");
-            gsub(/&&|\|\||;|\||&/, "\n");
-            print }
-        ')
+    # Reading the file (cat/ls/head/stat/realpath) is not running it.
+    printf '%s\n' "$COMMAND" | grep -qE '(^|[[:space:]])(cat|ls|head|tail|stat|realpath|file|wc|readlink|grep)([[:space:]]|$)' && exit 0
 
-    # 1. No real `scrapling extract <subcommand>` left after normalisation → pass.
-    printf '%s\n' "$SEGMENTS" | grep -qE "$SCRAPLING_RE" || exit 0
+    REASON="DENIED: that is the real scrapling binary, reached by its full path, which bypasses the shim on PATH that guarantees --ai-targeted.
 
-    UNPROTECTED=""
-    while IFS= read -r SEG; do
-      printf '%s\n' "$SEG" | grep -qE "$SCRAPLING_RE" || continue
-      # `--help` DIRECTLY after the subcommand prints usage and fetches
-      # nothing, so gating that is a pure false positive. It must be anchored
-      # there: anywhere else on the line Click swallows it as an option VALUE
-      # and a real extract runs — `-s --help`, `-H --help`, `--proxy --help`
-      # and even `> -h` all did. `-h` is not a scrapling option at all
-      # (`Error: No such option '-h'`), so it excused nothing legitimate and
-      # was pure attack surface; it is gone.
-      printf '%s\n' "$SEG" | grep -qE "$SCRAPLING_RE"'[[:space:]]*--help([[:space:]]|$)' && continue
-      # Standalone token, not a substring: `--ai-targeted-later` or a fragment
-      # glued to something else must not count as the flag.
-      printf '%s\n' "$SEG" | grep -qE "$FLAG_RE" && continue
-      UNPROTECTED="$SEG"
-      break
-    done < <(printf '%s\n' "$SEGMENTS")
+    Use the plain command instead — the shim adds the flag for you:
+        scrapling extract <get|fetch|stealthy-fetch> URL out.md
 
-    # Every extract call on the line is already flagged → pass. Click booleans
-    # are idempotent, so a duplicate flag is harmless.
-    [ -n "$UNPROTECTED" ] || exit 0
-
-    # 3. Deny, and hand back the exact corrected command so the retry costs one
-    #    round-trip. The flag belongs to the subcommand, not to the `extract`
-    #    group, so it is inserted right after get/post/put/delete/fetch/…
-    FIXED=$(printf '%s\n' "$COMMAND" | sed -E 's/(scrapling[[:space:]]+extract[[:space:]]+(get|post|put|delete|fetch|stealthy-fetch))/\1 --ai-targeted/g')
-
-    REASON="DENIED: scrapling extract requires --ai-targeted. Upstream declares it MANDATORY protection against prompt injection embedded in the fetched page (it strips head/script/style and hidden elements, and enables ad blocking). Run this instead:
-    $FIXED
-    Only scrapling extract is gated: scrapling install / shell / --version pass through. Raw, unsanitized full-document output is not reachable from Claude Code by design — run it yourself in a terminal if you need it."
+    --ai-targeted is upstream's mandatory protection against prompt injection embedded in the page it fetches. If you genuinely need the raw, unsanitized document, run it yourself in a terminal rather than routing around the shim here."
 
     jq -n --arg reason "$REASON" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: $reason}}'
     exit 0

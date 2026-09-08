@@ -491,6 +491,17 @@
         probe_version
       fi
 
+      # 1b. Drop the MCP entrypoint. `uv tool install` creates EVERY
+      #     [project.scripts] entry regardless of extras, so `scrapling-mcp`
+      #     lands on PATH even with only [shell] installed — verified after the
+      #     first rebuild: the binary existed and `--help` worked, while the
+      #     `mcp` package was absent from the tool venv, so starting the server
+      #     would fail at import. This install is deliberately MCP-less; leaving
+      #     a half-working server entrypoint on PATH invites exactly the
+      #     confusion the choice was meant to avoid. Unconditional, because uv
+      #     re-creates it on every reinstall.
+      rm -f "$HOME/.local/bin/scrapling-mcp" 2>/dev/null || true
+
       # 2. Fetch the browser stack (Playwright/Camoufox + deps). This is a heavy,
       #    network-bound download and it commonly fails under `sudo
       #    darwin-rebuild` where the network is unavailable to the activation

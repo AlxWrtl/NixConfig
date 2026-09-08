@@ -1210,6 +1210,15 @@
   # backtracking (a PreToolUse hook that blows up blocks every Bash call).
   hookScraplingAiTargeted = ''
     #!/usr/bin/env bash
+    # A GUARDRAIL against accidentally omitting --ai-targeted, NOT a security
+    # boundary against deliberate evasion. Independent review found shapes that
+    # no text matcher can close, because closing them needs real shell
+    # semantics: command substitution `$(scrapling extract get U o)` and
+    # backticks, `eval`, variable indirection (`S=scrapling; $S extract get`),
+    # a function wrapper, and a quoted command word (`scrapling extract "get"`).
+    # Those are documented known-gaps in checks/scrapling-hook-bench.sh. What
+    # this DOES close is every shape an agent hits by accident.
+    #
     # Fail-closed on policy, fail-OPEN on plumbing: if jq is missing or the
     # payload is unparseable we exit 0 rather than deny every Bash call.
     INPUT=$(cat)
@@ -1231,25 +1240,44 @@
     COMMAND=$(printf '%s' "$INPUT" | jq -r '.tool_input.command // ""' 2>/dev/null) || exit 0
 
     SCRAPLING_RE='scrapling[[:space:]]+extract[[:space:]]+(get|post|put|delete|fetch|stealthy-fetch)([[:space:]]|$)'
+    FLAG_RE='(^|[[:space:]])--ai-targeted([[:space:]]|$)'
 
-    # 1. Not an actual `scrapling extract <subcommand>` invocation → pass.
-    printf '%s\n' "$COMMAND" | grep -qE "$SCRAPLING_RE" || exit 0
+    # Build the DECISION COPY. Every step below exists because a measured case
+    # got it wrong; none is precautionary.
+    #   a. Join `\`+newline continuations, or `scrapling \<nl>extract get` reads
+    #      as two harmless lines.
+    #   b. Blank the CONTENTS of quoted strings. Without this, a literal in a
+    #      URL or a header value disarmed the check —
+    #        scrapling extract get "https://x/?q=--ai-targeted" o.md
+    #        scrapling extract get https://x o.md -H "X: --ai-targeted"
+    #      both passed. Blanking also removes two false DENIES for free, since
+    #      the words then stop existing inside quotes:
+    #        git commit -m "fix: scrapling extract get denies"   (was denied)
+    #        scrapling extract get "https://x/a #b" o.md --ai-targeted
+    #      The original COMMAND is kept intact for the deny message.
+    #   c. Only NOW strip a trailing comment: a `#` inside quotes is gone, so
+    #      `echo " #" && scrapling extract get U o.md` no longer truncates the
+    #      line before the real call.
+    #   d. Split on every shell separator. Single `&` was missing, so
+    #      `scrapling extract get U o.md & echo --ai-targeted` passed.
+    SEGMENTS=$(printf '%s\n' "$COMMAND" \
+      | sed -e :a -e '/\\$/{N;s/\\\n//;ba' -e '}' \
+      | awk '
+          { gsub(/"[^"]*"/, "\"Q\""); gsub(/'"'"'[^'"'"']*'"'"'/, "'"'"'Q'"'"'");
+            sub(/[[:space:]]#.*$/, "");
+            gsub(/&&|\|\||;|\||&/, "\n");
+            print }
+        ')
 
-    # 2. The flag must be on the SAME shell segment as the extract call, not
-    #    merely somewhere on the line. A whole-line search was measurably
-    #    bypassable: `echo "use --ai-targeted" && scrapling extract get U o.md`
-    #    passed, and so did `... get A a.md && ... get B b.md --ai-targeted`
-    #    where only the second call carried it. So: drop trailing shell
-    #    comments, split on && || ; | and newline, and require the flag inside
-    #    every segment that actually invokes extract.
-    SEGMENTS=$(printf '%s\n' "$COMMAND" | awk '
-      { sub(/[[:space:]]#.*$/, ""); gsub(/&&|\|\||;|\|/, "\n"); print }
-    ')
+    # 1. No real `scrapling extract <subcommand>` left after normalisation → pass.
+    printf '%s\n' "$SEGMENTS" | grep -qE "$SCRAPLING_RE" || exit 0
 
     UNPROTECTED=""
     while IFS= read -r SEG; do
       printf '%s\n' "$SEG" | grep -qE "$SCRAPLING_RE" || continue
-      printf '%s\n' "$SEG" | grep -q -F -e '--ai-targeted' && continue
+      # Standalone token, not a substring: `--ai-targeted-later` or a fragment
+      # glued to something else must not count as the flag.
+      printf '%s\n' "$SEG" | grep -qE "$FLAG_RE" && continue
       UNPROTECTED="$SEG"
       break
     done < <(printf '%s\n' "$SEGMENTS")

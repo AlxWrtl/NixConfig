@@ -74,6 +74,35 @@ run deny "flag only after a pipe"     \
   'scrapling extract get A a.md | grep -- --ai-targeted'
 
 echo
+echo "--- must DENY: shapes found by independent review, all reproduced ---"
+# Every one of these ALLOWED an unflagged extract before the quote-blanking /
+# line-joining / separator fixes. Each was replayed against the live hook.
+run deny "single & separator"        'scrapling extract get https://x o.md & echo --ai-targeted'
+run deny "flag literal in a URL"     'scrapling extract get "https://x/?q=--ai-targeted" o.md'
+run deny "flag in a header value"    'scrapling extract get https://x o.md -H "X: --ai-targeted"'
+run deny "quoted # fools stripper"   'echo " #" && scrapling extract get https://x o.md'
+run deny "backslash continuation"    'scrapling \
+extract get https://x o.md'
+run deny "flag glued to a word"      'scrapling extract get https://x o.md --ai-targeted-later'
+
+echo
+echo "--- must ALLOW: false denials fixed by quote-blanking ---"
+run allow "quoted # after real flag" 'scrapling extract get "https://x/a #b" o.md --ai-targeted'
+run allow "prose in a commit msg"    'git commit -m "fix: scrapling extract get denies"'
+
+echo
+echo "--- KNOWN GAPS: unclosable by text matching, asserted so they stay visible ---"
+# These need real shell semantics to catch. The hook is a guardrail against
+# accidental omission, NOT a boundary against deliberate evasion. If one of
+# these ever flips to deny, the matcher grew teeth it was not designed to have
+# and probably started denying legitimate commands too — investigate, do not
+# celebrate.
+run allow "command substitution"     'echo $(scrapling extract get https://x o.md) --ai-targeted'
+run allow "quoted subcommand"        'scrapling extract "get" https://x o.md'
+run allow "variable indirection"     'S=scrapling; $S extract get https://x o.md'
+run allow "eval + detached comment"  'eval "scrapling extract get https://x o.md" "#" --ai-targeted'
+
+echo
 echo "--- must ALLOW (flag present) ---"
 run allow "flag at end"         'scrapling extract get "https://x.com" o.md --ai-targeted'
 run allow "flag in middle"      'scrapling extract get --ai-targeted "https://x.com" o.md'

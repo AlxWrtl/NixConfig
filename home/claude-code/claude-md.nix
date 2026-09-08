@@ -53,6 +53,18 @@
     - Multi-line script → write to scratchpad, run the file. Never `node -e` /
       `python3 -c` inline: operators in the body break the permission matcher.
 
+    ## Web Retrieval (échelle — s'arrêter au premier rung qui marche)
+    - 0. API officielle : vérifier AVANT de scraper (Crunchbase/SimilarWeb/G2 en
+      ont une) | 1. WebFetch/WebSearch = défaut : rend la RÉPONSE, pas la page,
+      ~20× moins de tokens que lire un fichier de 33 Ko.
+    - 2. `scrapling extract get URL out.md` si 403, brut/complet requis, ou batch
+      (`-s SELECTEUR` = ne ramener que le fragment) | 3. `fetch --network-idle`
+      si get vide (JS) | 4. `stealthy-fetch --solve-cloudflare` si anti-bot.
+      Ces deux flags sont OFF par défaut : les omettre gâche le rung.
+    - Chrome/Playwright JAMAIS pour lire. Seulement pour AGIR : login, clic, visuel.
+    - Statut et taille ne prouvent rien — un 403 peut porter 75 Ko de page de
+      blocage : ouvrir le fichier, y chercher la donnée demandée.
+
     ## Vault Retrieval (enquire vs graphify — never both on one question)
     - `mcp__enquire__*` = what the vault WROTE: find/read notes, keyword +
       semantic search, explicit wikilinks, backlinks. Default choice.

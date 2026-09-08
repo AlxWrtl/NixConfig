@@ -310,8 +310,11 @@ The lifecycle of one request, in order:
 3. **The model tries to edit** — `PreToolUse` on `Edit|Write` and `Bash`
    refuses until the APEX skill has been invoked for that request, and
    re-arms on your next message. This is enforcement.
-4. **The model tries to commit** — the same event refuses any write to
-   `main`/`master`. Master moves through pull requests only.
+4. **The model tries to commit** — the same event refuses the git verbs that
+   put code on `main`/`master`: the ones that author a commit, and the ones
+   that move the branch ref onto an arbitrary object. It is a list, not a
+   seal — `pull`, `worktree add` and a refspec written straight onto the
+   local branch are outside it. Master moves through pull requests only.
 5. **APEX runs** its chain, each phase in a subagent with a fresh context,
    phase summaries persisted under `.claude/output/apex/`.
 6. **`-o` reads the vault** before planning, through one of two MCP servers,

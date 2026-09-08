@@ -10,8 +10,13 @@
 # `S=scrapling; $S extract get`, `scrapling extract "get"` — all four end up
 # executing this file, so all four are covered.
 #
-# Limit, stated plainly: calling the real binary by its full path skips this
-# shim. That is not something anyone writes by accident, and the hook covers it.
+# Limit, stated plainly: this covers what runs as `scrapling` on PATH, and
+# nothing else. A full or relative path to the real binary, a `PATH=` prefix,
+# `uvx`, `uv tool run`, `uv run --with`, the venv's own python, `scrapling
+# shell -c`, and the Python API all reach it unsanitized. A hook used to sit
+# behind this as a backstop; it was removed after review found it caught four
+# of eighteen such routes while denying `grep` on this repo's own source. A
+# guard that stops its owner and not the thing it names is worse than none.
 #
 # writeShellApplication prepends `set -euo pipefail` and runs shellcheck at
 # build time, so a regression here fails the rebuild.

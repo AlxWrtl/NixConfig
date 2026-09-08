@@ -416,22 +416,28 @@ the slot after the subcommand, and inject unconditionally, since the flag is
 idempotent.
 
 The harness generates shell compositions around a real call, swaps the binary
-for a recorder, and asserts the flag arrived **at argv[3]** — presence alone
-scored `-s --ai-targeted` as a pass. It refuses to run unless it can install
-the shim under test and a tripwire proves it can still detect a missing flag:
-the first version reported 48/48 and exit 0 for `/nonexistent/path/scrapling`,
+for a recorder, and asserts the flag arrived **immediately after the subcommand
+token** — presence alone scored `-s --ai-targeted` as a pass, and an assertion
+indexed by number would later have failed a *correct* shim once `--` could
+precede `extract` too. It refuses to run unless it can install the shim under
+test and a tripwire proves it can still detect a missing flag: the first
+version reported 48 passed and exit 0 for `/nonexistent/path/scrapling`,
 because `cp` failed unchecked and PATH fell through to the live system. It was
 grading the machine while claiming to grade its argument. Confirm it can fail —
-comment out the injection and it drops from 55/55 to 5/50.
+comment out the injection and 56 passing becomes 52 failing.
 
-`checks/scrapling-hook-bench.sh` covers what is left of the hook — 26 cases on
-one narrow job, refusing the real binary when it is reached around the shim: a
-full or relative path, a `PATH=` prefix, a variable holding the directory,
-`uvx`, `uv tool run`, the venv's python. It is a backstop, not a wall, and the
-skill says so. With no argument it extracts the hook out of
-`home/claude-code/hooks.nix` through `checks/scrapling-hook-extract.sh`, so it
-tests the string Nix will write rather than a copy that may have drifted, and
-works before any rebuild.
+There is no hook left to bench. One survived a while as a backstop for the
+routes the shim cannot see, then review measured it: it caught four of eighteen
+such routes, and it denied `grep "uv/tools/scrapling"` on this repository's own
+source — so touching the subject blocked the edit. A guard that stops its owner
+and not the thing it names is worse than none, and every attempt to sharpen it
+had produced a new defect. It was deleted rather than sharpened again.
+
+What that leaves is stated in the skill instead of implied by a mechanism: the
+shim covers what runs as `scrapling` on PATH, and a full path, `uvx`,
+`uv tool run`, `scrapling shell -c` or the Python API reach the tool with no
+sanitizing at all. Naming the perimeter is worth more than a guard that gives
+the wrong impression of one.
 
 ### Usage
 

@@ -328,29 +328,6 @@ in
         {
           matcher = "Bash";
           hooks = [
-            {
-              type = "command";
-              # rtk >= 0.43: hook natif du binaire (remplace l'ancien script
-              # rtk-rewrite.sh). Chemin absolu — les hooks tournent sous /bin/sh
-              # sans le PATH homebrew.
-              command = "/opt/homebrew/bin/rtk hook claude";
-              timeout = 5;
-            }
-            {
-              type = "command";
-              # Réécrit les commandes couvertes par filters.toml (nix) que le
-              # hook natif ignore — listes disjointes, pas de double-wrap.
-              command = "bash ~/.claude/hooks/rtk-nix-rewrite.sh";
-              timeout = 5;
-            }
-            {
-              type = "command";
-              # Impose --ai-targeted sur `scrapling extract` : flag déclaré
-              # obligatoire en amont contre l'injection de prompt via la page
-              # récupérée. Hook de sécurité → il REFUSE, il ne réécrit pas.
-              command = "bash ~/.claude/hooks/scrapling-ai-targeted.sh";
-              timeout = 5;
-            }
           ];
         }
         {

@@ -84,7 +84,6 @@ let
     ;
   inherit (hooks)
     hookRtkNixRewrite
-    hookScraplingAiTargeted
     hookProtectMain
     hookRequireApex
     hookApexFlags
@@ -351,10 +350,6 @@ in
     };
     "${claudeDir}/hooks/rtk-nix-rewrite.sh" = {
       text = hookRtkNixRewrite;
-      executable = true;
-    };
-    "${claudeDir}/hooks/scrapling-ai-targeted.sh" = {
-      text = hookScraplingAiTargeted;
       executable = true;
     };
     "${claudeDir}/hooks/react-docs-gate.js" = {

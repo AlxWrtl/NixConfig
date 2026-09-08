@@ -396,15 +396,48 @@ HEADING so the question takes one command. It is advisory, needs a reader, and
 is deliberately not wired into `nix flake check`: a heuristic that blocks a
 merge only teaches people to route around it.
 
-`checks/scrapling-hook-bench.sh` is the same kind of tool for the
-`--ai-targeted` hook: 30 cases, run with no argument. It extracts the hook out
-of `home/claude-code/hooks.nix` through `checks/scrapling-hook-extract.sh` and tests the string
-Nix will actually write, not a copy that may have drifted — so it works before
-any rebuild has installed the hook. Twelve of its cases are shell-composition
-bypasses (`cd x &&`, `;`, `|`, env prefix, subshell, absolute path, embedded
-newline) and four assert that a `--ai-targeted` mention elsewhere on the line
-does not disarm an unflagged call. It closes with a timing probe: a
-PreToolUse hook that backtracks blocks every Bash call of the session.
+`checks/scrapling-shim-fuzz.sh` is where the `--ai-targeted` guarantee is
+actually tested, and it exists because enumeration failed. The flag was first
+enforced by a PreToolUse hook that read the raw command line as text and had to
+predict what the shell would do with quotes, `$(...)`, `eval` and variable
+indirection. It passed 26 hand-written cases, then 30, then 44, and still had
+seven real defects — twice, a round of fixes reopened something the previous
+round had closed. The mind that writes a matcher enumerates the shapes it
+already handles.
+
+A shim on PATH replaced it: it is executed by the shell, so it receives the
+parsed argument vector and predicts nothing. That closes the shell-composition
+class entirely — but not argv itself. Review then found three more, all in the
+shim's own argument handling: `extract -- get` hid the subcommand behind the
+end-of-options marker, and scanning the whole argv for `--help` or an existing
+flag meant a token Click consumes as an option VALUE (`-s --help`,
+`-s --ai-targeted`) suppressed injection. The fix is positional: look only at
+the slot after the subcommand, and inject unconditionally, since the flag is
+idempotent.
+
+The harness generates shell compositions around a real call, swaps the binary
+for a recorder, and asserts the flag arrived **immediately after the subcommand
+token** — presence alone scored `-s --ai-targeted` as a pass, and an assertion
+indexed by number would later have failed a *correct* shim once `--` could
+precede `extract` too. It refuses to run unless it can install the shim under
+test and a tripwire proves it can still detect a missing flag: the first
+version reported 48 passed and exit 0 for `/nonexistent/path/scrapling`,
+because `cp` failed unchecked and PATH fell through to the live system. It was
+grading the machine while claiming to grade its argument. Confirm it can fail —
+comment out the injection and 56 passing becomes 52 failing.
+
+There is no hook left to bench. One survived a while as a backstop for the
+routes the shim cannot see, then review measured it: it caught four of eighteen
+such routes, and it denied `grep "uv/tools/scrapling"` on this repository's own
+source — so touching the subject blocked the edit. A guard that stops its owner
+and not the thing it names is worse than none, and every attempt to sharpen it
+had produced a new defect. It was deleted rather than sharpened again.
+
+What that leaves is stated in the skill instead of implied by a mechanism: the
+shim covers what runs as `scrapling` on PATH, and a full path, `uvx`,
+`uv tool run`, `scrapling shell -c` or the Python API reach the tool with no
+sanitizing at all. Naming the perimeter is worth more than a guard that gives
+the wrong impression of one.
 
 ### Usage
 

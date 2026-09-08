@@ -19,7 +19,11 @@ let
   claudeMd = import ./claude-code/claude-md.nix;
   rules = import ./claude-code/rules.nix;
   libdocs = import ./claude-code/libdocs.nix { inherit pkgs; };
-  activationScripts = import ./claude-code/activation.nix { inherit pkgs lib; };
+  scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
+  activationScripts = import ./claude-code/activation.nix {
+    inherit pkgs lib;
+    inherit (scraplingShim) scraplingShimPkg;
+  };
 
   inherit (claudeMd) claudeMdGlobal;
   inherit (rules) ruleNix ruleTypescript ruleReact;
@@ -80,7 +84,6 @@ let
     ;
   inherit (hooks)
     hookRtkNixRewrite
-    hookScraplingAiTargeted
     hookProtectMain
     hookRequireApex
     hookApexFlags
@@ -347,10 +350,6 @@ in
     };
     "${claudeDir}/hooks/rtk-nix-rewrite.sh" = {
       text = hookRtkNixRewrite;
-      executable = true;
-    };
-    "${claudeDir}/hooks/scrapling-ai-targeted.sh" = {
-      text = hookScraplingAiTargeted;
       executable = true;
     };
     "${claudeDir}/hooks/react-docs-gate.js" = {

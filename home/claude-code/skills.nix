@@ -3107,16 +3107,27 @@ in
     | similarweb.com/website/github.com | 31 823 B, ranks and traffic figures |
     | glassdoor.com/Reviews | 33 010 B, real page |
     | trustpilot.com/review/www.booking.com | 41 259 B, TrustScore and ratings |
-    | zillow.com/homes/for_sale | not retried past `get` |
-    | **g2.com** | **blocked on every rung** |
+    | **zillow.com/homes** | **refused by robots.txt** |
+    | **g2.com** | **refused by robots.txt** |
 
     Five of seven. Do not promise a user it will work before it has.
 
-    g2 is not a technical loss and no rung will change it: it 403s every HTML
-    page — homepage, category, product, reviews — while serving robots.txt, and
-    that robots.txt names `ClaudeBot`, `GPTBot`, `CCBot` and others under
-    `Disallow: /`. That is a stated policy, enforced. Report it as such and stop;
-    do not hunt for a way through. The clean route to that data is their API.
+    **Neither failure is technical, and no rung will change either.** Both say so
+    in robots.txt, and that is the first thing to check when a target resists:
+    - g2 403s every HTML page — homepage, category, product, reviews — while
+      serving robots.txt, and that file lists `ClaudeBot`, `GPTBot`, `CCBot` and
+      others under `Disallow: /`.
+    - zillow disallows `/homes/` under `User-agent: *`, allowing only three
+      narrow subpaths. Walking its ladder confirmed the refusal rather than a
+      defence: `get` 403, `fetch` 200 but 6 201 B of navigation with zero
+      listings and zero prices, `fetch --network-idle` 403, `stealthy-fetch` 403.
+
+    Report a robots.txt refusal as policy and stop; do not hunt for a way
+    through. The clean route to that data is the site's API.
+
+    Note the shape of the zillow result, because it recurs: a rung can return
+    200 with real markup and still carry none of what was asked for. That is
+    neither success nor a block — check for the requested data, not for a page.
 
     **Judge on CONTENT, never on status, size, or a keyword.** A 403 can carry a
     body — 938 B, 43 B, and once 75 KB that was a Cloudflare "Humans only" page.

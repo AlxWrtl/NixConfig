@@ -2,7 +2,7 @@
 # All command hooks: read JSON from stdin, exit 0 + JSON stdout
 # permissionDecision: "allow" | "deny" | "ask"
 # In Nix '' strings: escape single quotes as ''' (two apostrophes + the quote)
-{ graphifyReindexPkg }:
+{ graphifyReindexPkg, vaultSnapshotPkg }:
 {
   hookProtectMain = ''
     #!/usr/bin/env node
@@ -1208,4 +1208,34 @@
   # followed by get/post/put/delete/fetch/stealthy-fetch.
   # Regex is a flat alternation of literals: linear, no nested quantifier, no
   # backtracking (a PreToolUse hook that blows up blocks every Bash call).
+
+  # Encrypted off-machine snapshot at session end. Detached with nohup for the
+  # same reason as the reindex: the work must outlive Claude Code's exit, and
+  # `timeout` here only bounds the stdin read. Never blocks the session — a
+  # failed backup is logged, not surfaced as a hook error.
+  #
+  # It is the vault's ONLY off-machine copy: ~/Vaults is outside iCloud and no
+  # Time Machine destination is configured on this machine.
+  hookVaultSnapshot = ''
+    #!/usr/bin/env bash
+    SNAP="${vaultSnapshotPkg}/bin/vault-snapshot"
+    LOG="$HOME/GraphVault/vault-snapshot.log"
+    mkdir -p "$HOME/GraphVault" 2>/dev/null
+
+    # One snapshot at a time: parallel sessions ending together would race on
+    # the release rotation and could delete a generation that was still the
+    # newest proven one.
+    if command -v pgrep >/dev/null 2>&1; then
+      if pgrep -f "bin/vault-snapshot" >/dev/null 2>&1; then
+        printf '%s event=SessionEnd skip=busy\n' "$(date '+%Y-%m-%dT%H:%M:%S')" >>"$LOG"
+        exit 0
+      fi
+    fi
+
+    ( nohup "$SNAP" >>"$LOG" 2>&1 </dev/null & )
+
+    INPUT=$(cat)
+    : "$INPUT"
+    exit 0
+  '';
 }

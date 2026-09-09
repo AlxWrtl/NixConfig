@@ -205,6 +205,9 @@ in
         # Knowledge-graph refresh wrapper (no args; writes only to ~/GraphVault
         # — see sandbox allowWrite). Fired in background by APEX steps 01b/09b.
         "Bash(graphify-reindex)"
+        # vault-snapshot writes only to ~/GraphVault/vault-snapshot.log and to
+        # the AlxWrtl/attic release assets; it never touches the vault itself.
+        "Bash(vault-snapshot)"
         # Git — safe operations (granular, not blanket)
         "Bash(git status *)"
         "Bash(git diff *)"
@@ -521,6 +524,18 @@ in
             {
               type = "command";
               command = "bash ~/.claude/hooks/graphify-reindex.sh";
+              timeout = 5;
+              async = true;
+            }
+            # Encrypted off-machine backup. Since the vault left ~/Documents on
+            # 2026-09-09 it is no longer replicated by iCloud, and there is no
+            # Time Machine destination on this machine: this hook is the vault's
+            # only off-machine copy, so it runs on every session end rather than
+            # on demand. Detached like the reindex; a failure is logged to
+            # ~/GraphVault/vault-snapshot.log, never surfaced as a hook error.
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/vault-snapshot.sh";
               timeout = 5;
               async = true;
             }

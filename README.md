@@ -426,6 +426,22 @@ because `cp` failed unchecked and PATH fell through to the live system. It was
 grading the machine while claiming to grade its argument. Confirm it can fail —
 comment out the injection and 56 passing becomes 52 failing.
 
+`checks/vault-autocommit-bench.sh` covers the git half of the vault snapshot:
+20 cases on throwaway repos under `TMPDIR`, never the real vault, with the
+auto-commit block lifted verbatim out of the script so the bench cannot drift
+from it. Four of the cases are failure paths, because the block's whole job is
+to never abort the backup — a guard that only works on the happy path turns
+"one uncommitted note" into "no backup at all". Mutation-tested: remove the
+fast-forward and 20 passing becomes 16, failing on exactly the four
+assertions that depend on it.
+
+Its first run reported 12 failures that were all its own: the fixtures
+inherited the real git config, which signs commits with an SSH key the sandbox
+cannot read, so no fixture commit could ever succeed. Fixtures now disable
+signing — and the first mutation attempt was equally useless, breaking the
+block's shell syntax rather than removing one behaviour, which fails everything
+and proves nothing.
+
 There is no hook left to bench. One survived a while as a backstop for the
 routes the shim cannot see, then review measured it: it caught four of eighteen
 such routes, and it denied `grep "uv/tools/scrapling"` on this repository's own

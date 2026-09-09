@@ -35,13 +35,70 @@ esac
 [ -d "$VAULT/.git" ] || { log "FATAL not a git repo: $VAULT"; exit 1; }
 command -v gh >/dev/null 2>&1 || { log "FATAL gh not on PATH"; exit 1; }
 
-# A dirty tree is REPORTED, never a reason to skip. A bundle carries committed
-# history only, so refusing here would mean no backup at all on most session
-# ends — strictly worse than an incomplete backup that names what it omits.
+# A dirty tree used to be REPORTED and nothing more, on the reasoning that a
+# bundle carries committed history only and refusing would mean no backup at
+# all. That reasoning was sound but incomplete: reporting the omission does not
+# back the notes up. So commit them first, then bundle — the WARN becomes a
+# commit, and the snapshot carries everything.
+#
+# Each save lands on its own `vault/<stamp>` branch, then the base branch is
+# fast-forwarded onto it. The branch is therefore a NAMED MARKER, not a
+# divergence: the base branch stays the canonical full history, and each
+# session leaves a pointer to the state it produced, so recovering "the vault
+# as it was before that session" is `git checkout vault/<previous stamp>`.
+# `git bundle --all` picks up every branch, so the markers are backed up too.
+#
+# Stated plainly because it was raised and overruled: a branch adds no
+# recoverability that the commit does not already give, and these accumulate
+# with nothing to reap them. That is a deliberate choice, not an oversight.
+#
+# NOTHING here may abort the snapshot. Every git call is guarded and the worst
+# case falls back to the old behaviour — report the dirt, back up what is
+# committed. An unbacked-up vault is worse than an uncommitted note.
 DIRTY=$(git -C "$VAULT" status --porcelain 2>/dev/null || true)
 if [ -n "$DIRTY" ]; then
-  log "WARN these uncommitted files are NOT in this snapshot:"
-  printf '%s\n' "$DIRTY" >>"$LOG"
+  BASE=$(git -C "$VAULT" branch --show-current 2>/dev/null || true)
+  BR="vault/$(date -u +%Y%m%dT%H%M%SZ)"
+  COMMITTED=0
+
+  # Detached HEAD has no base to fast-forward, and committing there would
+  # strand the commit on no branch at all. Report and move on.
+  if [ -z "$BASE" ]; then
+    log "WARN vault is on a detached HEAD — no auto-commit, these stay out:"
+    printf '%s\n' "$DIRTY" >>"$LOG"
+  elif git -C "$VAULT" checkout -q -b "$BR" 2>>"$LOG"; then
+    if git -C "$VAULT" add -A 2>>"$LOG" \
+       && git -C "$VAULT" commit -q -m "vault: auto-save $BR" 2>>"$LOG"; then
+      COMMITTED=1
+      log "auto-saved on $BR"
+    else
+      log "WARN commit failed on $BR"
+    fi
+    # Always return to the base branch, committed or not: leaving the vault on
+    # a session branch would make the NEXT run branch off it and the base
+    # would silently stop being the full history.
+    if git -C "$VAULT" checkout -q "$BASE" 2>>"$LOG"; then
+      if [ "$COMMITTED" = "1" ]; then
+        git -C "$VAULT" merge --ff-only -q "$BR" 2>>"$LOG" \
+          || log "WARN $BASE could not fast-forward onto $BR — commit lives on the branch only"
+      else
+        # Nothing was committed, so the branch is an empty duplicate.
+        git -C "$VAULT" branch -q -d "$BR" 2>/dev/null || true
+      fi
+    else
+      log "WARN could not return to $BASE — vault left on $BR"
+    fi
+  else
+    log "WARN could not create $BR — no auto-commit, these stay out:"
+    printf '%s\n' "$DIRTY" >>"$LOG"
+  fi
+
+  # Re-read: whatever the outcome above, name what is STILL not going in.
+  DIRTY=$(git -C "$VAULT" status --porcelain 2>/dev/null || true)
+  if [ -n "$DIRTY" ]; then
+    log "WARN these uncommitted files are NOT in this snapshot:"
+    printf '%s\n' "$DIRTY" >>"$LOG"
+  fi
 fi
 
 W=$(mktemp -d)

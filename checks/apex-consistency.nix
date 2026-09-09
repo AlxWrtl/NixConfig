@@ -17,8 +17,14 @@ let
   # let a missing wiring in claude-code.nix pass in silence and ship a hook whose
   # binary path points nowhere — precisely the mute failure this hook exists to
   # remove.
+  # EVERY argument hooks.nix takes must be stubbed here. Adding one over there
+  # without adding it here does not merely let a regression through — it makes
+  # this whole file unevaluable, so `nix flake check` dies on "called without
+  # required argument" and the check stops running at all. That is exactly what
+  # `vaultSnapshotPkg` did when it was introduced.
   hooks = import ../home/claude-code/hooks.nix {
     graphifyReindexPkg = "/nix/store/00000000000000000000000000000000-stub";
+    vaultSnapshotPkg = "/nix/store/00000000000000000000000000000000-stub";
   };
 
   # Step file basename -> the nix attribute holding its content.

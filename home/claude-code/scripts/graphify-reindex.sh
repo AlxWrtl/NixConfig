@@ -16,7 +16,7 @@
 #     that one is launched manually. This script is incremental-only — the
 #     semantic cache is keyed on content hashes, unchanged notes cost nothing.
 
-VAULT="$HOME/Documents/AlxVault/02-Projets"
+VAULT="$HOME/Vaults/AlxVault/02-Projets"
 OUT="$HOME/GraphVault"
 GRAPH="$OUT/graphify-out/graph.json"
 LOCK="$OUT/.reindex.lock"

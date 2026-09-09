@@ -770,7 +770,7 @@
           { cwd: dir, encoding: "utf8" }).trim();
         // A repo with NO remote cannot receive a PR, so "merge via PR" has no
         // meaning there and this rule would forbid committing at all. Concrete
-        // case: ~/Documents/AlxVault, the local-only git safety net for the
+        // case: ~/Vaults/AlxVault, the local-only git safety net for the
         // Obsidian vault — this hook blocked three legitimate commits to it.
         // Narrowed, not weakened: repos WITH a remote are still protected
         // exactly as before. Fail-closed on doubt — if `git remote` errors we

@@ -461,7 +461,7 @@ in
 
     ## Vault
 
-    Root: `~/Documents/AlxVault`
+    Root: `~/Vaults/AlxVault`
 
     ## Process
 
@@ -514,7 +514,7 @@ in
 
        a. **Freshness probe** (cheap, no MCP): Bash
           `ls -l ~/GraphVault/graphify-out/graph.json` and compare its mtime
-          to the newest note under `~/Documents/AlxVault/02-Projets`.
+          to the newest note under `~/Vaults/AlxVault/02-Projets`.
           - File absent → graph status `absent`: skip the rest of this step
             (recency-only report). Do NOT build the graph here — the initial
             full build is manual and long.
@@ -1259,7 +1259,7 @@ in
 
     ## Vault
 
-    Root: `~/Documents/AlxVault`
+    Root: `~/Vaults/AlxVault`
 
     ## Process
 
@@ -2306,7 +2306,7 @@ in
 
     # Obsidian Vault (direct file access)
 
-    Vault path: `~/Documents/AlxVault`
+    Vault path: `~/Vaults/AlxVault`
 
     No MCP server needed — use native tools directly on the vault files.
 
@@ -2336,13 +2336,13 @@ in
     ## Tool Mapping
     | Action | Tool | Example |
     |--------|------|---------|
-    | Search notes | `Grep` | `Grep(pattern: "keyword", path: "~/Documents/AlxVault")` |
-    | Read note | `Read` | `Read(file_path: "~/Documents/AlxVault/02-Projets/Preliz/Preliz.md")` |
-    | List directory | `Glob` | `Glob(pattern: "**/*.md", path: "~/Documents/AlxVault/02-Projets/")` |
-    | Create note | `Write` | `Write(file_path: "~/Documents/AlxVault/01-Inbox/new-note.md", content: "...")` |
+    | Search notes | `Grep` | `Grep(pattern: "keyword", path: "~/Vaults/AlxVault")` |
+    | Read note | `Read` | `Read(file_path: "~/Vaults/AlxVault/02-Projets/Preliz/Preliz.md")` |
+    | List directory | `Glob` | `Glob(pattern: "**/*.md", path: "~/Vaults/AlxVault/02-Projets/")` |
+    | Create note | `Write` | `Write(file_path: "~/Vaults/AlxVault/01-Inbox/new-note.md", content: "...")` |
     | Edit note | `Edit` | `Edit(file_path: "...", old_string: "...", new_string: "...")` |
-    | Find by tag | `Grep` | `Grep(pattern: "tags:.*veille", path: "~/Documents/AlxVault")` |
-    | Find by frontmatter | `Grep` | `Grep(pattern: "^date: 2026", path: "~/Documents/AlxVault", multiline: true)` |
+    | Find by tag | `Grep` | `Grep(pattern: "tags:.*veille", path: "~/Vaults/AlxVault")` |
+    | Find by frontmatter | `Grep` | `Grep(pattern: "^date: 2026", path: "~/Vaults/AlxVault", multiline: true)` |
 
     ## Vault Structure
     - `00-Meta/` — Templates, vault config

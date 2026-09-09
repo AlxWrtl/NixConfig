@@ -6,7 +6,7 @@ let
 
   # Obsidian vault — shared constant, reusable by other modules.
   # Real on-disk location (NOT the iCloud~md~obsidian mirror path).
-  alxVaultPath = "/Users/alx/Documents/AlxVault";
+  alxVaultPath = "/Users/alx/Vaults/AlxVault";
 in
 {
   settingsJson = builtins.toJSON {

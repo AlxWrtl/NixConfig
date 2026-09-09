@@ -427,13 +427,23 @@ grading the machine while claiming to grade its argument. Confirm it can fail �
 comment out the injection and 56 passing becomes 52 failing.
 
 `checks/vault-autocommit-bench.sh` covers the git half of the vault snapshot:
-20 cases on throwaway repos under `TMPDIR`, never the real vault, with the
+28 cases on throwaway repos under `TMPDIR`, never the real vault, with the
 auto-commit block lifted verbatim out of the script so the bench cannot drift
 from it. Four of the cases are failure paths, because the block's whole job is
 to never abort the backup — a guard that only works on the happy path turns
 "one uncommitted note" into "no backup at all". Mutation-tested: remove the
 fast-forward and 20 passing becomes 16, failing on exactly the four
 assertions that depend on it.
+
+Sections 7 and 8 cover the per-project grouping: the vault is written by
+sessions on different projects, and one commit must never carry two of them.
+Four mutations, each keeping the shell grammar valid so the failures mean
+something: drop the project pattern and 28 passing becomes 22; take `-z` off
+`ls-files` and it becomes 25, on the three accented-filename assertions alone;
+restore the plain `git add -A` and the anti-mixing assertion is the one that
+fires. That last mutation exists because the first three left it unfalsified —
+they made the block SKIP the projects rather than merge them, so an assertion
+that had never once failed was being reported as passing.
 
 Its first run reported 12 failures that were all its own: the fixtures
 inherited the real git config, which signs commits with an SSH key the sandbox

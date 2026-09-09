@@ -81,10 +81,28 @@ fi
 # Rotate only AFTER the round trip is proven, never before. And never
 # `gh release upload --clobber`: it deletes the existing asset before uploading
 # the replacement (cli/cli#8822), so an interruption loses both copies.
-gh release list --repo "$REPO" --limit 100 --json tagName,createdAt \
-   --jq "sort_by(.createdAt) | reverse | .[${KEEP}:] | .[].tagName" 2>/dev/null \
+#
+# Sort on tagName, NOT on createdAt. A release's createdAt is the date of the
+# COMMIT it targets, and this carrier holds exactly one commit for ever, so
+# every release reports the SAME createdAt. Sorting on that constant yields
+# jq's stable order — gh's own newest-first listing — which `reverse` then
+# inverts, so `.[KEEP:]` picked the NEWEST release and deleted the snapshot
+# just uploaded. Measured 2026-09-09: four releases, all
+# createdAt=2026-09-09T08:59:57Z, and the run rotated out the tag it had
+# created seconds earlier. In steady state the backup would have stayed frozen
+# on its first three generations for ever, without ever raising an error.
+# tagName is an ISO-8601 UTC stamp by construction, so lexicographic order is
+# chronological order and depends on nothing GitHub decides.
+gh release list --repo "$REPO" --limit 100 --json tagName \
+   --jq "sort_by(.tagName) | reverse | .[${KEEP}:] | .[].tagName" 2>/dev/null \
 | while read -r old; do
     [ -n "$old" ] || continue
+    # Belt and braces: whatever any future ordering does, never delete the
+    # generation this run just proved.
+    if [ "$old" = "$TAG" ]; then
+      log "REFUSED to rotate out the tag just created: $TAG"
+      continue
+    fi
     gh release delete "$old" --repo "$REPO" --cleanup-tag --yes >>"$LOG" 2>&1 || true
     log "rotated out $old"
   done

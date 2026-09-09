@@ -71,6 +71,10 @@
         greedy = true;
       }
       {
+        name = "codex";
+        greedy = true;
+      }
+      {
         name = "coteditor";
         greedy = true;
       }

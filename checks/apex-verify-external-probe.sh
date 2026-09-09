@@ -119,8 +119,12 @@ case "${STUB_MODE:-pass}" in
     printf '%s\n' '{"verdict":"FAIL","summary":"one defect","findings":[{"file":"a.txt","line":1,"severity":"critical","problem":"p","expected_fix":"f","ac":"AC-1"}]}' > "$out"
     exit 0
     ;;
+  # Shaped like the real CLI's output, measured 2026-09-09: codex prefixes its
+  # failures `ERROR:` and carries a structured payload. The wrapper classifies on
+  # those lines only, because everything else on stderr is the banner and the
+  # echoed brief — that is, the diff under review.
   auth)
-    printf 'stream error: 401 Unauthorized — run `codex login`\n' >&2
+    printf 'ERROR: {"type":"error","status":401,"error":{"message":"Unauthorized — run `codex login`"}}\n' >&2
     exit 1
     ;;
   # More than 64 KB of stderr whose FIRST line carries the auth signal. The
@@ -128,7 +132,7 @@ case "${STUB_MODE:-pass}" in
   # returns 141 under pipefail once the output outgrows the pipe buffer, turning
   # "matched" into "did not match" on exactly the noisy failures that matter.
   bigauth)
-    printf '401 Unauthorized\n' >&2
+    printf 'ERROR: {"type":"error","status":401,"error":{"message":"Unauthorized"}}\n' >&2
     awk 'BEGIN{for(i=0;i<2000;i++) printf "padding line %d of a very noisy vendor backtrace aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n", i}' >&2
     exit 1
     ;;
@@ -145,6 +149,17 @@ case "${STUB_MODE:-pass}" in
     ;;
   model)
     printf 'ERROR: 400 model_not_found: unknown model\n' >&2
+    exit 1
+    ;;
+  # Codex echoes the brief on stdout, and the brief carries the diff under
+  # review. A classifier that greps stdout therefore lets the reviewed code
+  # decide how a failure is classified. Here stdout carries this wrapper's own
+  # auth vocabulary while the real failure on stderr is an account-scoped model
+  # refusal — the exact shape measured against the live API on 2026-09-09.
+  echoed-brief)
+    printf 'OpenAI Codex v0.153.4\n--------\nuser\n' >&2
+    cat "$STUB_STDIN" >&2
+    printf 'ERROR: {"type":"error","status":400,"error":{"message":"The model is not supported when using Codex with a ChatGPT account."}}\n' >&2
     exit 1
     ;;
   # Writes a VALID verdict, but only after sleeping. Without this, "no timeout
@@ -218,6 +233,9 @@ mkdir -p "$FIX_DIRTY"
   printf 'UNTRACKED-MARKER-TOKEN\n' > newfile.txt
   printf 'SPACE-NAME-MARKER\n' > 'spaced name.txt'
   printf 'NEWLINE-NAME-MARKER\n' > "$(printf 'new\nline.txt')"
+  # A reviewed file that talks about failures the way the vendor does. The
+  # wrapper must not let this decide how ITS failure is classified.
+  printf 'ERROR: {"type":"error","status":401,"error":{"message":"Unauthorized — run `codex login`"}}\nauth.json invalid api key\n' > poisoned.txt
 ) >/dev/null 2>&1
 
 # CLEAN: nothing to review at all.
@@ -406,6 +424,15 @@ assert_case auth-large 4 'reason=auth' '.verdict == "BLOCKED" and .reason == "au
 # connection reset sends them to fix the one thing that is not broken.
 run_wrapper auth-false-positive reset 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" auth-false-positive)"
 assert_case auth-false-positive 5 'reason=model' '.verdict == "BLOCKED" and .reason == "model"' 1
+
+# The diff under review must not be able to decide how a failure is classified.
+# Measured against the live API on 2026-09-09: this repo's own diff contains the
+# wrapper's auth vocabulary, Codex echoed the brief on stdout, and an
+# account-scoped model refusal was reported as reason=auth — which stops the
+# chain, so the fallback model was never dialled. Three rungs, because a model
+# refusal must advance to the end of the chain.
+run_wrapper echoed-brief echoed-brief 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" echoed-brief)"
+assert_case echoed-brief 5 'reason=model' '.verdict == "BLOCKED" and .reason == "model" and (.models_tried | length) == 3' 3
 
 # A model-shaped failure must ADVANCE through the whole chain. The last rung
 # passes no -m at all, so the chain is three rungs and ends at cli-default.

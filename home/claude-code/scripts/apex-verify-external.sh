@@ -710,6 +710,8 @@ LAST_OUT="$WORK/last.txt"
 ERR_FILE="$WORK/stderr.txt"
 STDOUT_FILE="$WORK/stdout.txt"
 CTX_FILE="$WORK/errctx.txt"
+ERRLINES_FILE="$WORK/errlines.txt"
+UNQUOTED_FILE="$WORK/err-unquoted.txt"
 FIRST_ERROR=""
 ANSWERED=""
 
@@ -729,15 +731,64 @@ scrub_secrets() {
 # before printf has finished writing, which turns "matched" into "did not
 # match" for every output larger than a pipe buffer — precisely the large,
 # noisy failures where the classification matters most.
+# Classify on codex's OWN voice, never on the text it is quoting.
+#
+# `codex exec` streams its banner AND the whole echoed brief to stderr, and the
+# brief carries the diff under review — so a classifier reading the raw stream
+# lets the reviewed code decide how a failure is classified. Measured against
+# the live API on 2026-09-09: this repository's own diff contains the auth
+# vocabulary below, and an account-scoped model refusal (`status 400 … not
+# supported when using Codex with a ChatGPT account`) was reported as
+# reason=auth. Auth stops the chain, so the fallback model was never dialled and
+# a degradable failure looked like a broken feature.
+#
+# Cutting the quoted text out BY PATTERN does not work either: the first attempt
+# kept lines carrying an error payload, and the test fixtures in this very diff
+# carry such payloads. The nonce does work — the brief is fenced by markers
+# holding a per-run random token the reviewed code cannot predict, so everything
+# between the FIRST and the LAST marker line is quoted material and is dropped
+# whole. Only then does the shape filter apply. An empty corpus matches nothing,
+# so an unrecognised failure falls through to the generic case, never to auth.
+err_corpus() {
+  : >"$ERRLINES_FILE"
+  [ -s "$ERR_FILE" ] || return 0
+
+  corpus_first=""
+  corpus_last=""
+  if [ -n "$NONCE" ]; then
+    corpus_first="$(grep -an -- "$NONCE" "$ERR_FILE" 2>/dev/null | head -1 | cut -d: -f1 || true)"
+    corpus_last="$(grep -an -- "$NONCE" "$ERR_FILE" 2>/dev/null | tail -1 | cut -d: -f1 || true)"
+  fi
+
+  if [ -n "$corpus_first" ] && [ -n "$corpus_last" ]; then
+    # `[ … ] && head` would be a failing AND-list when first is 1, and under
+    # `set -e` that ends the run instead of skipping the head.
+    {
+      if [ "$corpus_first" -gt 1 ]; then head -n "$((corpus_first - 1))" "$ERR_FILE"; fi
+      tail -n "+$((corpus_last + 1))" "$ERR_FILE"
+    } >"$UNQUOTED_FILE" 2>/dev/null || true
+  else
+    cat "$ERR_FILE" >"$UNQUOTED_FILE" 2>/dev/null || true
+  fi
+
+  grep -aE '^(ERROR|error):|"type"[[:space:]]*:[[:space:]]*"error"' "$UNQUOTED_FILE" \
+    >"$ERRLINES_FILE" 2>/dev/null || true
+}
+
+# Classify from the FILES, never `printf '%s' "$text" | grep -q`. Under
+# `pipefail` that pipeline reports 141 whenever grep matches early and exits
+# before printf has finished writing, which turns "matched" into "did not
+# match" for every output larger than a pipe buffer — precisely the large,
+# noisy failures where the classification matters most.
 err_matches() {
-  grep -qiE "$1" "$ERR_FILE" "$STDOUT_FILE"
+  grep -qiE "$1" "$ERRLINES_FILE"
 }
 
 # A bare `401` matched anywhere used to be enough to declare an auth failure, so
 # `connection reset (request_id=req_9f401bc2)` told the user to log in again.
 # A status code only counts when the line it sits on is talking about HTTP.
 err_status_code() {
-  grep -iE 'http|status' "$ERR_FILE" "$STDOUT_FILE" >"$CTX_FILE" 2>/dev/null || true
+  grep -iE 'http|status' "$ERRLINES_FILE" >"$CTX_FILE" 2>/dev/null || true
   grep -qE "(^|[^0-9])($1)([^0-9]|\$)" "$CTX_FILE"
 }
 
@@ -786,8 +837,18 @@ for model in "${CHAIN[@]}"; do
     break
   fi
 
+  err_corpus
+
   if [ -z "$FIRST_ERROR" ]; then
-    FIRST_ERROR="$(cat "$ERR_FILE" "$STDOUT_FILE" 2>/dev/null | tr '\n' ' ' | scrub_secrets | cut -c1-300 || true)"
+    # Codex's own error lines, for the same reason the classification uses them:
+    # the raw stream opens with a banner and the whole echoed brief, so a summary
+    # built from it quotes the diff back at the reader instead of naming the
+    # failure. Falls back to the raw stream only when codex printed no error line.
+    if [ -s "$ERRLINES_FILE" ]; then
+      FIRST_ERROR="$(tr '\n' ' ' <"$ERRLINES_FILE" 2>/dev/null | scrub_secrets | cut -c1-300 || true)"
+    else
+      FIRST_ERROR="$(tr '\n' ' ' <"$ERR_FILE" 2>/dev/null | scrub_secrets | cut -c1-300 || true)"
+    fi
   fi
 
   # Auth-shaped failure stops the chain at once: another model on the same

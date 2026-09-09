@@ -573,6 +573,25 @@ in
       "how does concept X relate to concept Y", "what clusters around entity
       X" → graphify. The same question never goes to both.
 
+    ### The graph's scope is what the reindex covers, NOT what the graph holds
+
+    graphify is reindexed from `02-Projets` alone (`graphify-reindex.sh`), so
+    that folder is the whole of its declared scope. Finding a node from
+    somewhere else does NOT widen it.
+
+    Measured 2026-09-09: of 2963 nodes, 2 carry a `source_file` relative to the
+    VAULT ROOT (`02-Projets/nix-darwin/nix-darwin.md`,
+    `04-Resources/Outils de récupération web pour agents IA.md`) instead of the
+    normal base relative to `02-Projets` (`Preliz/…`, `nix-darwin/…`). They are
+    residue from a run scoped differently, and `graphify-reindex.sh` is
+    incremental-only — a full rebuild is a separate manual gesture — so those
+    nodes will never be refreshed and never removed.
+
+    Consequence for a run: trust the declared scope, never the contents. A node
+    under `04-Resources` is not evidence that `04-Resources` is covered; it is a
+    frozen snapshot of one moment, and the note behind it may have changed or
+    been deleted since. Outside `02-Projets`, read the note itself.
+
     ## Output — Context Report
 
     Produce a compact report:

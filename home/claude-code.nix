@@ -13,7 +13,11 @@ let
   commands = import ./claude-code/commands.nix;
   skills = import ./claude-code/skills.nix;
   graphifyReindex = import ./claude-code/graphify-reindex.nix { inherit pkgs; };
-  hooks = import ./claude-code/hooks.nix { inherit (graphifyReindex) graphifyReindexPkg; };
+  vaultSnapshot = import ./claude-code/vault-snapshot.nix { inherit pkgs; };
+  hooks = import ./claude-code/hooks.nix {
+    inherit (graphifyReindex) graphifyReindexPkg;
+    inherit (vaultSnapshot) vaultSnapshotPkg;
+  };
   agents = import ./claude-code/agents.nix;
   shell = import ./claude-code/shell.nix;
   claudeMd = import ./claude-code/claude-md.nix;
@@ -29,6 +33,7 @@ let
   inherit (rules) ruleNix ruleTypescript ruleReact;
   inherit (libdocs) libdocsPkg;
   inherit (graphifyReindex) graphifyReindexPkg;
+  inherit (vaultSnapshot) vaultSnapshotPkg;
   inherit (settings)
     settingsJson
     statuslineScript
@@ -91,6 +96,7 @@ let
     hookBlockMainBash
     hookSessionStart
     hookGraphifyReindex
+    hookVaultSnapshot
     hookApexReminder
     hookSubagentStop
     hookTaskCompleted
@@ -300,6 +306,10 @@ in
       text = hookGraphifyReindex;
       executable = true;
     };
+    "${claudeDir}/hooks/vault-snapshot.sh" = {
+      text = hookVaultSnapshot;
+      executable = true;
+    };
     "${claudeDir}/hooks/apex-reminder.sh" = {
       text = hookApexReminder;
       executable = true;
@@ -370,6 +380,7 @@ in
   home.packages = [
     libdocsPkg
     graphifyReindexPkg
+    vaultSnapshotPkg
   ];
 
   # Activation scripts

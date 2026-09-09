@@ -70,7 +70,7 @@ BR=$(git -C "$V" branch --list 'vault/*' | tr -d ' *')
 [ "$(git -C "$V" rev-parse HEAD)" != "$BEFORE" ] && ok "un commit a été créé" || bad "aucun commit"
 git -C "$V" ls-tree -r --name-only HEAD | grep -q '^note.md$' \
   && ok "la note est dans le commit" || bad "note absente du commit"
-echo "$OUT" | grep -q "auto-saved on vault/" && ok "journalisé" || bad "pas journalisé" "$OUT"
+case "$OUT" in *"auto-saved vault on vault/"*) ok "journalisé" ;; *) bad "pas journalisé" "$OUT" ;; esac
 
 echo
 echo "=== 2. l'état d'AVANT reste atteignable (le filet demandé) ==="
@@ -119,6 +119,53 @@ echo "$OUT" | grep -q "commit failed" && ok "échec journalisé" || bad "échec 
   && ok "branche vide supprimée" || bad "branche vide laissée"
 [ -n "$(git -C "$V5" status --porcelain)" ] && ok "modifs préservées" || bad "modifs perdues"
 echo "$OUT" | grep -q "NOT in this snapshot" && ok "omission nommée" || bad "omission taise"
+
+echo
+echo "=== 7. isolation : un commit par projet, jamais un fourre-tout ==="
+# Le defaut que ce groupement corrige : 6 commits de l'historique reel du vault
+# touchent plusieurs projets, un d'eux trois. Un `add -A` en aurait fait la regle.
+V6=$(mkvault t6)
+mkdir -p "$V6/02-Projets/Alpha" "$V6/02-Projets/Beta" "$V6/04-Resources"
+echo a > "$V6/02-Projets/Alpha/note.md"
+echo b > "$V6/02-Projets/Beta/note.md"
+echo r > "$V6/04-Resources/ref.md"
+run_block "$V6" >/dev/null
+N=$(git -C "$V6" rev-list --count HEAD)
+[ "$N" = "4" ] && ok "3 commits ajoutes (1 par groupe)" "total $N" \
+  || bad "nombre de commits" "$N (attendu 4 = base + 3)"
+# Le journal est capture AVANT d'etre filtre. `git log | grep -q` est un piege
+# ici : grep -q sort au premier match, git recoit SIGPIPE, et le `pipefail` de
+# ce banc transforme ce succes en echec. Seul le sujet situe en DERNIERE ligne
+# passait, ce qui a produit 2 faux echecs sur 3 assertions saines.
+SUBJ=$(git -C "$V6" log --format=%s -3)
+case "$SUBJ" in *"vault(Alpha): auto-save"*) ok "commit Alpha etiquete" ;; *) bad "Alpha mal etiquete" ;; esac
+case "$SUBJ" in *"vault(Beta): auto-save"*)  ok "commit Beta etiquete"  ;; *) bad "Beta mal etiquete"  ;; esac
+case "$SUBJ" in *"vault(vault): auto-save"*) ok "hors-projet etiquete vault" ;; *) bad "hors-projet mal etiquete" ;; esac
+
+echo "  -- aucun commit ne melange deux projets --"
+MIX=0
+for h in $(git -C "$V6" rev-list -3 HEAD); do
+  p=$(git -C "$V6" show --name-only --format= "$h" | sed -n 's|^02-Projets/\([^/]*\)/.*|\1|p' | sort -u | grep -c .)
+  [ "$p" -gt 1 ] && MIX=$((MIX+1))
+done
+[ "$MIX" = "0" ] && ok "zero commit multi-projet" || bad "$MIX commit(s) melangent des projets"
+
+echo
+echo "=== 8. noms de fichiers reels : espaces, accents, apostrophe ==="
+V7=$(mkvault t7)
+mkdir -p "$V7/02-Projets/Gamma/sessions"
+printf 'x\n' > "$V7/02-Projets/Gamma/sessions/2026-09-09 - récupération d'un état.md"
+run_block "$V7" >/dev/null
+[ -z "$(git -C "$V7" status --porcelain)" ] && ok "fichier accentue commite" || bad "reste sale"
+S7=$(git -C "$V7" log --format=%s -1)
+case "$S7" in "vault(Gamma): auto-save"*) ok "groupe correctement" ;; *) bad "mauvais groupe" "$S7" ;; esac
+# Ne PAS comparer aux octets du nom : macOS stocke les accents en NFD alors que
+# ce fichier source les ecrit en NFC, et `ls-tree` les C-quote comme ls-files.
+# On verifie la structure — un chemin, sous le bon dossier — et que git relit
+# exactement ce que le disque contient.
+NP=$(git -C "$V7" ls-tree -r --name-only -z HEAD | tr '\0' '\n' | grep -c '^02-Projets/Gamma/sessions/')
+[ "$NP" = "1" ] && ok "chemin accentue intact dans l'arbre" \
+  || bad "chemin accentue perdu" "$NP entree(s) sous Gamma/sessions"
 
 echo
 echo "=== $PASS passed, $FAIL failed ==="

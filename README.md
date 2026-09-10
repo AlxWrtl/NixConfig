@@ -106,13 +106,16 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── vscode.nix               # VS Code settings, keybindings, extensions
 │   ├── claude-code.nix          # Claude Code entrypoint — imports claude-code/
 │   ├── claude-code/             # settings, hooks, agents, skills, commands, rules…
+│   │                            #   incl. skills-manifest.nix, read by BOTH agents
 │   ├── codex.nix                # Codex CLI entrypoint — imports codex/
-│   └── codex/                   # hooks.json generator, activation, hook & merge scripts
+│   └── codex/                   # hooks.json generator, activation, hook & merge scripts,
+│                                #   skills translation + generator for ~/.agents/skills
 ├── checks/                      # Flake checks (see Quality Gates)
 │   ├── apex-consistency.nix
 │   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
 │   ├── claude-config.nix
 │   ├── codex-config.nix
+│   ├── codex-skills.nix
 │   └── readme-consistency.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
 ├── wallpapers/                  # Desktop wallpaper
@@ -174,6 +177,7 @@ system.
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
 | `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |
+| `codex-skills` | The Codex skills come from the same manifest as Claude's and say nothing about a mechanism Codex lacks: manifest ↔ skill sources is a bijection, every translation anchor still matches its passage exactly once, no Claude model or tool name survives, every frontmatter parses, descriptions stay inside the 8000-character budget |
 | `readme-consistency` | This file against the repo: the APEX flag table vs the skill, `/apex` examples typing only live flags, every `.nix` in `modules/` `home/` `checks/` `hosts/` present in the Structure tree, every check listed above, no dangling path, no alias documented that no attrset declares, no hard count |
 
 Run them before every commit that touches `.nix` files — `format-check` in

@@ -61,6 +61,7 @@
         apex-consistency = import ./checks/apex-consistency.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
         codex-config = import ./checks/codex-config.nix { inherit pkgs; };
+        codex-skills = import ./checks/codex-skills.nix { inherit pkgs; };
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };
       };
 

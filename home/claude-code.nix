@@ -24,6 +24,7 @@ let
   rules = import ./claude-code/rules.nix;
   libdocs = import ./claude-code/libdocs.nix { inherit pkgs; };
   scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
+  apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
     inherit pkgs lib;
     inherit (scraplingShim) scraplingShimPkg;
@@ -32,6 +33,7 @@ let
   inherit (claudeMd) claudeMdGlobal;
   inherit (rules) ruleNix ruleTypescript ruleReact;
   inherit (libdocs) libdocsPkg;
+  inherit (apexVerifyExternal) apexVerifyExternalPkg;
   inherit (graphifyReindex) graphifyReindexPkg;
   inherit (vaultSnapshot) vaultSnapshotPkg;
   inherit (settings)
@@ -379,6 +381,7 @@ in
   # this merges with the definitions in the other home modules.
   home.packages = [
     libdocsPkg
+    apexVerifyExternalPkg
     graphifyReindexPkg
     vaultSnapshotPkg
   ];

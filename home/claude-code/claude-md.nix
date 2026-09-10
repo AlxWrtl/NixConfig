@@ -37,9 +37,11 @@
     (switch = taxe subagent ~15×): low mécanique, high/max plan+verif. Subagents:
     JAMAIS inherit — model explicite. Mécanique/explo/tests: haiku | Volumineux
     gros contexte: sonnet-5 | Impl/debug: opus 5.
-    Fable = vérificateur INDÉPENDANT read-only, rationné haut-enjeu (irréversible/
+    Fable = vérificateur INDÉPENDANT read-only, réservé haut-enjeu (irréversible/
     sécu/archi/prod): lit diff réel + ACs → PASS ou fix-list bornée, ne code
-    JAMAIS. Quota 5h/7j rare → garder pour le diff critique. Opus 5 ≈ fable (bat
+    JAMAIS. Réservé non par pénurie de quota (mesuré ici: 21 spawns vérificateurs
+    contre 6489 messages coordinateur) mais parce qu'une lecture indépendante ne
+    vaut son aller-retour que là où un manque coûte cher. Opus 5 ≈ fable (bat
     7 bench/12, moitié prix, meilleur auto-verif); edge fable réel = cyber
     offensif/exploit + bio autonome. Fable invoqué → classifier cyber/bio peut
     fallback Opus 4.8. /effort max = frontier only.

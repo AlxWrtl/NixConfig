@@ -178,8 +178,8 @@ particular fails on formatting alone.
 `readme-consistency` compares this document against live sources rather than
 against a copy of its own expectations: a check holding its own copy of the
 truth rots at the same rate as the thing it checks. It deliberately does not
-require the eleven modules inside `home/claude-code/` to be listed
-individually — that directory is documented as one unit.
+require the modules inside `home/claude-code/` to be listed individually —
+that directory is documented as one unit.
 
 ## Maintenance / Cleanup
 
@@ -267,13 +267,14 @@ Lowercase forces ON, **uppercase forces OFF** (`-PR` cancels an automatic
 | `-f` | `-F` | Test-first — a separate agent writes failing tests from the ACs; read-only for the implementer |
 | `-2` | | Divergence — second independent implementation of the core logic, behavioural diff |
 | `-p` | `-P` | Premises — force/forbid the independent premises pass |
+| `-e` | `-E` | External verify — one cross-vendor read-only pass (Codex/GPT) over the same diff |
 | `-pr` | `-PR` | Pull request — commit + PR |
 | `-k` | `-K` | Tasks — dependency breakdown into parallel waves |
 | `-v` | `-V` | Verify — research the plan online; must trace a query or say why none |
 | `-o` | `-O` | Obsidian — load vault context before planning |
 | `-n` | `-N` | Note — session note at the end, then reindex the knowledge graph |
 
-`-q`, `-f`, `-2`, `-p`, `-k` and `-v` are never auto-enabled — each is
+`-q`, `-f`, `-2`, `-p`, `-k`, `-v` and `-e` are never auto-enabled — each is
 expensive, and none belongs on a typo fix.
 
 ### Invariants

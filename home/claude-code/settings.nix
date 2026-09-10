@@ -111,6 +111,18 @@ in
           "${homeDirectory}/.aws"
           "${homeDirectory}/.gnupg"
           "${homeDirectory}/.config/secrets"
+          # ~/.codex is in allowWrite below so the codex CLI can open its session
+          # DB. These four are the parts of it that EXECUTE: hooks.json and
+          # hooks/ hold commands codex runs, config.toml can declare more, and
+          # AGENTS.md is instructions it obeys. Writable, they would turn one
+          # injected shell command into code that runs on the user's next codex
+          # session — so deny wins inside the allowed directory. auth.json stays
+          # writable on purpose: the CLI refreshes its own token there, and
+          # denying it would break re-auth for no attacker gain.
+          "${homeDirectory}/.codex/hooks.json"
+          "${homeDirectory}/.codex/hooks"
+          "${homeDirectory}/.codex/config.toml"
+          "${homeDirectory}/.codex/AGENTS.md"
         ];
         denyRead = [
           # Sans cette entrée, la clé privée était lisible depuis le sandbox :
@@ -165,9 +177,17 @@ in
         # widens the sandbox while implying a capability that does not exist is
         # worse than none. The browser rungs run with the sandbox disabled —
         # verified working, one confirmation box.
+        # The codex CLI (APEX `-e`, external verifier) opens a session state DB
+        # under $CODEX_HOME. With the sandbox as-is, the run aborts before it
+        # reviews anything: `unable to open database file` on
+        # ~/.codex/state_5.sqlite. No flag relocates it, so the path is the
+        # only lever. As above, allowWrite EXTENDS the writable set only — it
+        # grants no read it did not already have and re-opens nothing covered
+        # by denyRead.
         allowWrite = [
           "${homeDirectory}/GraphVault"
           "${homeDirectory}/Library/Application Support/rtk"
+          "${homeDirectory}/.codex"
         ];
       };
       network = {
@@ -202,6 +222,9 @@ in
         # Library docs via the Context7 REST API. A narrow grant on purpose:
         # the wrapper exists so this rule is not `Bash(curl *)`.
         "Bash(libdocs *)"
+        # External cross-vendor verifier (APEX `-e`). Wrapper around a
+        # read-only `codex exec` subprocess: it reviews, it never edits.
+        "Bash(apex-verify-external *)"
         # Knowledge-graph refresh wrapper (no args; writes only to ~/GraphVault
         # — see sandbox allowWrite). Fired in background by APEX steps 01b/09b.
         "Bash(graphify-reindex)"

@@ -301,8 +301,9 @@
   # is what eventually retired economy mode entirely on 2026-08-17.
   #
   # Rule: a typed flag is a FLOOR, never a ceiling. A risk signal can only
-  # raise the tier. `-e` is stripped because it no longer exists — see the
-  # filter below. Uppercase disables the user typed on purpose are preserved.
+  # raise the tier. `-e` (external verify) is passed through untouched: never
+  # stripped, and never added by a risk signal — see the comment below.
+  # Uppercase disables the user typed on purpose are preserved.
   #
   # False positives are the intended failure direction: a task that merely
   # mentions "settings" runs more thoroughly than needed. Cheap. The reverse
@@ -338,21 +339,20 @@
         const typed = parts.slice(0, i);
         const rest = parts.slice(i).join(" ");
 
-        // -e no longer exists (economy mode removed 2026-08-17), and APEX
-        // rejects an unknown flag by printing the valid list instead of running.
-        // Stripped BEFORE the risk gate on purpose: the briefs that historically
-        // carried -e are low-risk ones matching neither regex, so stripping it
-        // after an early exit would have left it in place for exactly the
-        // population it was meant to protect.
-        const kept = typed.filter(f => f !== "-e");
-        const strippedE = kept.length !== typed.length;
+        // -e now means external verify: one cross-vendor read-only pass over
+        // the same diff. The hook must never STRIP it — deleting a typed flag
+        // makes the feature inert with no error anywhere. And, the operative
+        // half, the hook must never ADD it either: a risk signal may raise the
+        // depth of a run, but it may not spend another vendor's allowance
+        // without the user typing the letter.
+        const kept = typed.slice();
 
         // Branch and save left the flag surface: both are mode invariants now,
         // so the tiers only carry what is still a real flag.
         const isHigh = HIGH.test(args);
         if (isHigh) target = ["-t", "-x", "-pr"];
         else if (STANDARD.test(args)) target = ["-t", "-pr"];
-        else if (!strippedE) process.exit(0);
+        else process.exit(0);
 
         // Add what is missing, but never override an explicit uppercase OFF.
         for (const f of (target || [])) {
@@ -364,8 +364,10 @@
 
         // The Fable spend is decided here, by regex, not by the coordinator's
         // judgement mid-run — that judgement is exactly what kept getting
-        // skipped. HIGH only: the 5h/7d quota is the scarce resource, and
-        // ORCHESTRATION.md keeps it for the check where a miss is expensive.
+        // skipped. HIGH only: not because the quota is scarce (measured here,
+        // 21 Fable spawns against 6489 coordinator messages — it never bound),
+        // but because an independent read is worth its round-trip only where a
+        // miss is expensive, which is what ORCHESTRATION.md keeps it for.
         const fable = isHigh
           ? "HIGH risk signal in this brief (hook/settings/permission/sandbox/deny/secret/"
             + "credential). The Fable read-only pass is MANDATORY for this run: once the "
@@ -980,7 +982,7 @@
   # table over there, grep for this line.
   hookApexReminder = ''
     #!/usr/bin/env bash
-    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche. Majuscule désactive. Question sans modification → réponse directe."
+    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -e vérif externe. Majuscule désactive. Question sans modification → réponse directe."
     exit 0
   '';
 

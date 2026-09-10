@@ -23,26 +23,12 @@ let
 
   hooks = import ./codex/hooks.nix { inherit pkgs; };
 
-  # writeShellApplication prepends `set -euo pipefail` and runs shellcheck at
-  # build time — both scripts are written for it and add neither themselves.
-  # yq supplies tomlq; coreutils supplies cmp/mktemp/cp/mv/sha256sum.
-  configMergePkg = pkgs.writeShellApplication {
-    name = "codex-config-merge";
-    runtimeInputs = [
-      pkgs.yq
-      pkgs.coreutils
-    ];
-    text = builtins.readFile ./codex/scripts/config-merge.sh;
-  };
-
-  verifyTrustPkg = pkgs.writeShellApplication {
-    name = "codex-verify-hook-trust";
-    runtimeInputs = [
-      pkgs.yq
-      pkgs.coreutils
-    ];
-    text = builtins.readFile ./codex/scripts/verify-hook-trust.sh;
-  };
+  # Defined in a plain `{ pkgs }:` file so checks/codex-config.nix can import
+  # the very same derivations and run them with an empty PATH — see the
+  # measurement recorded there. A home-manager module cannot be imported by a
+  # check, and that is why these two wrappers went untested until the PATH bug
+  # shipped.
+  inherit (import ./codex/packages.nix { inherit pkgs; }) configMergePkg verifyTrustPkg;
 
   activationScripts = import ./codex/activation.nix {
     inherit

@@ -98,7 +98,15 @@ if [ ! -f "$HOOKS" ]; then
 else
   CUR_HASH="$(sha_of "$HOOKS" 2>/dev/null || printf '')"
   if [ -z "$CUR_HASH" ]; then
-    add "no sha256 tool found: $HOOKS could not be checked against its baseline"
+    # Do not name a cause the code has not established. The first version said
+    # "no sha256 tool found" and was wrong: sha256sum was present, `awk` was
+    # not, so the pipeline failed. A check that misreports why it could not run
+    # sends the reader after the wrong thing.
+    if command -v sha256sum > /dev/null 2>&1 || command -v shasum > /dev/null 2>&1; then
+      add "could not compute the hash of $HOOKS although a sha256 tool exists — a helper it pipes through (awk) is missing from PATH"
+    else
+      add "no sha256 tool found: $HOOKS could not be checked against its baseline"
+    fi
   elif [ ! -f "$STATE" ]; then
     STALE=yes
     add "no reviewed baseline at $STATE: this hooks file has never been recorded as reviewed"

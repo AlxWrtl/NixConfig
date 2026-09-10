@@ -105,11 +105,14 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── ghostty.nix              # Terminal (Catppuccin, quick terminal)
 │   ├── vscode.nix               # VS Code settings, keybindings, extensions
 │   ├── claude-code.nix          # Claude Code entrypoint — imports claude-code/
-│   └── claude-code/             # settings, hooks, agents, skills, commands, rules…
+│   ├── claude-code/             # settings, hooks, agents, skills, commands, rules…
+│   ├── codex.nix                # Codex CLI entrypoint — imports codex/
+│   └── codex/                   # hooks.json generator, activation, hook & merge scripts
 ├── checks/                      # Flake checks (see Quality Gates)
 │   ├── apex-consistency.nix
 │   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
 │   ├── claude-config.nix
+│   ├── codex-config.nix
 │   └── readme-consistency.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
 ├── wallpapers/                  # Desktop wallpaper
@@ -166,10 +169,11 @@ system.
 
 | Check | What it enforces |
 |-------|------------------|
-| `format-check` | `nixfmt --check` over `flake.nix`, `modules/`, `home/`, `home/claude-code/`, `hosts/`, `checks/` |
+| `format-check` | `nixfmt --check` over `flake.nix`, `modules/`, `home/`, `home/claude-code/`, `home/codex/`, `hosts/`, `checks/` |
 | `system-config` | The whole `alex-mbp` darwin configuration actually builds |
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
+| `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |
 | `readme-consistency` | This file against the repo: the APEX flag table vs the skill, `/apex` examples typing only live flags, every `.nix` in `modules/` `home/` `checks/` `hosts/` present in the Structure tree, every check listed above, no dangling path, no alias documented that no attrset declares, no hard count |
 
 Run them before every commit that touches `.nix` files — `format-check` in
@@ -218,7 +222,39 @@ list, deliberately not duplicated here.
 | Git | home-manager (`home/git.nix`) | SSH signing, rebase-on-pull, fsck |
 | SSH | home-manager (`home/ssh.nix`) | Host configs (Tailscale) |
 | Claude Code | home-manager (`home/claude-code/`) | settings, hooks, agents, skills, commands, rules, shell aliases |
+| Codex CLI | home-manager (`home/codex/`) | `hooks.json` + hook scripts (store symlinks), `config.toml` merge, hook-trust verification |
 | Secrets | git-crypt (`secrets.nix`, `backups/`) | Git email, SSH hosts, app config exports |
+
+## Codex Hooks — Trusting Them After a Rebuild
+
+Codex records hook trust **per hook and by position**, inside
+`~/.codex/config.toml`, as a `[hooks.state."<file>:<event>:<group>:<hook>"]`
+table carrying a hash of the hook's content. A hook it has not been told to
+trust is **skipped in silence** — no error, no log, no protection, while the
+configuration still looks correct. That is why `~/.codex/config.toml` is
+merged in place and never regenerated, and why `home/codex/hooks.nix` requires
+new hooks to be appended only at the END of an event's list.
+
+Nothing outside Codex can grant that trust, and no Codex command reports it
+(`codex doctor` has no hook check). So the sequence after any change to the
+hooks is manual, and short:
+
+1. `sudo darwin-rebuild switch --flake .#alex-mbp` — activation merges
+   `config.toml`, links `hooks.json`, then runs `codex-verify-hook-trust`.
+2. The verifier warns on **both** hooks. That is expected on a first rebuild
+   and after any hook edit; a silent pass there would mean the check failed to
+   notice, not that you are protected.
+3. Open Codex, run `/hooks`, review each hook and trust it.
+4. Record the reviewed baseline by hand: `codex-verify-hook-trust -a`. It
+   writes the hash under `~/.local/state/`, outside the agent's writable set,
+   so nothing running inside a session can forge its own clean bill of health.
+   Activation never passes `-a`: the review it records is a human act.
+
+After that, rebuilds are silent until the hooks' content changes — then the
+warning returns and step 3 has to happen again.
+
+The verifier never claims a hook IS trusted at runtime; it can only report
+that one is un-approved or stale. Its silence is not proof of protection.
 
 ## Post Clean Install Checklist
 

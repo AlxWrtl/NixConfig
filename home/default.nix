@@ -15,6 +15,7 @@
     ./ghostty.nix
     ./vscode.nix
     ./claude-code.nix
+    ./codex.nix
   ];
 
   home.username = "alx";

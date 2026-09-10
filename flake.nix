@@ -49,6 +49,10 @@
           # after, verified — nixfmt does not shift the indentation that nix
           # strips from multiline strings.
           ${pkgs.nixfmt}/bin/nixfmt --check home/claude-code/*.nix
+          # Explicit per directory, and that is the trap: a NEW module
+          # directory is neither formatted nor checked until its own line
+          # exists here, and the failure mode is silence.
+          ${pkgs.nixfmt}/bin/nixfmt --check home/codex/*.nix
           ${pkgs.nixfmt}/bin/nixfmt --check hosts/alex-mbp/*.nix
           ${pkgs.nixfmt}/bin/nixfmt --check checks/*.nix
           touch $out
@@ -56,6 +60,7 @@
         system-config = self.darwinConfigurations."alex-mbp".system;
         apex-consistency = import ./checks/apex-consistency.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
+        codex-config = import ./checks/codex-config.nix { inherit pkgs; };
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };
       };
 

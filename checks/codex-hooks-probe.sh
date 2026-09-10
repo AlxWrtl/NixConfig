@@ -277,6 +277,12 @@ pay() { # pay <name> <content>
 }
 
 P_INSIDE=$(pay inside "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"file_path\":\"$FIX_MAIN/src/app.ts\"}}")
+# Codex edits through patches, not through a path field. Measured live on
+# 2026-09-10: a real edit reached the hook carrying no file_path at all, so it
+# denied for want of a readable target — the right answer by the wrong route.
+# This payload proves the patch body is read: the deny must name the branch,
+# not the missing field.
+P_PATCH=$(pay patch "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"patch\":\"*** Begin Patch\\n*** Update File: $FIX_MAIN/src/app.ts\\n@@\\n-a\\n+b\\n*** End Patch\"}}")
 P_FEAT=$(pay feat "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"cwd\":\"$FIX_FEAT\",\"tool_input\":{\"file_path\":\"$FIX_FEAT/src/app.ts\"}}")
 P_MASTER=$(pay master "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"cwd\":\"$FIX_MASTER\",\"tool_input\":{\"file_path\":\"$FIX_MASTER/src/app.ts\"}}")
 P_OUTSIDE=$(pay outside "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"file_path\":\"$OUTSIDE/plain.txt\"}}")
@@ -465,6 +471,7 @@ while IFS='|' read -r label script wd pathkey payload want filt stderr_re maxsec
 done << TABLE
 # --- protect-main.js: SECURITY, fails CLOSED ---------------------------------
 pm-main-inside|pm|$FIX_MAIN|base|$P_INSIDE|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main|
+pm-patch-inside|pm|$FIX_MAIN|base|$P_PATCH|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main\. Ask|
 pm-master-inside|pm|$FIX_MASTER|base|$P_MASTER|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
 pm-feature-branch|pm|$FIX_FEAT|base|$P_FEAT|0|-|-|
 pm-outside-worktree|pm|$FIX_MAIN|base|$P_OUTSIDE|0|-|-|

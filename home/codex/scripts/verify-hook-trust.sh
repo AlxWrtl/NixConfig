@@ -176,15 +176,29 @@ if [ "$NFOUND" -gt 0 ]; then
       '  This check CANNOT confirm that a hook is trusted at runtime: Codex exposes no' \
       '  command that reports hook trust. It can only report that a hook is un-approved' \
       '  or stale. Its silence is not proof that you are protected.' \
-      '  FIX: open Codex, run /hooks, review and trust the hooks. Then record the' \
-      "  reviewed baseline with:  codex-verify-hook-trust -a"
+      '  FIX, in this order: open Codex, run /hooks, review and trust the hooks.' \
+      '  ONLY THEN record the baseline, and pass the same keys the activation' \
+      '  passes — recording it first would satisfy the staleness check for that' \
+      '  content forever, while the hooks may never have been approved:' \
+      "    codex-verify-hook-trust $* -a"
   } >&2
 else
   printf 'codex-hook-trust: nothing un-approved or stale detected. This check cannot confirm a hook is trusted at runtime — only that one is un-approved or stale.\n'
 fi
 
 if [ "$ACCEPT" = yes ]; then
-  if [ -z "$CUR_HASH" ]; then
+  # Refuse to record when nothing was checked. Measured 2026-09-10: run as a
+  # bare `-a`, this tool printed "no expected trust keys were passed in, so no
+  # hook was checked for approval" and then recorded a baseline anyway. That
+  # baseline satisfies the staleness detector for that exact content forever,
+  # so a later run reports clean while the hooks may never have been approved —
+  # a security tool issuing a certificate it has just said it cannot justify.
+  # The baseline is a HUMAN statement that the hooks were reviewed in a Codex
+  # session; it is only meaningful alongside the keys it vouches for.
+  if [ "$#" -eq 0 ]; then
+    printf 'codex-hook-trust: refusing to record a baseline — no expected trust keys were passed, so nothing was checked.\n' >&2
+    printf '  Approve the hooks first (open Codex, run /hooks), then re-run this with the same keys the activation passes, plus -a.\n' >&2
+  elif [ -z "$CUR_HASH" ]; then
     printf 'codex-hook-trust: nothing to record — no hash could be computed for %s\n' "$HOOKS" >&2
   elif mkdir -p "$(dirname "$STATE")" 2>/dev/null && printf '%s\n' "$CUR_HASH" > "$STATE" 2>/dev/null; then
     printf 'codex-hook-trust: reviewed baseline recorded (%s… in %s)\n' "${CUR_HASH:0:12}" "$STATE"

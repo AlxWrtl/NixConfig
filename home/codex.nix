@@ -32,6 +32,8 @@ let
 
   hooks = import ./codex/hooks.nix { inherit pkgs; };
 
+  inherit (import ./codex/agents-md.nix) agentsMd;
+
   # Defined in a plain `{ pkgs }:` file so checks/codex-config.nix can import
   # the very same derivations and run them with an empty PATH — see the
   # measurement recorded there. A home-manager module cannot be imported by a
@@ -67,6 +69,14 @@ in
 {
   home.file = hookScriptFiles // {
     "${codexDir}/hooks.json".text = hooks.hooksJson + "\n";
+
+    # force: this file already exists as a real, hand-edited file. Without it
+    # home-manager refuses to link and leaves an AGENTS.md.backup behind, and
+    # the stale instructions keep being loaded.
+    "${codexDir}/AGENTS.md" = {
+      text = agentsMd;
+      force = true;
+    };
   };
 
   # On PATH so the human can record the reviewed baseline by hand after

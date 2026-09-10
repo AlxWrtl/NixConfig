@@ -220,6 +220,43 @@ function firstPath(obj) {
   return null;
 }
 
+// Codex edits through PATCHES, not through a path field: `apply_patch` occurs
+// 166 times in the 0.154.0 binary against 12 for `file_path`. Measured live on
+// 2026-09-10, a real edit on master reached this hook and was refused with
+// "carries no file path field" — the right answer, reached by ignorance rather
+// than by knowledge, and the reason the outside-the-worktree carve-out could
+// never apply. So read the patch body too.
+//
+// The envelope's own format is the source: `*** Add File: <p>`,
+// `*** Update File: <p>`, `*** Delete File: <p>`, plus the unified-diff form
+// a patch may carry. Any ONE target inside the worktree is enough to refuse,
+// so the first match decides and the rest need not be parsed.
+function firstPatchPath(obj) {
+  if (!obj || typeof obj !== "object") return null;
+  const bodies = [];
+  for (const k of ["patch", "input", "diff", "content", "changes"]) {
+    const v = obj[k];
+    if (typeof v === "string" && v.trim() !== "") bodies.push(v);
+    // `changes` may be an object keyed by path — the keys are the targets.
+    else if (v && typeof v === "object" && !Array.isArray(v)) {
+      for (const key of Object.keys(v)) {
+        if (typeof key === "string" && key.includes("/")) return key;
+      }
+    }
+  }
+  const re =
+    /^\*\*\*\s+(?:Add|Update|Delete)\s+File:\s*(.+?)\s*$|^(?:\+\+\+|---)\s+(?:[ab]\/)?(.+?)\s*$/;
+  for (const body of bodies) {
+    for (const line of body.split("\n")) {
+      const m = re.exec(line);
+      if (!m) continue;
+      const p = (m[1] || m[2] || "").trim();
+      if (p && p !== "/dev/null") return p;
+    }
+  }
+  return null;
+}
+
 // --- main -------------------------------------------------------------------
 
 let input = "";
@@ -265,9 +302,15 @@ function main() {
 
   // The exact field name is the vendor's, not ours: read the plausible
   // aliases rather than betting on one (plan R4).
-  const raw = firstPath(data.tool_input) || firstPath(data);
+  const raw =
+    firstPath(data.tool_input) ||
+    firstPath(data) ||
+    firstPatchPath(data.tool_input) ||
+    firstPatchPath(data);
   if (!raw) {
-    denyOnBranch("the hook input carries no file path field");
+    denyOnBranch(
+      "the hook input carries neither a file path nor a readable patch",
+    );
     return;
   }
 

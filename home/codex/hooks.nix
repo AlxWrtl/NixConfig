@@ -21,9 +21,10 @@
 #   Codex treats every non-zero exit other than 2 as "did not block", so a
 #   hook the host kills GRANTS what it exists to refuse. Each script therefore
 #   refuses itself first, on its own watchdog: protect-main at 3000 ms,
-#   quality-gate at 4000 ms. The registered timeout must stay above both — 5,
-#   NEVER below 4. Lower it and the host kills the hook before its watchdog
-#   fires, and the fail-closed property is gone with no visible symptom.
+#   block-main-shell at 3000 ms, quality-gate at 4000 ms. The registered
+#   timeout must stay above all three — 5, NEVER below 4. Lower it and the host
+#   kills the hook before its watchdog fires, and the fail-closed property is
+#   gone with no visible symptom.
 #   Change it here and you must change the constant in the script too.
 #
 # INTERPRETER — the absolute system node, deliberately NOT
@@ -52,6 +53,7 @@ let
 
   protectMainScript = mkHookScript "codex-protect-main.js" ./scripts/protect-main.js;
   qualityGateScript = mkHookScript "codex-quality-gate.js" ./scripts/quality-gate.js;
+  blockMainShellScript = mkHookScript "codex-block-main-shell.js" ./scripts/block-main-shell.js;
 
   # ORDERED. Append at the end; see the contract above.
   hookList = [
@@ -69,6 +71,35 @@ let
       matcher = null;
       basename = "quality-gate.js";
       script = qualityGateScript;
+      timeout = 5;
+    }
+    # APPENDED AT THE END OF THE LIST, 2026-09-10, and that is the whole point:
+    # it becomes PreToolUse GROUP 1, so protect-main keeps pre_tool_use:0:0 and
+    # quality-gate keeps stop:0:0 — both stay trusted. Inserting it above
+    # protect-main would have un-trusted the guard it is meant to reinforce,
+    # in silence. Physical position in this list is what decides the group
+    # index of a PreToolUse hook; the Stop entry in between changes nothing.
+    #
+    # WHY IT EXISTS. protect-main only ever sees `Edit|Write`. Measured on a
+    # throwaway repo on master: Codex changed a file with
+    # `perl -0pi -e 's/1/2/g' note.txt` — a shell command, no edit tool, no
+    # hook, no protection. This is the shell half of the same guard, ported
+    # from home/claude-code/hooks.nix:hookBlockMainBash.
+    #
+    # THE MATCHER NAMES THREE TOOLS BECAUSE THE TOOL NAME IS NOT ESTABLISHED.
+    # The Codex binary carries the strings `shell`, `local_shell` and `bash`
+    # and nothing says which one a PreToolUse payload actually carries. A
+    # matcher that guesses wrong produces a hook that never fires — the exact
+    # failure being repaired — so all three are named. Same alternation syntax
+    # as the `Edit|Write` entry above. The script defends the same way one
+    # layer down: it reads the command from every plausible field and accepts
+    # a string or an argv array.
+    {
+      event = "PreToolUse";
+      stateEvent = "pre_tool_use";
+      matcher = "shell|local_shell|bash";
+      basename = "block-main-shell.js";
+      script = blockMainShellScript;
       timeout = 5;
     }
   ];

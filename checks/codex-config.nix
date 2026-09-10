@@ -47,20 +47,29 @@ let
   allEntries = builtins.concatMap entriesOf allGroups;
   commands = map (h: h.command or "") allEntries;
 
-  firstEntryOf =
-    e:
+  # Addressed BY INDEX, not just "the first one": trust is positional, so a
+  # check that only ever looks at group 0 stops seeing the moment a second
+  # group is appended to an event — and appending is the sanctioned way to add
+  # a hook here.
+  groupAt =
+    e: i:
     let
       gs = groupsOf e;
-      es = if gs == [ ] then [ ] else entriesOf (builtins.head gs);
+    in
+    if builtins.length gs <= i then null else builtins.elemAt gs i;
+  entryAt =
+    e: i:
+    let
+      g = groupAt e i;
+      es = if g == null then [ ] else entriesOf g;
     in
     if es == [ ] then null else builtins.head es;
-  firstCommandOf = e: if firstEntryOf e == null then null else (firstEntryOf e).command or null;
-  firstMatcherOf =
-    e:
-    let
-      gs = groupsOf e;
-    in
-    if gs == [ ] then null else (builtins.head gs).matcher or null;
+  commandAt = e: i: if entryAt e i == null then null else (entryAt e i).command or null;
+  matcherAt = e: i: if groupAt e i == null then null else (groupAt e i).matcher or null;
+  showCommandAt = e: i: if commandAt e i == null then "<absent>" else commandAt e i;
+  showMatcherAt = e: i: if matcherAt e i == null then "<absent>" else matcherAt e i;
+  firstCommandOf = e: commandAt e 0;
+  firstMatcherOf = e: matcherAt e 0;
 
   # --- what the module actually installs -----------------------------------
   installed = map (f: toString f.source) hooks.scriptFiles;
@@ -120,7 +129,7 @@ let
         + ". This is the exact live failure this module repairs: seven such commands made Codex print `hook exited with code 127` every turn while branch protection was OFF and the configuration looked correct";
     }
     {
-      name = "C3 hooks.json: exactly the two declared hooks, PreToolUse and Stop";
+      name = "C3 hooks.json: exactly the three declared hooks, two PreToolUse and one Stop";
       ok =
         jsonOk
         &&
@@ -128,35 +137,45 @@ let
             "PreToolUse"
             "Stop"
           ]
-        && builtins.length allGroups == 2
-        && builtins.length allEntries == 2;
+        && builtins.length (groupsOf "PreToolUse") == 2
+        && builtins.length allGroups == 3
+        && builtins.length allEntries == 3;
       msg =
-        "expected one PreToolUse group and one Stop group, found events ["
+        "expected two PreToolUse groups (protect-main, then block-main-shell) and one Stop group, found events ["
         + builtins.concatStringsSep ", " eventNames
         + "] with "
         + toString (builtins.length allEntries)
         + " hook(s) — every extra or missing entry shifts a positional trust key and un-trusts its neighbours in silence";
     }
     {
-      name = "C4 order: protect-main is PreToolUse[0], quality-gate is Stop[0]";
+      name = "C4 order: protect-main is PreToolUse[0], block-main-shell is PreToolUse[1], quality-gate is Stop[0]";
       ok =
         jsonOk
-        && firstCommandOf "PreToolUse" == "${hooks.nodeBin} ${pathOfBasename "protect-main.js"}"
-        && firstCommandOf "Stop" == "${hooks.nodeBin} ${pathOfBasename "quality-gate.js"}";
+        && commandAt "PreToolUse" 0 == "${hooks.nodeBin} ${pathOfBasename "protect-main.js"}"
+        && commandAt "PreToolUse" 1 == "${hooks.nodeBin} ${pathOfBasename "block-main-shell.js"}"
+        && commandAt "Stop" 0 == "${hooks.nodeBin} ${pathOfBasename "quality-gate.js"}";
       msg =
         "PreToolUse[0] is "
-        + (if firstCommandOf "PreToolUse" == null then "<absent>" else firstCommandOf "PreToolUse")
+        + showCommandAt "PreToolUse" 0
+        + ", PreToolUse[1] is "
+        + showCommandAt "PreToolUse" 1
         + " and Stop[0] is "
-        + (if firstCommandOf "Stop" == null then "<absent>" else firstCommandOf "Stop")
-        + " — trust is recorded by position, so swapping or inserting ahead of these two invalidates their approval and Codex then SKIPS them without a word";
+        + showCommandAt "Stop" 0
+        + " — trust is recorded by position, so swapping them, or inserting anything AHEAD of protect-main, invalidates an approval already given and Codex then SKIPS that hook without a word. The shell guard is appended at index 1 for exactly that reason";
     }
     {
-      name = "C5 matcher: PreToolUse[0] matches Edit|Write, Stop[0] carries none";
-      ok = jsonOk && firstMatcherOf "PreToolUse" == "Edit|Write" && firstMatcherOf "Stop" == null;
+      name = "C5 matcher: PreToolUse[0] matches Edit|Write, PreToolUse[1] covers the three shell tool names, Stop[0] carries none";
+      ok =
+        jsonOk
+        && matcherAt "PreToolUse" 0 == "Edit|Write"
+        && matcherAt "PreToolUse" 1 == "shell|local_shell|bash"
+        && matcherAt "Stop" 0 == null;
       msg =
         "PreToolUse[0] matcher is "
-        + (if firstMatcherOf "PreToolUse" == null then "<absent>" else firstMatcherOf "PreToolUse")
-        + " — a matcher that does not name the edit tools means the branch guard never fires on the very calls it exists to refuse; Stop takes no matcher";
+        + showMatcherAt "PreToolUse" 0
+        + " and PreToolUse[1] matcher is "
+        + showMatcherAt "PreToolUse" 1
+        + " — a matcher that does not name the tool means the guard never fires on the very calls it exists to refuse, which is how `perl -0pi -e 's/1/2/g' note.txt` edited a file on master while protect-main watched Edit|Write. The shell tool's real name is NOT established (the binary carries `shell`, `local_shell` and `bash`), so all three are named rather than guessed at; Stop takes no matcher";
     }
     {
       name = "C6 timeouts: every hook is registered with at least 4 seconds";
@@ -164,7 +183,7 @@ let
       msg =
         "timeout(s) missing, non-integer or below 4: "
         + builtins.concatStringsSep ", " (map (t: if t == null then "<absent>" else toString t) timeouts)
-        + " — protect-main self-denies at 3000 ms and quality-gate self-exits at 4000 ms; register anything under 4 s and the host kills the hook BEFORE its own watchdog fires, and a killed hook exits with a code Codex reads as 'did not block'. Change this and you must change the constants in the scripts";
+        + " — protect-main and block-main-shell self-deny at 3000 ms and quality-gate self-exits at 4000 ms; register anything under 4 s and the host kills the hook BEFORE its own watchdog fires, and a killed hook exits with a code Codex reads as 'did not block'. Change this and you must change the constants in the scripts";
     }
     {
       name = "C7 interpreter: the absolute system node, not a pinned store path";
@@ -181,6 +200,7 @@ let
       ok =
         hooks.trustKeySuffixes == [
           "pre_tool_use:0:0"
+          "pre_tool_use:1:0"
           "stop:0:0"
         ]
         && builtins.length hooks.trustKeySuffixes == builtins.length allEntries;

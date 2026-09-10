@@ -65,17 +65,38 @@ usage() {
     '  -a  record the current hooks.json hash as the reviewed baseline'
 }
 
-while getopts ':j:c:s:ah' opt; do
-  case "$opt" in
-    j) HOOKS="$OPTARG" ;;
-    c) CONFIG="$OPTARG" ;;
-    s) STATE="$OPTARG" ;;
-    a) ACCEPT=yes ;;
-    h) usage; exit 0 ;;
-    *) usage >&2; exit 0 ;;
+# Hand-rolled rather than getopts, and the reason is a real bug this had.
+# getopts stops at the first non-option word, so `… KEY KEY -a` left ACCEPT
+# unset AND fed `-a` in as a fourth expected trust key — the tool then reported
+# "never approved — no trust entry for: -a" and silently declined to record.
+# The flag's position must not matter: a human typing it at the end is the
+# natural spelling, and the guidance printed below used to suggest exactly that.
+KEYS=()
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    -j)
+      if [ "$#" -lt 2 ]; then usage >&2; exit 0; fi
+      HOOKS="$2"; shift 2 ;;
+    -c)
+      if [ "$#" -lt 2 ]; then usage >&2; exit 0; fi
+      CONFIG="$2"; shift 2 ;;
+    -s)
+      if [ "$#" -lt 2 ]; then usage >&2; exit 0; fi
+      STATE="$2"; shift 2 ;;
+    -a) ACCEPT=yes; shift ;;
+    -h) usage; exit 0 ;;
+    --) shift; while [ "$#" -gt 0 ]; do KEYS+=("$1"); shift; done ;;
+    -*)
+      # Never let an unknown flag pass for a trust key: it would be reported as
+      # un-approved, which reads as a security finding about a hook that does
+      # not exist.
+      printf 'codex-hook-trust: unknown option %s\n' "$1" >&2
+      usage >&2
+      exit 0 ;;
+    *) KEYS+=("$1"); shift ;;
   esac
 done
-shift $((OPTIND - 1))
+set -- "${KEYS[@]+"${KEYS[@]}"}"
 
 sha_of() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -180,7 +201,7 @@ if [ "$NFOUND" -gt 0 ]; then
       '  ONLY THEN record the baseline, and pass the same keys the activation' \
       '  passes — recording it first would satisfy the staleness check for that' \
       '  content forever, while the hooks may never have been approved:' \
-      "    codex-verify-hook-trust $* -a"
+      "    codex-verify-hook-trust -a $*"
   } >&2
 else
   printf 'codex-hook-trust: nothing un-approved or stale detected. This check cannot confirm a hook is trusted at runtime — only that one is un-approved or stale.\n'

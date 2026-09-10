@@ -115,8 +115,14 @@ const MAX_CMD = 128 * 1024; // longer than this is refused, not truncated
 const MAX_DIRS = 4; // candidate worktrees inspected, deadline aside
 const DEADLINE = Date.now() + BUDGET_MS;
 
+// Addressed to the HUMAN, not to the model. Codex mounts .git read-only under
+// workspace-write by design — a writable .git/hooks would let an agent plant a
+// hook that runs outside the sandbox the next time a human runs git — and there
+// is no toggle for it. Measured 2026-09-10: `git checkout -b fix/x` inside a
+// Codex session fails with "cannot lock ref … unable to create directory".
 const CUT =
-  "Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash), then retry. " +
+  "Ask the human to cut a branch (git checkout -b <type>/<desc>, e.g. feat/auth-redirect) and to say when it is done. " +
+  "You cannot create it yourself: .git is read-only in this sandbox. " +
   "Read-only commands are allowed on this branch; bringing code to master happens through a PR on GitHub.";
 
 let settled = false;

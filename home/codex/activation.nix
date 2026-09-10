@@ -11,6 +11,7 @@
   configMergePkg,
   verifyTrustPkg,
   sandboxMode,
+  approvalPolicy,
   trustKeys,
 }:
 
@@ -46,7 +47,7 @@ in
   # writes its own .backup and restores it if validation fails.
   codexConfigMerge = lib.hm.dag.entryAfter [ "codexDirs" ] ''
     (
-      ${configMergePkg}/bin/codex-config-merge "${sandboxMode}"
+      ${configMergePkg}/bin/codex-config-merge "sandbox_mode=${sandboxMode}" "approval_policy=${approvalPolicy}"
     ) || true
   '';
 

@@ -362,7 +362,7 @@ let
     cp "$probe/merge/config.toml" "$probe/merge/config.orig"
 
     run_empty_path "$probe/m1.log" \
-      ${codexPkgs.configMergePkg}/bin/codex-config-merge workspace-write "$probe/merge/config.toml"
+      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/config.toml" sandbox_mode=workspace-write approval_policy=never
     assert_no_complaint "$probe/m1.log" "codex-config-merge"
 
     # Observable effect 1: the key was actually set, in the preamble.

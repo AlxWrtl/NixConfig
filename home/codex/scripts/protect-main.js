@@ -58,8 +58,16 @@ const BUDGET_MS = 3000; // self-deny deadline; the host kills at 5000
 const GIT_MS = 1500; // ceiling for any single git call
 const DEADLINE = Date.now() + BUDGET_MS;
 
+// Addressed to the HUMAN, not to the model. Codex mounts .git read-only under
+// workspace-write by design — a writable .git/hooks would let an agent plant a
+// hook that runs outside the sandbox the next time a human runs git — and there
+// is no toggle for it. Measured 2026-09-10: `git checkout -b fix/x` inside a
+// Codex session fails with "cannot lock ref … unable to create directory". So
+// telling the model to cut the branch asks it for something it cannot do, and
+// it loops asking for permission instead.
 const CUT =
-  "Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
+  "Ask the human to cut a branch (git checkout -b <type>/<desc>, e.g. feat/auth-redirect) and to say when it is done. " +
+  "You cannot create it yourself: .git is read-only in this sandbox.";
 
 let settled = false;
 let branchSeen = null;

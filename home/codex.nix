@@ -21,6 +21,15 @@ let
   # choices, exactly as the Claude side refuses to force `.model`.
   sandboxMode = "workspace-write";
 
+  # No human confirmation before an action. What is left between the model and
+  # the filesystem is the sandbox above and the two branch hooks below —
+  # nothing else. A deliberate trade for a working loop, made 2026-09-10 after
+  # the guard was measured refusing a write on master: the refusal did not
+  # depend on the confirmation, so removing the confirmation does not remove
+  # the guard. Textual inspection of a shell command has limits the hook's own
+  # header states; this makes them the only limits that remain.
+  approvalPolicy = "never";
+
   hooks = import ./codex/hooks.nix { inherit pkgs; };
 
   # Defined in a plain `{ pkgs }:` file so checks/codex-config.nix can import
@@ -36,6 +45,7 @@ let
       configMergePkg
       verifyTrustPkg
       sandboxMode
+      approvalPolicy
       ;
     # Same expression that generates the JSON emits these keys, so they cannot
     # drift from the file they describe. "$HOME" is expanded by the activation

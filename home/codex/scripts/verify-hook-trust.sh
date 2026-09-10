@@ -163,10 +163,14 @@ if [ "$#" -eq 0 ]; then
   add "no expected trust keys were passed in, so no hook was checked for approval"
 fi
 
+# A key with NO trust entry is the one finding that contradicts `-a` outright,
+# so it is counted separately: see the record block at the end.
+NEVER=0
 for key in "$@"; do
   if [ "$TRUST_READABLE" = no ]; then
     add "could not check the trust entry for: $key"
   elif ! printf '%s\n' "$TRUSTED" | grep -Fxq -- "$key"; then
+    NEVER=$((NEVER + 1))
     add "never approved — no trust entry for: $key"
   elif [ "$STALE" = yes ]; then
     add "approval is STALE, re-approve: $key"
@@ -216,13 +220,26 @@ if [ "$ACCEPT" = yes ]; then
   # a security tool issuing a certificate it has just said it cannot justify.
   # The baseline is a HUMAN statement that the hooks were reviewed in a Codex
   # session; it is only meaningful alongside the keys it vouches for.
+  #
+  # What `-a` can and cannot refuse, and the line between them was drawn the
+  # hard way. It CANNOT refuse on staleness: staleness is derived from this
+  # baseline, so after every rebuild every key reads stale until the baseline
+  # is re-recorded. Blocking there would make the flag impossible to use in the
+  # one situation it exists for. Nothing here can observe that a human just
+  # approved in a Codex session — `-a` IS that human statement.
+  # It CAN refuse when a key has NO trust entry at all: that is checkable, and
+  # it flatly contradicts the claim being recorded.
   if [ "$#" -eq 0 ]; then
     printf 'codex-hook-trust: refusing to record a baseline — no expected trust keys were passed, so nothing was checked.\n' >&2
     printf '  Approve the hooks first (open Codex, run /hooks), then re-run this with the same keys the activation passes, plus -a.\n' >&2
+  elif [ "$NEVER" -gt 0 ]; then
+    printf 'codex-hook-trust: refusing to record a baseline — %s of the hooks you are vouching for has no trust entry at all, so it was never approved.\n' "$NEVER" >&2
+    printf '  Open Codex, run /hooks, trust them, then re-run this command.\n' >&2
   elif [ -z "$CUR_HASH" ]; then
     printf 'codex-hook-trust: nothing to record — no hash could be computed for %s\n' "$HOOKS" >&2
   elif mkdir -p "$(dirname "$STATE")" 2>/dev/null && printf '%s\n' "$CUR_HASH" > "$STATE" 2>/dev/null; then
     printf 'codex-hook-trust: reviewed baseline recorded (%s… in %s)\n' "${CUR_HASH:0:12}" "$STATE"
+    printf '  This records YOUR statement that you have just reviewed and trusted these hooks in Codex. Nothing here can verify it.\n'
   else
     printf 'codex-hook-trust: could not write the baseline to %s\n' "$STATE" >&2
   fi

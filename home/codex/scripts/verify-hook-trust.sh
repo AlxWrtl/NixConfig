@@ -129,8 +129,11 @@ else
       add "no sha256 tool found: $HOOKS could not be checked against its baseline"
     fi
   elif [ ! -f "$STATE" ]; then
-    STALE=yes
-    add "no reviewed baseline at $STATE: this hooks file has never been recorded as reviewed"
+    # NOT the same as stale, and conflating the two sent a user to re-approve
+    # three perfectly trusted hooks. Absent baseline means this script has no
+    # point of comparison; it says nothing about whether Codex trusts them.
+    STALE=nobaseline
+    add "no reviewed baseline at $STATE: nothing here can tell whether these hooks have been reviewed. If you have already trusted them in Codex, record it with -a; that is all this is asking."
   else
     OLD_HASH=""
     read -r OLD_HASH _ < "$STATE" || true
@@ -174,6 +177,8 @@ for key in "$@"; do
     add "never approved — no trust entry for: $key"
   elif [ "$STALE" = yes ]; then
     add "approval is STALE, re-approve: $key"
+  elif [ "$STALE" = nobaseline ]; then
+    add "trust entry present; whether it is current cannot be judged without a baseline: $key"
   elif [ "$STALE" = unknown ]; then
     add "trust entry present, but staleness could not be checked: $key"
   fi

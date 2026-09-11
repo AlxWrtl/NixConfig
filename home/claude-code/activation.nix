@@ -94,8 +94,22 @@
 
       # Intelligent merge: base provides defaults, existing preserves user changes
       # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox,
-      # effortLevel, alwaysThinkingEnabled. NEVER force .model: /model and /fast
-      # are deliberate session choices that must survive rebuilds.
+      # effortLevel, alwaysThinkingEnabled, skillOverrides. NEVER force .model:
+      # /model and /fast are deliberate session choices that must survive rebuilds.
+      # `.skillOverrides` est dans la liste par nécessité : sans force-override,
+      # il n'arriverait que par le deep merge `.[0] * .[1]`, où le live gagne sur
+      # toute clé qu'il détient déjà — la valeur nix serait ignorée en silence dès
+      # la première écriture par autre chose. Ce repo s'est déjà fait avoir par
+      # exactement cette forme sur `.model`.
+      # Ce que le force-override NE règle PAS : `skillOverrides` est fusionné par
+      # objet entre scopes, le scope projet battant le scope utilisateur, et un
+      # basculement manuel dans le sélecteur `/skills` écrit
+      # `.claude/settings.local.json` — fichier IGNORÉ PAR GIT ici
+      # (`.gitignore:2:.claude/`, tout le répertoire). Une entrée en scope local
+      # bat donc le scope utilisateur nix-managé, force-override compris, et ne
+      # produit AUCUN diff : `git status` reste propre, la dérive contre la
+      # source nix est silencieuse. C'est pire que tracké, pas plus doux : rien
+      # ne la fait remonter. Connu, accepté, hors périmètre.
       # `.voice` n'est PAS force-overridden : le deep merge `.[0] * .[1]` est
       # récursif, donc toute sous-clé présente dans la base et absente du live
       # (ex. autoSubmit) est injectée, tandis qu'un `mode` changé en session
@@ -109,9 +123,10 @@
         BASE_SANDBOX=$(jq -c '.sandbox' "$BASE")
         BASE_EFFORT=$(jq -c '.effortLevel' "$BASE")
         BASE_THINK=$(jq -c '.alwaysThinkingEnabled' "$BASE")
+        BASE_SKILLOV=$(jq -c '.skillOverrides' "$BASE")
         jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
-          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" \
-            '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th
+          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" --argjson so "$BASE_SKILLOV" \
+            '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th | .skillOverrides = $so
              # legacy: `voiceEnabled` (clé plate) est encore lue par le binaire
              # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas
              # garder deux sources de vérité qui peuvent diverger.

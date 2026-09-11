@@ -27,8 +27,8 @@
 # override's `to` is itself substituted afterwards: writing `haiku` in a
 # replacement is a way to reach `gpt-5.6-luna`, and writing `Opus 5` there by
 # accident is a way to get `GPT-5.6` you did not intend. stripFrontmatter runs
-# before dedent so that both the flush-left frontmatters and the one that is
-# indented today (trello) are parsed by the same code path.
+# before dedent so that every frontmatter, flush-left or indented, is parsed by
+# the same code path.
 { lib }:
 let
   # Number of leading spaces on a line. No regex: `builtins.match` would work
@@ -62,19 +62,20 @@ let
 
   # Remove the indentation common to every NON-BLANK line.
   #
-  # MEASURED, and not what it was written for: this is a no-op on all 33 files,
-  # trello included. Nix already strips the common indentation of an indented
-  # string, and trello — the one file whose frontmatter is genuinely indented —
-  # ALSO carries eight body lines at column 0, because the shared `contract`
+  # MEASURED, and not what it was written for: this was a no-op on all 33 files
+  # back when one of them (trello) still carried an indented frontmatter. Nix
+  # already strips the common indentation of an indented string, and that file
+  # ALSO carried eight body lines at column 0, because the shared `contract`
   # and `scope` helpers interpolate their output unindented. A common-prefix
-  # dedent therefore computes 0 and changes nothing. Indentation histogram of
-  # the deployed file: 8 lines at 0, 1 at 2, 44 at 4, 11 at 6.
+  # dedent therefore computed 0 and changed nothing — which is exactly why the
+  # damage sat in the frontmatter and never in the body, and why the repair was
+  # `stripFrontmatter` and not `dedent`: un frontmatter qui ne commence pas à la
+  # colonne 0 n'est pas parsé, un corps indenté est seulement laid. Le correctif
+  # est depuis remonté dans la source ; histogramme mesuré APRÈS réparation :
+  # 69 lignes à 0, 12 à 2, 2 à 4 — plus aucun frontmatter indenté.
   #
-  # It is kept because it is the right normaliser for a file that IS uniformly
-  # indented, and one will show up. The trello repair lives in
-  # `stripFrontmatter`, which is where the damage actually is: a frontmatter
-  # that does not start at column 0 is not parsed, while an indented body is
-  # merely ugly. See `indentedFrontmatter`.
+  # Gardé parce que c'est le bon normaliseur pour un fichier uniformément
+  # indenté, et il en arrivera un. Voir `indentedFrontmatter`.
   dedent =
     s:
     let
@@ -105,7 +106,8 @@ let
       lines = lib.splitString "\n" s;
       first = if lines == [ ] then "" else builtins.head lines;
       base = leading first;
-      # Re-emitted FLUSH LEFT, and this is the whole trello repair.
+      # Re-emitted FLUSH LEFT : garde-fou dormant, plus une réparation active.
+      # Aucun fichier n'arrive indenté aujourd'hui ; ceci attend le prochain.
       # `stripLead` on the markers and the kept keys; continuations lose
       # exactly `base` columns so their relative depth survives.
       unindent =
@@ -1398,27 +1400,34 @@ in
     }
   ];
 
-  # Skills whose frontmatter does NOT start at column 0 in the source, and that
-  # `stripFrontmatter` therefore has to re-emit flush left. Today: one.
+  # Skills dont le frontmatter ne commence PAS à la colonne 0 dans la source, et
+  # que `stripFrontmatter` doit donc ré-émettre au fer à gauche. Aujourd'hui :
+  # aucune. La liste est vide et reste là pour le PROCHAIN cas, pas pour trello.
   #
-  # trello's frontmatter is written four columns deeper than the rest of its
-  # `''` block, so the deployed file opens with four spaces before `---` and no
-  # scanner parses it — Claude lists that skill's description as literally
-  # `---` today. The defect is real on the Claude side too and is NOT repaired
-  # there: the byte-for-byte constraint of this run forbids touching the
-  # source, so it is repaired on the way out and the two sides diverge on this
-  # one file, deliberately.
+  # Le mécanisme, à conserver même à vide. Un frontmatter indenté est un
+  # frontmatter mort : aucun scanner ne le parse, la skill est listée avec une
+  # description de rebut ou sautée, et rien ne le signale. Le coût est la skill
+  # entière, pas quelques octets de mise en forme — d'où la ré-émission à la
+  # colonne 0 sur le chemin de sortie.
   #
-  # This list was called `dedentExceptions` when it was written, on the
-  # assumption that a common-prefix dedent would fix the file. Measured, it
-  # does not: trello also has eight body lines at column 0 (the shared
-  # `contract` and `scope` helpers interpolate unindented), so the common
-  # prefix is 0 and `dedent` is a no-op. Renamed to say what it is about.
+  # Pourquoi pas `dedent`. Cette liste s'appelait `dedentExceptions` à
+  # l'écriture, en supposant qu'un retrait du préfixe commun suffirait. Mesuré :
+  # non. trello portait huit lignes de CORPS déjà à la colonne 0 (les helpers
+  # partagés `contract`, `scope`, `handoffs` s'interpolent sans indentation),
+  # donc le préfixe commun valait 0 et `dedent` était un no-op — sur les 33
+  # fichiers. Le dégât était dans le frontmatter, jamais dans le corps : un
+  # dédenteur global ne peut pas viser la bonne zone.
   #
-  # Keep it SYMMETRIC: an entry that no longer needs flattening is as much a
-  # defect as a missing one — it means the source was repaired upstream and
-  # nobody told this file.
-  indentedFrontmatter = [ "trello" ];
+  # Histoire : trello a été le seul cas, réparé EN AMONT dans
+  # home/claude-code/skills.nix le 2026-09-11 (l'indentation de l'interpolation
+  # ouvrante a été portée à 8, ce qui retire les 4 espaces que nix comptait
+  # comme contenu de chaîne). Les deux côtés ne divergent donc plus.
+  #
+  # Garder la liste SYMÉTRIQUE : une entrée qui n'a plus besoin d'être aplatie
+  # est un défaut au même titre qu'une entrée manquante — cela veut dire que la
+  # source a été réparée en amont et que personne n'a prévenu ce fichier. C10
+  # échoue dans les deux sens, et c'est voulu.
+  indentedFrontmatter = [ ];
 
   # The frontmatter keys `stripFrontmatter` removes. Exactly these — a key that
   # appears in the corpus and not here means normalisation silently started

@@ -131,6 +131,26 @@ let
   # --- skills -------------------------------------------------------------
   skillsCorpus = builtins.concatStringsSep "\n" (builtins.attrValues (textAttrs skills));
 
+  # Le corpus des SKILL.md vient du MANIFESTE, pas des attributs aplatis de
+  # skills.nix ci-dessus : `textAttrs skills` ramasse aussi les `steps/*.md`
+  # d'apex, qui n'ont légitimement AUCUN frontmatter. Les itérer ferait échouer
+  # A10 sur des fichiers sains. Le manifeste est la seule source qui dise quel
+  # texte part vers quel chemin déployé ; on ne garde que les `SKILL.md`, les
+  # seuls que le loader parse comme frontmatter. Import nu, sans argument :
+  # c'est documenté en tête du manifeste et les autres checks en dépendent.
+  skillMds = builtins.concatMap (
+    s:
+    map (f: {
+      inherit (s) name;
+      inherit (f) text;
+    }) (builtins.filter (f: f.path == "SKILL.md") s.files)
+  ) (import ../home/claude-code/skills-manifest.nix).manifest;
+
+  # Même prédicat que checks/codex-skills.nix:273, mot pour mot : un frontmatter
+  # doit ouvrir sur `---` en colonne 0. Une seconde orthographe de la même idée
+  # (regex, helper lib, paire leading/stripLead) divergerait du côté Codex.
+  skillsBadFrontmatter = builtins.filter (f: builtins.substring 0 4 f.text != "---\n") skillMds;
+
   # --- scrapling: one version, pinned in two files -------------------------
   # activation.nix installs an exact pin; the skill TEXT repeats that version
   # in its install instructions and states its measurements were taken on it.
@@ -263,6 +283,14 @@ let
             builtins.concatStringsSep ", " (map (v: "scrapling[shell]==" + v) scraplingSkillPins)
         )
         + " — the skill tells the agent which command to run and claims its measurements were taken on that version; bump one without the other and it teaches a wrong install with a green build and no signal";
+    }
+    {
+      name = "A10 skills: every SKILL.md frontmatter opens at column 0";
+      ok = skillsBadFrontmatter == [ ];
+      msg =
+        "skill(s) whose text does not start with `---` on line 1: "
+        + builtins.concatStringsSep ", " (map (f: f.name) skillsBadFrontmatter)
+        + " — a frontmatter that does not parse costs the WHOLE skill, not one field: the loader falls back to the directory name and takes the first body line as the description, so the model routes on garbage, and `allowed-tools`, `model` and `disable-model-invocation` silently stop applying. The mechanism is nix itself: a `''…''` string is dedented by the MINIMUM common indentation across ALL its lines, so one line indented shallower than the body shifts every other line to the right, frontmatter included — fix the shallow line, not the `---`";
     }
   ];
 

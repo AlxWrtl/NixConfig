@@ -1,8 +1,6 @@
 # Global CLAUDE.md content (< 100 lines — every line costs context in EVERY session)
 {
   claudeMdGlobal = ''
-    @RTK.md
-
     Always respond in caveman full mode: terse prose, no filler, fragments over sentences,
     no articles unless ambiguous. Preserve all code, paths, commands, errors verbatim.
     Deactivate only for: security warnings, irreversible action confirmations.
@@ -22,29 +20,9 @@
     - macOS with nix-darwin + flakes + home-manager (M1)
     - Package manager: pnpm (never npm or yarn).
 
-    ## Project Map (nix-darwin)
-    modules/system.nix    — Core nix, env, security, shell
-    modules/packages.nix  — CLI tools
-    modules/services.nix  — Background services (launchd)
-    modules/ui.nix        — Fonts, Dock, Finder, system.defaults
-    modules/brew.nix      — GUI apps (Homebrew)
-    home/*.nix            — User config via home-manager
-    home/claude-code/     — Claude Code declarative config
-
     ## Model Allocation
-    Défaut = opus 5 (workhorse full-loop: coordonne + plan + code + auto-verif
-    fresh-context), 1M ctx. Effort-tiering DANS opus 5 avant de switcher modèle
-    (switch = taxe subagent ~15×): low mécanique, high/max plan+verif. Subagents:
-    JAMAIS inherit — model explicite. Mécanique/explo/tests: haiku | Volumineux
-    gros contexte: sonnet-5 | Impl/debug: opus 5.
-    Fable = vérificateur INDÉPENDANT read-only, réservé haut-enjeu (irréversible/
-    sécu/archi/prod): lit diff réel + ACs → PASS ou fix-list bornée, ne code
-    JAMAIS. Réservé non par pénurie de quota (mesuré ici: 21 spawns vérificateurs
-    contre 6489 messages coordinateur) mais parce qu'une lecture indépendante ne
-    vaut son aller-retour que là où un manque coûte cher. Opus 5 ≈ fable (bat
-    7 bench/12, moitié prix, meilleur auto-verif); edge fable réel = cyber
-    offensif/exploit + bio autonome. Fable invoqué → classifier cyber/bio peut
-    fallback Opus 4.8. /effort max = frontier only.
+    - Subagents: JAMAIS inherit — `model` explicite à chaque spawn. Détail de
+      l'allocation: apex `steps/ORCHESTRATION.md`.
 
     ## Verify Checklist
     - commit: English, imperative, type prefix (feat/fix/chore/refactor)

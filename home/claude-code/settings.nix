@@ -196,8 +196,49 @@ in
       };
     };
 
+    # Contrôle ce que le prompt système liste à CHAQUE tour. Le vocabulaire a
+    # QUATRE valeurs, pas deux : `on` (nom + description, défaut quand la clé
+    # est absente), `name-only` (nom seul), `user-invocable-only` (retiré du
+    # listing, toujours tapable), `off` (désactivé).
+    # Les 10 entrées ci-dessous sont mesurées : JAMAIS invoquées sur 214
+    # démarrages, tout en occupant le listing à chaque tour.
+    # `user-invocable-only` est délibéré : il sort l'entrée du listing que le
+    # modèle voit, mais `/caveman`, `/tdd` et les autres restent tapables.
+    # `off` a été écarté : il retire AUSSI l'entrée du menu slash, de Remote
+    # Control et des listes de commandes de l'Agent SDK — la taper renvoie
+    # alors une erreur.
+    # ATTENTION : sept des dix sont des fichiers COMMANDE sous
+    # ~/.claude/commands/, pas des skills. Qu'ils soient couverts est un
+    # comportement MESURÉ, pas un contrat documenté : la doc ne décrit la clé
+    # que comme prenant des noms de skills, et la page « commands merged into
+    # skills » ne dit nulle part que les deux se rejoignent ici. Vérifié sur le
+    # binaire installé 2.1.268, lancé avec `--settings` : un fichier commande et
+    # un vrai skill disparaissent du listing à l'identique. À re-vérifier après
+    # chaque upgrade — rien ne le garantit.
+    # Une VALEUR non reconnue est ignorée en silence : ni erreur, ni check qui
+    # l'attrape. C'est la raison d'être de ce commentaire.
+    skillOverrides = {
+      auto = "user-invocable-only";
+      "cancel-ralph" = "user-invocable-only";
+      caveman = "user-invocable-only";
+      cavemem = "user-invocable-only";
+      "context-prime" = "user-invocable-only";
+      optimize = "user-invocable-only";
+      "ralph-loop" = "user-invocable-only";
+      schliff = "user-invocable-only";
+      tdd = "user-invocable-only";
+      "verify-feature" = "user-invocable-only";
+    };
+
     permissions = {
-      defaultMode = "acceptEdits";
+      # `auto` délègue chaque décision de permission à un classifieur de sûreté
+      # au lieu de demander à l'utilisateur — il remplace un mode choisi
+      # délibérément (`acceptEdits`), donc la frontière n'est plus la même.
+      # Les garde-fous du repo ne disparaissent PAS avec lui : le gate APEX sur
+      # Edit/Write (require-apex.js) et les hooks de branche (protect-main.js,
+      # block-main-bash.js) sont de l'application, pas de la suggestion, et le
+      # mode de permission ne les touche pas.
+      defaultMode = "auto";
       # `ask` forces a confirmation box for matching commands, overriding
       # skipDangerousModePermissionPrompt and acceptEdits. Precedence: deny > ask > allow.
       # Box only for sudo (sudo git, sudo darwin-rebuild, …). A bare "Bash" rule

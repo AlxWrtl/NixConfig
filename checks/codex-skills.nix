@@ -451,7 +451,7 @@ let
       ok = badFrontmatter == [ ];
       msg =
         showList (map showFrontmatter badFrontmatter)
-        + " — a frontmatter that does not parse costs the WHOLE skill: the scanner lists it with a garbage description or skips it, and says nothing. Claude currently shows trello's description as literally `---` for this exact reason. The key lines must be at COLUMN 0 (see indentedFrontmatter and C10). The name/directory equality is repo hygiene, not a Codex requirement — Codex names a skill by this `name:`, measured — but every probe and bug report here assumes the two words are the same";
+        + " — a frontmatter that does not parse costs the WHOLE skill: the scanner lists it with a garbage description or skips it, and says nothing. Claude showed trello's description as literally `---` for this exact reason, until the source was repaired on 2026-09-11. The key lines must be at COLUMN 0 (see indentedFrontmatter and C10). The name/directory equality is repo hygiene, not a Codex requirement — Codex names a skill by this `name:`, measured — but every probe and bug report here assumes the two words are the same";
     }
     {
       name = "C8b stripped keys: the keys present in the source frontmatters and absent from the translated ones are exactly `strippedKeys`";

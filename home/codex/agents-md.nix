@@ -16,66 +16,68 @@
 # `approval_policy = "never"` set in config.toml. The approval system was off;
 # the model was obeying this file. Repo edits now proceed, because the branch
 # hooks gate them — the same reasoning the Claude side already uses.
-{
-  agentsMd = ''
-    Always respond in caveman full mode: terse prose, no filler, fragments over
-    sentences, no articles unless ambiguous. Preserve all code, paths, commands,
-    errors verbatim. Deactivate only for: security warnings, irreversible action
-    confirmations.
+#
+# LE TEXTE COMMUN N'EST PLUS ICI. Il vient de `agent-instructions.nix`, splicé
+# à la colonne 0 (une chaîne indentée est désindentée du minimum de ses lignes,
+# un splice indenté décalerait le tronc et ferait rougir G1). Ne rien recopier
+# du tronc dans le delta : la copie coûte double, elle mange du contexte à
+# chaque session ET elle rend la source partagée éditable sans effet.
+#
+# `Project Map` SUPPRIMÉ. C'était une liste de chemins tenue à la main, que
+# n'importe quel `ls` reconstruit, retirée de CLAUDE.md comme dérivable et
+# laissée ici par le même lot. Elle annonçait `home/Codex/`, un répertoire qui
+# n'a JAMAIS existé : une carte manuelle ne peut qu'être fausse en silence.
+# G7 interdit son retour dans l'une ou l'autre sortie.
+#
+# LA DIVERGENCE DU CONFIDENCE GATE EST DÉLIBÉRÉE, pas un oubli. Claude reçoit
+# la règle depuis `~/.claude/rules/` à l'ouverture d'un `.nix` ; Codex n'a pas
+# de `rules/` et doit donc la porter EN PERMANENCE, inline. G5 l'épingle des
+# deux côtés : une passe d'« harmonisation » qui la remonte au tronc ou la
+# duplique côté Claude rougira — c'est voulu, ne pas la « corriger ».
+let
+  shared = import ../claude-code/agent-instructions.nix;
 
+  deltaSections = [
+    {
+      name = "Git (sandbox Codex)";
+      body = ''
+        - Branch first. Never edit on main/master: a hook refuses it. You CANNOT
+          cut the branch yourself — `.git` is read-only in this sandbox by
+          design — so ask the human to run `git checkout -b <type>/<desc>` and
+          to say when it is done. Wait for that answer.
+        - master is reached through a PR on GitHub, never by a local merge.
+        - No `git add`/`commit`/`push` unless explicitly asked.
+      '';
+    }
+    {
+      name = "Ask First (sandbox Codex)";
+      body = ''
+        - En plus de la liste du tronc : tout appel réseau. La sortie réseau est
+          filtrée ici, un appel qui part sans accord échoue tard et en silence.
+      '';
+    }
+    {
+      name = "Verify — nix";
+      body = ''
+        - `nix-instantiate --parse file.nix`, puis demander à l'humain de
+          rebuild — `darwin-rebuild` exige un mot de passe et prend des minutes.
+      '';
+    }
+    {
+      name = "Confidence Gate (nix)";
+      body = ''
+        - Rate confidence before writing nix. Below 80%, stop and check the docs.
+      '';
+    }
+  ];
+in
+{
+  inherit deltaSections;
+
+  agentsMd = ''
+    ${shared.preamble}
     # Codex — Global Guardrails
 
-    ## Non-negotiables
-    - Repo file edits: proceed. The branch hooks gate them — do not ask first.
-      Ask before: sudo, chmod, installs, deletes outside the repo, network calls,
-      large refactors, anything irreversible.
-    - Branch first. Never edit on main/master: a hook refuses it. You CANNOT cut
-      the branch yourself — `.git` is read-only in this sandbox by design — so
-      ask the human to run `git checkout -b <type>/<desc>` and to say when done.
-    - master is reached through a PR on GitHub, never by a local merge.
-    - No `git add`/`commit`/`push` unless explicitly asked.
-    - Never touch secrets: ~/.ssh, ~/.aws, ~/.gnupg, **/.env*, secrets/,
-      *token*, *key*, *cert*.
-    - Keep diffs minimal. Small, reversible changes.
-
-    ## Identity
-    - macOS with nix-darwin + flakes + home-manager (M1)
-    - Package manager: pnpm (never npm or yarn)
-    - TypeScript strict mode
-
-    ## Project Map (nix-darwin)
-    modules/system.nix    — Core nix, env, security, shell
-    modules/packages.nix  — CLI tools
-    modules/brew.nix      — GUI apps and CLI casks (Homebrew)
-    home/*.nix            — User config via home-manager
-    home/claude-code/     — Claude Code declarative config
-    home/codex/           — Codex declarative config: hooks, config merge, trust check
-
-    ## Verify Checklist
-    - nix: `nix-instantiate --parse file.nix`, then ask the human to rebuild —
-      `darwin-rebuild` needs a password and takes minutes.
-    - ts: `pnpm typecheck && pnpm lint --max-warnings 0`
-    - commit: English, imperative, type prefix (feat/fix/chore/refactor)
-
-    ## Code Quality
-    - No debug prints left in production code. No `any` in TypeScript.
-    - Explicit error handling, no silent catches. Validate external input.
-    - Source of truth: repo docs OR official vendor docs only.
-
-    ## Execution Discipline
-    - Act on established facts. Never re-derive a decision already made.
-    - After a fix, re-run the EXACT failing command. Same error twice → stop,
-      question the assumption, change approach.
-    - Blocked after 3 attempts → report what was tried. Never fake success,
-      never weaken a test to make it pass.
-    - Lead with the outcome. Show the command output that proves it.
-    - Fix what was asked. Adjacent problems: mention, do not touch.
-
-    ## Confidence Gate (nix)
-    - Rate confidence before writing nix. Below 80%, stop and check the docs.
-
-    ## Style (FR)
-    - Réponses courtes et actionnables.
-    - Quand tu modifies du code : quoi / pourquoi / comment vérifier (3 bullets).
-  '';
+    ${shared.trunk}
+    ${shared.render deltaSections}'';
 }

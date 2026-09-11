@@ -242,6 +242,14 @@ in
           path = "SKILL.md";
           text = skills.skillScrapling;
         }
+        {
+          path = "references/cli-usage.md";
+          text = skills.scraplingCliUsage;
+        }
+        {
+          path = "references/code-overview.md";
+          text = skills.scraplingCodeOverview;
+        }
       ];
     }
   ];

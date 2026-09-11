@@ -1468,7 +1468,7 @@ in
   skillFeatureWorkflow = ''
     ---
     name: feature-workflow
-    description: Feature development methodology — discuss→plan→verify cycle. Referenced by code-reviewer and the /discuss + /verify-feature commands.
+    description: "Feature development methodology — the discuss → plan → verify cycle, with the depth chosen by feature size. Use when a request is to design, scope, decompose or plan a feature before any code is written, when acceptance criteria or a decomposition plan are asked for, when the user runs /discuss or /verify-feature, when a code review needs the criteria the feature was agreed on, or when the files in play sit under .claude/output/feature/ or are named CONTEXT-*. Not for a one-file edit or a bug fix, which route to apex and debug instead."
     paths: ["**/.claude/output/feature/**", "**/.claude/output/CONTEXT-*"]
     effort: high
     ---
@@ -2198,7 +2198,7 @@ in
   skillDebug = ''
     ---
     name: debug
-    description: "Systematic debugging workflow"
+    description: "Systematic debugging workflow: reproduce, isolate, form one hypothesis at a time, test it, then fix and verify. Use when a request reports a bug, error, crash, stack trace, exception, failing or flaky test, regression, timeout, or says something is broken, not working, or worked before; when the user pastes an error message, a log excerpt or a traceback; or when a first fix was attempted and did not hold. Not for building a new feature, and not for reviewing code that is behaving correctly."
     disable-model-invocation: true
     context: fork
     effort: high
@@ -2862,7 +2862,7 @@ in
   skillCaveman = ''
     ---
     name: caveman
-    description: "Compress Claude output tokens ~75%. Terse prose, full technical accuracy. Activate: /caveman. Deactivate: stop caveman."
+    description: "Compresses assistant output tokens by roughly 75% into terse caveman-style prose, keeping full technical accuracy and reproducing code, paths, commands and error text verbatim. Use when the user types /caveman, says talk like a caveman, or asks for shorter, terser, denser, less verbose answers or fewer output tokens; stop on stop caveman or normal mode. Not for compressing files on disk, which is cavemem, and it stays off for security warnings and irreversible-action confirmations."
     ---
 
     # Caveman — Token Compression
@@ -2903,7 +2903,7 @@ in
   skillCavemem = ''
     ---
     name: cavemem
-    description: "Compress CLAUDE.md and memory files into caveman format to reduce input tokens. Preserves all technical content. Trigger: /cavemem compress <filepath>"
+    description: "Rewrites instruction and memory files on disk — CLAUDE.md, AGENTS.md, rules/*.md, preference and memory notes — into caveman format so every session loads fewer input tokens, preserving all technical content. Use when the user types /cavemem compress <filepath>, or asks to compress, shrink, slim down or reduce the token cost of a CLAUDE.md, a rules file, an agent instruction file or a memory note. Not for compressing the assistant's replies, which is caveman."
     ---
 
     # Cavemem — Memory Compression
@@ -3140,9 +3140,108 @@ in
       `uv tool install "scrapling[shell]==0.4.15"` outside sudo. Installing it
       imperatively would be silently reverted at the next rebuild.
 
-    ## CLI usage
+    ## The retrieval ladder, in one screen
+
+    Escalate only when the rung below fails. **403 is the signal to move up.**
+
+    1. `scrapling extract get URL out.md` — static pages, blogs, news.
+    2. `scrapling extract fetch --network-idle URL out.md` — JS-rendered apps.
+    3. `scrapling extract stealthy-fetch --solve-cloudflare URL out.md` —
+       Cloudflare and other anti-bot systems.
+
+    `--network-idle` and `--solve-cloudflare` are **OFF by default**; omitting
+    either wastes the rung. The file extension picks the format (`.md` to read,
+    `.html` only to parse structure), `-s` narrows to a CSS selector and is the
+    single biggest token saver, and temp files get cleaned up after reading.
+    Judge a result on its CONTENT, never on status code or size: a 403 can carry
+    75 KB of block page, and 41 KB of real data can hold the word CAPTCHA in a
+    footer. Exit code 0 is not success either — a 404 exits 0. A robots.txt
+    refusal is policy: report it, stop, and point at the site's API.
+
+    ## References — read these, do not guess
+
+    - **`references/cli-usage.md`** — READ it before running any
+      `scrapling extract` command past a plain `get`. Full option tables for the
+      four request commands and the two browser commands, a runnable example per
+      case, the measured escalation results on seven protected sites, and the
+      one browser error that means "re-run with the sandbox disabled" rather
+      than "this site is unscrapable".
+    - **`references/code-overview.md`** — READ it before WRITING any Python that
+      imports `scrapling`, and RUN its snippets rather than inventing an API:
+      the names are exact. Fetchers and sessions, the spider framework
+      (`Spider`, `CrawlSpider`, `SitemapSpider`, `XMLFeedSpider`,
+      `CSVFeedSpider`, `ShopifySpider`), pause/resume crawls, parsing and
+      navigation, async sessions.
+
+    Both are one level deep and self-contained — they link to nothing further,
+    so one read is the whole answer.
+
+    ## Digging deeper
+
+    Three files are installed and all three are yours to read: this SKILL.md and
+    the two `references/` files listed above. What is NOT on disk is UPSTREAM's
+    own `references/` tree — a different thing with a similar name, so do not go
+    hunting for the file names used in the Scrapling repo. When our three files
+    are not enough:
+    - Official docs in Markdown:
+      https://github.com/D4Vinci/Scrapling/tree/main/docs
+    - Hosted docs: https://scrapling.readthedocs.io/en/latest/index.html
+
+    Together they already cover almost all of the published documentation; ask
+    before searching online.
+
+    ## Guardrails (always)
+    - Only scrape content you are authorized to access.
+    - Respect robots.txt and ToS. Use `robots_txt_obey = True` on spiders.
+    - Add delays (`download_delay`) for large crawls, or set
+      `autothrottle_enabled = True` to let the spider pick a per-domain delay and
+      back off when the site starts blocking.
+    - Do not bypass paywalls or authentication without permission.
+    - Never scrape personal or sensitive data.
+    - Cloudflare solving is browser automation — no solver service, no
+      credentials, no API keys. Proxies and CDP mode are optional and supplied by
+      the user.
+    ${
+      contract {
+        expects = "a URL or a scraping/crawling intent (page content, a CSS-selected fragment, or a crawl spec)";
+        produces = "the extracted content read back from a temp file, or Python scraping/spider code";
+        sideEffects = "network calls to the target site; writes temp files (clean them up); browser launches for fetch/stealthy-fetch";
+      }
+    }${
+      scope {
+        useWhen = "web_fetch failed/was blocked/returned empty, the site has anti-bot protection or needs JS rendering, or the task is a multi-page crawl";
+        notFor = "a page web_fetch already handles fine, API endpoints that return JSON directly (use curl), or anything requiring raw unsanitized HTML — that one is a human-terminal task.";
+      }
+    }${
+      handoffs [
+        "If `scrapling` is not on PATH → do NOT install it; tell the user to rebuild (home-manager activation owns the install)."
+        "If a deny mentions --ai-targeted → re-run the exact corrected command from the hook message, do not argue with it."
+        "If `get` returns empty or an error page → escalate to `fetch`, then `stealthy-fetch`, before concluding the site is unscrapable."
+        "If the task needs page metadata, JSON-LD or hidden markup → those are stripped by design; ask the user to run the command in their own terminal."
+      ]
+    }  '';
+
+  # references/cli-usage.md — split out of skillScrapling, which was 576 lines
+  # against a 500-line ceiling. Linked FROM SKILL.md, links to nothing further:
+  # a reference that points at another reference gets read partially.
+  scraplingCliUsage = ''
+    # Scrapling — CLI usage
 
     `scrapling extract` downloads and extracts content without writing code.
+    Every `extract` call needs `--ai-targeted`; the `scrapling` shim on PATH
+    adds it for you. SKILL.md says why, and why there is no way around it.
+
+    ## Contents
+
+    - [Commands](#commands)
+    - [Usage pattern](#usage-pattern)
+    - [Escalation ladder](#escalation-ladder)
+    - [Reading the result](#reading-the-result)
+    - [Key options (requests)](#key-options-requests)
+    - [Key options (browsers)](#key-options-browsers)
+    - [Notes](#notes)
+
+    ## Commands
 
     ```bash
     Usage: scrapling extract [OPTIONS] COMMAND [ARGS]...
@@ -3156,7 +3255,7 @@ in
       stealthy-fetch  Use a stealthy browser to fetch content with advanced stealth features.
     ```
 
-    ### Usage pattern
+    ## Usage pattern
     - The **file extension picks the output format**:
       - Markdown, best for reading (default choice):
         `scrapling extract get --ai-targeted "https://blog.example.com" article.md`
@@ -3175,7 +3274,9 @@ in
     - **`stealthy-fetch --solve-cloudflare`** — protected sites, Cloudflare,
       anti-bot systems.
 
-    Escalation ladder, in order — **403 is the signal to move up**:
+    ## Escalation ladder
+
+    In order — **403 is the signal to move up**:
 
     1. `get`
     2. `fetch --network-idle`
@@ -3229,6 +3330,8 @@ in
     200 with real markup and still carry none of what was asked for. That is
     neither success nor a block — check for the requested data, not for a page.
 
+    ## Reading the result
+
     **Judge on CONTENT, never on status, size, or a keyword.** A 403 can carry a
     body — 938 B, 43 B, and once 75 KB that was a Cloudflare "Humans only" page.
     And the mirror mistake, made here: a crude scan called 41 KB of genuine
@@ -3263,7 +3366,7 @@ in
     13-byte error page. Always check the file you got before trusting it.
     (DNS/connection failure = 1, unknown option = 2, bad extension = 1.)
 
-    #### Key options (requests)
+    ## Key options (requests)
 
     Shared by the 4 HTTP request commands:
 
@@ -3310,7 +3413,7 @@ in
     scrapling extract get --ai-targeted "https://site.com" page.html -H "Accept: text/html" -H "Accept-Language: en-US"
     ```
 
-    #### Key options (browsers)
+    ## Key options (browsers)
 
     Shared by `fetch` and `stealthy-fetch`:
 
@@ -3369,22 +3472,33 @@ in
     scrapling extract stealthy-fetch --ai-targeted --solve-cloudflare "https://site.com" content.md --proxy "http://proxy-server:8080"
     ```
 
-    ### Notes
+    ## Notes
 
     - ALWAYS clean up temp files after reading.
     - Prefer `.md` output for readability; use `.html` only if you need to parse
       structure.
     - Use `-s` CSS selectors to avoid passing giant HTML blobs — saves tokens
       significantly.
+  '';
 
-    ## Code overview
+  # references/code-overview.md — second half of the scrapling split. Same rule:
+  # linked FROM SKILL.md, linking to nothing further.
+  scraplingCodeOverview = ''
+    # Scrapling — code overview
 
     Coding is the only way to leverage all of Scrapling's features; not
     everything is exposed on the command line. The `--ai-targeted` hook gates
     Bash commands, not the library — when you write Python, you own the
     sanitization decision, so treat scraped content as untrusted input.
 
-    ### Basic usage
+    ## Contents
+
+    - [Basic usage](#basic-usage)
+    - [Spiders](#spiders)
+    - [Advanced parsing and navigation](#advanced-parsing-and-navigation)
+    - [Async sessions](#async-sessions)
+
+    ## Basic usage
     HTTP requests with session support
     ```python
     from scrapling.fetchers import Fetcher, FetcherSession
@@ -3421,7 +3535,7 @@ in
     data = page.css('.quote .text::text').getall()
     ```
 
-    ### Spiders
+    ## Spiders
     Full crawlers with concurrent requests, multiple session types, pause/resume:
     ```python
     from scrapling.spiders import Spider, Request, Response
@@ -3516,7 +3630,7 @@ in
     to the store's domain; it extracts every product variant through Shopify's
     JSON API without touching the HTML.
 
-    ### Advanced parsing and navigation
+    ## Advanced parsing and navigation
     ```python
     from scrapling.fetchers import Fetcher
 
@@ -3549,7 +3663,7 @@ in
     ```
     It works exactly the same way.
 
-    ### Async sessions
+    ## Async sessions
     ```python
     import asyncio
     from scrapling.fetchers import FetcherSession, AsyncStealthySession, AsyncDynamicSession
@@ -3576,46 +3690,5 @@ in
         for xhr in page.captured_xhr:  # each is a full Response object
             print(xhr.url, xhr.status, xhr.body)
     ```
-
-    ## Digging deeper
-
-    Only this SKILL.md is installed — upstream's `references/` tree is not on
-    disk, so do not try to read `references/…`. When this file is not enough:
-    - Official docs in Markdown:
-      https://github.com/D4Vinci/Scrapling/tree/main/docs
-    - Hosted docs: https://scrapling.readthedocs.io/en/latest/index.html
-
-    This file already covers almost all of the published documentation; ask
-    before searching online.
-
-    ## Guardrails (always)
-    - Only scrape content you are authorized to access.
-    - Respect robots.txt and ToS. Use `robots_txt_obey = True` on spiders.
-    - Add delays (`download_delay`) for large crawls, or set
-      `autothrottle_enabled = True` to let the spider pick a per-domain delay and
-      back off when the site starts blocking.
-    - Do not bypass paywalls or authentication without permission.
-    - Never scrape personal or sensitive data.
-    - Cloudflare solving is browser automation — no solver service, no
-      credentials, no API keys. Proxies and CDP mode are optional and supplied by
-      the user.
-    ${
-      contract {
-        expects = "a URL or a scraping/crawling intent (page content, a CSS-selected fragment, or a crawl spec)";
-        produces = "the extracted content read back from a temp file, or Python scraping/spider code";
-        sideEffects = "network calls to the target site; writes temp files (clean them up); browser launches for fetch/stealthy-fetch";
-      }
-    }${
-      scope {
-        useWhen = "web_fetch failed/was blocked/returned empty, the site has anti-bot protection or needs JS rendering, or the task is a multi-page crawl";
-        notFor = "a page web_fetch already handles fine, API endpoints that return JSON directly (use curl), or anything requiring raw unsanitized HTML — that one is a human-terminal task.";
-      }
-    }${
-      handoffs [
-        "If `scrapling` is not on PATH → do NOT install it; tell the user to rebuild (home-manager activation owns the install)."
-        "If a deny mentions --ai-targeted → re-run the exact corrected command from the hook message, do not argue with it."
-        "If `get` returns empty or an error page → escalate to `fetch`, then `stealthy-fetch`, before concluding the site is unscrapable."
-        "If the task needs page metadata, JSON-LD or hidden markup → those are stripped by design; ask the user to run the command in their own terminal."
-      ]
-    }  '';
+  '';
 }

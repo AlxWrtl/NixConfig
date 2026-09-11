@@ -58,6 +58,7 @@
           touch $out
         '';
         system-config = self.darwinConfigurations."alex-mbp".system;
+        agent-instructions = import ./checks/agent-instructions.nix { inherit pkgs; };
         apex-consistency = import ./checks/apex-consistency.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
         codex-config = import ./checks/codex-config.nix { inherit pkgs; };

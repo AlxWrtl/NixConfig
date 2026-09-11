@@ -111,6 +111,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   └── codex/                   # hooks.json generator, activation, hook & merge scripts,
 │                                #   skills translation + generator for ~/.agents/skills
 ├── checks/                      # Flake checks (see Quality Gates)
+│   ├── agent-instructions.nix
 │   ├── apex-consistency.nix
 │   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
 │   ├── claude-config.nix
@@ -174,6 +175,7 @@ system.
 |-------|------------------|
 | `format-check` | `nixfmt --check` over `flake.nix`, `modules/`, `home/`, `home/claude-code/`, `home/codex/`, `hosts/`, `checks/` |
 | `system-config` | The whole `alex-mbp` darwin configuration actually builds |
+| `agent-instructions` | The shared instruction trunk actually reaches both rendered outputs: every shared section body present in `CLAUDE.md` and `AGENTS.md`, each heading exactly once, headings equal the declared trunk-plus-delta list in order, no mechanism Codex lacks named to Codex or smuggled through the trunk, the nix Confidence Gate divergence pinned as Codex-inline only, each output under 100 lines, `Project Map` gone from both |
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
 | `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |

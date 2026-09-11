@@ -31,7 +31,30 @@
 
   # Remove read-only backups before linkGeneration to avoid interactive mv prompts
   claudeCodePreLink = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
-    rm -f "$HOME/.claude/skills"/*/SKILL.md.backup
+    # Purge de TOUT `*.backup` sous skills/, à N'IMPORTE QUELLE profondeur.
+    # Pourquoi ici, avant checkLinkTargets : c'est checkLinkTargets qui pose la
+    # question interactive "Existing file ... would be clobbered by backing up"
+    # dès qu'un `<fichier>.backup` (backupFileExtension = "backup", flake.nix)
+    # traîne en face d'un fichier nix-managé. Sans cette purge le rebuild sous
+    # sudo se bloque sur un prompt : c'est la raison d'être de l'entrée.
+    # RÉCURSIF, et non plus `*/SKILL.md.backup` : l'ancien glob ne voyait qu'UN
+    # niveau et qu'UN seul nom. Résidu mesuré — skills/apex/eval-suite.json.backup,
+    # vivant depuis le 27 mars parce qu'aucun des deux sites de nettoyage ne le
+    # visait — et skills/scrapling/references/ rend le niveau 2 obligatoire.
+    # JAMAIS `*.bak` : home-manager ne produit pas cette extension. Le
+    # skills/debug/SKILL.md.bak sur disque est l'orphelin d'une édition HUMAINE,
+    # et supprimer des fichiers utilisateur n'est pas le rôle de ce script.
+    # `\( -type f -o -type l \)` et non `-type f` seul : home-manager déplace le
+    # pré-existant TEL QUEL, donc un lien symbolique étranger nommé `*.backup`
+    # existe et `-type f` le saute — le `rm -f` d'origine, lui, prenait tous les
+    # types. Un backup non purgé = le prompt sudo que l'entrée doit éviter.
+    # Sous-shell + `|| true` : home-manager concatène toutes les entrées dans UN
+    # shell `set -eu`, donc un find non nul (répertoire absent au tout premier
+    # rebuild) tuerait tout le reste du DAG d'activation.
+    (
+      [ -d "$HOME/.claude/skills" ] \
+        && find "$HOME/.claude/skills" \( -type f -o -type l \) -name '*.backup' -delete
+    ) || true
     # keybindings.json est passé sous nix : la version manuelle pré-existante est
     # déplacée en .backup par home-manager (backupFileExtension = "backup") au
     # premier rebuild. On la purge ici pour ne pas accumuler, et pour éviter le
@@ -54,9 +77,18 @@
   # and silently skips symlinks that resolve outside ~/.claude/skills/
   claudeCodeDesymlinkSkills = lib.hm.dag.entryAfter [ "fixHmGcRoot" ] ''
     set -euo pipefail
+    # Partage des rôles avec claudeCodePreLink, écrit ici pour qu'on ne croie
+    # pas à une redondance : le pre-link purge ce qui EXISTE avant
+    # checkLinkTargets, donc il empêche le prompt ; celui-ci purge ce que
+    # linkGeneration vient de créer DANS CE RUN, sinon le résidu survit jusqu'au
+    # rebuild suivant — c'est exactement comme ça que
+    # skills/apex/eval-suite.json.backup a tenu six mois. Même portée récursive,
+    # pour la même raison : references/ et les fichiers non-SKILL.md.
+    (
+      [ -d "$HOME/.claude/skills" ] \
+        && find "$HOME/.claude/skills" \( -type f -o -type l \) -name '*.backup' -delete
+    ) || true
     for f in "$HOME/.claude/skills"/*/SKILL.md; do
-      # Remove stale backups (read-only from nix store) to avoid mv prompts
-      rm -f "''${f}.backup"
       [ -L "$f" ] || continue
       target=$(readlink "$f")
       cp "$target" "$f.tmp"

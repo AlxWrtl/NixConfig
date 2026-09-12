@@ -5,14 +5,17 @@
 # else. No rationale, no design notes, no plan — a reviewer told why the code is
 # right stops looking for the reason it is not.
 #
-# THE BRIEF IS THE PERIMETER, NOT JUST THE PROMPT. `--print-brief` shows what the
-# subprocess is told; `--cd "$WORK"` is what makes that the whole of what it can
-# reach. The subprocess is rooted in the throwaway work directory — which holds
-# the brief, the schema and nothing else — and never in the repository, because
-# a reviewer with read access to the worktree can simply open the design notes
-# the brief withholds. The brief already carries the full diff and the criteria,
-# so the repository adds nothing but the rationale we are deliberately hiding.
-# `--skip-git-repo-check` is what lets the CLI start outside a git repo.
+# THE BRIEF IS WHAT THE SUBPROCESS IS TOLD, AND `--print-brief` shows it. It is
+# NOT a perimeter: `--cd "$SNAPSHOT"` sets the start directory, it does not bound
+# what the process can read, and `-s read-only` forbids writing, not reading.
+# Measured on codex-cli 0.154.0 — see the note above `codex_cmd`, which carries
+# the four arms. What the snapshot buys is that the sensitive paths are not THERE
+# to be stumbled on; it does not stop a determined read elsewhere on the disk.
+# The subprocess sees a temporary source snapshot reconstructed from
+# the merge base plus code changes, without `.git`, `.claude/output/` or
+# secret-shaped paths. This
+# lets it inspect files named by the diff while the brief still withholds the
+# plan and conversation. `--skip-git-repo-check` lets the CLI start there.
 #
 # The subprocess is a verifier, not an actor. It runs with `-s read-only`, its
 # answer is constrained by `--output-schema` to a bounded JSON verdict, and that
@@ -528,6 +531,51 @@ if [ "$DIFF_BYTES" -gt "$MAX_DIFF_BYTES" ]; then
   emit "BLOCKED" "input" 8
 fi
 
+# --- read-only source snapshot -----------------------------------------------
+# Reconstruct code at the reviewed state so Codex can inspect current files.
+SNAPSHOT="$WORK/repo"
+mkdir -p "$SNAPSHOT"
+if ! git -C "$REPO" archive --format=tar "$MERGE_BASE" -- . ':(exclude).claude/output/**' | tar -xf - -C "$SNAPSHOT"; then
+  SUMMARY="could not create the read-only source snapshot from $MERGE_BASE"
+  emit "BLOCKED" "input" 8
+fi
+
+scrub_snapshot() {
+  # `.env*` est dans la liste des RÉPERTOIRES, pas seulement des fichiers : le
+  # `find -type f` plus bas ne supprime `.env*` que sur des fichiers réguliers,
+  # donc un répertoire suivi par git comme `.env-private/` survivait entier, et
+  # aucun de ses descendants (`config.json`, …) ne matche les autres filtres.
+  # `-prune -exec rm -rf` emporte le sous-arbre, descendants compris.
+  # Tous les motifs sont INSENSIBLES à la casse. Ils ne l'étaient pas : `secrets`
+  # et `.env*` étaient sensibles quand token/key/cert ne l'étaient pas, donc
+  # `Secrets/`, `.ENV` ou `SECRETS/x` passaient. Git conserve l'orthographe
+  # suivie même sur un APFS insensible à la casse, donc le cas est réel.
+  find "$SNAPSHOT" -type d \( -ipath '*/.claude/output' -o -ipath '*/.ssh' -o -ipath '*/.aws' -o -ipath '*/.gnupg' -o -ipath '*/secrets' -o -iname '.env*' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -prune -exec rm -rf {} +
+  find "$SNAPSHOT" -type l -delete
+  find "$SNAPSHOT" -type f \( -iname '.env*' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -delete
+}
+
+TRACKED_PATCH="$WORK/tracked.patch"
+tracked_status=0
+git_diff "$MERGE_BASE" --binary -- . ':!.claude/output/**' >"$TRACKED_PATCH" || tracked_status=$?
+if [ "$tracked_status" -gt 1 ] || { [ -s "$TRACKED_PATCH" ] && ! git -C "$SNAPSHOT" apply --binary "$TRACKED_PATCH"; }; then
+  SUMMARY="could not apply tracked changes to the read-only source snapshot"
+  emit "BLOCKED" "input" 8
+fi
+
+if [ "$INCLUDE_UNTRACKED" -eq 1 ] && [ -s "$UNTRACKED_LIST" ]; then
+  while IFS= read -r -d '' untracked; do
+    case "/$untracked" in
+      */.claude/output/*|*/secrets/*|*/.env*|*token*|*key*|*cert*) continue ;;
+    esac
+    [ -f "$REPO/$untracked" ] || continue
+    [ -L "$REPO/$untracked" ] && continue
+    mkdir -p "$SNAPSHOT/$(dirname "$untracked")"
+    cp "$REPO/$untracked" "$SNAPSHOT/$untracked"
+  done <"$UNTRACKED_LIST"
+fi
+scrub_snapshot
+
 # --- the brief ----------------------------------------------------------------
 #
 # Deliberately just two things: what the change must satisfy, and what the
@@ -803,9 +851,35 @@ for model in "${CHAIN[@]}"; do
   : >"$ERR_FILE"
   : >"$STDOUT_FILE"
 
+  # CE QUE `--cd` + `-s read-only` GARANTIT, ET CE QU'IL NE GARANTIT PAS.
+  #
+  # `--cd` choisit un répertoire de TRAVAIL. `-s read-only` interdit d'ÉCRIRE.
+  # NI L'UN NI L'AUTRE N'EST UNE FRONTIÈRE DE LECTURE : le sous-processus peut
+  # lire n'importe quel fichier que l'utilisateur peut lire, dont le vrai dépôt,
+  # `.git`, `~/.ssh`. L'instantané est donc une COMMODITÉ — il met les sources
+  # au bon état sous la main du modèle — et non un confinement.
+  #
+  # Mesuré le 2026-09-12 sur codex-cli 0.154.0, quatre bras, sentinelle aléatoire
+  # dans un répertoire FRÈRE de l'espace de travail, bras de contrôle à chaque
+  # fois pour prouver que la sonde savait lire :
+  #   1. `-s read-only --cd DIR`                      -> sentinelle extérieure LUE
+  #   2. + `-c sandbox_permissions='[]'`              -> LUE quand même
+  #   3. sandbox-exec autour de codex                 -> `sandbox_apply: Operation
+  #      not permitted` : codex applique LUI-MÊME Seatbelt, on ne l'imbrique pas
+  #   4. sandbox-exec + `--dangerously-bypass-...`    -> le binaire meurt sans
+  #      diagnostic sous une politique restrictive
+  # Aucune configuration exposée par cette version ne restreint la lecture.
+  #
+  # CE QUI PROTÈGE RÉELLEMENT, donc ce qu'il ne faut pas affaiblir :
+  #   - `scrub_snapshot` retire les chemins sensibles DE L'INSTANTANÉ, ce qui
+  #     borne ce que le modèle trouve sans avoir à chercher ;
+  #   - le PROMPT ne contient que les critères et le diff ;
+  #   - `-s read-only` empêche toute écriture, donc toute persistance.
+  # Un lecteur qui croirait à une frontière ici cesserait de tenir ces trois
+  # lignes-là, qui sont les seules vraies. Voir AC3.
   codex_cmd=(
     timeout "$TIMEOUT_S" "$CODEX_BIN" exec
-    --cd "$WORK"
+    --cd "$SNAPSHOT"
     --skip-git-repo-check
     -s read-only
     --ephemeral

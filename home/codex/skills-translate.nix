@@ -1325,8 +1325,8 @@ let
         So page metadata, inline JSON-LD, CSS and hidden markup are unreachable from
         Claude Code. That is intended. Raw full-document extraction is a **human**
         task: the user runs the real binary in their own terminal, outside Claude
-        Code, where neither the shim nor the hook applies. Say so instead of trying
-        to route around them.'';
+        Code, where the shim does not apply. Say so instead of trying to route
+        around it.'';
       to = ''
         So page metadata, inline JSON-LD, CSS and hidden markup are unreachable from
         any agent session on this machine. That is intended, and it is not specific

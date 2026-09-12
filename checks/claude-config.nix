@@ -151,6 +151,44 @@ let
   # (regex, helper lib, paire leading/stripLead) divergerait du côté Codex.
   skillsBadFrontmatter = builtins.filter (f: builtins.substring 0 4 f.text != "---\n") skillMds;
 
+  # --- A11: le pied de contrat --------------------------------------------
+  # Même corpus que A10, et pour la même raison : seuls les SKILL.md portent
+  # un contrat. Titres bornés par des sauts de ligne des DEUX côtés, sinon
+  # `## Scope` se laisserait satisfaire par `## Scoped tools` et la garde ne
+  # garderait plus rien.
+  contractHeadings = [
+    "\n## Input/Output Contract\n"
+    "\n## Scope\n"
+    "\n## Handoffs\n"
+  ];
+
+  # caveman et cavemem sont des bascules de mode de sortie (38 et 31 lignes)
+  # dont tout le contrat tient déjà dans la `description` : ce qu'elles font,
+  # quand se déclencher, quand s'arrêter, ce pour quoi elles ne sont PAS. Un
+  # bloc de contrat y serait du cérémonial. Liste tenue à la main, donc gardée
+  # dans les deux sens (cf. C10 / indentedFrontmatter dans codex-skills.nix) :
+  # une exemption ne peut pas échouer toute seule, elle ne peut que devenir
+  # fausse en silence, et celle que personne ne relit devient un trou.
+  footerExempt = [
+    "caveman"
+    "cavemem"
+  ];
+
+  skillsMissingFooter = builtins.filter (
+    f: !(builtins.elem f.name footerExempt) && builtins.any (h: !(hasInfix h f.text)) contractHeadings
+  ) skillMds;
+
+  # Entrée MORTE : la skill exemptée a fini par se doter d'un pied de contrat,
+  # ou a disparu du manifeste (renommée, retirée). Dans les deux cas la liste
+  # ne décrit plus rien et le prochain lecteur lui fait confiance.
+  deadFooterExempt = builtins.filter (
+    n:
+    let
+      hits = builtins.filter (f: f.name == n) skillMds;
+    in
+    hits == [ ] || builtins.any (f: builtins.any (h: hasInfix h f.text) contractHeadings) hits
+  ) footerExempt;
+
   # --- scrapling: one version, pinned in two files -------------------------
   # activation.nix installs an exact pin; the skill TEXT repeats that version
   # in its install instructions and states its measurements were taken on it.
@@ -291,6 +329,16 @@ let
         "skill(s) whose text does not start with `---` on line 1: "
         + builtins.concatStringsSep ", " (map (f: f.name) skillsBadFrontmatter)
         + " — a frontmatter that does not parse costs the WHOLE skill, not one field: the loader falls back to the directory name and takes the first body line as the description, so the model routes on garbage, and `allowed-tools`, `model` and `disable-model-invocation` silently stop applying. The mechanism is nix itself: a `''…''` string is dedented by the MINIMUM common indentation across ALL its lines, so one line indented shallower than the body shifts every other line to the right, frontmatter included — fix the shallow line, not the `---`";
+    }
+    {
+      name = "A11 skills: every SKILL.md keeps its contract footer";
+      ok = skillsMissingFooter == [ ] && deadFooterExempt == [ ];
+      msg =
+        "skill(s) missing `## Input/Output Contract`, `## Scope` or `## Handoffs`: "
+        + builtins.concatStringsSep ", " (map (f: f.name) skillsMissingFooter)
+        + " | listed in footerExempt but now carrying a footer, or gone from the manifest: "
+        + builtins.concatStringsSep ", " deadFooterExempt
+        + " — a skill that ships without its footer ships without a contract: the model gets no statement of what the skill expects and produces, no boundary saying when NOT to use it, and no routing to the skill that should take over, so it improvises all three. The mechanism is nix again: a `''` block closed too early ends the attribute mid-document and the trailing sections land inside the NEXT attribute — it parses, A10 still sees a frontmatter at column 0, C1 still maps every attribute to a manifest entry, the 500-line ceiling is still met, and the text is simply deployed to the wrong file. That is how scrapling lost its guardrails and its contract with an all-green build. A DEAD exemption is the same failure one level up: a hand-maintained list cannot fail loudly, only be silently wrong";
     }
   ];
 

@@ -535,6 +535,23 @@ fi
 # Reconstruct code at the reviewed state so Codex can inspect current files.
 SNAPSHOT="$WORK/repo"
 mkdir -p "$SNAPSHOT"
+
+# `git archive` HONORE `export-ignore` et `export-subst`. Un `.gitattributes`
+# qui en pose ferait donc silencieusement omettre des fichiers de l'instantané,
+# ou en réécrirait le contenu, et l'instantané cesserait de représenter la base
+# de fusion — puis `git apply` du patch suivi échouerait sur un fichier omis,
+# avec un message qui n'aurait rien à voir avec la cause.
+# Aucun n'est posé aujourd'hui (`git check-attr` : 0), donc le danger est LATENT.
+# On refuse bruyamment plutôt que de produire un instantané faux en silence :
+# c'est la panne que tout ce fichier existe pour ne pas avoir. Le jour où l'un
+# de ces attributs devient légitime ici, ce BLOCKED dira quoi réparer.
+if git -C "$REPO" ls-files -z -- . \
+  | xargs -0 -r git -C "$REPO" check-attr export-ignore export-subst -- 2>/dev/null \
+  | grep -qv ': unspecified$'; then
+  SUMMARY="a git attribute (export-ignore or export-subst) would alter the snapshot; the reviewed sources would not match $MERGE_BASE"
+  emit "BLOCKED" "input" 8
+fi
+
 if ! git -C "$REPO" archive --format=tar "$MERGE_BASE" -- . ':(exclude).claude/output/**' | tar -xf - -C "$SNAPSHOT"; then
   SUMMARY="could not create the read-only source snapshot from $MERGE_BASE"
   emit "BLOCKED" "input" 8
@@ -552,7 +569,14 @@ scrub_snapshot() {
   # suivie même sur un APFS insensible à la casse, donc le cas est réel.
   find "$SNAPSHOT" -type d \( -ipath '*/.claude/output' -o -ipath '*/.ssh' -o -ipath '*/.aws' -o -ipath '*/.gnupg' -o -ipath '*/secrets' -o -iname '.env*' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -prune -exec rm -rf {} +
   find "$SNAPSHOT" -type l -delete
-  find "$SNAPSHOT" -type f \( -iname '.env*' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -delete
+  # MÊME jeu de noms que le filtre des répertoires ci-dessus, et c'est le point :
+  # une liste présente d'un seul côté est un trou, quel que soit le côté. Le
+  # `.env*` manquait aux RÉPERTOIRES, et `.ssh`/`.aws`/`.gnupg`/`secrets` /
+  # `.claude/output` manquaient aux FICHIERS — un fichier régulier nommé `.ssh`
+  # traversait donc l'instantané. Les deux trous ont été trouvés par une passe
+  # externe, à un tour d'écart, parce que la première correction n'avait réparé
+  # qu'un sens. Toute addition ici doit être faite DES DEUX CÔTÉS.
+  find "$SNAPSHOT" -type f \( -iname '.env*' -o -iname '.ssh' -o -iname '.aws' -o -iname '.gnupg' -o -iname 'secrets' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -delete
 }
 
 TRACKED_PATCH="$WORK/tracked.patch"

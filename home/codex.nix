@@ -32,6 +32,14 @@ let
 
   hooks = import ./codex/hooks.nix { inherit pkgs; };
 
+  # Reads home/claude-code/skills-manifest.nix — the SAME list the Claude side
+  # installs from — and writes a translated copy to ~/.agents/skills. One
+  # source of text, two outputs. The previous copy of this tree was kept by
+  # hand and drifted for four months in silence: its apex still advertised
+  # flags removed in May, and its obsidian skill still pointed at a vault path
+  # that had moved.
+  skills = import ./codex/skills.nix { inherit pkgs lib; };
+
   inherit (import ./codex/agents-md.nix) agentsMd;
 
   # Defined in a plain `{ pkgs }:` file so checks/codex-config.nix can import
@@ -67,17 +75,20 @@ let
   );
 in
 {
-  home.file = hookScriptFiles // {
-    "${codexDir}/hooks.json".text = hooks.hooksJson + "\n";
+  home.file =
+    hookScriptFiles
+    // skills.files
+    // {
+      "${codexDir}/hooks.json".text = hooks.hooksJson + "\n";
 
-    # force: this file already exists as a real, hand-edited file. Without it
-    # home-manager refuses to link and leaves an AGENTS.md.backup behind, and
-    # the stale instructions keep being loaded.
-    "${codexDir}/AGENTS.md" = {
-      text = agentsMd;
-      force = true;
+      # force: this file already exists as a real, hand-edited file. Without it
+      # home-manager refuses to link and leaves an AGENTS.md.backup behind, and
+      # the stale instructions keep being loaded.
+      "${codexDir}/AGENTS.md" = {
+        text = agentsMd;
+        force = true;
+      };
     };
-  };
 
   # On PATH so the human can record the reviewed baseline by hand after
   # trusting the hooks in a Codex session: `codex-verify-hook-trust -a`.

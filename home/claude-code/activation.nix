@@ -31,7 +31,30 @@
 
   # Remove read-only backups before linkGeneration to avoid interactive mv prompts
   claudeCodePreLink = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
-    rm -f "$HOME/.claude/skills"/*/SKILL.md.backup
+    # Purge de TOUT `*.backup` sous skills/, à N'IMPORTE QUELLE profondeur.
+    # Pourquoi ici, avant checkLinkTargets : c'est checkLinkTargets qui pose la
+    # question interactive "Existing file ... would be clobbered by backing up"
+    # dès qu'un `<fichier>.backup` (backupFileExtension = "backup", flake.nix)
+    # traîne en face d'un fichier nix-managé. Sans cette purge le rebuild sous
+    # sudo se bloque sur un prompt : c'est la raison d'être de l'entrée.
+    # RÉCURSIF, et non plus `*/SKILL.md.backup` : l'ancien glob ne voyait qu'UN
+    # niveau et qu'UN seul nom. Résidu mesuré — skills/apex/eval-suite.json.backup,
+    # vivant depuis le 27 mars parce qu'aucun des deux sites de nettoyage ne le
+    # visait — et skills/scrapling/references/ rend le niveau 2 obligatoire.
+    # JAMAIS `*.bak` : home-manager ne produit pas cette extension. Le
+    # skills/debug/SKILL.md.bak sur disque est l'orphelin d'une édition HUMAINE,
+    # et supprimer des fichiers utilisateur n'est pas le rôle de ce script.
+    # `\( -type f -o -type l \)` et non `-type f` seul : home-manager déplace le
+    # pré-existant TEL QUEL, donc un lien symbolique étranger nommé `*.backup`
+    # existe et `-type f` le saute — le `rm -f` d'origine, lui, prenait tous les
+    # types. Un backup non purgé = le prompt sudo que l'entrée doit éviter.
+    # Sous-shell + `|| true` : home-manager concatène toutes les entrées dans UN
+    # shell `set -eu`, donc un find non nul (répertoire absent au tout premier
+    # rebuild) tuerait tout le reste du DAG d'activation.
+    (
+      [ -d "$HOME/.claude/skills" ] \
+        && find "$HOME/.claude/skills" \( -type f -o -type l \) -name '*.backup' -delete
+    ) || true
     # keybindings.json est passé sous nix : la version manuelle pré-existante est
     # déplacée en .backup par home-manager (backupFileExtension = "backup") au
     # premier rebuild. On la purge ici pour ne pas accumuler, et pour éviter le
@@ -54,9 +77,18 @@
   # and silently skips symlinks that resolve outside ~/.claude/skills/
   claudeCodeDesymlinkSkills = lib.hm.dag.entryAfter [ "fixHmGcRoot" ] ''
     set -euo pipefail
+    # Partage des rôles avec claudeCodePreLink, écrit ici pour qu'on ne croie
+    # pas à une redondance : le pre-link purge ce qui EXISTE avant
+    # checkLinkTargets, donc il empêche le prompt ; celui-ci purge ce que
+    # linkGeneration vient de créer DANS CE RUN, sinon le résidu survit jusqu'au
+    # rebuild suivant — c'est exactement comme ça que
+    # skills/apex/eval-suite.json.backup a tenu six mois. Même portée récursive,
+    # pour la même raison : references/ et les fichiers non-SKILL.md.
+    (
+      [ -d "$HOME/.claude/skills" ] \
+        && find "$HOME/.claude/skills" \( -type f -o -type l \) -name '*.backup' -delete
+    ) || true
     for f in "$HOME/.claude/skills"/*/SKILL.md; do
-      # Remove stale backups (read-only from nix store) to avoid mv prompts
-      rm -f "''${f}.backup"
       [ -L "$f" ] || continue
       target=$(readlink "$f")
       cp "$target" "$f.tmp"
@@ -94,8 +126,22 @@
 
       # Intelligent merge: base provides defaults, existing preserves user changes
       # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox,
-      # effortLevel, alwaysThinkingEnabled. NEVER force .model: /model and /fast
-      # are deliberate session choices that must survive rebuilds.
+      # effortLevel, alwaysThinkingEnabled, skillOverrides. NEVER force .model:
+      # /model and /fast are deliberate session choices that must survive rebuilds.
+      # `.skillOverrides` est dans la liste par nécessité : sans force-override,
+      # il n'arriverait que par le deep merge `.[0] * .[1]`, où le live gagne sur
+      # toute clé qu'il détient déjà — la valeur nix serait ignorée en silence dès
+      # la première écriture par autre chose. Ce repo s'est déjà fait avoir par
+      # exactement cette forme sur `.model`.
+      # Ce que le force-override NE règle PAS : `skillOverrides` est fusionné par
+      # objet entre scopes, le scope projet battant le scope utilisateur, et un
+      # basculement manuel dans le sélecteur `/skills` écrit
+      # `.claude/settings.local.json` — fichier IGNORÉ PAR GIT ici
+      # (`.gitignore:2:.claude/`, tout le répertoire). Une entrée en scope local
+      # bat donc le scope utilisateur nix-managé, force-override compris, et ne
+      # produit AUCUN diff : `git status` reste propre, la dérive contre la
+      # source nix est silencieuse. C'est pire que tracké, pas plus doux : rien
+      # ne la fait remonter. Connu, accepté, hors périmètre.
       # `.voice` n'est PAS force-overridden : le deep merge `.[0] * .[1]` est
       # récursif, donc toute sous-clé présente dans la base et absente du live
       # (ex. autoSubmit) est injectée, tandis qu'un `mode` changé en session
@@ -109,9 +155,10 @@
         BASE_SANDBOX=$(jq -c '.sandbox' "$BASE")
         BASE_EFFORT=$(jq -c '.effortLevel' "$BASE")
         BASE_THINK=$(jq -c '.alwaysThinkingEnabled' "$BASE")
+        BASE_SKILLOV=$(jq -c '.skillOverrides' "$BASE")
         jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
-          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" \
-            '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th
+          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" --argjson so "$BASE_SKILLOV" \
+            '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th | .skillOverrides = $so
              # legacy: `voiceEnabled` (clé plate) est encore lue par le binaire
              # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas
              # garder deux sources de vérité qui peuvent diverger.

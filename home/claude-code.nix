@@ -11,7 +11,7 @@ let
   # Import modular definitions
   settings = import ./claude-code/settings.nix { homeDirectory = config.home.homeDirectory; };
   commands = import ./claude-code/commands.nix;
-  skills = import ./claude-code/skills.nix;
+  skillsManifest = import ./claude-code/skills-manifest.nix;
   graphifyReindex = import ./claude-code/graphify-reindex.nix { inherit pkgs; };
   vaultSnapshot = import ./claude-code/vault-snapshot.nix { inherit pkgs; };
   hooks = import ./claude-code/hooks.nix {
@@ -54,41 +54,6 @@ let
     commandVerifyFeature
     featureChainScript
     ;
-  inherit (skills)
-    skillApex
-    apexStep00Init
-    apexStep00bBranch
-    apexStep00bSave
-    apexStep01Analyze
-    apexStep01bObsidianContext
-    apexStep02Plan
-    apexStep02cVerify
-    apexStep02bTasks
-    apexStep03Execute
-    apexStep04Validate
-    apexStep05Examine
-    apexStep06Resolve
-    apexStep07Tests
-    apexStep08RunTests
-    apexStep09Finish
-    apexStep09bObsidianNote
-    apexRouting
-    apexOrchestration
-    apexEvalSuite
-    skillDebug
-    skillFeatureWorkflow
-    skillNixDarwin
-    skillClaudeCodeMeta
-    skillObsidian
-    skillSchliff
-    skillAutoresearch
-    skillTestingPatterns
-    skillCodebaseAudit
-    skillCaveman
-    skillCavemem
-    skillTrello
-    skillScrapling
-    ;
   inherit (hooks)
     hookRtkNixRewrite
     hookProtectMain
@@ -126,6 +91,25 @@ let
     agentDebugger
     ;
   inherit (shell) aliases sessionVars;
+  # Every skill file, derived from the manifest rather than typed out.
+  #
+  # `force` is COMPUTED, not stored: see the header of skills-manifest.nix.
+  # It must stay true for exactly the 14 SKILL.md plus apex/eval-suite.json,
+  # because claudeCodeDesymlinkSkills replaces those with real copies and
+  # home-manager has to be allowed to clobber them. A file under steps/ never
+  # carries it.
+  skillFiles = builtins.listToAttrs (
+    builtins.concatMap (
+      skill:
+      map (file: {
+        name = "${claudeDir}/skills/${skill.name}/${file.path}";
+        value = {
+          inherit (file) text;
+          force = baseNameOf file.path == "SKILL.md" || file.path == "eval-suite.json";
+        };
+      }) skill.files
+    ) skillsManifest.manifest
+  );
 in
 {
   # Shell integration
@@ -140,7 +124,7 @@ in
   ];
 
   # Write ~/.claude content declaratively
-  home.file = {
+  home.file = skillFiles // {
     # Settings base (read-only reference, merged by activation script)
     "${claudeDir}/settings-base.json" = {
       text = settingsJson;
@@ -180,11 +164,7 @@ in
     "${claudeDir}/commands/discuss.md".text = commandDiscuss;
     "${claudeDir}/commands/verify-feature.md".text = commandVerifyFeature;
 
-    # Skills (force = true: desymlink activation script replaces these with real copies)
-    "${claudeDir}/skills/feature-workflow/SKILL.md" = {
-      text = skillFeatureWorkflow;
-      force = true;
-    };
+    # Skills come from skillFiles above, derived from skills-manifest.nix.
 
     # Feature chain script
     "${claudeDir}/feature-chain.sh" = {
@@ -203,81 +183,6 @@ in
     "${claudeDir}/agents/test-runner.md".text = agentTestRunner;
     "${claudeDir}/agents/security-auditor.md".text = agentSecurityAuditor;
     "${claudeDir}/agents/debugger.md".text = agentDebugger;
-
-    "${claudeDir}/skills/apex/SKILL.md" = {
-      text = skillApex;
-      force = true;
-    };
-    "${claudeDir}/skills/apex/steps/step-00-init.md".text = apexStep00Init;
-    "${claudeDir}/skills/apex/steps/step-00b-branch.md".text = apexStep00bBranch;
-    "${claudeDir}/skills/apex/steps/step-00b-save.md".text = apexStep00bSave;
-    "${claudeDir}/skills/apex/steps/step-01-analyze.md".text = apexStep01Analyze;
-    "${claudeDir}/skills/apex/steps/step-01b-obsidian-context.md".text = apexStep01bObsidianContext;
-    "${claudeDir}/skills/apex/steps/step-02-plan.md".text = apexStep02Plan;
-    "${claudeDir}/skills/apex/steps/step-02c-verify.md".text = apexStep02cVerify;
-    "${claudeDir}/skills/apex/steps/step-02b-tasks.md".text = apexStep02bTasks;
-    "${claudeDir}/skills/apex/steps/step-03-execute.md".text = apexStep03Execute;
-    "${claudeDir}/skills/apex/steps/step-04-validate.md".text = apexStep04Validate;
-    "${claudeDir}/skills/apex/steps/step-05-examine.md".text = apexStep05Examine;
-    "${claudeDir}/skills/apex/steps/step-06-resolve.md".text = apexStep06Resolve;
-    "${claudeDir}/skills/apex/steps/step-07-tests.md".text = apexStep07Tests;
-    "${claudeDir}/skills/apex/steps/step-08-run-tests.md".text = apexStep08RunTests;
-    "${claudeDir}/skills/apex/steps/step-09-finish.md".text = apexStep09Finish;
-    "${claudeDir}/skills/apex/steps/step-09b-obsidian-note.md".text = apexStep09bObsidianNote;
-    "${claudeDir}/skills/apex/steps/ROUTING.md".text = apexRouting;
-    "${claudeDir}/skills/apex/steps/ORCHESTRATION.md".text = apexOrchestration;
-    "${claudeDir}/skills/apex/eval-suite.json" = {
-      text = apexEvalSuite;
-      force = true;
-    };
-    "${claudeDir}/skills/debug/SKILL.md" = {
-      text = skillDebug;
-      force = true;
-    };
-    "${claudeDir}/skills/nix-darwin/SKILL.md" = {
-      text = skillNixDarwin;
-      force = true;
-    };
-    "${claudeDir}/skills/claude-code-meta/SKILL.md" = {
-      text = skillClaudeCodeMeta;
-      force = true;
-    };
-    "${claudeDir}/skills/obsidian/SKILL.md" = {
-      text = skillObsidian;
-      force = true;
-    };
-    "${claudeDir}/skills/schliff/SKILL.md" = {
-      text = skillSchliff;
-      force = true;
-    };
-    "${claudeDir}/skills/autoresearch/SKILL.md" = {
-      text = skillAutoresearch;
-      force = true;
-    };
-    "${claudeDir}/skills/testing-patterns/SKILL.md" = {
-      text = skillTestingPatterns;
-      force = true;
-    };
-    "${claudeDir}/skills/codebase-audit/SKILL.md" = {
-      text = skillCodebaseAudit;
-      force = true;
-    };
-    "${claudeDir}/skills/caveman/SKILL.md" = {
-      text = skillCaveman;
-      force = true;
-    };
-    "${claudeDir}/skills/cavemem/SKILL.md" = {
-      text = skillCavemem;
-      force = true;
-    };
-    "${claudeDir}/skills/trello/SKILL.md" = {
-      text = skillTrello;
-      force = true;
-    };
-    "${claudeDir}/skills/scrapling/SKILL.md" = {
-      text = skillScrapling;
-      force = true;
-    };
 
     # Hooks
     "${claudeDir}/hooks/protect-main.js" = {

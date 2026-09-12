@@ -53,7 +53,6 @@ let
 
   # ------------------------------------------------------------- extracteurs
   splitLines = lib.splitString "\n";
-  occurrencesOf = needle: text: builtins.length (lib.splitString needle text) - 1;
 
   # Ancré en début de ligne : le titre de niveau 1 (`# Codex — …`) ne doit pas
   # être ramassé, et builtins.match compare la ligne ENTIÈRE, donc `# X` ne
@@ -102,9 +101,11 @@ let
   duplicatedHeadings = lib.concatMap (
     o:
     let
-      bad = builtins.filter (n: occurrencesOf "## ${n}" o.text != 1) sectionNames;
+      rendered = headingsOf o.text;
+      count = n: builtins.length (builtins.filter (h: h == n) rendered);
+      bad = builtins.filter (n: count n != 1) rendered;
     in
-    map (n: "${o.label}/## ${n} x${toString (occurrencesOf "## ${n}" o.text)}") bad
+    map (n: "${o.label}/## ${n} x${toString (count n)}") bad
   ) outputs;
 
   # --------------------------------------------------------------------- G3
@@ -145,12 +146,11 @@ let
   confidenceNeedle = "Rate confidence before writing nix";
   confidenceInline = lib.hasInfix confidenceNeedle codexOut;
   confidenceInRules = lib.hasInfix confidenceNeedle rules.ruleNix;
-  # Substring, NOT `builtins.elem` on headings: the Codex heading is
-  # `Confidence Gate (nix)`, so an exact-element test on the heading list is
-  # `false` for the very text it is supposed to catch. A verbatim copy of the
-  # section into Claude's delta would then keep G5 green — the criterion says
-  # a later « harmonisation » must go RED, so test the rule's own needle.
+  # Le corps reste interdit dans Claude, mais ne suffit pas : une copie peut
+  # garder le titre et paraphraser la règle. Le préfixe attrape donc aussi
+  # `Confidence Gate (nix)` et toute variante suffixée.
   confidenceInClaude = lib.hasInfix confidenceNeedle claudeOut;
+  confidenceHeadingInClaude = builtins.any (lib.hasPrefix "Confidence Gate") (headingsOf claudeOut);
 
   # --------------------------------------------------------------------- G6
   lineBudget = 100;
@@ -182,12 +182,12 @@ let
         + " — c'est LE point du refactor. Un tronc importé mais pas interpolé laisse les deux documents repartir en dérive sans qu'un seul build bouge, et la dérive est invisible parce qu'aucune des deux sorties n'est fausse prise isolément";
     }
     {
-      name = "G2 trunk: each shared heading appears EXACTLY once per output";
+      name = "G2 outputs: each rendered heading name appears EXACTLY once per output";
       ok = duplicatedHeadings == [ ];
       msg =
         "titre(s) hors compte: "
         + builtins.concatStringsSep ", " duplicatedHeadings
-        + " — zéro = la section n'arrive pas, deux = une copie recollée à la main dans un delta. La copie coûte double : elle consomme du contexte à chaque session ET elle rend la source partagée éditable sans effet, donc la prochaine correction du tronc ne s'applique qu'à moitié";
+        + " — chaque nom de titre rendu, tronc ou delta, doit être unique. Une copie coûte double : elle consomme du contexte à chaque session ET elle rend une source éditable sans effet, donc la prochaine correction ne s'applique qu'à moitié";
     }
     {
       name = "G3 outputs: headings equal the declared trunk-plus-delta list, in order";
@@ -208,14 +208,16 @@ let
     }
     {
       name = "G5 divergence: the nix Confidence Gate stays Codex-inline only";
-      ok = confidenceInline && confidenceInRules && !confidenceInClaude;
+      ok = confidenceInline && confidenceInRules && !confidenceInClaude && !confidenceHeadingInClaude;
       msg =
         "inline dans agentsMd: "
         + (if confidenceInline then "oui" else "NON")
         + " | dans rules.nix ruleNix: "
         + (if confidenceInRules then "oui" else "NON")
-        + " | règle recopiée dans claudeMdGlobal: "
+        + " | corps recopié dans claudeMdGlobal: "
         + (if confidenceInClaude then "PRÉSENTE" else "absente")
+        + " | titre Confidence Gate dans claudeMdGlobal: "
+        + (if confidenceHeadingInClaude then "PRÉSENT" else "absent")
         + " — cette asymétrie est DÉLIBÉRÉE et c'est la seule du lot : Claude charge la règle depuis `~/.claude/rules/` à l'ouverture d'un `.nix`, Codex n'a pas de `rules/` et doit la porter en permanence. Une passe d'« harmonisation » qui la supprime d'un côté ou la duplique de l'autre doit rougir ici, sinon elle coûte la règle à Codex ou du contexte permanent à Claude";
     }
     {

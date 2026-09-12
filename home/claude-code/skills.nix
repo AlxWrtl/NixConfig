@@ -3095,24 +3095,9 @@ in
     sanitize deliberately — `page.markdown()` on the body, or a CSS selector —
     and say in your answer that the content was not flag-sanitized.
 
-    ### What the flag costs (measured on 0.4.15, not estimated)
-
-    - The output is **byte-identical to the `<body>` slice** of the unflagged
-      run. It is not readability-style main-content extraction: `<nav>`,
-      `id="footer"` and `<table>` all survive.
-    - Real size delta: **-1.26 %** on Hacker News, **-5.74 %** on Wikipedia.
-    - Gone, in every output format (`.html`, `.md`, `.txt`): `<head>` and
-      everything in it (title, meta, canonical, OG tags), all
-      `<script>`/`<style>`/`<noscript>`/`<svg>`, deliberately hidden elements
-      (inline `display:none`, `visibility:hidden`, `opacity:0`, `height:0`,
-      `aria-hidden="true"`, `<template>`), HTML comments, zero-width chars.
-    - `-s` cannot get them back: sanitization runs BEFORE the selector.
-      Measured with the flag on: `-s head` 8917 B → **0**, `-s title` → **0**,
-      `-s script` → **0**, `-s style` → **0**,
-      `-s '[aria-hidden=true]'` → **0**.
-    - `--no-ai-targeted` **does not exist** (`Error: No such option`). There is
-      no in-band way back. Do not look for a bypass, an env var, or a config
-      key — there is none.
+    Flag measurements and removed-element list live in `references/cli-usage.md`.
+    There is no `--no-ai-targeted` escape hatch; do not hunt for a bypass,
+    environment variable or config key.
 
     So page metadata, inline JSON-LD, CSS and hidden markup are unreachable from
     Claude Code. That is intended. Raw full-document extraction is a **human**
@@ -3122,18 +3107,8 @@ in
 
     ## Setup — already done, do NOT install anything
 
-    The binary is installed and pinned declaratively by home-manager activation
-    (`home/claude-code/activation.nix`):
-
-    ```bash
-    uv tool install "scrapling[shell]==0.4.15"   # done at rebuild, not by you
-    scrapling install                             # browsers, done at rebuild
-    ```
-
-    - Binary: `~/.local/bin/scrapling` (on PATH). Python 3.10+.
-    - Extra is `[shell]`, not `[all]`: it carries the fetchers (browsers +
-      anti-bot), `markdownify` (required for `.md` output) and IPython. `[all]`
-      would only add `mcp`, dead weight in an MCP-less install.
+    Installation layout and declarative setup commands live in
+    `references/cli-usage.md`.
     - **Never** run `pip install`, `uv tool install`, a venv, or
       `scrapling install` yourself. If the binary is missing, say so and let the
       user rebuild (`sudo darwin-rebuild switch --flake .#alex-mbp`) or run
@@ -3233,6 +3208,8 @@ in
 
     ## Contents
 
+    - [Setup details](#setup-details)
+    - [AI-targeted output shape](#ai-targeted-output-shape)
     - [Commands](#commands)
     - [Usage pattern](#usage-pattern)
     - [Escalation ladder](#escalation-ladder)
@@ -3240,6 +3217,42 @@ in
     - [Key options (requests)](#key-options-requests)
     - [Key options (browsers)](#key-options-browsers)
     - [Notes](#notes)
+
+    ## Setup details
+
+    The binary is installed and pinned declaratively by home-manager activation
+    (`home/claude-code/activation.nix`):
+
+    ```bash
+    uv tool install "scrapling[shell]==0.4.15"   # done at rebuild, not by you
+    scrapling install                             # browsers, done at rebuild
+    ```
+
+    - Binary: `~/.local/bin/scrapling` (on PATH). Python 3.10+.
+    - Extra is `[shell]`, not `[all]`: it carries the fetchers (browsers +
+      anti-bot), `markdownify` (required for `.md` output) and IPython. `[all]`
+      would only add `mcp`, dead weight in an MCP-less install.
+
+    ## AI-targeted output shape
+
+    Measured on 0.4.15, not estimated:
+
+    - The output is **byte-identical to the `<body>` slice** of the unflagged
+      run. It is not readability-style main-content extraction: `<nav>`,
+      `id="footer"` and `<table>` all survive.
+    - Real size delta: **-1.26 %** on Hacker News, **-5.74 %** on Wikipedia.
+    - Gone, in every output format (`.html`, `.md`, `.txt`): `<head>` and
+      everything in it (title, meta, canonical, OG tags), all
+      `<script>`/`<style>`/`<noscript>`/`<svg>`, deliberately hidden elements
+      (inline `display:none`, `visibility:hidden`, `opacity:0`, `height:0`,
+      `aria-hidden="true"`, `<template>`), HTML comments, zero-width chars.
+    - `-s` cannot get them back: sanitization runs BEFORE the selector.
+      Measured with the flag on: `-s head` 8917 B → **0**, `-s title` → **0**,
+      `-s script` → **0**, `-s style` → **0**,
+      `-s '[aria-hidden=true]'` → **0**.
+    - `--no-ai-targeted` **does not exist** (`Error: No such option`). There is
+      no in-band way back. Do not look for a bypass, an env var, or a config
+      key — there is none.
 
     ## Commands
 

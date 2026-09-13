@@ -158,6 +158,11 @@ let
 
   # --------------------------------------------------------------------- G7
   projectMapIn = builtins.filter (o: lib.hasInfix "Project Map" o.text) outputs;
+  obsoleteCodexGit = builtins.filter (n: lib.hasInfix n codexOut) [
+    ".git` is read-only"
+    "ask the human to run `git checkout -b"
+    "CANNOT cut the branch"
+  ];
 
   labels = xs: builtins.concatStringsSep ", " (map (o: o.label) xs);
 
@@ -235,6 +240,11 @@ let
         "`Project Map` encore présent dans: "
         + labels projectMapIn
         + " — le bloc a été retiré de CLAUDE.md comme dérivable de l'arborescence et laissé dans AGENTS.md par le MÊME lot. Une carte de chemins tenue à la main ne peut qu'être fausse en silence, et elle l'était (`home/Codex/` n'a jamais existé)";
+    }
+    {
+      name = "G8 codex Git guidance: automatic branch creation, no obsolete read-only handoff";
+      ok = obsoleteCodexGit == [ ] && lib.hasInfix "git checkout -b <type>/<desc>" codexOut;
+      msg = "obsolete guidance: ${builtins.concatStringsSep ", " obsoleteCodexGit}";
     }
   ];
 

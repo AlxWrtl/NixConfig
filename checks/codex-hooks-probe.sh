@@ -200,25 +200,20 @@ new_repo "$FIX_FEAT" main
 # written to protect. Two names are guarded, so both need a case.
 FIX_MASTER="$WORK/repo-master"
 new_repo "$FIX_MASTER" master
+(cd "$FIX_MASTER" && git_q branch existing) > /dev/null 2>&1
 
-# A `master` repo WITH a remote. block-main-shell.js ports the Claude side's
-# vault carve-out — a repo with NO remote cannot receive a PR, so a command
-# that only moves a git ref is allowed there — and NARROWS it to ref moves
-# only. Two fixtures are therefore needed to grade it: this one, where
-# `git commit` must be refused, and $FIX_MASTER (remote-less), where the same
-# command must pass while `perl -0pi` and `git checkout --` must not.
+# A second `master` repo with a remote proves policy is remote-agnostic.
 FIX_REMOTE="$WORK/repo-master-remote"
 new_repo "$FIX_REMOTE" master
 (cd "$FIX_REMOTE" && git_q remote add origin https://example.invalid/probe.git) > /dev/null 2>&1
 
-# PRECONDITION for the carve-out pair: one fixture has a remote, the other does
-# not. Both cases pass by accident if this ever stops being true.
+# Preconditions ensure commit denials cover both remote states.
 if [ -n "$( (cd "$FIX_MASTER" && PATH="$BASE_PATH" git remote) 2> /dev/null)" ]; then
-  echo "probe: \$FIX_MASTER has a remote — the no-remote carve-out cases would be meaningless" >&2
+  echo "probe: \$FIX_MASTER unexpectedly has a remote" >&2
   exit 2
 fi
 if [ -z "$( (cd "$FIX_REMOTE" && PATH="$BASE_PATH" git remote) 2> /dev/null)" ]; then
-  echo "probe: \$FIX_REMOTE has no remote — the carve-out would swallow its cases" >&2
+  echo "probe: \$FIX_REMOTE has no remote" >&2
   exit 2
 fi
 
@@ -318,6 +313,51 @@ S_RM=$(sh_payload sh-rm "$FIX_MASTER" "\"rm -f src/app.ts\"")
 S_CHECKOUT=$(sh_payload sh-checkout "$FIX_MASTER" "\"git checkout -- .\"")
 S_COMMIT_REMOTE=$(sh_payload sh-commit-remote "$FIX_REMOTE" "\"git commit -am wip\"")
 S_COMMIT_LOCAL=$(sh_payload sh-commit-local "$FIX_MASTER" "\"git commit -am wip\"")
+S_BRANCH_CREATE=$(sh_payload sh-branch-create "$FIX_MASTER" "\"git checkout -b feat/auto-probe\"")
+S_SWITCH_CREATE=$(sh_payload sh-switch-create "$FIX_MASTER" "\"git switch -c fix/auto-probe\"")
+S_BRANCH_CHAINED=$(sh_payload sh-branch-chained "$FIX_MASTER" "\"git checkout -b feat/bad && touch pwned\"")
+S_RESET=$(sh_payload sh-reset "$FIX_MASTER" "\"git reset --hard HEAD\"")
+S_BRANCH_DIRECT=$(sh_payload sh-branch-direct "$FIX_MASTER" "\"git branch feat/direct\"")
+S_BRANCH_DELETE=$(sh_payload sh-branch-delete "$FIX_MASTER" "\"git branch -D old\"")
+S_BRANCH_LIST=$(sh_payload sh-branch-list "$FIX_MASTER" "\"git branch --list 'feat/*'\"")
+S_BRANCH_COLOR_CREATE=$(sh_payload sh-branch-color-create "$FIX_MASTER" "\"git branch --color=never feat/bypass\"")
+S_BRANCH_CONTAINS=$(sh_payload sh-branch-contains "$FIX_MASTER" "\"git branch --contains HEAD\"")
+S_BRANCH_FORMAT=$(sh_payload sh-branch-format "$FIX_MASTER" "\"git branch --format='%(refname:short)' --sort=refname\"")
+S_CHECKOUT_EXISTING=$(sh_payload sh-checkout-existing "$FIX_MASTER" "\"git checkout existing\"")
+S_SWITCH_EXISTING=$(sh_payload sh-switch-existing "$FIX_MASTER" "\"git switch existing\"")
+S_CHECKOUT_ORPHAN=$(sh_payload sh-checkout-orphan "$FIX_MASTER" "\"git checkout --orphan orphan/x\"")
+S_SWITCH_ORPHAN=$(sh_payload sh-switch-orphan "$FIX_MASTER" "\"git switch --orphan orphan/x\"")
+S_CHECKOUT_COMPACT=$(sh_payload sh-checkout-compact "$FIX_MASTER" "\"git checkout -bfeat/compact\"")
+S_WORKTREE_ADD=$(sh_payload sh-worktree-add "$FIX_MASTER" "\"git worktree add /private/tmp/wt-probe existing\"")
+S_CONFIG_WRITE=$(sh_payload sh-config-write "$FIX_MASTER" "\"git config test.key value\"")
+S_CONFIG_READ=$(sh_payload sh-config-read "$FIX_MASTER" "\"git config --get test.key\"")
+S_WORKTREE_LIST=$(sh_payload sh-worktree-list "$FIX_MASTER" "\"git worktree list\"")
+S_REMOTE_READ=$(sh_payload sh-remote-read "$FIX_MASTER" "\"git remote -v\"")
+S_LS_TREE=$(sh_payload sh-ls-tree "$FIX_MASTER" "\"git ls-tree HEAD\"")
+S_ABS_CHECKOUT=$(sh_payload sh-abs-checkout "$FIX_MASTER" "\"$GIT_BIN_DIR/git checkout existing\"")
+S_ABS_CONFIG=$(sh_payload sh-abs-config "$FIX_MASTER" "\"$GIT_BIN_DIR/git config test.key value\"")
+S_ABS_STATUS=$(sh_payload sh-abs-status "$FIX_MASTER" "\"$GIT_BIN_DIR/git status --short\"")
+S_REMOTE_CHAIN=$(sh_payload sh-remote-chain "$FIX_MASTER" "\"git remote -v add origin https://example.invalid/x\"")
+S_DIFF_OUTPUT=$(sh_payload sh-diff-output "$FIX_MASTER" "\"git diff --output=tracked-or-new-file\"")
+S_LOG_OUTPUT=$(sh_payload sh-log-output "$FIX_MASTER" "\"git log --output=log.txt\"")
+S_SHOW_OUTPUT=$(sh_payload sh-show-output "$FIX_MASTER" "\"git show --output show.txt HEAD\"")
+S_GREP_PAGER=$(sh_payload sh-grep-pager "$FIX_MASTER" "\"git grep --open-files-in-pager='sh -c evil' export\"")
+S_CAT_FILTERS=$(sh_payload sh-cat-filters "$FIX_MASTER" "\"git cat-file --filters HEAD:src/app.ts\"")
+S_LOG_READ=$(sh_payload sh-log-read "$FIX_MASTER" "\"git log -1 --oneline\"")
+S_SHOW_READ=$(sh_payload sh-show-read "$FIX_MASTER" "\"git show --stat HEAD\"")
+S_DIFF_READ=$(sh_payload sh-diff-read "$FIX_MASTER" "\"git diff --stat\"")
+S_GREP_READ=$(sh_payload sh-grep-read "$FIX_MASTER" "\"git grep export\"")
+S_CAT_READ=$(sh_payload sh-cat-read "$FIX_MASTER" "\"git cat-file -t HEAD\"")
+S_CONFIG_SCOPE_WRITE=$(sh_payload sh-config-scope-write "$FIX_MASTER" "\"git config --show-scope test.key value\"")
+S_QUOTED_GIT=$(sh_payload sh-quoted-git "$FIX_MASTER" "\"\\\"git\\\" checkout existing\"")
+S_QUOTED_ABS_GIT=$(sh_payload sh-quoted-abs-git "$FIX_MASTER" "\"'$GIT_BIN_DIR/git' checkout existing\"")
+S_BRANCH_ALL_PATTERN=$(sh_payload sh-branch-all-pattern "$FIX_MASTER" "\"git branch -a 'feat/*'\"")
+S_STATUS_DEVNULL=$(sh_payload sh-status-devnull "$FIX_MASTER" "\"git status >/dev/null 2>&1\"")
+S_REL_CHECKOUT=$(sh_payload sh-rel-checkout "$FIX_MASTER" "\"./git checkout existing\"")
+S_REL_CONFIG=$(sh_payload sh-rel-config "$FIX_MASTER" "\"../bin/git config test.key value\"")
+S_REL_STATUS=$(sh_payload sh-rel-status "$FIX_MASTER" "\"~/bin/git status --short\"")
+S_SHOW_SIGNATURE=$(sh_payload sh-show-signature "$FIX_MASTER" "\"git log --show-signature -1\"")
+S_HELP_WEB=$(sh_payload sh-help-web "$FIX_MASTER" "\"git help --web status\"")
 # Read-only, on master, must stay allowed — a branch nothing may run on is a
 # branch its owner turns the guard off for. The second one also pins the
 # /dev/null carve-out: `> /dev/null 2>&1` is a redirection and must not count.
@@ -471,7 +511,7 @@ while IFS='|' read -r label script wd pathkey payload want filt stderr_re maxsec
 done << TABLE
 # --- protect-main.js: SECURITY, fails CLOSED ---------------------------------
 pm-main-inside|pm|$FIX_MAIN|base|$P_INSIDE|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main|
-pm-patch-inside|pm|$FIX_MAIN|base|$P_PATCH|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main\. Ask|
+pm-patch-inside|pm|$FIX_MAIN|base|$P_PATCH|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main\. Create|
 pm-master-inside|pm|$FIX_MASTER|base|$P_MASTER|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
 pm-feature-branch|pm|$FIX_FEAT|base|$P_FEAT|0|-|-|
 pm-outside-worktree|pm|$FIX_MAIN|base|$P_OUTSIDE|0|-|-|
@@ -489,9 +529,54 @@ bs-redirect-master|bs|$FIX_MASTER|base|$S_REDIRECT|2|.hookSpecificOutput.permiss
 bs-sed-inplace-master|bs|$FIX_MASTER|base|$S_SED|2|.hookSpecificOutput.permissionDecision == "deny"|fs-inplace-edit|
 bs-tee-master|bs|$FIX_MASTER|base|$S_TEE|2|.hookSpecificOutput.permissionDecision == "deny"|fs-writer-command|
 bs-rm-master|bs|$FIX_MASTER|base|$S_RM|2|.hookSpecificOutput.permissionDecision == "deny"|fs-writer-command|
-bs-checkout-paths-master|bs|$FIX_MASTER|base|$S_CHECKOUT|2|.hookSpecificOutput.permissionDecision == "deny"|worktree-checkout-paths|
+bs-checkout-paths-master|bs|$FIX_MASTER|base|$S_CHECKOUT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
 bs-commit-with-remote|bs|$FIX_REMOTE|base|$S_COMMIT_REMOTE|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
-bs-commit-no-remote|bs|$FIX_MASTER|base|$S_COMMIT_LOCAL|0|-|-|
+bs-commit-no-remote|bs|$FIX_MASTER|base|$S_COMMIT_LOCAL|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-create-checkout|bs|$FIX_MASTER|base|$S_BRANCH_CREATE|0|-|-|
+bs-create-switch|bs|$FIX_MASTER|base|$S_SWITCH_CREATE|0|-|-|
+bs-create-chained-deny|bs|$FIX_MASTER|base|$S_BRANCH_CHAINED|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-reset-protected|bs|$FIX_MASTER|base|$S_RESET|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-branch-direct-deny|bs|$FIX_MASTER|base|$S_BRANCH_DIRECT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-branch-delete-deny|bs|$FIX_MASTER|base|$S_BRANCH_DELETE|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-branch-list-readonly|bs|$FIX_MASTER|base|$S_BRANCH_LIST|0|-|-|
+bs-branch-color-create-deny|bs|$FIX_MASTER|base|$S_BRANCH_COLOR_CREATE|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-branch-contains-readonly|bs|$FIX_MASTER|base|$S_BRANCH_CONTAINS|0|-|-|
+bs-branch-format-readonly|bs|$FIX_MASTER|base|$S_BRANCH_FORMAT|0|-|-|
+bs-checkout-existing-deny|bs|$FIX_MASTER|base|$S_CHECKOUT_EXISTING|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-switch-existing-deny|bs|$FIX_MASTER|base|$S_SWITCH_EXISTING|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-checkout-orphan-deny|bs|$FIX_MASTER|base|$S_CHECKOUT_ORPHAN|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-switch-orphan-deny|bs|$FIX_MASTER|base|$S_SWITCH_ORPHAN|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-checkout-compact-deny|bs|$FIX_MASTER|base|$S_CHECKOUT_COMPACT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-worktree-add-deny|bs|$FIX_MASTER|base|$S_WORKTREE_ADD|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-config-write-deny|bs|$FIX_MASTER|base|$S_CONFIG_WRITE|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-config-get-readonly|bs|$FIX_MASTER|base|$S_CONFIG_READ|0|-|-|
+bs-worktree-list-readonly|bs|$FIX_MASTER|base|$S_WORKTREE_LIST|0|-|-|
+bs-remote-readonly|bs|$FIX_MASTER|base|$S_REMOTE_READ|0|-|-|
+bs-ls-tree-readonly|bs|$FIX_MASTER|base|$S_LS_TREE|0|-|-|
+bs-abs-checkout-deny|bs|$FIX_MASTER|base|$S_ABS_CHECKOUT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-abs-config-deny|bs|$FIX_MASTER|base|$S_ABS_CONFIG|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-abs-status-readonly|bs|$FIX_MASTER|base|$S_ABS_STATUS|0|-|-|
+bs-remote-extra-deny|bs|$FIX_MASTER|base|$S_REMOTE_CHAIN|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-diff-output-deny|bs|$FIX_MASTER|base|$S_DIFF_OUTPUT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-log-output-deny|bs|$FIX_MASTER|base|$S_LOG_OUTPUT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-show-output-deny|bs|$FIX_MASTER|base|$S_SHOW_OUTPUT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-grep-pager-deny|bs|$FIX_MASTER|base|$S_GREP_PAGER|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-cat-filters-deny|bs|$FIX_MASTER|base|$S_CAT_FILTERS|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-log-readonly|bs|$FIX_MASTER|base|$S_LOG_READ|0|-|-|
+bs-show-readonly|bs|$FIX_MASTER|base|$S_SHOW_READ|0|-|-|
+bs-diff-readonly|bs|$FIX_MASTER|base|$S_DIFF_READ|0|-|-|
+bs-grep-readonly|bs|$FIX_MASTER|base|$S_GREP_READ|0|-|-|
+bs-cat-file-readonly|bs|$FIX_MASTER|base|$S_CAT_READ|0|-|-|
+bs-config-scope-write-deny|bs|$FIX_MASTER|base|$S_CONFIG_SCOPE_WRITE|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-quoted-git-deny|bs|$FIX_MASTER|base|$S_QUOTED_GIT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-quoted-abs-git-deny|bs|$FIX_MASTER|base|$S_QUOTED_ABS_GIT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-branch-all-pattern-readonly|bs|$FIX_MASTER|base|$S_BRANCH_ALL_PATTERN|0|-|-|
+bs-status-devnull-readonly|bs|$FIX_MASTER|base|$S_STATUS_DEVNULL|0|-|-|
+bs-relative-checkout-deny|bs|$FIX_MASTER|base|$S_REL_CHECKOUT|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-relative-config-deny|bs|$FIX_MASTER|base|$S_REL_CONFIG|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-relative-status-readonly|bs|$FIX_MASTER|base|$S_REL_STATUS|0|-|-|
+bs-show-signature-deny|bs|$FIX_MASTER|base|$S_SHOW_SIGNATURE|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
+bs-help-web-deny|bs|$FIX_MASTER|base|$S_HELP_WEB|2|.hookSpecificOutput.permissionDecision == "deny"|git-not-proven-readonly|
 bs-readonly-git-status|bs|$FIX_MASTER|base|$S_STATUS|0|-|-|
 bs-readonly-ls-devnull|bs|$FIX_MASTER|base|$S_LS|0|-|-|
 bs-feature-branch|bs|$FIX_FEAT|base|$S_PERL_FEAT|0|-|-|

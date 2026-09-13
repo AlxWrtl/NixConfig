@@ -15,14 +15,15 @@
 let
   codexDir = ".codex";
 
-  # The one key this repo forces (D3). It decides what the agent may break; a
-  # silent drift to full access is precisely what a declarative configuration
-  # exists to prevent. `model` and `model_reasoning_effort` stay session
-  # choices, exactly as the Claude side refuses to force `.model`.
-  sandboxMode = "workspace-write";
+  permissionsProfile = "git-workspace";
+  permissionsBlock = ''
+    [permissions.git-workspace]
+    extends = ":workspace"
+    filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }
+  '';
 
   # No human confirmation before an action. What is left between the model and
-  # the filesystem is the sandbox above and the two branch hooks below —
+  # the filesystem is the permissions profile above and two branch hooks —
   # nothing else. A deliberate trade for a working loop, made 2026-09-10 after
   # the guard was measured refusing a write on master: the refusal did not
   # depend on the confirmation, so removing the confirmation does not remove
@@ -54,7 +55,8 @@ let
       lib
       configMergePkg
       verifyTrustPkg
-      sandboxMode
+      permissionsProfile
+      permissionsBlock
       approvalPolicy
       ;
     # Same expression that generates the JSON emits these keys, so they cannot

@@ -326,19 +326,13 @@ let
       to = ''
         1. Check the current branch — `git branch --show-current` is a read, it runs.
            If already on a feature branch, use it and continue.
-        2. If on main/master: you CANNOT cut the branch yourself. `.git` is
-           read-only in this sandbox by design, so `git checkout -b` is refused,
-           and a step that orders a refused command is inert — it reads as done
-           and nothing happened. Ask the human to run it, verbatim and in full:
-           `git checkout -b feat/{task-id}` where task-id is a short slug from
-           the task description.
-        3. STOP and WAIT for the human to say it is done. Then re-read the current
-           branch and confirm it yourself before any edit. Never start editing
-           from main/master on the promise that the branch will arrive later —
-           the commit hook refuses main/master, so the work would have nowhere
-           to land.
+        2. If on main/master, create `feat/{task-id}` with
+           `git checkout -b feat/{task-id}`. This validated creation is the sole
+           Git mutation allowed on a protected branch.
+        3. Re-read the current branch and prove HEAD moved off main/master before
+           any edit. If creation failed, stop; never edit on a promise.
       '';
-      why = "O7. This is the step that contradicts `~/.codex/AGENTS.md` most directly: the instruction file already tells the agent it cannot create the branch and must ask the human, while this step ordered `git checkout -b`. The two cannot both be obeyed, and the sandbox decides which one is real. Turning the step into ask-and-wait also gives it a verifiable end state (the branch exists, re-read to confirm) instead of an unverifiable one (the command was issued).";
+      why = "O7. The git-workspace profile permits ref creation while the guard admits only validated creation that moves HEAD off main/master. Re-reading the branch makes the transition observable before edits.";
     }
     {
       skill = "apex";
@@ -979,10 +973,8 @@ let
 
         There is no `isolation` parameter on a spawn and no command that moves the
         session into a git worktree: sub-agents share this checkout. So the
-        decision the source described is not one this agent can take — it is one
-        it can ASK for, exactly like the branch (step-00b), and `.git` is
-        read-only in this sandbox, so `git worktree add` issued from here is
-        refused.
+        linked worktree metadata may live outside configured workspace roots.
+        Such linked worktrees remain unsupported; ask the human to prepare one.
 
         Do NOT reach for a worktree to make a wave safe. That conclusion predates
         this translation and holds harder here: file-disjoint waves solve
@@ -1008,7 +1000,7 @@ let
         its diff read explicitly (`git -C {worktree} diff`) because a plain
         `git diff` here cannot see it, and that branch merged into the run's own
         branch BEFORE step-09 — otherwise the work reaches neither the commit nor
-        the PR. The merge is also a human step for the same reason the branch is.
+        the PR. Merging remains explicit coordination, never inferred.
 
         Two things that do not change once you have one, both of which have to be
         in the brief or the agent starts on sand:
@@ -1019,7 +1011,7 @@ let
           the first edit, and record the result. Without it, a red check at the
           end cannot be told apart from a red check that was already there.
       '';
-      why = "O19. The section is built on two harness features that do not exist here: an `isolation: worktree` parameter on the spawn call and an `EnterWorktree` command. Renaming them would invent an API. Removing the section outright would lose the part that is genuinely useful and host-independent — when a worktree is the right instrument, what it does not give you, and who owes the merge — so the mechanism moves to a request to the human, which is the same shape step-00b already takes for the branch, and the reasoning survives intact.";
+      why = "O19. The spawn harness still provides no worktree isolation. Unlike ordinary branch creation, linked-worktree Git metadata may live outside configured workspace roots, so preparation remains a human handoff for that specific boundary.";
     }
     {
       skill = "apex";
@@ -1033,15 +1025,19 @@ let
       '';
       to = ''
         Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-        list (long or password-interactive). Sandbox-blocked commands (`git push`
-        over SSH, docker, local DB sockets, anything writing `.git`): there is no
+        list (long or password-interactive). Local Git writes are permitted by
+        the `git-workspace` profile on a feature branch; on main/master the hook
+        permits only exact validated new-branch creation. Commit/push still need
+        explicit user prose, and push/network may remain unavailable.
+        Sandbox-blocked commands (`git push` over SSH, docker, local DB sockets):
+        there is no
         mid-run escalation on this host — `approval_policy = "never"` means an
         escalation request is denied, not shown to anyone. Put the exact command
         on the "Run yourself" list and continue with what does not depend on it.
         Never weaken the sandbox config itself. See the classification rule in
         ORCHESTRATION.md.
       '';
-      why = "O20a. `dangerouslyDisableSandbox` is a Claude Code permission mechanism: the tool call is re-issued and the user gets a confirmation box. Codex has no such parameter, and this host sets `approval_policy = \"never\"` in `~/.codex/config.toml`, so nothing is ever shown for approval. An agent told to retry ONCE with an escalation would burn the retry, read the same denial, and — worst case — start looking for a way around the sandbox. Naming the real fallback (the Run-yourself list) keeps the command visible to the human instead.";
+      why = "O20a. `dangerouslyDisableSandbox` has no Codex counterpart. The translation distinguishes permitted local Git under `git-workspace` from genuinely blocked network/socket access, keeps protected-branch mutation narrow, and preserves explicit authorization for commit/push.";
     }
     {
       skill = "apex";
@@ -1059,7 +1055,7 @@ let
       '';
       to = ''
         - **Sandbox-blocked** — `git push` over SSH, docker, local DB sockets,
-          anything writing `.git`, or any command that just failed with clear
+          or any command that just failed with clear
           sandbox evidence (permission denied on allowed work, socket/auth
           failure): do NOT retry. There is no escalation switch here and no
           confirmation box — `approval_policy = "never"` denies the request
@@ -1068,8 +1064,13 @@ let
           "Run yourself" list, say what it was for, and continue with the work
           that does not depend on it. Never weaken the sandbox config itself and
           never touch secrets to make a command pass.
+
+          Local Git writes are permitted by `git-workspace` on feature branches.
+          On main/master, only exact validated new-branch creation may mutate Git.
+          Commit/push still require explicit user prose; push/network may remain
+          unavailable even after authorization.
       '';
-      why = "O20b. Second site of the same absent mechanism, and the one that spells out the retry protocol. The classification itself (safe / long / sandbox-blocked / in doubt) is good on any host and is kept; only the escalation branch changes, because here the answer to a sandbox refusal is a human, not a flag. The last sentence is preserved word for word: it is the rule that stops an agent from solving a permission error by editing the permissions.";
+      why = "O20b. Second absent-escalation site. Network and socket denials remain sandbox-blocked; local Git is classified separately according to profile, protected-branch hook, and explicit commit/push authorization.";
     }
     {
       skill = "obsidian";
@@ -1195,8 +1196,8 @@ let
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
       from = "- it is an experiment whose likeliest outcome is `git checkout .`";
-      to = "- it is an experiment whose likeliest outcome is throwing the work away (and note you cannot do that with `git checkout .` here — it needs `.git/index.lock`; the worktree-only way is `git diff --binary | git apply -R`)";
-      why = "O25b. Not an order, a criterion — but it names the command the reader would reach for, and that command is refused on this host. Measured alongside O24c: `git checkout .` dies on `index.lock`, exit 128, the file unchanged. A criterion phrased around an impossible action is a criterion nobody can apply.";
+      to = "- it is an experiment whose likeliest outcome is `git checkout .` on its feature branch";
+      why = "O25b. Local Git writes are available on the feature branch under `git-workspace`, so the experiment criterion may name ordinary worktree reset behavior again.";
     }
     {
       skill = "apex";
@@ -1222,45 +1223,44 @@ let
       to = ''
         - **Safe** — read-only, parse, test, edit a file in the repo, `git status`,
           `git diff`, `nix-instantiate --parse`, grep, build steps that do not touch
-          the system: execute directly. `git add` is NOT in this class here — it
-          writes `.git/index`, which is read-only in this sandbox — and it belongs
-          on the "Run yourself" list two bullets down.'';
-      why = "O25. Found by independent review of the fixes, not of the original. The bullet classed `git status/add` as Safe and told the agent to execute it directly, while the same list two bullets later classes anything writing `.git` as blocked. The agent that creates a file follows the nearer instruction, is refused, and has been taught by its own instructions that the refusal is surprising. Measured: with `.git` read-only, `git add` dies on `index.lock` with exit 128.";
+          the system: execute directly. `git add` is local and permitted on a
+          feature branch; commit and push still require explicit user prose.'';
+      why = "O25. Local Git writes now belong to `git-workspace`; staging is safe after the protected-branch escape, while commit/push retain their explicit-user-prose gate.";
     }
     {
       skill = "nix-darwin";
       file = "SKILL.md";
       from = "- Always `git add` new files before rebuild (flakes requirement)";
-      to = "- Always ask the human to `git add` new files BEFORE they rebuild (flakes ignore untracked files). You cannot run it — `.git` is read-only here — and a rebuild that silently ignores your new module is the failure this line exists to prevent.";
-      why = "O26. The instruction is right about flakes and wrong about who runs it. Left alone, the agent adds a module, is refused by `git add`, hands the rebuild to the human anyway, and the flake evaluates without the file: the build either fails for an unrelated-looking reason or quietly omits the module. Naming the human is what keeps the rule true.";
+      to = "- Always `git add` new files before rebuild (flakes ignore untracked files); run it only after HEAD is off main/master.";
+      why = "O26. Flakes still ignore untracked files, while `git-workspace` now lets the agent stage them after leaving the protected branch.";
     }
     {
       skill = "nix-darwin";
       file = "SKILL.md";
       from = "1. Untracked files invisible to flakes → `git add` first";
-      to = "1. Untracked files invisible to flakes → have the human `git add` them first (you cannot: `.git` is read-only here)";
+      to = "1. Untracked files invisible to flakes → `git add` them on the feature branch first";
       why = "O26b. Second site of the same instruction, in the troubleshooting list — the one actually read when the symptom appears.";
     }
     {
       skill = "nix-darwin";
       file = "SKILL.md";
       from = "    - If flake input is missing → update flake.nix first, git add flake.nix, then rebuild";
-      to = "    - If flake input is missing → update flake.nix first, ask the human to `git add flake.nix`, then rebuild";
+      to = "    - If flake input is missing → update flake.nix, `git add flake.nix` on the feature branch, then rebuild";
       why = "O26c. Third site. Left untranslated it is the same trap as O26, on the one file whose absence from the index breaks evaluation outright.";
     }
     {
       skill = "autoresearch";
       file = "SKILL.md";
       from = "2. `git checkout -b autoresearch/<goal>-<date>`";
-      to = "2. Ask the human to run `git checkout -b autoresearch/<goal>-<date>` and to say when it is done — `.git` is read-only here, you cannot cut the branch yourself. Do not start iterating before they confirm.";
+      to = "2. Run `git checkout -b autoresearch/<goal>-<date>`, then verify HEAD moved off main/master before iterating.";
       why = "O24b. Same defect as O7 and O24, third site. A loop that believes it is on its own branch while it is on the caller's writes every experiment straight onto whatever was checked out, and the discard path below then reverts the caller's work.";
     }
     {
       skill = "autoresearch";
       file = "SKILL.md";
       from = "- On keep: `git add -A && git commit`. On discard: `git checkout -- . && git clean -fd`";
-      to = "- On keep: print the `git add -A && git commit` for the human to run — writes to `.git` are refused here — and wait for confirmation before the next iteration. On discard: `git diff --binary | git apply -R && git clean -fd`, which you CAN run: `git apply` without `--index` writes only the worktree. Do NOT use `git checkout -- .` or `git restore --worktree` here — both take `.git/index.lock` and die, leaving the rejected experiment in place.";
-      why = "O24c. The keep path writes to `.git` and is refused; the discard path has to be rewritten, not merely kept. MEASURED on a throwaway repo with `.git` made read-only, three arms: `git checkout -- . && git clean -fd` → `fatal: Unable to create .git/index.lock`, exit 128, the modified file UNCHANGED and the untracked one still there (the `&&` also stops the clean); `git restore --worktree .` → identical failure; `git diff --binary | git apply -R && git clean -fd` → exit 0, file back to base, untracked removed. The first version of this override asserted that `git checkout -- .` touches only the worktree — it does not, it updates the index — and independent review caught it. Getting this wrong is worse than leaving it untranslated: a loop that believes it reset itself starts every later iteration from a dirty tree and attributes the mess to its own change.";
+      to = "- On keep: `git add -A`; commit only when explicitly requested in user prose. On discard: `git diff --binary | git apply -R && git clean -fd`.";
+      why = "O24c. `git-workspace` permits staging and worktree reset on the experiment feature branch. Commit remains conditional on explicit user prose; discard stays local.";
     }
     {
       skill = "apex";
@@ -1297,26 +1297,18 @@ let
 
         Use `gh pr create` with:'';
       to = ''
-        ## Git Operations — HAND THEM TO THE HUMAN, do not run them
+        ## Git Operations
 
-        `.git` is read-only in this sandbox and approvals are off, so `git add`,
-        `git commit` and `git push` all fail here. Running them and reading the
-        failure as done is the exact trap step-00b names for `git checkout -b`.
-
-        PRINT the exact commands, then STOP and wait:
-
-        1. **Stage**: `git add` the modified/created files, named explicitly
+        1. **Stage**: `git add` modified/created files, named explicitly
         2. **Commit**: conventional format — `feat: {description}`,
-           `fix: {description}`; a body listing key changes when the diff is large
+           `fix: {description}`; only after explicit user request
         3. **Push**: `git push -u origin {branch-name}`
-
-        Resume only once the human says it is done, and CONFIRM it yourself with
-        `git log -1 --oneline` before claiming the run shipped.
+           only after explicit user request
 
         ## Create Pull Request
 
-        Ask the human to run it and to paste back the URL. `gh pr create` with:'';
-      why = "O24. Found by independent review of the real diff. The step ordered four write commands the host refuses: AGENTS.md states `.git` is read-only in this sandbox and forbids add/commit/push unless asked, and `approval_policy = \"never\"` removes any escalation path. So `/apex -pr` would run this step, be refused, and the run would report itself shipped with no commit and no PR — an inert step, the failure mode O7 already fixes for the branch step. The confirmation by `git log -1` is what makes it non-inert: without it the agent has no way to tell a done hand-off from an ignored one.";
+        Run `gh pr create` only when explicitly requested. Use:'';
+      why = "O24. `git-workspace` permits local staging and authorized commit operations on feature branches. The translation keeps commit, push, and PR creation conditional on explicit user prose; network availability remains a separate runtime constraint.";
     }
     {
       skill = "scrapling";

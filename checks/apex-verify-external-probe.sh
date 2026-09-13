@@ -28,7 +28,9 @@
 
 set -euo pipefail
 
-SUT="${1:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/home/claude-code/scripts/apex-verify-external.sh}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SUT="${1:-$REPO_ROOT/home/claude-code/scripts/apex-verify-external.sh}"
+BASH_BIN="$(command -v bash)"
 
 [ -f "$SUT" ] && [ -r "$SUT" ] || {
   echo "probe: script under test not found or not readable: $SUT" >&2
@@ -90,8 +92,84 @@ STUB_DIR="$WORK/stub"
 NOCODEX_DIR="$WORK/nostub"
 mkdir -p "$STUB_DIR" "$NOCODEX_DIR"
 
+# A PATH shim cannot fault the installed wrapper: writeShellApplication pins its
+# runtime PATH before this source starts. Bash reads BASH_ENV before that
+# preamble, so a shell function survives both source and packaged execution.
+# The targeted producer runs normally first, then returns a distinct failure;
+# this proves the wrapper checks producer status even after valid output exists.
+FAULT_BASH_ENV="$WORK/fault-producer.bash"
+cat > "$FAULT_BASH_ENV" <<'GIT_STUB'
+git() {
+  local subcommand="" arg status
+  for arg in "$@"; do
+    case "$arg" in
+      ls-tree | cat-file) subcommand="$arg"; break ;;
+    esac
+  done
+  command git "$@"
+  status=$?
+  case "${GIT_FAULT_MODE:-}:$subcommand" in
+    ls-tree:ls-tree)
+      printf 'called\n' > "${GIT_FAULT_MARKER:?}"
+      return 86
+      ;;
+    cat-file:cat-file)
+      printf 'called\n' > "${GIT_FAULT_MARKER:?}"
+      return 87
+      ;;
+  esac
+  return "$status"
+}
+
+mkdir() {
+  command mkdir "$@"
+  local status=$?
+  if [ "${SNAPSHOT_FAULT_MODE:-}" = mkdir ]; then
+    printf 'called\n' > "${SNAPSHOT_FAULT_MARKER:?}"
+    return 88
+  fi
+  return "$status"
+}
+
+find() {
+  command find "$@"
+  local status=$?
+  if [ "${SNAPSHOT_FAULT_MODE:-}" = find ]; then
+    printf 'called\n' > "${SNAPSHOT_FAULT_MARKER:?}"
+    return 89
+  fi
+  return "$status"
+}
+
+cp() {
+  command cp "$@"
+  local status=$?
+  if [ "${SNAPSHOT_FAULT_MODE:-}" = cp ]; then
+    printf 'called\n' > "${SNAPSHOT_FAULT_MARKER:?}"
+    return 90
+  fi
+  return "$status"
+}
+
+rm() {
+  command rm "$@"
+  local status=$? arg
+  if [ "${SNAPSHOT_FAULT_MODE:-}" = rm ]; then
+    for arg in "$@"; do
+      case "$arg" in
+        */repo | */repo/*)
+          printf 'called\n' > "${SNAPSHOT_FAULT_MARKER:?}"
+          return 91
+          ;;
+      esac
+    done
+  fi
+  return "$status"
+}
+GIT_STUB
+
 cat > "$STUB_DIR/codex" <<'STUB'
-#!/usr/bin/env bash
+#!/bin/bash
 # Stand-in for the Codex CLI. Records argv and the brief, then plays the
 # scenario named by $STUB_MODE. Never touches the network.
 if [ "${1:-}" = "--version" ]; then
@@ -102,13 +180,90 @@ printf '%s\n' "$@" > "$STUB_ARGV"
 printf 'call\n' >> "$STUB_CALLS"
 out=""
 prev=""
+cd_path=""
 for a in "$@"; do
   case "$prev" in
     -o) out="$a" ;;
+    --cd) cd_path="$a" ;;
   esac
   prev="$a"
 done
 cat > "$STUB_STDIN"
+if [ -f "$cd_path/tracked.txt" ] && grep -q 'beta-TRACKED-MARKER' "$cd_path/tracked.txt"; then
+  : > "${STUB_READ_MARKER:?}"
+fi
+if [ -f "$cd_path/untracked-only.txt" ] && grep -q 'UNTRACKED-ONLY-MARKER' "$cd_path/untracked-only.txt"; then
+  : > "${STUB_UNTRACKED_ONLY_MARKER:?}"
+fi
+if [ -f "$cd_path/odd
+parent/untracked.txt" ] && grep -q 'UNTRACKED-PARENT-NEWLINE-MARKER' "$cd_path/odd
+parent/untracked.txt"; then
+  : > "${STUB_UNTRACKED_PARENT_MARKER:?}"
+fi
+if [ -e "$cd_path/.claude/output/withheld.md" ]; then
+  : > "${STUB_WITHHELD_MARKER:?}"
+fi
+if [ -e "$cd_path/nested/.claude/output" ]; then
+  : > "${STUB_WITHHELD_MARKER:?}"
+fi
+if [ -e "$cd_path/api-token.txt" ] || [ -e "$cd_path/outside-link.txt" ] \
+  || [ -e "$cd_path/secrets/passwords.json" ] || [ -e "$cd_path/.envrc" ] \
+  || [ -e "$cd_path/keys/config.json" ]; then
+  : > "${STUB_WITHHELD_MARKER:?}"
+fi
+# Names every protected path still readable from --cd, one per line. A bare
+# marker would only say "something leaked"; the scrub filters are a list, and a
+# failure has to say WHICH entry of that list stopped working.
+if [ -n "${STUB_SURVIVORS:-}" ]; then
+  : > "$STUB_SURVIVORS"
+  for p in \
+    .git .env .env-private .env-private/config.json .ENV-UPPER .Env-Dir \
+    .SSH .Aws .GnUpG mixed/Secrets files/.ssh files/.aws files/.gnupg files/secrets \
+    client-CeRt.pem certificates Mixed-ToKeN.txt ToKeNs key-material files/KEY; do
+    [ -e "$cd_path/$p" ] && printf '%s\n' "$p" >> "$STUB_SURVIVORS"
+  done
+fi
+if [ -n "${STUB_SNAPSHOT_EXPECTED:-}" ]; then
+  : > "${STUB_SNAPSHOT_FAILURE:?}"
+  (cd "$STUB_SNAPSHOT_EXPECTED" && find . -mindepth 1 -print0 | sort -z) > "$STUB_SNAPSHOT_FAILURE.expected-tree"
+  (cd "$cd_path" && find . -mindepth 1 -print0 | sort -z) > "$STUB_SNAPSHOT_FAILURE.actual-tree"
+  cmp -s "$STUB_SNAPSHOT_FAILURE.expected-tree" "$STUB_SNAPSHOT_FAILURE.actual-tree" \
+    || printf 'tree: missing or unexpected entries\n' >> "$STUB_SNAPSHOT_FAILURE"
+  while IFS= read -r -d '' expected; do
+    rel="${expected#"$STUB_SNAPSHOT_EXPECTED/"}"
+    actual="$cd_path/$rel"
+    if [ -L "$expected" ]; then
+      if [ ! -L "$actual" ]; then
+        printf '%s: expected symlink\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+        continue
+      fi
+      expected_target="$(readlink "$expected" && printf .)" || {
+        printf '%s: expected readlink failed\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+        continue
+      }
+      actual_target="$(readlink "$actual" && printf .)" || {
+        printf '%s: actual readlink failed\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+        continue
+      }
+      [ "$actual_target" = "$expected_target" ] \
+        || printf '%s: symlink target bytes differ\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+    elif [ -f "$expected" ]; then
+      if [ ! -f "$actual" ] || [ -L "$actual" ]; then
+        printf '%s: expected regular file\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+        continue
+      fi
+      cmp -s "$expected" "$actual" \
+        || printf '%s: regular file bytes differ\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+      if [ -x "$expected" ] && [ ! -x "$actual" ]; then
+        printf '%s: executable mode lost\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+      elif [ ! -x "$expected" ] && [ -x "$actual" ]; then
+        printf '%s: unexpected executable mode\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+      fi
+    elif [ -d "$expected" ] && [ ! -d "$actual" ]; then
+      printf '%s: expected directory\n' "$rel" >> "$STUB_SNAPSHOT_FAILURE"
+    fi
+  done < <(find "$STUB_SNAPSHOT_EXPECTED" -mindepth 1 -print0)
+fi
 verdict_pass='{"verdict":"PASS","summary":"no defects found","findings":[]}'
 case "${STUB_MODE:-pass}" in
   pass)
@@ -223,16 +378,64 @@ git_q() { git -c user.email=probe@local -c user.name=probe -c commit.gpgsign=fal
 # of those otherwise, and it is correct today.
 FIX_DIRTY="$WORK/fix-dirty"
 mkdir -p "$FIX_DIRTY"
+printf 'OUTSIDE-SECRET-MARKER\n' > "$WORK/outside-secret.txt"
 ( cd "$FIX_DIRTY"
   git_q -c init.defaultBranch=master init -q .
   printf '.claude/\n' >> .git/info/exclude
   printf 'alpha\n' > tracked.txt
   git_q add tracked.txt
   git_q commit -qm base
+  mkdir -p .claude/output
+  printf 'WITHHELD-RUN-NOTE\n' > .claude/output/withheld.md
+  git_q add -f .claude/output/withheld.md
+  git_q commit -qm 'fixture: withheld run note'
+  printf 'TRACKED-TOKEN-MARKER\n' > api-token.txt
+  git_q add -f api-token.txt
+  git_q commit -qm 'fixture: token file'
+  mkdir -p secrets keys nested/.claude .SSH .Aws .GnUpG mixed/Secrets \
+    files certificates ToKeNs key-material .Env-Dir
+  printf 'TRACKED-SECRETS-DIR-MARKER\n' > secrets/passwords.json
+  printf 'TRACKED-KEY-DIR-MARKER\n' > keys/config.json
+  printf 'TRACKED-ENVRC-MARKER\n' > .envrc
+  # A tracked DIRECTORY whose name matches `.env*` and whose contents match no
+  # other filter at all. This is the reported case: `config.json` is not a
+  # token, a key, a cert or a secret by name, so nothing but the directory
+  # prune can keep it out of the snapshot.
+  mkdir -p .env-private
+  printf 'TRACKED-ENVDIR-MARKER\n' > .env-private/config.json
+  printf 'TRACKED-ENVFILE-MARKER\n' > .env
+  printf 'TRACKED-UPPER-ENVFILE-MARKER\n' > .ENV-UPPER
+  printf 'TRACKED-MIXED-ENVDIR-MARKER\n' > .Env-Dir/config.json
+  printf 'TRACKED-SSH-DIR-MARKER\n' > .SSH/config
+  printf 'TRACKED-AWS-DIR-MARKER\n' > .Aws/config
+  printf 'TRACKED-GNUPG-DIR-MARKER\n' > .GnUpG/pubring
+  printf 'TRACKED-SECRETS-UPPER-DIR-MARKER\n' > mixed/Secrets/passwords.json
+  printf 'TRACKED-SSH-FILE-MARKER\n' > files/.ssh
+  printf 'TRACKED-AWS-FILE-MARKER\n' > files/.aws
+  printf 'TRACKED-GNUPG-FILE-MARKER\n' > files/.gnupg
+  printf 'TRACKED-SECRETS-FILE-MARKER\n' > files/secrets
+  printf 'TRACKED-CERT-FILE-MARKER\n' > client-CeRt.pem
+  printf 'TRACKED-CERT-DIR-MARKER\n' > certificates/public.txt
+  printf 'TRACKED-TOKEN-FILE-MARKER\n' > Mixed-ToKeN.txt
+  printf 'TRACKED-TOKEN-DIR-MARKER\n' > ToKeNs/public.txt
+  printf 'TRACKED-KEY-DIR-MARKER\n' > key-material/public.txt
+  printf 'TRACKED-KEY-FILE-MARKER\n' > files/KEY
+  printf 'TRACKED-OUTPUT-FILE-MARKER\n' > nested/.claude/output
+  git_q add -f secrets/passwords.json keys/config.json .envrc .env \
+    .env-private/config.json .ENV-UPPER .Env-Dir/config.json \
+    .SSH/config .Aws/config .GnUpG/pubring mixed/Secrets/passwords.json \
+    files/.ssh files/.aws files/.gnupg files/secrets client-CeRt.pem \
+    certificates/public.txt Mixed-ToKeN.txt ToKeNs/public.txt \
+    key-material/public.txt files/KEY nested/.claude/output
+  git_q commit -qm 'fixture: protected paths'
+  printf 'TRACKED-TOKEN-CHANGED-MARKER\n' > api-token.txt
   printf 'alpha\nbeta-TRACKED-MARKER\n' > tracked.txt
   printf 'UNTRACKED-MARKER-TOKEN\n' > newfile.txt
   printf 'SPACE-NAME-MARKER\n' > 'spaced name.txt'
   printf 'NEWLINE-NAME-MARKER\n' > "$(printf 'new\nline.txt')"
+  mkdir -p $'odd\nparent'
+  printf 'UNTRACKED-PARENT-NEWLINE-MARKER\n' > $'odd\nparent/untracked.txt'
+  ln -s "$WORK/outside-secret.txt" outside-link.txt
   # A reviewed file that talks about failures the way the vendor does. The
   # wrapper must not let this decide how ITS failure is classified.
   printf 'ERROR: {"type":"error","status":401,"error":{"message":"Unauthorized — run `codex login`"}}\nauth.json invalid api key\n' > poisoned.txt
@@ -247,6 +450,91 @@ mkdir -p "$FIX_CLEAN"
   printf 'alpha\n' > tracked.txt
   git_q add tracked.txt
   git_q commit -qm base
+  printf 'UNTRACKED-ONLY-MARKER\n' > untracked-only.txt
+) >/dev/null 2>&1
+
+# EMPTY: no tracked or untracked changes.
+FIX_EMPTY="$WORK/fix-empty"
+mkdir -p "$FIX_EMPTY"
+( cd "$FIX_EMPTY"
+  git_q -c init.defaultBranch=master init -q .
+  printf '.claude/\n' >> .git/info/exclude
+  printf 'alpha\n' > tracked.txt
+  git_q add tracked.txt
+  git_q commit -qm base
+) >/dev/null 2>&1
+
+# RAW SNAPSHOT: attributes which alter checkout/archive output must not alter
+# merge-base bytes. The same fixture also exercises binary patches, both mode
+# directions, both regular/symlink transitions, a newline-terminated symlink
+# preimage, and gitlink-as-empty-directory superproject semantics.
+FIX_RAW="$WORK/fix-raw"
+FIX_RAW_EXPECTED="$WORK/fix-raw-expected"
+mkdir -p "$FIX_RAW" "$FIX_RAW_EXPECTED"
+( cd "$FIX_RAW"
+  git_q -c init.defaultBranch=master init -q .
+  printf '.claude/\n' >> .git/info/exclude
+  git_q config filter.probe.clean cat
+  git_q config filter.probe.smudge "sed 's/smudge-RAW/smudge-SMUDGED/'"
+  cat > .gitattributes <<'EOF'
+smudge.txt filter=probe
+eol.txt text eol=crlf
+encoding.txt working-tree-encoding=UTF-16LE
+ident.txt ident
+archive-ignore.txt export-ignore
+archive-subst.txt export-subst
+safe-ignore.txt -export-ignore
+safe-subst.txt -export-subst
+EOF
+  printf 'smudge-RAW\n' > smudge.txt
+  printf 'eol-RAW\r\n' > eol.txt
+  printf 'encoding-RAW\n' | /usr/bin/iconv -f UTF-8 -t UTF-16LE > encoding.txt
+  printf 'ident-$Id$\n' > ident.txt
+  printf 'archive-ignore-RAW\n' > archive-ignore.txt
+  printf 'archive-subst-$Format:%%H$\n' > archive-subst.txt
+  printf 'safe-ignore-RAW\n' > safe-ignore.txt
+  printf 'safe-subst-RAW\n' > safe-subst.txt
+  printf '\000binary-base\377\n' > binary.dat
+  printf 'mode-down\n' > mode-down.sh
+  printf 'mode-up\n' > mode-up.sh
+  printf 'regular-base\n' > file-to-link
+  ln -s $'base-target\n' link-to-file
+  chmod +x mode-down.sh
+  chmod -x mode-up.sh
+  git_q add .gitattributes smudge.txt eol.txt encoding.txt ident.txt \
+    archive-ignore.txt archive-subst.txt safe-ignore.txt safe-subst.txt \
+    binary.dat mode-down.sh mode-up.sh file-to-link link-to-file
+  git_q commit -qm 'fixture: raw base'
+  gitlink_oid="$(git_q rev-parse HEAD)"
+  git_q update-index --add --cacheinfo "160000,$gitlink_oid,vendor/sub"
+  git_q commit -qm 'fixture: gitlink'
+  mkdir -p vendor/sub
+  newline_parent=$'tracked\nparent'
+  mkdir -p "$newline_parent" "$FIX_RAW_EXPECTED/$newline_parent"
+  printf 'TRACKED-PARENT-NEWLINE-MARKER\n' > "$newline_parent/file.txt"
+  git_q add "$newline_parent/file.txt"
+  git_q commit -qm 'fixture: newline parent'
+
+  for file in .gitattributes smudge.txt eol.txt encoding.txt ident.txt archive-ignore.txt \
+    archive-subst.txt safe-ignore.txt safe-subst.txt; do
+    git_q cat-file blob "master:$file" > "$FIX_RAW_EXPECTED/$file"
+  done
+  git_q cat-file blob "master:$newline_parent/file.txt" > "$FIX_RAW_EXPECTED/$newline_parent/file.txt"
+  printf '\000binary-current\376\375\n' > binary.dat
+  printf '\000binary-current\376\375\n' > "$FIX_RAW_EXPECTED/binary.dat"
+  chmod -x mode-down.sh
+  chmod +x mode-up.sh
+  printf 'mode-down\n' > "$FIX_RAW_EXPECTED/mode-down.sh"
+  printf 'mode-up\n' > "$FIX_RAW_EXPECTED/mode-up.sh"
+  chmod -x "$FIX_RAW_EXPECTED/mode-down.sh"
+  chmod +x "$FIX_RAW_EXPECTED/mode-up.sh"
+  rm file-to-link link-to-file
+  ln -s $'current-target\n' file-to-link
+  printf 'regular-current\n' > link-to-file
+  printf 'regular-current\n' > "$FIX_RAW_EXPECTED/link-to-file"
+  mkdir -p "$FIX_RAW_EXPECTED/vendor/sub"
+  find "$FIX_RAW_EXPECTED" -type f -exec chmod 0644 {} +
+  chmod 0755 "$FIX_RAW_EXPECTED/mode-up.sh"
 ) >/dev/null 2>&1
 
 # MAIN-ONLY: no `master`, so the base fallback must land on `main`.
@@ -284,7 +572,6 @@ ok_case() { # ok_case <label> <note>
   PASS=$((PASS+1))
   printf 'ok    %-26s %s\n' "$1" "$2"
 }
-
 is_informational() { [[ "$INFORMATIONAL" == *" $1 "* ]]; }
 
 # The envelope always lives under the reviewed repository's own output root,
@@ -297,21 +584,38 @@ run_wrapper() { # run_wrapper <label> <mode> <version> <repo> <use-stub 1|0> -- 
   CASE_OUT="$(case_out_for "$repo" "$label")"
   rm -f "$CASE_OUT"
   local argv="$WORK/argv-$label.txt" calls="$WORK/calls-$label.txt"
-  rm -f "$argv" "$calls"
+  rm -f "$argv" "$calls" "$WORK/survivors-$label.txt" \
+    "$WORK/snapshot-$label.failure" "$WORK/snapshot-$label.failure.expected-tree" \
+    "$WORK/snapshot-$label.failure.actual-tree" "$WORK/git-fault-$label.marker" \
+    "$WORK/snapshot-fault-$label.marker" "$WORK/untracked-only-$label.marker" \
+    "$WORK/untracked-parent-$label.marker"
   : > "$calls"
   LAST_ARGV="$argv"
   local pathspec="$BASE_PATH"
   [ "$usestub" = "1" ] && pathspec="$STUB_DIR:$BASE_PATH"
   [ "$usestub" = "0" ] && pathspec="$NOCODEX_DIR:$BASE_PATH"
+  [ "${CASE_RUNTIME_PATH_CLEAN:-0}" = "1" ] && pathspec="$STUB_DIR"
   set +e
   CASE_STDOUT="$(
     cd "$repo" &&
     env -u APEX_CODEX_MODEL \
       PATH="$pathspec" \
+      BASH_ENV="$FAULT_BASH_ENV" \
+      GIT_FAULT_MODE="${CASE_GIT_FAULT_MODE:-}" \
+      GIT_FAULT_MARKER="$WORK/git-fault-$label.marker" \
+      SNAPSHOT_FAULT_MODE="${CASE_SNAPSHOT_FAULT_MODE:-}" \
+      SNAPSHOT_FAULT_MARKER="$WORK/snapshot-fault-$label.marker" \
       TMPDIR="${CASE_TMPDIR:-${TMPDIR:-/tmp}}" \
       STUB_MODE="$mode" STUB_VERSION="$version" \
       STUB_ARGV="$argv" STUB_CALLS="$calls" STUB_STDIN="$WORK/stdin-$label.txt" \
-      bash -euo pipefail "$SUT" "$@" 2>"$WORK/stderr-$label.txt"
+      STUB_READ_MARKER="$WORK/read-$label.marker" \
+      STUB_UNTRACKED_ONLY_MARKER="$WORK/untracked-only-$label.marker" \
+      STUB_UNTRACKED_PARENT_MARKER="$WORK/untracked-parent-$label.marker" \
+      STUB_WITHHELD_MARKER="$WORK/withheld-$label.marker" \
+      STUB_SURVIVORS="$WORK/survivors-$label.txt" \
+      STUB_SNAPSHOT_EXPECTED="${CASE_SNAPSHOT_EXPECTED:-}" \
+      STUB_SNAPSHOT_FAILURE="$WORK/snapshot-$label.failure" \
+      "$BASH_BIN" -euo pipefail "$SUT" "$@" 2>"$WORK/stderr-$label.txt"
   )"
   CASE_STATUS=$?
   set -e
@@ -361,6 +665,13 @@ assert_case() {
 echo "=== apex-verify-external probe (stub codex; the real binary is unreachable) ==="
 
 DIRTY_OUT="$FIX_DIRTY/.claude/output/apex"
+
+if sed -n '/runtimeInputs = \[/,/^[[:space:]]*\];/p' "$REPO_ROOT/home/claude-code/apex-verify-external.nix" \
+  | grep -qE '^[[:space:]]+pkgs\.findutils[[:space:]]*$'; then
+  ok_case runtime-inputs-declared "findutils pinned for packaged scrub"
+else
+  fail_case runtime-inputs-declared "pkgs.findutils absent from runtimeInputs"
+fi
 
 # --- verdict paths ------------------------------------------------------------
 run_wrapper pass pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" pass)"
@@ -453,7 +764,7 @@ assert_case unparseable 7 'reason=unparseable' '.verdict == "BLOCKED" and .reaso
 run_wrapper oversize pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --max-diff-bytes 5 --out "$(case_out_for "$FIX_DIRTY" oversize)"
 assert_case oversize 8 'reason=input' '.verdict == "BLOCKED" and .reason == "input"' 0
 
-run_wrapper empty-diff pass 0.153.1 "$FIX_CLEAN" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_CLEAN" empty-diff)"
+run_wrapper empty-diff pass 0.153.1 "$FIX_EMPTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_EMPTY" empty-diff)"
 assert_case empty-diff 8 'reason=input' '.verdict == "BLOCKED" and .reason == "input"' 0
 
 run_wrapper acs-missing pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS_MISSING" --base master --out "$(case_out_for "$FIX_DIRTY" acs-missing)"
@@ -466,6 +777,48 @@ assert_case acs-empty 8 'reason=input' '.verdict == "BLOCKED" and .reason == "in
 # reviewer would be told why the author believes the change is right.
 run_wrapper acs-plan pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS_PLAN" --base master --out "$(case_out_for "$FIX_DIRTY" acs-plan)"
 assert_case acs-plan 8 'reason=input' '.verdict == "BLOCKED" and .reason == "input"' 0
+
+CASE_SNAPSHOT_EXPECTED="$FIX_RAW_EXPECTED"
+run_wrapper snapshot-raw-bytes pass 0.153.1 "$FIX_RAW" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_RAW" snapshot-raw-bytes)"
+raw_why=""
+[ "$CASE_STATUS" = 0 ] || raw_why="exit: expected 0, got $CASE_STATUS"
+[ -z "$raw_why" ] && [ "$CASE_CALLS" != 1 ] && raw_why="codex calls: expected 1, got $CASE_CALLS"
+[ -z "$raw_why" ] && [ ! -f "$WORK/snapshot-snapshot-raw-bytes.failure" ] && raw_why="stub wrote no comparison result"
+if [ -z "$raw_why" ] && [ -s "$WORK/snapshot-snapshot-raw-bytes.failure" ]; then
+  raw_why="snapshot differs from expected bytes: $(tr '\n' '|' < "$WORK/snapshot-snapshot-raw-bytes.failure")"
+fi
+if [ -n "$raw_why" ]; then fail_case snapshot-raw-bytes "$raw_why"; else ok_case snapshot-raw-bytes "raw attributes, binary, modes, symlinks, gitlink"; fi
+unset CASE_SNAPSHOT_EXPECTED
+
+for fault in ls-tree cat-file; do
+  CASE_GIT_FAULT_MODE="$fault"
+  run_wrapper "snapshot-$fault-failure" pass 0.153.1 "$FIX_RAW" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_RAW" "snapshot-$fault-failure")"
+  fault_why=""
+  [ -f "$WORK/git-fault-snapshot-$fault-failure.marker" ] || fault_why="BASH_ENV git function was not invoked"
+  [ -z "$fault_why" ] && [ "$CASE_STATUS" != 8 ] && fault_why="exit: expected 8, got $CASE_STATUS"
+  [ -z "$fault_why" ] && [ "$CASE_CALLS" != 0 ] && fault_why="codex calls: expected 0, got $CASE_CALLS"
+  if [ -z "$fault_why" ] && ! jq -e '.verdict == "BLOCKED" and .reason == "input"' "$CASE_OUT" >/dev/null 2>&1; then
+    fault_why="missing BLOCKED input envelope"
+  fi
+  if [ -n "$fault_why" ]; then fail_case "snapshot-$fault-failure" "$fault_why"; else ok_case "snapshot-$fault-failure" "injected failure, exit 8, 0 calls"; fi
+  unset CASE_GIT_FAULT_MODE
+done
+
+for fault in mkdir find cp rm; do
+  fault_repo="$FIX_RAW"
+  case "$fault" in cp | rm) fault_repo="$FIX_DIRTY" ;; esac
+  CASE_SNAPSHOT_FAULT_MODE="$fault"
+  run_wrapper "snapshot-$fault-failure" pass 0.153.1 "$fault_repo" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$fault_repo" "snapshot-$fault-failure")"
+  fault_why=""
+  [ -f "$WORK/snapshot-fault-snapshot-$fault-failure.marker" ] || fault_why="BASH_ENV $fault function was not invoked"
+  [ -z "$fault_why" ] && [ "$CASE_STATUS" != 8 ] && fault_why="exit: expected 8, got $CASE_STATUS"
+  [ -z "$fault_why" ] && [ "$CASE_CALLS" != 0 ] && fault_why="codex calls: expected 0, got $CASE_CALLS"
+  if [ -z "$fault_why" ] && ! jq -e '.verdict == "BLOCKED" and .reason == "input"' "$CASE_OUT" >/dev/null 2>&1; then
+    fault_why="missing BLOCKED input envelope"
+  fi
+  if [ -n "$fault_why" ]; then fail_case "snapshot-$fault-failure" "$fault_why"; else ok_case "snapshot-$fault-failure" "injected failure, exit 8, 0 calls"; fi
+  unset CASE_SNAPSHOT_FAULT_MODE
+done
 
 # --- base fallback ------------------------------------------------------------
 # `master` was once hard-coded. A repository whose only sin is being called main
@@ -570,14 +923,45 @@ if [ -z "$secrets_why" ]; then
 fi
 if [ -n "$secrets_why" ]; then fail_case secrets "$secrets_why"; else ok_case secrets "credentials scrubbed before the envelope"; fi
 
+# --- the scrub prunes protected DIRECTORIES, not only protected files ---------
+#
+# `.env*` sat on the file filter alone, so a tracked `.env-private/` reached the
+# snapshot whole: the directory prune did not know the name, and nothing inside
+# it — `config.json` — matched any other filter either. The reviewer could read
+# every byte of it. The stub reports back which protected paths it can still
+# see from --cd, so a regression names the survivor instead of only denying it.
+run_wrapper snapshot-env pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" snapshot-env)"
+SURVIVORS="$WORK/survivors-snapshot-env.txt"
+envdir_why=""
+# `ls-files --error-unmatch` et non `-f` : la présence dans l'arbre de travail ne
+# dit pas que git les SUIT. Un `.env*` non suivi est filtré par un autre chemin
+# de code — la copie des non-suivis — donc le cas ne prouverait rien sur
+# l'élagage des répertoires, qui est ce qu'il existe pour tester.
+for protected in \
+  .env .env-private/config.json .ENV-UPPER .Env-Dir/config.json \
+  .SSH/config .Aws/config .GnUpG/pubring mixed/Secrets/passwords.json \
+  files/.ssh files/.aws files/.gnupg files/secrets client-CeRt.pem \
+  certificates/public.txt Mixed-ToKeN.txt ToKeNs/public.txt \
+  key-material/public.txt files/KEY; do
+  if ! git -C "$FIX_DIRTY" ls-files --error-unmatch -- "$protected" >/dev/null 2>&1; then
+    envdir_why="fixture path is not tracked: $protected"
+    break
+  fi
+done
+[ -z "$envdir_why" ] && [ "$CASE_CALLS" != "1" ] && envdir_why="codex calls: expected 1, got $CASE_CALLS — the snapshot was never inspected"
+[ -z "$envdir_why" ] && [ ! -f "$SURVIVORS" ] && envdir_why="the stub recorded no survivor list, so the assertion would be vacuous"
+if [ -z "$envdir_why" ] && [ -s "$SURVIVORS" ]; then
+  envdir_why="protected paths survived into the snapshot: $(tr '\n' ' ' < "$SURVIVORS")"
+fi
+if [ -n "$envdir_why" ]; then fail_case snapshot-env "$envdir_why"; else ok_case snapshot-env "full AC3 file/directory and case matrix pruned"; fi
+
 # --- argv: the subprocess is a verifier, not an actor -------------------------
 #
 # Presence-only assertions are not enough. `-s danger-full-access` appended
 # AFTER `-s read-only` contains the string `-s read-only` and would pass, while
 # the LAST -s is what the CLI honours. So: exactly one -s, and its value is
-# read-only. And `--cd` is the only thing standing between the external model
-# and read access to the whole repository, so its value is asserted, not just
-# its presence.
+# read-only. And `--cd` defines the reconstructed source perimeter, so its value
+# is asserted, not just its presence.
 argv_why=""
 if [ ! -s "$PASS_ARGV" ]; then
   argv_why="no argv recorded — the stub never ran"
@@ -586,16 +970,29 @@ else
   argv_line="$(tr '\n' ' ' < "$PASS_ARGV")"
 
   s_count=0; s_value=""; cd_seen=0; cd_value=""; skip_seen=0
+  project_doc_count=0; project_doc_value=""; strict_config_seen=0
   for ((i = 0; i < ${#ARGV_ARR[@]}; i++)); do
     case "${ARGV_ARR[i]}" in
       -s)   s_count=$((s_count + 1)); s_value="${ARGV_ARR[i+1]:-}" ;;
       --cd) cd_seen=1; cd_value="${ARGV_ARR[i+1]:-}" ;;
+      -c)
+        case "${ARGV_ARR[i+1]:-}" in
+          project_doc_max_bytes=*)
+            project_doc_count=$((project_doc_count + 1))
+            project_doc_value="${ARGV_ARR[i+1]#project_doc_max_bytes=}"
+            ;;
+        esac
+        ;;
+      --strict-config) strict_config_seen=1 ;;
       --skip-git-repo-check) skip_seen=1 ;;
     esac
   done
 
   [ "$s_count" = 1 ] || argv_why="expected exactly one -s, found $s_count; argv: $argv_line"
   [ -z "$argv_why" ] && [ "$s_value" != "read-only" ] && argv_why="the -s value is '$s_value', not read-only; argv: $argv_line"
+  [ -z "$argv_why" ] && [ "$project_doc_count" != 1 ] && argv_why="expected exactly one project_doc_max_bytes override, found $project_doc_count; argv: $argv_line"
+  [ -z "$argv_why" ] && [ "$project_doc_value" != 0 ] && argv_why="project_doc_max_bytes is '$project_doc_value', not 0; argv: $argv_line"
+  [ -z "$argv_why" ] && [ "$strict_config_seen" != 1 ] && argv_why="--strict-config missing, so a removed config key could fail open"
 
   if [ -z "$argv_why" ]; then
     for want in '--ignore-user-config ' '--output-schema ' '--ephemeral '; do
@@ -613,9 +1010,9 @@ else
     done
   fi
 
-  # THE READ PERIMETER. The brief already carries the diff and the criteria; the
-  # repository adds nothing but the rationale we are deliberately hiding. If
-  # --cd points at the repo, the reviewer can just open the design notes.
+# THE READ PERIMETER. Codex must receive code to inspect, but not the repository
+# metadata and run notes. The wrapper supplies a temporary reconstructed snapshot
+# and keeps the real repository path out of argv.
   if [ -z "$argv_why" ]; then
     [ "$cd_seen" = 1 ] || argv_why="no --cd in argv: $argv_line"
   fi
@@ -625,10 +1022,25 @@ else
     done
   fi
   if [ -z "$argv_why" ]; then
+    case "$cd_value" in
+      */repo) : ;;
+      *) argv_why="--cd is not the reconstructed source snapshot: $cd_value" ;;
+    esac
+  fi
+  if [ -z "$argv_why" ]; then
     [ "$skip_seen" = 1 ] || argv_why="no --skip-git-repo-check, so the CLI cannot start outside a repo: $argv_line"
   fi
+  if [ -z "$argv_why" ] && [ ! -e "$WORK/read-pass.marker" ]; then
+    argv_why="stub could not read tracked marker from reconstructed snapshot"
+  fi
+  if [ -z "$argv_why" ] && [ ! -e "$WORK/untracked-parent-pass.marker" ]; then
+    argv_why="stub could not read untracked file whose parent ends in a newline"
+  fi
+  if [ -z "$argv_why" ] && [ -e "$WORK/withheld-pass.marker" ]; then
+    argv_why="snapshot exposed withheld .claude/output metadata"
+  fi
 fi
-if [ -n "$argv_why" ]; then fail_case argv "$argv_why"; else ok_case argv "one -s read-only, --cd off-repo, no bypass"; fi
+if [ -n "$argv_why" ]; then fail_case argv "$argv_why"; else ok_case argv "one -s read-only, reconstructed snapshot, no bypass"; fi
 
 # --- informational modes ------------------------------------------------------
 # Both are named in the contract as printing their own content and no status
@@ -785,10 +1197,34 @@ else
   ok_case untracked-excluded "--no-untracked excludes it"
 fi
 
+# A repository with only included untracked changes must still reach Codex: the
+# tracked patch is empty, but the synthesized untracked diff is reviewable.
+run_wrapper untracked-only pass 0.153.1 "$FIX_CLEAN" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_CLEAN" untracked-only)"
+if [ "$CASE_STATUS" = 0 ] && [ "$CASE_CALLS" = 1 ] \
+  && [ -e "$WORK/untracked-only-untracked-only.marker" ] \
+  && jq -e '.verdict == "PASS"' "$CASE_OUT" >/dev/null 2>&1; then
+  ok_case untracked-only "empty tracked patch accepted; untracked source reviewed"
+else
+  fail_case untracked-only "only-untracked source was not read before the PASS verdict"
+fi
+
+case "$SUT" in
+  /etc/profiles/* | /nix/store/*)
+    CASE_RUNTIME_PATH_CLEAN=1
+    run_wrapper runtime-clean-path pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" runtime-clean-path)"
+    unset CASE_RUNTIME_PATH_CLEAN
+    assert_case runtime-clean-path 0 '^EXTERNAL-VERIFY PASS ' '.verdict == "PASS"' 1
+    ;;
+esac
+
 # --- the envelopes never contaminated the diff --------------------------------
 # If .git/info/exclude stopped hiding .claude/, every envelope written above
 # would become an untracked file and be fed back into the next review.
-if printf '%s\n' "$CASE_STDOUT" | grep -q '.claude/output/apex'; then
+# `grep` sur le FICHIER, pas sur son nom. La forme précédente pipait la VARIABLE
+# — un chemin sous $WORK — dans grep, donc le motif `.claude/output/apex` ne
+# pouvait jamais matcher et la branche verte gagnait toujours. Assertion verte
+# par construction, AC6 non prouvée.
+if grep -q '\.claude/output/apex' "$UNTRACKED_BRIEF"; then
   fail_case envelope-isolation "the harness's own envelopes appear in the reviewed diff"
 else
   ok_case envelope-isolation "envelopes excluded from the reviewed diff"

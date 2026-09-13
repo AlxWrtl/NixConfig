@@ -119,6 +119,14 @@ let
   # actually decide behaviour, never against prose around them.
   codexSrc = builtins.readFile ../home/codex.nix;
 
+  # --- the two copies of the block (C11) -----------------------------------
+  # `config-merge.sh` keeps its own hard-coded CANONICAL and refuses anything
+  # else, which is a deliberate allowlist: an argument arriving from elsewhere
+  # must not be able to install an arbitrary permissions profile. The cost is a
+  # second copy of the same string, and that copy FAILS OPEN — a mismatch warns
+  # and `exit 0`, so the activation reports nothing worth noticing.
+  mergeSrc = builtins.readFile ../home/codex/scripts/config-merge.sh;
+
   assertions = [
     {
       name = "C1 hooks.json: the generated JSON parses";
@@ -233,6 +241,13 @@ let
         && hasInfix "workspace_roots = { \"\${alxVaultPath}\" = true }" codexSrc
         && hasInfix "\".git/hooks\" = \"read\"" codexSrc;
       msg = "home/codex.nix no longer grants the vault as a workspace root, or lost the `.git/hooks` = read rule. Both halves are load-bearing and neither fails loudly on its own: without the root, Codex silently cannot write its session note and hands it back to a human — the asymmetry that left 8f5e724, 0d70c93 and fe9b527 with no note at all. Without the rule, the grant reaches the vault's OWN `.git/hooks`, and the vault is auto-committed by vault-snapshot, so a hook planted there executes outside this sandbox. The rule is written once for every root, which is why dropping it costs two repositories and not one";
+    }
+    {
+      name = "C11 permissions profile: config-merge.sh's CANONICAL carries the same grant";
+      ok =
+        hasInfix "workspace_roots = { \"/Users/alx/Vaults/AlxVault\" = true }" mergeSrc
+        && hasInfix "\".git/hooks\" = \"read\"" mergeSrc;
+      msg = "home/codex/scripts/config-merge.sh keeps its own hard-coded CANONICAL block and REFUSES any other, and the refusal is a warn plus `exit 0` — so the two copies drifting does not fail, it silently does nothing. Measured 2026-09-14: `workspace_roots` was added to home/codex.nix, `nix flake check` was green with 8 checks, `darwin-rebuild switch` succeeded, and the live ~/.codex/config.toml came out byte-identical to the one from before, the only trace being one warn line in forty lines of activation output. Edit either copy and you must edit both";
     }
   ];
 
@@ -405,7 +420,7 @@ let
     run_empty_path "$probe/m1.log" \
       ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/config.toml" \
         --permissions-profile git-workspace \
-        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
         default_permissions=git-workspace approval_policy=never
     assert_no_complaint "$probe/m1.log" "codex-config-merge"
     strip_owned "$probe/merge/config.toml" > "$probe/merge/outside.after"
@@ -429,7 +444,8 @@ let
        ! grep -Fq 'marker = "preserve-byte-for-byte"' "$probe/merge/config.toml" || \
        ! grep -Fq 'marker = "managed-boundary-preserved"' "$probe/merge/config.toml" || \
        [ "$(grep -Fc '[permissions.git-workspace]' "$probe/merge/config.toml")" -ne 1 ] || \
-       ! grep -Fq 'filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }' "$probe/merge/config.toml"; then
+       ! grep -Fq 'filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }' "$probe/merge/config.toml" || \
+       ! grep -Fq 'workspace_roots = { "/Users/alx/Vaults/AlxVault" = true }' "$probe/merge/config.toml"; then
       cat "$probe/m1.log" >&2
       pfail "codex-config-merge failed byte preservation or canonical profile reconciliation"
     fi
@@ -438,7 +454,7 @@ let
     run_empty_path "$probe/m2.log" \
       ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/config.toml" \
         --permissions-profile git-workspace \
-        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
         default_permissions=git-workspace approval_policy=never
     cmp -s "$probe/merge/once" "$probe/merge/config.toml" || pfail "codex-config-merge is not idempotent"
 
@@ -453,7 +469,7 @@ let
     run_empty_path "$probe/m3.log" \
       ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/ambiguous.toml" \
         --permissions-profile git-workspace \
-        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
         default_permissions=git-workspace approval_policy=never
     cmp -s "$probe/merge/ambiguous.orig" "$probe/merge/ambiguous.toml" || pfail "ambiguous owned profile did not fail closed"
 
@@ -468,7 +484,7 @@ let
     run_empty_path "$probe/m4.log" \
       ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/ambiguous-single.toml" \
         --permissions-profile git-workspace \
-        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
         default_permissions=git-workspace approval_policy=never
     cmp -s "$probe/merge/ambiguous-single.orig" "$probe/merge/ambiguous-single.toml" || pfail "single-quoted owned descendant did not fail closed"
 
@@ -483,7 +499,7 @@ let
     run_empty_path "$probe/m5.log" \
       ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/ambiguous-spaced.toml" \
         --permissions-profile git-workspace \
-        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
         default_permissions=git-workspace approval_policy=never
     cmp -s "$probe/merge/ambiguous-spaced.orig" "$probe/merge/ambiguous-spaced.toml" || pfail "whitespace-dotted owned descendant did not fail closed"
 
@@ -493,7 +509,7 @@ let
       run_empty_path "$probe/$label.log" \
         ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$fixture" \
           --permissions-profile git-workspace \
-          --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+          --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
           default_permissions=git-workspace approval_policy=never
       cmp -s "$fixture.orig" "$fixture" || pfail "$label semantic ambiguity did not fail closed"
     }

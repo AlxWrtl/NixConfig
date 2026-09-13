@@ -23,6 +23,7 @@
       pkgs.git
       pkgs.jq
       pkgs.coreutils
+      pkgs.findutils
       pkgs.gnugrep
       pkgs.gnused
     ];

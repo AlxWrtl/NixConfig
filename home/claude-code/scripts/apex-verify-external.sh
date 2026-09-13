@@ -534,41 +534,139 @@ fi
 # --- read-only source snapshot -----------------------------------------------
 # Reconstruct code at the reviewed state so Codex can inspect current files.
 SNAPSHOT="$WORK/repo"
-mkdir -p "$SNAPSHOT"
-
-# `git archive` HONORE `export-ignore` et `export-subst`. Un `.gitattributes`
-# qui en pose ferait donc silencieusement omettre des fichiers de l'instantané,
-# ou en réécrirait le contenu, et l'instantané cesserait de représenter la base
-# de fusion — puis `git apply` du patch suivi échouerait sur un fichier omis,
-# avec un message qui n'aurait rien à voir avec la cause.
-# Aucun n'est posé aujourd'hui (`git check-attr` : 0), donc le danger est LATENT.
-# On refuse bruyamment plutôt que de produire un instantané faux en silence :
-# c'est la panne que tout ce fichier existe pour ne pas avoir. Le jour où l'un
-# de ces attributs devient légitime ici, ce BLOCKED dira quoi réparer.
-if git -C "$REPO" ls-files -z -- . \
-  | xargs -0 -r git -C "$REPO" check-attr export-ignore export-subst -- 2>/dev/null \
-  | grep -qv ': unspecified$'; then
-  SUMMARY="a git attribute (export-ignore or export-subst) would alter the snapshot; the reviewed sources would not match $MERGE_BASE"
+if ! mkdir -p "$SNAPSHOT"; then
+  SUMMARY="could not create the source snapshot directory"
   emit "BLOCKED" "input" 8
 fi
 
-if ! git -C "$REPO" archive --format=tar "$MERGE_BASE" -- . ':(exclude).claude/output/**' | tar -xf - -C "$SNAPSHOT"; then
-  SUMMARY="could not create the read-only source snapshot from $MERGE_BASE"
+# Read Git objects directly. Checkout and archive commands transform blobs via
+# attributes (smudge, EOL, encoding, ident, export-ignore/export-subst), so they
+# cannot provide the byte-exact preimages required by the binary patch below.
+TREE_LIST="$WORK/merge-base-tree.z"
+tree_status=0
+git -C "$REPO" ls-tree -r -z --full-tree "$MERGE_BASE" >"$TREE_LIST" || tree_status=$?
+if [ "$tree_status" -ne 0 ]; then
+  SUMMARY="git ls-tree failed while reconstructing the source snapshot (status $tree_status)"
   emit "BLOCKED" "input" 8
 fi
+
+while IFS= read -r -d '' tree_record; do
+  entry_meta="${tree_record%%$'\t'*}"
+  entry_path="${tree_record#*$'\t'}"
+  entry_mode=""
+  entry_type=""
+  entry_oid=""
+  entry_extra=""
+  if [ "$entry_meta" = "$tree_record" ] \
+    || ! read -r entry_mode entry_type entry_oid entry_extra <<<"$entry_meta" \
+    || [ -n "$entry_extra" ]; then
+    SUMMARY="git ls-tree returned a malformed snapshot entry"
+    emit "BLOCKED" "input" 8
+  fi
+  case "$entry_path" in
+    "" | /* | . | .. | ./* | ../* | */./* | */../* | */. | */..)
+      SUMMARY="git ls-tree returned an unsafe snapshot path"
+      emit "BLOCKED" "input" 8
+      ;;
+  esac
+
+  entry_dest="$SNAPSHOT/$entry_path"
+  entry_parent_path="${entry_path%/*}"
+  if [ "$entry_parent_path" = "$entry_path" ]; then
+    entry_parent="$SNAPSHOT"
+  else
+    entry_parent="$SNAPSHOT/$entry_parent_path"
+  fi
+  if ! mkdir -p "$entry_parent"; then
+    SUMMARY="could not create a snapshot directory"
+    emit "BLOCKED" "input" 8
+  fi
+  if [ -e "$entry_dest" ] || [ -L "$entry_dest" ]; then
+    SUMMARY="git tree paths collide in the source snapshot"
+    emit "BLOCKED" "input" 8
+  fi
+
+  case "$entry_mode $entry_type" in
+    "100644 blob" | "100755 blob")
+      if ! git -C "$REPO" cat-file blob "$entry_oid" >"$entry_dest"; then
+        SUMMARY="git cat-file failed while reconstructing the source snapshot"
+        emit "BLOCKED" "input" 8
+      fi
+      if [ "$entry_mode" = "100755" ]; then
+        snapshot_mode=0755
+      else
+        snapshot_mode=0644
+      fi
+      if ! chmod "$snapshot_mode" "$entry_dest"; then
+        SUMMARY="could not set a file mode in the source snapshot"
+        emit "BLOCKED" "input" 8
+      fi
+      ;;
+    "120000 blob")
+      link_target=""
+      if ! link_target="$(git -C "$REPO" cat-file blob "$entry_oid" && printf '\001')"; then
+        SUMMARY="git cat-file failed while reconstructing a symlink preimage"
+        emit "BLOCKED" "input" 8
+      fi
+      case "$link_target" in
+        *$'\001') link_target="${link_target%$'\001'}" ;;
+        *)
+          SUMMARY="could not preserve a symlink target in the source snapshot"
+          emit "BLOCKED" "input" 8
+          ;;
+      esac
+      if ! ln -s -- "$link_target" "$entry_dest"; then
+        SUMMARY="could not create a symlink preimage in the source snapshot"
+        emit "BLOCKED" "input" 8
+      fi
+      ;;
+    "160000 commit")
+      if ! mkdir "$entry_dest"; then
+        SUMMARY="could not represent a gitlink in the source snapshot"
+        emit "BLOCKED" "input" 8
+      fi
+      ;;
+    *)
+      SUMMARY="git ls-tree returned unsupported mode/type: $entry_mode $entry_type"
+      emit "BLOCKED" "input" 8
+      ;;
+  esac
+done <"$TREE_LIST"
 
 scrub_snapshot() {
   # `.env*` est dans la liste des RÉPERTOIRES, pas seulement des fichiers : le
   # `find -type f` plus bas ne supprime `.env*` que sur des fichiers réguliers,
   # donc un répertoire suivi par git comme `.env-private/` survivait entier, et
   # aucun de ses descendants (`config.json`, …) ne matche les autres filtres.
-  # `-prune -exec rm -rf` emporte le sous-arbre, descendants compris.
+  # `-prune` liste la racine du sous-arbre; la boucle NUL qui suit l'emporte,
+  # descendants compris, tout en propageant un échec de `rm`.
   # Tous les motifs sont INSENSIBLES à la casse. Ils ne l'étaient pas : `secrets`
   # et `.env*` étaient sensibles quand token/key/cert ne l'étaient pas, donc
   # `Secrets/`, `.ENV` ou `SECRETS/x` passaient. Git conserve l'orthographe
   # suivie même sur un APFS insensible à la casse, donc le cas est réel.
-  find "$SNAPSHOT" -type d \( -ipath '*/.claude/output' -o -ipath '*/.ssh' -o -ipath '*/.aws' -o -ipath '*/.gnupg' -o -ipath '*/secrets' -o -iname '.env*' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -prune -exec rm -rf {} +
-  find "$SNAPSHOT" -type l -delete
+  scrub_dirs="$WORK/scrub-dirs.z"
+  if ! find "$SNAPSHOT" -type d \( -ipath '*/.git' -o -ipath '*/.claude/output' -o -ipath '*/.ssh' -o -ipath '*/.aws' -o -ipath '*/.gnupg' -o -ipath '*/secrets' -o -iname '.env*' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -prune -print0 >"$scrub_dirs"; then
+    SUMMARY="could not prune sensitive directories from the source snapshot"
+    emit "BLOCKED" "input" 8
+  fi
+  while IFS= read -r -d '' scrub_path; do
+    if ! rm -rf -- "$scrub_path"; then
+      SUMMARY="could not remove a sensitive directory from the source snapshot"
+      emit "BLOCKED" "input" 8
+    fi
+  done <"$scrub_dirs"
+
+  scrub_links="$WORK/scrub-links.z"
+  if ! find "$SNAPSHOT" -type l -print0 >"$scrub_links"; then
+    SUMMARY="could not remove symlinks from the source snapshot"
+    emit "BLOCKED" "input" 8
+  fi
+  while IFS= read -r -d '' scrub_path; do
+    if ! rm -f -- "$scrub_path"; then
+      SUMMARY="could not remove a symlink from the source snapshot"
+      emit "BLOCKED" "input" 8
+    fi
+  done <"$scrub_links"
   # MÊME jeu de noms que le filtre des répertoires ci-dessus, et c'est le point :
   # une liste présente d'un seul côté est un trou, quel que soit le côté. Le
   # `.env*` manquait aux RÉPERTOIRES, et `.ssh`/`.aws`/`.gnupg`/`secrets` /
@@ -576,13 +674,23 @@ scrub_snapshot() {
   # traversait donc l'instantané. Les deux trous ont été trouvés par une passe
   # externe, à un tour d'écart, parce que la première correction n'avait réparé
   # qu'un sens. Toute addition ici doit être faite DES DEUX CÔTÉS.
-  find "$SNAPSHOT" -type f \( -iname '.env*' -o -iname '.ssh' -o -iname '.aws' -o -iname '.gnupg' -o -iname 'secrets' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -delete
+  scrub_files="$WORK/scrub-files.z"
+  if ! find "$SNAPSHOT" -type f \( -ipath '*/.git' -o -ipath '*/.claude/output' -o -iname '.env*' -o -iname '.ssh' -o -iname '.aws' -o -iname '.gnupg' -o -iname 'secrets' -o -iname '*token*' -o -iname '*key*' -o -iname '*cert*' \) -print0 >"$scrub_files"; then
+    SUMMARY="could not remove sensitive files from the source snapshot"
+    emit "BLOCKED" "input" 8
+  fi
+  while IFS= read -r -d '' scrub_path; do
+    if ! rm -f -- "$scrub_path"; then
+      SUMMARY="could not remove a sensitive file from the source snapshot"
+      emit "BLOCKED" "input" 8
+    fi
+  done <"$scrub_files"
 }
 
 TRACKED_PATCH="$WORK/tracked.patch"
 tracked_status=0
 git_diff "$MERGE_BASE" --binary -- . ':!.claude/output/**' >"$TRACKED_PATCH" || tracked_status=$?
-if [ "$tracked_status" -gt 1 ] || { [ -s "$TRACKED_PATCH" ] && ! git -C "$SNAPSHOT" apply --binary "$TRACKED_PATCH"; }; then
+if [ "$tracked_status" -gt 1 ] || { [ -s "$TRACKED_PATCH" ] && ! git -C "$SNAPSHOT" apply --binary --whitespace=nowarn "$TRACKED_PATCH"; }; then
   SUMMARY="could not apply tracked changes to the read-only source snapshot"
   emit "BLOCKED" "input" 8
 fi
@@ -594,8 +702,20 @@ if [ "$INCLUDE_UNTRACKED" -eq 1 ] && [ -s "$UNTRACKED_LIST" ]; then
     esac
     [ -f "$REPO/$untracked" ] || continue
     [ -L "$REPO/$untracked" ] && continue
-    mkdir -p "$SNAPSHOT/$(dirname "$untracked")"
-    cp "$REPO/$untracked" "$SNAPSHOT/$untracked"
+    untracked_parent="${untracked%/*}"
+    if [ "$untracked_parent" = "$untracked" ]; then
+      untracked_dest_parent="$SNAPSHOT"
+    else
+      untracked_dest_parent="$SNAPSHOT/$untracked_parent"
+    fi
+    if ! mkdir -p "$untracked_dest_parent"; then
+      SUMMARY="could not create a directory for an untracked snapshot file"
+      emit "BLOCKED" "input" 8
+    fi
+    if ! cp "$REPO/$untracked" "$SNAPSHOT/$untracked"; then
+      SUMMARY="could not copy an untracked file into the source snapshot"
+      emit "BLOCKED" "input" 8
+    fi
   done <"$UNTRACKED_LIST"
 fi
 scrub_snapshot
@@ -909,6 +1029,8 @@ for model in "${CHAIN[@]}"; do
     --ephemeral
     --ignore-user-config
     --ignore-rules
+    --strict-config
+    -c project_doc_max_bytes=0
     --output-schema "$SCHEMA"
     -o "$LAST_OUT"
   )

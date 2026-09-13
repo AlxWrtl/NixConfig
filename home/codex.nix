@@ -15,10 +15,43 @@
 let
   codexDir = ".codex";
 
+  # The Obsidian vault, granted as a second workspace root so Codex can write
+  # its own session note instead of handing it to a human — the asymmetry that
+  # left three commits (8f5e724, 0d70c93, fe9b527) with no note at all.
+  #
+  # A ROOT, not a `filesystem` entry, and that is the whole design: the rules
+  # under `:workspace_roots` apply to EVERY effective root, so the vault
+  # inherits the `.git/hooks` = read line already written below instead of
+  # needing a second, unproven precedence rule beside it. One list, one place.
+  # The vault is itself a git repository (vault-snapshot auto-commits it), so
+  # the distinction is not academic: a hook planted in ITS `.git/hooks` would
+  # run outside this sandbox at the next auto-commit.
+  #
+  # Measured before the line was written, two arms on the same targets, a
+  # control arm each time, a throwaway vault under $HOME because $TMPDIR is
+  # writable by default and would have made the positive arm vacuous:
+  #
+  #                                    without grant   with grant
+  #   workspace control                ÉCRIT           ÉCRIT
+  #   vault/note.md                    refused         ÉCRIT     <- what it buys
+  #   vault/.git/probe                 refused         ÉCRIT     <- the trade
+  #   vault/.git/hooks/pre-commit      refused         refused   <- holds
+  #   anywhere else under $HOME        refused         refused   <- unchanged
+  #
+  # The trade named plainly: `.git` = write reaches the vault's git objects
+  # too, because the rule is per-root-set and not per-root. `.git/hooks` — the
+  # half that EXECUTES — stays out of reach, which is the half that matters.
+  alxVaultPath = "/Users/alx/Vaults/AlxVault";
+
   permissionsProfile = "git-workspace";
+  # One TOML section, inline tables only. A `[permissions.git-workspace.*]`
+  # sub-table would be a SECOND section header, and codex-config-merge replaces
+  # exactly one section by name — the sub-table would survive the strip and
+  # accumulate. Keeping it inline keeps the managed block singular.
   permissionsBlock = ''
     [permissions.git-workspace]
     extends = ":workspace"
+    workspace_roots = { "${alxVaultPath}" = true }
     filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }
   '';
 

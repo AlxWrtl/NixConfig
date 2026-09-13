@@ -10,7 +10,8 @@
   lib,
   configMergePkg,
   verifyTrustPkg,
-  sandboxMode,
+  permissionsProfile,
+  permissionsBlock,
   approvalPolicy,
   trustKeys,
 }:
@@ -95,11 +96,15 @@ in
 
   # config.toml is MERGED, never generated and never linked: Codex stores the
   # per-hook trust table inside that same file, and wiping it un-trusts every
-  # hook in silence. The script forces exactly one key, warns on any change,
+  # hook in silence. The script forces only owned roots and profile block,
   # writes its own .backup and restores it if validation fails.
   codexConfigMerge = lib.hm.dag.entryAfter [ "codexDirs" ] ''
     (
-      ${configMergePkg}/bin/codex-config-merge "sandbox_mode=${sandboxMode}" "approval_policy=${approvalPolicy}"
+      ${configMergePkg}/bin/codex-config-merge \
+        --permissions-profile "${permissionsProfile}" \
+        --permissions-block ${lib.escapeShellArg permissionsBlock} \
+        "default_permissions=${permissionsProfile}" \
+        "approval_policy=${approvalPolicy}"
     ) || true
   '';
 

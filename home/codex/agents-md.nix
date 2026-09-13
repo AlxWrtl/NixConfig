@@ -41,12 +41,12 @@ let
     {
       name = "Git (sandbox Codex)";
       body = ''
-        - Branch first. Never edit on main/master: a hook refuses it. You CANNOT
-          cut the branch yourself — `.git` is read-only in this sandbox by
-          design — so ask the human to run `git checkout -b <type>/<desc>` and
-          to say when it is done. Wait for that answer.
+        - Branch first. On main/master, create and verify a new local branch with
+          `git checkout -b <type>/<desc>` before editing. This is the sole Git
+          mutation allowed there; linked worktrees whose metadata lives outside
+          workspace roots remain unsupported.
         - master is reached through a PR on GitHub, never by a local merge.
-        - No `git add`/`commit`/`push` unless explicitly asked.
+        - No `git commit`/`push` unless explicitly requested in user prose.
       '';
     }
     {

@@ -38,8 +38,8 @@
 //     - the command matches no write-shaped rule      -> nothing to refuse
 //     - git says no candidate directory is a worktree -> nothing to protect
 //     - git says no candidate branch is protected     -> nothing to protect
-//     - the protected repo has NO REMOTE and the command only moves git refs
-//       (the vault carve-out, see below)
+//     - the command is exactly validated checkout -b / switch -c creation of a
+//       new local branch that moves HEAD off main/master
 //   Everything else denies: unparseable stdin, no command field, a command too
 //   long to inspect, git missing, git slow, git broken, an uncaught throw.
 //
@@ -50,7 +50,7 @@
 //   So the rules describe WRITES — the table below — and a command matching
 //   none of them is allowed without so much as a git call.
 //
-// THE CARVE-OUTS, AND WHICH SIDE EACH WAS TAKEN FROM
+// THE SOLE MUTATING CARVE-OUT
 //
 //   The two Claude hooks carve out different things, because they see
 //   different information:
@@ -60,18 +60,8 @@
 //       has no single target — globs, relative paths, a `cd` in the middle,
 //       substitution — so "outside the worktree" could never be PROVEN, and
 //       this hook only ever allows from proof.
-//     * hookBlockMainBash (shell) knows the repo, and carves out a repo with
-//       NO REMOTE: it cannot receive a PR, so "merge via PR" is meaningless
-//       there and the rule would forbid committing at all (the local-only
-//       Obsidian vault, three legitimate commits blocked). That one IS ported,
-//       and NARROWED: it applies only when every matched rule is in the `git`
-//       family, i.e. the command only moves refs. A filesystem write —
-//       `perl -pi`, `sed -i`, `rm` — is protect-main's territory, and
-//       protect-main has no remote carve-out, so neither does this hook. That
-//       is also what keeps the measured failure above covered: a throwaway
-//       repo has no remote, and its `perl -0pi` is still refused.
-//     * git errors while asking about the remote mean "assume it has one", so
-//       doubt keeps the protection rather than dissolving it.
+//     * checkout -b / switch -c with exactly one validated, absent branch name
+//       is allowed. Every other mutation is denied, with or without a remote.
 //
 // THE WATCHDOG IS LOAD-BEARING (identical argument to protect-main.js)
 //
@@ -115,14 +105,8 @@ const MAX_CMD = 128 * 1024; // longer than this is refused, not truncated
 const MAX_DIRS = 4; // candidate worktrees inspected, deadline aside
 const DEADLINE = Date.now() + BUDGET_MS;
 
-// Addressed to the HUMAN, not to the model. Codex mounts .git read-only under
-// workspace-write by design — a writable .git/hooks would let an agent plant a
-// hook that runs outside the sandbox the next time a human runs git — and there
-// is no toggle for it. Measured 2026-09-10: `git checkout -b fix/x` inside a
-// Codex session fails with "cannot lock ref … unable to create directory".
 const CUT =
-  "Ask the human to cut a branch (git checkout -b <type>/<desc>, e.g. feat/auth-redirect) and to say when it is done. " +
-  "You cannot create it yourself: .git is read-only in this sandbox. " +
+  "Create a new local branch with git checkout -b <type>/<desc> (e.g. feat/auth-redirect), verify it moved HEAD off main/master, then retry. " +
   "Read-only commands are allowed on this branch; bringing code to master happens through a PR on GitHub.";
 
 let settled = false;
@@ -262,15 +246,6 @@ function branchOf(dir) {
   return { kind: "branch", branch: String(br.stdout || "").trim() };
 }
 
-// "none" | "some" | "unknown". Doubt is "some": the carve-out below only fires
-// on a proven absence of remote.
-function remoteState(dir) {
-  const r = git(["remote"], dir);
-  if (gitBroken(r)) return "unknown";
-  if (r.status !== 0) return "unknown";
-  return String(r.stdout || "").trim().length > 0 ? "some" : "none";
-}
-
 // --- the rule table ---------------------------------------------------------
 //
 // One rule per family of commands, each readable on its own line, each
@@ -281,7 +256,7 @@ function remoteState(dir) {
 //   fs  — mutates the filesystem. New here, because the Claude side reaches
 //         those through protect-main's Edit|Write matcher and this host does
 //         not: `perl -0pi` is not an edit tool call, it is a shell command.
-// The family decides one thing only: whether the no-remote carve-out applies.
+// Families keep diagnostics clear; protected-branch policy is remote-agnostic.
 
 const src = (x) => (typeof x === "string" ? x : x.source);
 const seq = (...parts) => parts.map(src).join("");
@@ -328,7 +303,7 @@ const GIT_RULES = [
   {
     id: "git-write-verb",
     why: "authors a commit, publishes, or moves a ref outright",
-    pat: seq(oneOf(/commit|push|merge|rebase|update-ref/), EOW),
+    pat: seq(oneOf(/add|commit|push|fetch|pull|merge|rebase|reset|update-ref|tag|notes|replace|gc|prune/), EOW),
   },
 
   // cherry-pick, revert and am REPLAY work onto HEAD, so on master they land
@@ -362,8 +337,17 @@ const GIT_RULES = [
   // wholesale would break the very workflow this hook's own message prescribes.
   {
     id: "git-branch-force",
-    why: "-f / --force / -M / -C overwrite an existing branch ref",
-    pat: flagged(/branch/, /--force/, cluster("fMC")),
+    why: "branch mutation creates, deletes, moves, copies, or configures a ref",
+    pat: flagged(
+      /branch/,
+      /--force|--delete|--move|--copy|--set-upstream-to|--unset-upstream|--edit-description/,
+      cluster("fdDmMcCu"),
+    ),
+  },
+  {
+    id: "git-branch-create-direct",
+    why: "a positional branch name creates a ref outside the validated escape",
+    pat: seq(oneOf(/branch/), EOW, /(?:\s+-\S+)*\s+/, ARG),
   },
   {
     id: "git-checkout-force",
@@ -374,6 +358,11 @@ const GIT_RULES = [
     id: "git-switch-force",
     why: "-C / --force-create is the switch spelling of checkout -B",
     pat: flagged(/switch/, /--force-create/, cluster("C")),
+  },
+  {
+    id: "git-branch-create",
+    why: "creates a branch and is allowed only in the exact validated escape form",
+    pat: flagged(/checkout|switch/, /-b/, /-c/, /--create/),
   },
 
   // A mode flag AIMED AT a commit-ish that is not one of the safe ones drags
@@ -391,9 +380,7 @@ const GIT_RULES = [
 
   // These four are spelled `git` and are NOT ref moves: they overwrite or
   // delete files in the worktree, which is protect-main's territory. So they
-  // are tagged `fs` and the no-remote carve-out does not reach them — measured
-  // here: with the family left at `git`, `git checkout -- .` was ALLOWED on
-  // master in a remote-less repo while destroying every uncommitted change.
+  // are tagged `fs`; `git checkout -- .` can destroy uncommitted changes.
   {
     id: "worktree-checkout-paths",
     family: "fs",
@@ -630,9 +617,100 @@ function matchRules(cmd) {
   for (const r of RULES) {
     if (Date.now() > DEADLINE)
       denyOnBranch("inspecting the command exhausted the hook's time budget");
-    if (views.some((v) => r.re.test(v))) hitList.push(r);
+    if (
+      views.some((v) => r.re.test(v)) &&
+      !(r.id === "git-branch-create-direct" && readOnlyBranchCommand(cmd))
+    )
+      hitList.push(r);
   }
   return hitList;
+}
+
+// `git branch` is unusual: a positional creates unless a read selector such
+// as --list/--contains is present. Keep common reads usable, fail closed on
+// unknown/mutating options, and do not let cosmetic options hide creation.
+function readOnlyBranchCommand(cmd) {
+  const m = /^\s*git\s+branch(?:\s+(.*?))?\s*$/.exec(cmd);
+  if (!m) return false;
+  if (!m[1]) return true;
+  const tokens = m[1].match(/'[^']*'|"[^"]*"|\S+/g) || [];
+  let selector = false;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (/^(?:-a|-r|-l|-v|-vv|--all|--remotes|--show-current)$/.test(t)) {
+      selector = true;
+      continue;
+    }
+    if (/^--(?:color|format|sort)=/.test(t)) continue;
+    if (t === "--list") {
+      selector = true;
+      continue;
+    }
+    if (/^--(?:contains|no-contains|merged|no-merged|points-at)$/.test(t)) {
+      selector = true;
+      if (++i >= tokens.length) return false;
+      continue;
+    }
+    if (t.startsWith("-")) return false;
+    if (!selector) return false;
+  }
+  return true;
+}
+
+function shellWords(cmd) {
+  let normalized = cmd.trim();
+  const redirects = /(?:\s+(?:[12]?>\s*\/dev\/null|2>&1|1>&2))+\s*$/;
+  normalized = normalized.replace(redirects, "");
+  if (/[;&|<>$`\n\r]/.test(normalized)) return null;
+  const words = normalized.match(/'[^']*'|"[^"]*"|\S+/g);
+  return words && words.map((w) => w.replace(/^(['"])(.*)\1$/, "$2"));
+}
+
+// Git is closed by default on protected branches. This whole-command
+// allowlist contains only reads; everything unknown becomes mutation-shaped.
+function provenReadOnlyGitCommand(cmd) {
+  const words = shellWords(cmd);
+  if (!words || path.basename(words[0]) !== "git") return false;
+  let i = 1;
+  while (words[i] === "--no-pager" || words[i] === "--literal-pathspecs") i++;
+  if (words[i] === "-C") i += 2;
+  if (i >= words.length) return true;
+  if (words[i] === "--version")
+    return i === words.length - 1;
+  const verb = words[i++];
+  const rest = words.slice(i);
+  const dangerous = rest.some(
+    (x) =>
+      x === "--output" ||
+      x.startsWith("--output=") ||
+      x === "--ext-diff" ||
+      x === "--textconv" ||
+      x === "--open-files-in-pager" ||
+      x.startsWith("--open-files-in-pager=") ||
+      x === "-O" ||
+      x.startsWith("-O") ||
+      x === "--filters" ||
+      x === "--show-signature",
+  );
+  if (dangerous) return false;
+  if (/^(?:status|log|show|rev-parse|ls-files|ls-tree|grep|cat-file|merge-base|name-rev|describe|version)$/.test(verb))
+    return true;
+  if (verb === "diff") return true;
+  if (verb === "branch") return readOnlyBranchCommand(cmd);
+  if (verb === "remote")
+    return rest.length === 0 || (rest.length === 1 && rest[0] === "-v") || rest[0] === "show" || rest[0] === "get-url";
+  if (verb === "config")
+    return (
+      !rest.some((x) => /^(?:--add|--replace-all|--unset|--unset-all|--rename-section|--remove-section|--edit|-e)$/.test(x)) &&
+      rest.some((x) => /^(?:--get|--get-all|--get-regexp|--get-urlmatch|--list|-l)$/.test(x))
+    );
+  if (verb === "worktree") return rest[0] === "list";
+  if (verb === "stash") return rest[0] === "list" || rest[0] === "show";
+  return false;
+}
+
+function containsGitCommand(cmd) {
+  return /(?:^|[\s;&|()])(?:[^\s;&|()]+\/)?git(?:\s|$)/.test(dequoteTight(cmd));
 }
 
 // --- reading the payload ----------------------------------------------------
@@ -769,7 +847,6 @@ function decideBlind(dirs, why) {
 }
 
 function decide(dirs, hitList) {
-  const gitOnly = hitList.every((r) => r.family === "git");
   const lead = hitList[0];
   for (const d of dirs) {
     const st = branchOf(d);
@@ -788,8 +865,6 @@ function decide(dirs, hitList) {
     if (st.kind === "norepo") continue;
     if (PROTECTED.indexOf(st.branch) === -1) continue;
     branchSeen = st.branch;
-    // The vault carve-out, narrowed to ref-moving commands — see the header.
-    if (gitOnly && remoteState(d) === "none") continue;
     deny(
       "BLOCKED: on " +
         safe(st.branch) +
@@ -802,6 +877,33 @@ function decide(dirs, hitList) {
     );
   }
   allow();
+}
+
+// Sole protected-branch mutation: one plain creation command, one new valid
+// branch name, no start point, chaining, redirection, or force spelling.
+function tryBranchEscape(dirs, cmd) {
+  const m = /^\s*git\s+(?:checkout\s+-b|switch\s+(?:-c|--create))\s+([A-Za-z0-9._/-]+)\s*$/.exec(
+    cmd,
+  );
+  if (!m) return false;
+  const name = m[1];
+  if (PROTECTED.indexOf(name) !== -1) return false;
+  for (const d of dirs) {
+    const st = branchOf(d);
+    if (st.kind === "broken") denyUnverifiable(st.why);
+    if (st.kind === "norepo" || PROTECTED.indexOf(st.branch) === -1) continue;
+    branchSeen = st.branch;
+    const valid = git(["check-ref-format", "--branch", name], d);
+    if (gitBroken(valid) || valid.status !== 0)
+      denyOnBranch("the requested new branch name is invalid");
+    const exists = git(["show-ref", "--verify", "--quiet", "refs/heads/" + name], d);
+    if (gitBroken(exists) || (exists.status !== 0 && exists.status !== 1))
+      denyOnBranch("the requested branch could not be checked for existence");
+    if (exists.status === 0)
+      denyOnBranch("the requested branch already exists, so creation is not new");
+  }
+  allow();
+  return true;
 }
 
 // --- main -------------------------------------------------------------------
@@ -839,9 +941,17 @@ function main() {
     return;
   }
 
+  if (tryBranchEscape(dirs, cmd)) return;
+
   // The read-only fast path: no write-shaped rule fires, so there is nothing
   // to refuse and not one git call is spent on it.
   const hitList = matchRules(cmd);
+  if (containsGitCommand(cmd) && !provenReadOnlyGitCommand(dequoteTight(cmd)))
+    hitList.unshift({
+      id: "git-not-proven-readonly",
+      family: "git",
+      why: "is a Git command outside the protected-branch read allowlist",
+    });
   if (hitList.length === 0) allow();
 
   for (const d of retargetDirs(cmd)) pushDir(dirs, d);

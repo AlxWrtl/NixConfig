@@ -356,31 +356,167 @@ let
     [hooks.state."PROBE:pre_tool_use:0:0"]
     trusted_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"
 
-    [profiles.other]
+      [profiles.other]
     sandbox_mode = "read-only"
+
+    [permissions.other]
+    extends = ":read-only"
+    marker = "preserve-byte-for-byte"
+
+    [permissions.git-workspace]
+    extends = ":workspace"
+    filesystem = { ":workspace_roots" = { ".git" = "read", ".git/hooks" = "read" } }
+
+      [after.managed]
+    marker = "managed-boundary-preserved"
     TOML
     cp "$probe/merge/config.toml" "$probe/merge/config.orig"
 
+    strip_owned() {
+      awk '
+        BEGIN { pre=1; skip=0 }
+        /^[[:space:]]*\[/ {
+          pre=0
+          if ($0 ~ /^[[:space:]]*\[permissions\.git-workspace\][[:space:]]*$/) { skip=1; next }
+          skip=0
+        }
+        skip { next }
+        pre && $0 ~ /^(sandbox_mode|default_permissions|approval_policy)[[:space:]]*=/ { next }
+        { print }
+      ' "$1"
+    }
+    strip_owned "$probe/merge/config.orig" > "$probe/merge/outside.orig"
+
     run_empty_path "$probe/m1.log" \
-      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/config.toml" sandbox_mode=workspace-write approval_policy=never
+      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/config.toml" \
+        --permissions-profile git-workspace \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        default_permissions=git-workspace approval_policy=never
     assert_no_complaint "$probe/m1.log" "codex-config-merge"
+    strip_owned "$probe/merge/config.toml" > "$probe/merge/outside.after"
+    cmp -s "$probe/merge/outside.orig" "$probe/merge/outside.after" || \
+      pfail "bytes outside managed root lines and exact managed block changed"
 
     # Observable effect 1: the key was actually set, in the preamble.
-    if ! awk 'BEGIN { pre = 1 } /^\[/ { pre = 0 } pre' "$probe/merge/config.toml" \
-         | grep -Fxq 'sandbox_mode = "workspace-write"'; then
+    if awk 'BEGIN { pre=1 } /^[[:space:]]*\[/ { pre=0 } pre' "$probe/merge/config.toml" \
+         | grep -Eq '^[[:space:]]*sandbox_mode[[:space:]]*=' || \
+       ! grep -Fxq 'default_permissions = "git-workspace"' "$probe/merge/config.toml" || \
+       ! grep -Fxq 'approval_policy = "never"' "$probe/merge/config.toml"; then
       cat "$probe/m1.log" >&2
       cat "$probe/merge/config.toml" >&2
-      pfail "codex-config-merge exited 0 and left sandbox_mode unchanged — a wrapper that silently does nothing is the failure this probe exists to catch"
+      pfail "codex-config-merge did not replace root sandbox_mode with default_permissions"
     fi
 
-    # Observable effect 2: everything from the first table header on is
-    # untouched, [profiles.other] sandbox_mode included. This is the cmp guard.
-    if ! cmp -s \
-         <(awk 'BEGIN { t = 0 } /^\[/ { t = 1 } t' "$probe/merge/config.orig") \
-         <(awk 'BEGIN { t = 0 } /^\[/ { t = 1 } t' "$probe/merge/config.toml"); then
+    # Observable effect 2: user-owned hook/profile bytes survive; managed block
+    # is canonical and singular.
+    if ! grep -Fq 'trusted_hash = "sha256:0000000000000000000000000000000000000000000000000000000000000000"' "$probe/merge/config.toml" || \
+       ! grep -Fq 'sandbox_mode = "read-only"' "$probe/merge/config.toml" || \
+       ! grep -Fq 'marker = "preserve-byte-for-byte"' "$probe/merge/config.toml" || \
+       ! grep -Fq 'marker = "managed-boundary-preserved"' "$probe/merge/config.toml" || \
+       [ "$(grep -Fc '[permissions.git-workspace]' "$probe/merge/config.toml")" -ne 1 ] || \
+       ! grep -Fq 'filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }' "$probe/merge/config.toml"; then
       cat "$probe/m1.log" >&2
-      pfail "codex-config-merge altered the table section — the trust table Codex keeps there is what an un-trusted, silently skipped hook is made of"
+      pfail "codex-config-merge failed byte preservation or canonical profile reconciliation"
     fi
+
+    cp "$probe/merge/config.toml" "$probe/merge/once"
+    run_empty_path "$probe/m2.log" \
+      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/config.toml" \
+        --permissions-profile git-workspace \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        default_permissions=git-workspace approval_policy=never
+    cmp -s "$probe/merge/once" "$probe/merge/config.toml" || pfail "codex-config-merge is not idempotent"
+
+    cat > "$probe/merge/ambiguous.toml" <<'TOML'
+    default_permissions = "old"
+    approval_policy = "on-request"
+
+    [permissions."git-workspace"]
+    extends = ":workspace"
+    TOML
+    cp "$probe/merge/ambiguous.toml" "$probe/merge/ambiguous.orig"
+    run_empty_path "$probe/m3.log" \
+      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/ambiguous.toml" \
+        --permissions-profile git-workspace \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        default_permissions=git-workspace approval_policy=never
+    cmp -s "$probe/merge/ambiguous.orig" "$probe/merge/ambiguous.toml" || pfail "ambiguous owned profile did not fail closed"
+
+    cat > "$probe/merge/ambiguous-single.toml" <<'TOML'
+    default_permissions = "old"
+    approval_policy = "on-request"
+
+    [permissions.'git-workspace'.child]
+    marker = "must-survive"
+    TOML
+    cp "$probe/merge/ambiguous-single.toml" "$probe/merge/ambiguous-single.orig"
+    run_empty_path "$probe/m4.log" \
+      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/ambiguous-single.toml" \
+        --permissions-profile git-workspace \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        default_permissions=git-workspace approval_policy=never
+    cmp -s "$probe/merge/ambiguous-single.orig" "$probe/merge/ambiguous-single.toml" || pfail "single-quoted owned descendant did not fail closed"
+
+    cat > "$probe/merge/ambiguous-spaced.toml" <<'TOML'
+    default_permissions = "old"
+    approval_policy = "on-request"
+
+    [ 'permissions' . "git-workspace" . child ]
+    marker = "must-survive"
+    TOML
+    cp "$probe/merge/ambiguous-spaced.toml" "$probe/merge/ambiguous-spaced.orig"
+    run_empty_path "$probe/m5.log" \
+      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/ambiguous-spaced.toml" \
+        --permissions-profile git-workspace \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        default_permissions=git-workspace approval_policy=never
+    cmp -s "$probe/merge/ambiguous-spaced.orig" "$probe/merge/ambiguous-spaced.toml" || pfail "whitespace-dotted owned descendant did not fail closed"
+
+    assert_semantic_ambiguity() {
+      fixture="$1"; label="$2"
+      cp "$fixture" "$fixture.orig"
+      run_empty_path "$probe/$label.log" \
+        ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$fixture" \
+          --permissions-profile git-workspace \
+          --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+          default_permissions=git-workspace approval_policy=never
+      cmp -s "$fixture.orig" "$fixture" || pfail "$label semantic ambiguity did not fail closed"
+    }
+
+    cat > "$probe/merge/escaped-root.toml" <<'TOML'
+    "sandbox\u005fmode" = "danger-full-access"
+    TOML
+    assert_semantic_ambiguity "$probe/merge/escaped-root.toml" escaped-root
+
+    cat > "$probe/merge/array-descendant.toml" <<'TOML'
+    [[permissions.'git-workspace'.child]]
+    marker = "must-survive"
+    TOML
+    assert_semantic_ambiguity "$probe/merge/array-descendant.toml" array-descendant
+
+    cat > "$probe/merge/escaped-profile.toml" <<'TOML'
+    [permissions."git\u002dworkspace".child]
+    marker = "must-survive"
+    TOML
+    assert_semantic_ambiguity "$probe/merge/escaped-profile.toml" escaped-profile
+
+    cat > "$probe/merge/canonical-array-child.toml" <<'TOML'
+    [permissions.git-workspace]
+    extends = ":workspace"
+    filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }
+    [[permissions.'git-workspace'.child]]
+    marker = "must-survive"
+    TOML
+    assert_semantic_ambiguity "$probe/merge/canonical-array-child.toml" canonical-array-child
+
+    cat > "$probe/merge/canonical-escaped-child.toml" <<'TOML'
+    [permissions.git-workspace]
+    extends = ":workspace"
+    filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }
+    [permissions."git\u002dworkspace".child]
+    marker = "must-survive"
+    TOML
+    assert_semantic_ambiguity "$probe/merge/canonical-escaped-child.toml" canonical-escaped-child
 
     echo "codex-config: both wrappers ran clean under env -i PATH=/var/empty — OK"
   '';

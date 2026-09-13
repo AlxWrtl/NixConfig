@@ -31,7 +31,23 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-CANONICAL=$'[permissions.git-workspace]\nextends = ":workspace"\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }'
+# THE SECOND COPY OF THE BLOCK, AND WHY IT IS ALLOWED TO EXIST.
+# This script writes exactly one known block and refuses any other, so an
+# argument reaching it from elsewhere cannot install an arbitrary permissions
+# profile. That allowlist is the point, and it costs a duplicate of the string
+# in `home/codex.nix`.
+#
+# The duplicate FAILS OPEN: a mismatch warns and `exit 0`, so the rebuild stays
+# green and the profile is simply never updated. Measured 2026-09-14 —
+# `workspace_roots` was added to `home/codex.nix`, `nix flake check` was green
+# with 8 checks, `darwin-rebuild switch` succeeded, and the live config.toml came
+# out byte-identical to the one from before. The only signal was one `warn` line
+# in the middle of forty lines of activation output.
+#
+# C11 in checks/codex-config.nix now ties the two spellings together at eval
+# time, because a green build that changes nothing is the failure this repo
+# keeps finding. Editing either copy alone must turn the build red.
+CANONICAL=$'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }'
 if [ "$PROFILE_BLOCK" = "$CANONICAL"$'\n' ]; then PROFILE_BLOCK="$CANONICAL"; fi
 if [ "$PROFILE" != "git-workspace" ] || [ "$PROFILE_BLOCK" != "$CANONICAL" ]; then
   warn "exact git-workspace permissions profile is required; nothing to do"

@@ -112,6 +112,13 @@ let
   # --- the ordering contract (AC16) ----------------------------------------
   hooksSrc = builtins.readFile ../home/codex/hooks.nix;
 
+  # --- the permissions profile (C10) ---------------------------------------
+  # Read as SOURCE because `permissionsBlock` lives in a `let` inside a
+  # home-manager module and is not reachable from here as a value. So the
+  # assertion is textual, and it is written against the three spellings that
+  # actually decide behaviour, never against prose around them.
+  codexSrc = builtins.readFile ../home/codex.nix;
+
   assertions = [
     {
       name = "C1 hooks.json: the generated JSON parses";
@@ -218,6 +225,14 @@ let
         && hasInfix "APPEND ONLY" hooksSrc
         && hasInfix "attribute set" hooksSrc;
       msg = "home/codex/hooks.nix no longer builds its hooks from an explicit ordered list, or its header lost the append-only rule — an attribute set would be sorted alphabetically by nix and reorder the file, and a mid-list insertion un-trusts every hook after it with no error anywhere";
+    }
+    {
+      name = "C10 permissions profile: the vault is a workspace ROOT and .git/hooks stays read";
+      ok =
+        hasInfix "alxVaultPath = \"/Users/alx/Vaults/AlxVault\";" codexSrc
+        && hasInfix "workspace_roots = { \"\${alxVaultPath}\" = true }" codexSrc
+        && hasInfix "\".git/hooks\" = \"read\"" codexSrc;
+      msg = "home/codex.nix no longer grants the vault as a workspace root, or lost the `.git/hooks` = read rule. Both halves are load-bearing and neither fails loudly on its own: without the root, Codex silently cannot write its session note and hands it back to a human — the asymmetry that left 8f5e724, 0d70c93 and fe9b527 with no note at all. Without the rule, the grant reaches the vault's OWN `.git/hooks`, and the vault is auto-committed by vault-snapshot, so a hook planted there executes outside this sandbox. The rule is written once for every root, which is why dropping it costs two repositories and not one";
     }
   ];
 

@@ -491,6 +491,29 @@ in
           ];
         }
         {
+          # Matcher = liste de chaînes EXACTES séparées par `|`, pas une regex :
+          # un motif qui n'a que [A-Za-z0-9_-], espace, `,` et `|` est comparé
+          # littéralement. Ne JAMAIS y ajouter `.*` (bascule en regex, gain nul),
+          # et un `mcp__serveur` seul ne matcherait AUCUN outil.
+          # `browser_run_code_unsafe` exécute lui aussi du JS dans la page
+          # (1166 occurrences dans les transcripts locaux) : même risque de nul
+          # mal lu, donc même garde. Cet ensemble doit rester RIGOUREUSEMENT
+          # égal à la constante `TOOLS` du hook — le probe compare les deux
+          # sens.
+          matcher = "mcp__claude-in-chrome__javascript_tool|mcp__playwright__browser_evaluate|mcp__playwright__browser_run_code_unsafe";
+          hooks = [
+            {
+              type = "command";
+              # Synchrone, contrairement à ses deux voisins : `async = true`
+              # déporte la livraison de `additionalContext` au tour de
+              # conversation SUIVANT, alors que ce garde doit parler pendant
+              # que la sonde est encore le sujet.
+              command = "${node} ~/.claude/hooks/null-result-gate.js";
+              timeout = 5;
+            }
+          ];
+        }
+        {
           hooks = [
             {
               type = "command";

@@ -415,6 +415,29 @@ in
     - **Dependencies**: libraries, utilities, types to use
     - **Risks**: potential issues or unknowns
 
+    ## Probe contract (every ad hoc probe)
+
+    A probe is anything you write on the spot to decide a question: a grep, a
+    find, a one-off script, a pipeline. Every probe reports three fields
+    together — `total, matched, sample` — and never `matched` alone:
+    - `total`: how many units the probe actually READ (files opened, lines
+      scanned). Not how many exist in theory.
+    - `matched`: how many of them satisfied the predicate.
+    - `sample`: up to 3 matches quoted VERBATIM. No sample, no match.
+
+    A count with no denominator is unfalsifiable, which is why `matched` alone
+    is never a report.
+
+    `matched: 0` with `total: 0` is a broken instrument, not a finding. The walk
+    read nothing, so the predicate never ran; the zero describes the harness.
+    The repo already states the rule, in `checks/codex-skills-probe.sh`:
+    a predicate that cannot tell "nothing to find" from "nothing read" is not a predicate
+
+    Before reporting ANY zero: re-run the SAME probe against a case that MUST
+    match — a line you already have in front of you — and show it returning
+    non-zero. That positive control ships with the zero. An absence reported
+    without it is an untested claim, and step-05-examine treats it as a finding.
+
     ## Conflicts & Constraints (REQUIRED — confront task vs codebase)
 
     This is what makes step-01 analysis, not just exploration. You MUST fill every
@@ -444,6 +467,31 @@ in
     Three, not ten: asking upfront is the best-measured error reducer in the
     literature, and the first question carries most of the gain. Nothing here
     blocks a run without `-q` — it just plans on the safest reading and says so.
+
+    ## Fable analyze pass (absences and numbers)
+
+    On high-stakes work only: ONE spawn per run, `model: fable`, read-only,
+    never a second. It is the fourth bounded artefact a Fable pass may read
+    (ORCHESTRATION.md), and it replaces nothing — the diff pass at validate
+    still runs.
+
+    STRICT perimeter, these two things and nothing else:
+    1. every sentence of the analyze summary asserting an ABSENCE — "nothing
+       found", "X does not exist", "no hits", "none of them do".
+    2. every NUMBER the summary states — counts, totals, tallies, percentages.
+
+    The brief is that list of claims ALONE, each paired with the command that
+    produced it. Never the explorer's reasoning, never the transcript, never the
+    plan. Fable re-runs the commands and compares what comes out.
+
+    It returns PASS, or a bounded list of
+    `claim → what was replayed → what came out`.
+    It never rewrites the analysis, never proposes a plan, never edits.
+
+    Why a separate process holds it: the verifier must never be the process that
+    produced the claim. A run that re-reads its own probe with its own eyes
+    confirms the probe, not the fact — the blind spot that produced the zero is
+    still in place, and it is exactly the blind spot being tested.
 
     ## If save mode (-s):
     Write findings to `.claude/output/apex/{task-id}/01-analyze.md`
@@ -710,6 +758,25 @@ in
        cannot source is written as an open question; that is a valid outcome, not
        a failure.
 
+       **Tag every premise.** The FIRST token of a premise line is its tag:
+       `[M] measured or [I] inferred`. No third value, no untagged premise.
+       - `[M]` is legal ONLY with its evidence inline on the same line: the
+         command and its output, or a `file:line` that was actually opened.
+         No evidence written down, no `[M]`.
+       - `[I]` covers everything else — INCLUDING whatever the analyze summary
+         asserts without a source of its own. Inherited confidence is still
+         inference; a claim does not become measured by changing hands.
+
+       Hard rule: no `[I]` premise becomes a string the user sees, a number
+       written into the code, or a statement reported as fact. It is measured
+       before it is used, or it is written as an open question.
+
+       The tag is `never self-audited`. A tag re-read only by the process that
+       wrote it measures nothing — that process already believes it. It counts
+       only when ANOTHER process reads it, and that reader is NAMED: Agent 1 of
+       step-05-examine carries the box on every run, plus the Fable premises
+       pass whenever `-p` adds one. A tag that nobody re-reads is decoration.
+
        Premise and scope errors dominate user corrections, and most surface only
        after code exists. A stronger planner does not fix this: reasoning models
        rarely flag a false premise on their own.
@@ -798,8 +865,9 @@ in
     cited read-only commands, never a write-effect one, and never rewrites the
     plan.
 
-    **Record in the plan which Fable passes will run** — the premises pass if you
-    add it, the default diff pass at validate, and the examine synthesis pass if
+    **Record in the plan which Fable passes will run** — the analyze pass over
+    absences and numbers if step-01 ran one, the premises pass if you add it,
+    the default diff pass at validate, and the examine synthesis pass if
     examine runs high-stakes. That record is the audit trail of every Fable spawn
     in the run; it does not authorize the diff pass, which needs no record to run.
 
@@ -1117,6 +1185,16 @@ in
     - [ ] Scope creep: changes no AC asked for.
     - [ ] Tests asserting nothing: no assertion, mocked subject, tautology.
     - [ ] Tests that pass because the assertion was bent to fit the code.
+    - [ ] Any probe cited in the summary: is its denominator shown? A `matched`
+          with no `total` is not a measurement, and a zero it returns is not
+          an absence.
+    - [ ] Any visible label, string or `aria-label` the diff introduces: is its
+          SOURCE cited — a capture, a spec, or the user's own words? An
+          invented label is a finding, not a detail.
+    - [ ] Every `[M]` premise: does the cited evidence actually exist as cited?
+          Every `[I]` premise: did it stay out of the code? This box is NOT
+          optional — step-02-plan names it as the independent reader that makes
+          the tags mean anything, so without it the tag rule lies.
 
     ### Agent 2: Security & data integrity
     - [ ] AuthN/authZ gaps; missing input validation; data exposed in responses.
@@ -1874,8 +1952,9 @@ in
     Fable rule (inverted from the prior design): Fable is NO LONGER the
     coordinator. Spawn `model: fable` ONLY as a read-only verifier on high-stakes
     work (irreversible / security / architecture / prod). Each spawn reads ONE
-    bounded artefact — the plan's premises, the real diff + ACs, or the examine
-    synthesis — never the whole repo, returns PASS or a bounded fix-list (`file:line → problem → expected
+    bounded artefact — the plan's premises, the real diff + ACs, the examine
+    synthesis, or the analyze summary's absence claims and numbers (step-01) —
+    never the whole repo, returns PASS or a bounded fix-list (`file:line → problem → expected
     fix`), and NEVER edits. On reversible/routine work, skip Fable — the machine
     gate + Opus 5 fresh-context self-verify suffice. Why reserved — not a quota:
     measured in this repo, 21 verifier spawns against 6 489 coordinator
@@ -2710,6 +2789,21 @@ in
     expect(() => riskyOperation()).toThrow(/expected error/);
     await expect(asyncRisky()).rejects.toThrow();
     ```
+
+    ## Positive controls
+
+    A test you have only ever seen PASS has not been run — it has been observed.
+    Break on purpose the thing it watches and see it go red. A test that stays
+    green while its subject is broken is guarding nothing, and no amount of
+    green repeats will say so.
+
+    **Two polarities, always.** A predicate shown returning 0 must also be shown
+    returning non-zero on a case that MUST match. One polarity proves the
+    plumbing runs; it does not prove the predicate discriminates.
+
+    **Denominator.** Report `total` next to `matched`. An exact count over the
+    wrong perimeter is indistinguishable from a correct count over the right
+    one — same number, no way to tell them apart after the fact.
 
     ${contract {
       expects = "module/function to test, or test strategy request. Optionally: existing test files.";

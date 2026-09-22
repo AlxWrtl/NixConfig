@@ -113,10 +113,12 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 ├── checks/                      # Flake checks (see Quality Gates)
 │   ├── agent-instructions.nix
 │   ├── apex-consistency.nix
+│   ├── apex-plan-provenance.nix
 │   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
 │   ├── claude-config.nix
 │   ├── codex-config.nix
 │   ├── codex-skills.nix
+│   ├── hook-wiring.nix
 │   └── readme-consistency.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
 ├── wallpapers/                  # Desktop wallpaper
@@ -177,9 +179,11 @@ system.
 | `system-config` | The whole `alex-mbp` darwin configuration actually builds |
 | `agent-instructions` | The shared instruction trunk actually reaches both rendered outputs: every shared section body present in `CLAUDE.md` and `AGENTS.md`, each heading exactly once, headings equal the declared trunk-plus-delta list in order, no mechanism Codex lacks named to Codex or smuggled through the trunk, the nix Confidence Gate divergence pinned as Codex-inline only, each output under 100 lines, `Project Map` gone from both |
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
+| `apex-plan-provenance` | Every premise in an APEX plan carries `[M]` or `[I]` as its first token: the clause still stands in step-02-plan, and the line detector is run against two inline fixtures — one correctly tagged, one identical but for a stripped tag — so a detector that stopped detecting fails instead of passing. Presence is not truth: it proves the tag is THERE, never that it is earned; falsifying a tag is the examine reviewer's job and the Fable premises pass |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
 | `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |
 | `codex-skills` | The Codex skills come from the same manifest as Claude's and say nothing about a mechanism Codex lacks: manifest ↔ skill sources is a bijection, every translation anchor still matches its passage exactly once, no Claude model or tool name survives, every frontmatter parses, descriptions stay inside the 8000-character budget |
+| `hook-wiring` | Claude Code hook wiring, from the evaluated module rather than from text: every hook file `home/claude-code.nix` installs is named by a `command` in `home/claude-code/settings.nix` and every such command names a file that exists, both senses reported apart; `additionalContext` emitted only inside `hookSpecificOutput`, the one shape the reference documents; the `hookEventName` a hook writes equal to the event registering it. Each direction is guarded by a corpus-non-empty assertion first, because an extractor that stops matching would otherwise be green forever |
 | `readme-consistency` | This file against the repo: the APEX flag table vs the skill, `/apex` examples typing only live flags, every `.nix` in `modules/` `home/` `checks/` `hosts/` present in the Structure tree, every check listed above, no dangling path, no alias documented that no attrset declares, no hard count |
 
 Run them before every commit that touches `.nix` files — `format-check` in
@@ -507,6 +511,12 @@ shim covers what runs as `scrapling` on PATH, and a full path, `uvx`,
 `uv tool run`, `scrapling shell -c` or the Python API reach the tool with no
 sanitizing at all. Naming the perimeter is worth more than a guard that gives
 the wrong impression of one.
+
+`checks/null-result-gate-probe.sh` grades the null-result gate on both
+polarities at once — the shapes that must make it speak, and the shapes that
+must leave it silent, including every input it cannot read — and its
+`--mutants` mode rebuilds the hook three ways to prove the harness still goes
+red on a declared set of cases rather than on everything.
 
 ### Usage
 

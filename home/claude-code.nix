@@ -77,6 +77,7 @@ let
     hookQualityGate
     hookGovernanceAudit
     hookReactDocsGate
+    hookNullResultGate
     ;
   inherit (agents)
     agentFrontend
@@ -271,6 +272,10 @@ in
     };
     "${claudeDir}/hooks/react-docs-gate.js" = {
       text = hookReactDocsGate;
+      executable = true;
+    };
+    "${claudeDir}/hooks/null-result-gate.js" = {
+      text = hookNullResultGate;
       executable = true;
     };
 

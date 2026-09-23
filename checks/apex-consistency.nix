@@ -301,7 +301,107 @@ let
       needle = "A verifier is handed 02-acs.md and never the plan.";
       scope = skills.apexStep02Plan;
     }
+    {
+      # The contract has to be in force BEFORE the first probe runs, which is
+      # why it is pinned to analyze: a copy of this heading living in examine
+      # would keep a corpus-wide needle green while probes at analyze time went
+      # back to reporting bare hit counts.
+      name = "analyze: ad hoc probes answer to a stated contract";
+      needle = "## Probe contract (every ad hoc probe)";
+      scope = skills.apexStep01Analyze;
+    }
+    {
+      # The heading above is satisfied by a section with nothing under it. This
+      # is the operative clause — the three fields together. `matched` alone is
+      # the whole failure mode, so the denominator and the sample are guarded
+      # here rather than left to the heading.
+      name = "analyze: a probe reports total and sample, never matched alone";
+      needle = "total, matched, sample";
+      scope = skills.apexStep01Analyze;
+    }
+    {
+      # Without this, `matched: 0` over `total: 0` reads as an absence when it
+      # is a harness that read nothing. Measured repeatedly in this repo: a
+      # green run of an instrument that never ran is the mute failure the whole
+      # contract exists to remove.
+      name = "analyze: a zero from an empty walk is a broken instrument";
+      needle = "a broken instrument, not a finding";
+      scope = skills.apexStep01Analyze;
+    }
+    {
+      # The one clause that puts a SECOND reader on the analyze summary's
+      # absences and numbers. Scoped to analyze because a pass that runs after
+      # the plan is written reviews a conclusion, not its premises.
+      name = "analyze: absences and numbers get a Fable pass";
+      needle = "## Fable analyze pass (absences and numbers)";
+      scope = skills.apexStep01Analyze;
+    }
+    {
+      # Two values, no third, no untagged premise. Drop the tag vocabulary and
+      # every premise silently reverts to unmarked prose, which is exactly the
+      # state the sourcing rules above were written against.
+      name = "plan: every premise is tagged measured or inferred";
+      needle = "[M] measured or [I] inferred";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # A tag re-read only by the process that wrote it measures nothing. This
+      # is the clause that names an external reader, so losing it leaves the
+      # tags above as decoration while every needle guarding them stays green.
+      name = "plan: the premise tag is never audited by its own author";
+      needle = "never self-audited";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # The needle is the whole question, not the word `denominator`: that word
+      # also appears in the probe contract at analyze, so a short needle would
+      # be satisfied by the analyze prose alone if this review line disappeared.
+      # Scoped to examine because reading it anywhere else is not a review.
+      name = "examine: a cited probe is checked for its denominator";
+      needle = "is its denominator shown?";
+      scope = skills.apexStep05Examine;
+    }
+    {
+      # The rule that separates a test that was RUN from one that was merely
+      # observed passing. Scoped to the testing-patterns skill: this is where a
+      # test author reads it, and a copy of the heading surviving in APEX prose
+      # would keep a corpus-wide needle green while the skill that produces
+      # tests stopped saying it. Limit, stated rather than implied: this pins
+      # the section ANCHOR, so gutting the body under it while keeping the
+      # heading passes here — the two needles below it are its substance.
+      name = "testing: a test is proven by a positive control, not by repeats";
+      needle = "## Positive controls";
+      scope = skills.skillTestingPatterns;
+    }
+    {
+      # The clause that extends the Fable cartridge to the analyze summary. The
+      # four bounded artefacts are one sentence; without this needle the
+      # analyze item can be dropped from the list and every other orchestration
+      # needle stays green, leaving step-01's `## Fable analyze pass` section
+      # with nothing in ORCHESTRATION that lets a spawn be spent on it.
+      name = "orchestration: the analyze summary is a bounded artefact a Fable pass may read";
+      needle = "or the analyze summary's absence claims and numbers";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # A Fable pass that runs without being written down leaves no audit
+      # trail, and one that was planned and skipped leaves none either. Scoped
+      # to step-02-plan because the record has to be made WHERE the plan is
+      # written; the same sentence in orchestration would describe a duty with
+      # no document to carry it.
+      name = "plan: the Fable passes that will run are recorded in the plan";
+      needle = "**Record in the plan which Fable passes will run**";
+      scope = skills.apexStep02Plan;
+    }
   ];
+
+  # Non-vacuity, asserted at the DEFINITION and not at the use site. `hasInfix
+  # ""` is true against every string, so a needle emptied by a bad edit turns
+  # its invariant permanently green — the exact silent-pass shape this file
+  # exists to remove, and it would be invisible because the check stays green.
+  # A missing `needle` attribute is caught here too, rather than as an
+  # "attribute missing" trace from inside the filter.
+  vacuousInvariants = builtins.filter (i: !(i ? needle) || i.needle == "") invariants;
 
   # An invariant may pin itself to ONE step instead of the whole corpus.
   # hasInfix over the concatenated corpus cannot tell "in step-00" from "moved
@@ -489,7 +589,13 @@ let
 
 in
 pkgs.runCommand "apex-consistency-check" { } (
-  if missingInvariants != [ ] then
+  if vacuousInvariants != [ ] then
+    fail (
+      "invariant(s) with an empty or missing needle: "
+      + builtins.concatStringsSep "; " (map (i: i.name) vacuousInvariants)
+      + ". An empty needle matches every string, so the invariant would report itself present forever."
+    )
+  else if missingInvariants != [ ] then
     fail ("lost invariant(s): " + builtins.concatStringsSep "; " (map (i: i.name) missingInvariants))
   else if unknownSuiteFlags != [ ] then
     fail (

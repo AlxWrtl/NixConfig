@@ -75,7 +75,7 @@ tomlq -e . "$CONFIG" >/dev/null 2>&1 || { warn "$CONFIG does not parse as TOML; 
 # Ambiguity fails closed: duplicate owned root keys or any alternate/dotted
 # permissions table may contain user-owned data that cannot safely be removed.
 for key in sandbox_mode default_permissions approval_policy; do
-  count="$(awk -v k="$key" 'BEGIN{p=1;n=0} /^[[:space:]]*\[/{p=0} p && $0 ~ "^[ \\t]*(\\\"" k "\\\"|\\047" k "\\047|" k ")[ \\t]*="{n++} END{print n}' "$CONFIG")"
+  count="$(awk -v k="$key" 'BEGIN{p=1;n=0} /^[[:space:]]*\[/{p=0} p && $0 ~ "^[ \\t]*(\"" k "\"|\\047" k "\\047|" k ")[ \\t]*="{n++} END{print n}' "$CONFIG")"
   [ "$count" -le 1 ] || { warn "ambiguous duplicate root $key; $CONFIG left untouched"; exit 0; }
   # shellcheck disable=SC2016 # jq program must receive literal $k.
   semantic="$(tomlq -r --arg k "$key" 'has($k)' "$CONFIG" 2>/dev/null || printf '')"
@@ -105,7 +105,18 @@ if [ "$semantic_profile" = "true" ]; then
   semantic_shape="$(tomlq -r '
     .permissions."git-workspace" as $p |
     ($p | type) == "object" and
-    (($p | keys | sort) == (["extends", "filesystem"] | sort)) and
+    # workspace_roots is repo-owned since CANONICAL gained it (PR #158); the
+    # older two-key form stays accepted so it can still be upgraded. Anything
+    # else in the block is user-owned and refuses the merge. This list had not
+    # followed CANONICAL, so the script refused its own block for nine days.
+    (($p | keys | sort) as $k
+      | $k == (["extends", "filesystem"] | sort)
+        or $k == (["extends", "filesystem", "workspace_roots"] | sort)) and
+    # `has`, not `//`: jq treats false as absent, so `// {}` read a literal
+    # workspace_roots = false as an empty object and accepted it.
+    ((($p | has("workspace_roots")) | not)
+      or ($p.workspace_roots | type == "object"
+        and (to_entries | all(.value | type == "boolean")))) and
     (($p.filesystem | type) == "object") and
     (($p.filesystem | keys) == [":workspace_roots"]) and
     (($p.filesystem.":workspace_roots" | type) == "object") and

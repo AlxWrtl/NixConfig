@@ -20,12 +20,12 @@
 # ORDER OF APPLICATION — overrides, THEN substitutions, THEN stripFrontmatter,
 # THEN dedent. Do not reorder, and here is the reason someone will need in six
 # months: every override anchor is copied VERBATIM from the ORIGINAL Claude
-# text. Run the substitutions first and `Opus 5 is the workhorse` has already
+# text. Run the substitutions first and `Opus 5.5 is the workhorse` has already
 # become `GPT-5.6 is the workhorse`, so every anchor quoting it stops matching
 # — and a `from` that does not match is not an error, it is a silent no-op that
 # leaves the untranslated passage in place. Overrides first also means an
 # override's `to` is itself substituted afterwards: writing `haiku` in a
-# replacement is a way to reach `gpt-5.6-luna`, and writing `Opus 5` there by
+# replacement is a way to reach `gpt-5.6-luna`, and writing `Opus 5.5` there by
 # accident is a way to get `GPT-5.6` you did not intend. stripFrontmatter runs
 # before dedent so that every frontmatter, flush-left or indented, is parsed by
 # the same code path.
@@ -146,9 +146,9 @@ let
 
   substitutions = [
     {
-      from = "Opus 5";
+      from = "Opus 5.5";
       to = "GPT-5.6";
-      why = "Names the coordinator model in prose. It must be replaced BEFORE the lowercase `opus`, which is why this table is a list and not an attribute set: nix would sort an attribute set alphabetically and hand `Fable` to the matcher before `Opus 5`, and any future entry that is a prefix of another would then apply in the wrong order.";
+      why = "Names the coordinator model in prose. It must be replaced BEFORE the lowercase `opus`, which is why this table is a list and not an attribute set: nix would sort an attribute set alphabetically and hand `Fable` to the matcher before `Opus 5.5`, and any future entry that is a prefix of another would then apply in the wrong order.";
     }
     {
       from = "Fable";
@@ -217,7 +217,7 @@ let
       skill = "apex";
       file = "SKILL.md";
       from = ''
-        description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts the depth (diagnosis, standard, high-stakes) but every task runs the full analyze → plan → execute → validate chain. Opus 5 plans, executes and self-verifies; Fable read-only verifies the high-stakes diff by default, plus the plan's premises when the target itself is the risk. Not for pure questions or research with zero file modification."
+        description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts the depth (diagnosis, standard, high-stakes) but every task runs the full analyze → plan → execute → validate chain. Opus 5.5 plans, executes and self-verifies; Fable read-only verifies the high-stakes diff by default, plus the plan's premises when the target itself is the risk. Not for pure questions or research with zero file modification."
       '';
       to = ''
         description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts the depth (diagnosis, standard, high-stakes) but every task runs the full analyze → plan → execute → validate chain. GPT-5.6 plans, executes and self-verifies; a bounded read-only pass at effort xhigh verifies the high-stakes diff by default, plus the plan's premises when the target itself is the risk. Not for pure questions or research with zero file modification."
@@ -228,7 +228,7 @@ let
       skill = "apex";
       file = "SKILL.md";
       from = ''
-        - Model routing (ORCHESTRATION.md): Opus 5 is the workhorse (coordinates,
+        - Model routing (ORCHESTRATION.md): Opus 5.5 is the workhorse (coordinates,
           plans, codes, self-verifies); Fable is an independent read-only verifier on
           high-stakes work only — the real diff by default, PLUS the plan's premises
           when the target itself is the risk — every spawn passes an explicit
@@ -272,7 +272,7 @@ let
       skill = "apex";
       file = "SKILL.md";
       from = ''
-        After finish on L/XL or high-stakes changes → spawn a Fable read-only verifier on the diff + ACs (the default pass); the coordinator (Opus 5) applies its bounded fix-list. Routine/reversible → Opus 5 self-verify only. When being wrong about the TARGET would cost more than a bad implementation, ALSO spawn a premises pass at plan approval — before any code exists; the two passes check different aspects.
+        After finish on L/XL or high-stakes changes → spawn a Fable read-only verifier on the diff + ACs (the default pass); the coordinator (Opus 5.5) applies its bounded fix-list. Routine/reversible → Opus 5.5 self-verify only. When being wrong about the TARGET would cost more than a bad implementation, ALSO spawn a premises pass at plan approval — before any code exists; the two passes check different aspects.
       '';
       to = ''
         After finish on L/XL or high-stakes changes → spawn a read-only verifier subagent on the diff + ACs (`model: gpt-5.6`, effort `xhigh` — the default pass); the coordinator applies its bounded fix-list. Routine/reversible → coordinator self-verify only. When being wrong about the TARGET would cost more than a bad implementation, ALSO spawn a premises pass at plan approval — before any code exists; the two passes check different aspects.
@@ -572,9 +572,9 @@ let
       file = "steps/step-05-examine.md";
       from = ''
         Launch 3 parallel code-reviewer agents, each with a different focus.
-        Spawn each with an explicit `model: opus` override (Opus 5 is a strong
+        Spawn each with an explicit `model: opus` override (Opus 5.5 is a strong
         reviewer; the per-invocation param beats the agent frontmatter). The
-        coordinator (Opus 5) synthesizes and arbitrates their findings inline; on
+        coordinator (Opus 5.5) synthesizes and arbitrates their findings inline; on
         high-stakes, add one Fable read-only verdict pass over the synthesis — a
         third possible spend of the cartridge, recorded in the plan alongside the
         other passes (step-02-plan), never spawned off the books.
@@ -623,7 +623,7 @@ let
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
       from = ''
-        ## Model routing — Opus 5 workhorse, Fable = independent high-stakes verifier
+        ## Model routing — Opus 5.5 workhorse, Fable = independent high-stakes verifier
       '';
       to = ''
         ## Model routing — GPT-5.6 workhorse, effort is the dial
@@ -633,7 +633,7 @@ let
     {
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
-      from = "`opus` = Opus 5, the current workhorse.";
+      from = "`opus` = Opus 5.5, the current workhorse.";
       to = "Codex exposes six reasoning efforts (`low`, `medium`, `high`, `xhigh`, `max`, `ultra`) where the source assumed three, so the effort is part of the routing decision, not a detail: what the call omits is unset.";
       why = "O12b. A mid-line anchor on purpose. The sentence before it — `ALWAYS pass an explicit model parameter on every Agent call` — is deliberately left for the substitution table, which turns `Agent call` into `spawn_agent call`; swallowing it into this override would have made that rule dead and lost the only live site of a delimited Agent form. What is replaced is the gloss that mapped one identifier to one model name, which is a tautology after substitution.";
     }
@@ -664,7 +664,7 @@ let
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
       from = ''
-        Effort-tiering first: prefer dialing Opus 5 effort (low↔max) over switching
+        Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
         models — a model switch pays the ~15× subagent/context tax. Switch model only
         when the tier gap is real (haiku mechanical, sonnet bulk).
       '';
@@ -681,7 +681,7 @@ let
       file = "steps/ORCHESTRATION.md";
       from = ''
         fix`), and NEVER edits. On reversible/routine work, skip Fable — the machine
-        gate + Opus 5 fresh-context self-verify suffice. Why reserved — not a quota:
+        gate + Opus 5.5 fresh-context self-verify suffice. Why reserved — not a quota:
         measured in this repo, 21 verifier spawns against 6 489 coordinator
         messages, so the allowance never was the binding constraint. What a Fable
         pass costs is a round-trip, and what it buys is one thing — a reader that
@@ -736,7 +736,7 @@ let
         does not create one.
 
         Why stacking pays HERE, when the rule above says stacking stops paying
-        once two verifiers check the SAME aspect: Opus 5 and Fable share a training
+        once two verifiers check the SAME aspect: Opus 5.5 and Fable share a training
         family, so they share blind spots by construction — a defect both were
         trained past stays invisible however many times it is re-read. Whether a
         defect survives a reader from a DIFFERENT family is the one aspect no
@@ -827,21 +827,21 @@ let
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
       from = ''
-        ## Verify loop (Opus 5 self-verify; Fable on high-stakes)
+        ## Verify loop (Opus 5.5 self-verify; Fable on high-stakes)
 
         After EVERY execute wave, verify — depth scaled to blast-radius:
         1. Machine gate FIRST (free): parse / typecheck / lint / tests. Never spend a
            model to find what a compiler finds.
         2. Read the execute summary AND the actual diff (`git diff --stat` + the diff
            of touched files). Never trust the summary alone.
-        3. Opus 5 coordinator self-verifies each acceptance criterion against the real
-           diff (fresh-context adversarial pass — Opus 5's strength).
+        3. Opus 5.5 coordinator self-verifies each acceptance criterion against the real
+           diff (fresh-context adversarial pass — Opus 5.5's strength).
         4. HIGH-STAKES ONLY (irreversible / security / architecture / prod): spawn a
            Fable read-only verifier over the diff + ACs — the default spend, whether
            or not a premises pass already ran at plan approval; it returns PASS or a
            bounded fix-list and NEVER edits.
         5. Issues found → CORRECTIONS list (persisted): one line per issue —
-           `file: problem → expected fix`. The coordinator re-briefs an Opus 5
+           `file: problem → expected fix`. The coordinator re-briefs an Opus 5.5
            implementer (`model: opus`) with a SHARPER brief each round (root cause,
            exact files/lines, expected end state, exact command that must pass), then
            re-verifies the new diff.

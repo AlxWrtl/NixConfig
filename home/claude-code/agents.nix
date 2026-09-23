@@ -1,7 +1,7 @@
 # Agent definitions (10 specialized agents)
 # Description pattern: [What]. Use when [triggers].
 # Domain knowledge stays in project SKILL.md files — agents stay generic
-# Models — Opus 5 is the workhorse (coordinates, plans, codes, self-verifies);
+# Models — Opus 5.5 is the workhorse (coordinates, plans, codes, self-verifies);
 #          Fable is an independent read-only verifier on high-stakes diffs only:
 #         Haiku (quick-fix, git-ship, codebase-navigator, test-runner, security-auditor)
 #         Opus  (frontend-expert, backend-expert, nix-expert, debugger — executors)

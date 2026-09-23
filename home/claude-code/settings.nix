@@ -27,15 +27,17 @@ in
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
     };
 
-    # Défaut déclaratif : Opus 5 = workhorse full-loop (1M natif, pas de suffixe
-    # [1m]). Fable n'est plus coordinateur — il est spawné en vérificateur
+    # Défaut déclaratif : Opus 5.5 = workhorse full-loop. L'alias `opus` suit le
+    # dernier Opus ; le suffixe `[1m]` sélectionne le contexte 1M. Valeur
+    # alignée sur ce que /model écrit dans le live (alias, pas un identifiant
+    # daté). Fable n'est plus coordinateur — il est spawné en vérificateur
     # read-only sur diff haut-enjeu seulement, voir apex ORCHESTRATION.md.
     # NON force-overridden dans la 2e passe jq, MAIS cette valeur re-seed le
     # live quand la clé y est absente (le CLI la retire quand /model écrit son
     # choix dans ~/.claude.json) — d'où l'obligation de la garder alignée sur
     # le défaut voulu, sinon le rebuild fait régresser le modèle.
-    model = "claude-opus-5";
-    # Chaîne de repli si Opus 5 est indisponible/surchargé : essayée dans
+    model = "opus[1m]";
+    # Chaîne de repli si Opus 5.5 est indisponible/surchargé : essayée dans
     # l'ordre, uniquement en cas d'échec de requête. N'affecte pas le défaut.
     fallbackModel = [
       "claude-opus-4-8"

@@ -40,6 +40,7 @@ in
     # Chaîne de repli si Opus 5.5 est indisponible/surchargé : essayée dans
     # l'ordre, uniquement en cas d'échec de requête. N'affecte pas le défaut.
     fallbackModel = [
+      "claude-opus-5"
       "claude-opus-4-8"
       "claude-sonnet-5"
     ];

@@ -457,6 +457,57 @@ let
         --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
         default_permissions=git-workspace approval_policy=never
     cmp -s "$probe/merge/once" "$probe/merge/config.toml" || pfail "codex-config-merge is not idempotent"
+    # The cmp above alone passed for the wrong reason (measured 2026-09-23): a
+    # merge that REFUSES its own canonical block also leaves the file unchanged.
+    # From 2026-09-14 to 2026-09-23 every rebuild printed "extra or malformed
+    # semantic structure" on the live config, because the shape check had not
+    # been taught workspace_roots. Steady state must be silent, not just inert.
+    # NOT assert_no_complaint: that one only looks for PATH needles, so it could
+    # never see this refusal (measured: the check stayed green with it here).
+    if [ -s "$probe/m2.log" ]; then
+      cat "$probe/m2.log" >&2
+      pfail "codex-config-merge printed something on an already-canonical config; steady state must be silent"
+    fi
+
+    # The shape check must still refuse a block carrying keys nobody owns.
+    cat > "$probe/merge/extra-key.toml" <<'TOML'
+    default_permissions = "git-workspace"
+    approval_policy = "never"
+
+    [permissions.git-workspace]
+    extends = ":workspace"
+    workspace_roots = { "/Users/alx/Vaults/AlxVault" = true }
+    filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }
+    user_marker = "must-survive"
+    TOML
+    cp "$probe/merge/extra-key.toml" "$probe/merge/extra-key.orig"
+    run_empty_path "$probe/m-extra.log" \
+      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/extra-key.toml" \
+        --permissions-profile git-workspace \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        default_permissions=git-workspace approval_policy=never
+    cmp -s "$probe/merge/extra-key.orig" "$probe/merge/extra-key.toml" || pfail "a git-workspace block with a user-owned extra key was rewritten"
+    grep -Fq 'extra or malformed semantic structure' "$probe/m-extra.log" || pfail "a git-workspace block with a user-owned extra key was not refused loudly"
+
+    # jq's `//` treats false as absent: `workspace_roots // {}` read a literal
+    # false as an empty object, so the shape check waved it through and the
+    # block was rewritten (found by an independent review, 2026-09-23).
+    cat > "$probe/merge/roots-false.toml" <<'TOML'
+    default_permissions = "git-workspace"
+    approval_policy = "never"
+
+    [permissions.git-workspace]
+    extends = ":workspace"
+    workspace_roots = false
+    filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }
+    TOML
+    cp "$probe/merge/roots-false.toml" "$probe/merge/roots-false.orig"
+    run_empty_path "$probe/m-false.log" \
+      ${codexPkgs.configMergePkg}/bin/codex-config-merge --config "$probe/merge/roots-false.toml" \
+        --permissions-profile git-workspace \
+        --permissions-block $'[permissions.git-workspace]\nextends = ":workspace"\nworkspace_roots = { "/Users/alx/Vaults/AlxVault" = true }\nfilesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }\n' \
+        default_permissions=git-workspace approval_policy=never
+    cmp -s "$probe/merge/roots-false.orig" "$probe/merge/roots-false.toml" || pfail "workspace_roots = false was accepted and rewritten instead of refused"
 
     cat > "$probe/merge/ambiguous.toml" <<'TOML'
     default_permissions = "old"

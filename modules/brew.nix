@@ -131,6 +131,12 @@
     masApps = {
       "DaisyDisk" = 411643860;
       "Keynote" = 409183694;
+      # NE PAS commenter cette ligne pour contourner un échec de MAJ mas.
+      # Mesuré le 2026-09-23 : `brew bundle --zap --force-cleanup` (la commande
+      # que lance nix-darwin) DÉSINSTALLE une app App Store retirée du Brewfile.
+      # Elle part à la corbeille, et la remettre exige `sudo` — le bundle est
+      # root:wheel. Si mas échoue sur un timeout App Store, attendre ou traiter
+      # `upgrade`, jamais retirer l'entrée.
       "Microsoft Excel" = 462058435;
       "Microsoft PowerPoint" = 462062816;
       "Microsoft Word" = 462054704;

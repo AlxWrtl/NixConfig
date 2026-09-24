@@ -71,6 +71,10 @@
         greedy = true;
       }
       {
+        name = "blender";
+        greedy = true;
+      }
+      {
         name = "codex";
         greedy = true;
       }

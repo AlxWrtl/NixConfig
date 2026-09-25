@@ -524,8 +524,14 @@ door, in a throwaway git repo it builds: inline `python3 -c` / `node -e` /
 scripts outside the repo that write and name it must be denied; read-only
 calls, in-repo scripts, a helper merely named `cp`, oversized or missing
 scripts and a `cd` into temp must pass, and a plain `ls` must not spawn git at
-all. Its `--mutants` mode grades every mutant on its declared red set, and the
-hook as it stood before these rules goes red on it.
+all. Script paths are resolved through every `cd` before them and through the
+hook's environment, `codex exec` is denied when the session cwd, its `-C` or
+its `cd`s name a repo unless an unwidened `-s read-only` lets it pass (the one
+exemption, a `cd` into an existing non-repo temp dir with no `-C` and no
+danger flag, fails closed on anything it cannot establish), commands past the
+256 K cap are denied unread, and 64 KB adversarial shapes must finish fast.
+Its `--mutants` mode grades every mutant on its declared red set, and the hook
+as it stood before these rules goes red on it.
 
 ### Usage
 

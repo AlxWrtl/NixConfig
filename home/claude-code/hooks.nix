@@ -61,6 +61,37 @@
   # Cost of the change: one deny -> apex -> retry round trip per modifying
   # task, instead of one per session. That is the point.
   #
+  # INTERPRETER WRITES (2026-09-25). The Bash door read shell syntax only, so a
+  # python/node/ruby script edited the repo unseen. What shipped, as replayed
+  # with this hook's own source over the recorded Bash calls: 0 earlier denies
+  # lost, in both replays. New denies: +29 over 20 645 rows with the scripts as
+  # they are on disk today — most out-of-repo scripts have since been deleted,
+  # so the script rule's bulk cannot be re-run that way; +66 over 20 072 unique
+  # (cmd, cwd) pairs with deleted scripts served from their recovered text, 42
+  # of them script runs, 0 on read-only or module calls (`-m`). The split of
+  # those 66 into real edits and false positives has NOT been audited row by
+  # row; a false positive costs one stray apex call. `perl -0pi` counts as
+  # in-place (21 unique passes before).
+  #
+  # What still goes through, named so it is not mistaken for coverage:
+  #   - a script path held in any `$VAR` other than `$TMPDIR` or a `NAME=value`
+  #     set earlier in the same command; a path built at run time;
+  #   - a `cd` followed by a relative script path;
+  #   - a write done by a CHILD: subprocess, os.system, exec of another tool;
+  #   - `python3 <<< "code"` (a here-string) and `<<\EOF` (escaped delimiter);
+  #   - `/usr/bin/env python3 -c`, `bun run` / `deno run` of a script,
+  #     `uv run python -c`;
+  #   - an interpreter after `then`, `do`, `{` or `!` — command position is
+  #     read after separators and env/timeout/VAR= prefixes only;
+  #   - more than 16 flags before `-c`, or a 5th script in one command;
+  #   - a flag taking a SEPARATE argument before `-c` or the script
+  #     (`python3 -W ignore -c ...`): the argument reads as the script;
+  #   - a quoted variable followed by a bare tail (`python3 "$TMPDIR"/edit.py`);
+  #   - `codex exec`, deferred.
+  # And one imprecision the other way: the write API is looked for in the
+  # WHOLE command, so `python3 -c "print(1)"; echo "open(f, 'w')"` counts the
+  # echoed text against the interpreter.
+  #
   # FAIL-OPEN on any error, unlike protect-main and block-main-bash. This is a
   # workflow hook, not a safety one: a missed APEX costs little, a session
   # where no edit can land costs a lot.
@@ -71,6 +102,7 @@
     process.stdin.on("end", () => {
       const fs = require("fs");
       const path = require("path");
+      const os = require("os");
       const { execSync } = require("child_process");
       try {
         const data = JSON.parse(input);
@@ -133,7 +165,9 @@
           // send newline-joined compounds, and `^` is not multiline here.
           const AT_CMD = "(^|[\\n|;&]\\s*|\\$\\(\\s*|&&\\s*|\\|\\|\\s*)";
           const WRITES = [
-            /\b(sed|perl|ruby)\b[^|;&]*\s-[a-zA-Z]*i\b/,
+            // `\w`, not `[a-zA-Z]`: `perl -0pi -e` puts a DIGIT before the
+            // `i`, and the letter class let 21 recorded in-place edits through.
+            /\b(sed|perl|ruby)\b[^|;&]*\s-\w*i\b/,
             // The argument class excludes separators, not just whitespace: once
             // a temp target is blanked the word is bare (`tee   && echo`), and
             // a plain \S would happily match the `&` of the next command.
@@ -143,13 +177,172 @@
             /--(write|fix|in-place)\b/,
             /\bgit\s+(apply|restore|checkout\s+--)/
           ];
-          if (!WRITES.some(r => r.test(probe))) process.exit(0);
+
+          // THE THIRD DOOR: an interpreter. `python3 -c`, `node -e`, `ruby -e`
+          // or a heredoc fed to one writes through its own file API, and none
+          // of that is shell syntax. These run on `noTemp` — quotes INTACT,
+          // because the code is inside them — never on `probe`.
+          //
+          // POS is command position, past `env`/`timeout N`/`VAR=x` prefixes.
+          // R_INLINE and R_HEREDOC were measured over 20 645 recorded Bash
+          // calls: 4 and 345 fires, 0 false positives. The obvious simpler
+          // detector (inline flag plus any `open(`) made 41.
+          //
+          // A NEWLINE ENDS A COMMAND. Every class after the separator stops at
+          // it: `A=x` on one line and `python3 "$A/e.py"` on the next is an
+          // assignment THEN a command, not one prefixed command — and a word
+          // list that runs past a newline pins `<<` on the NEXT command.
+          //
+          // BACKTRACKING, MEASURED. Every option or word loop is written so a
+          // run of text splits one way only (`-x` tokens, no `--?` in front of a
+          // class that holds `-` itself: that made `python3 --a` x28 run past
+          // 20 s), and is capped at 16. Timed on 64 KB adversarial inputs
+          // (separators, newlines, `$(node `, `a=b` lines, flag runs, 40 K
+          // spaces, `File.open(` x20 000, 64 shapes in all): every regex of
+          // this door under 10 ms warm on each. That is a measurement on
+          // those shapes, not a proof of linearity — and the older shell-door
+          // passes above still take seconds on some of the same inputs.
+          const POS = "(?:^|[\\n|;&(`][ \\t]*|\\$\\([ \\t]*)(?:(?:env|nohup|time|exec|timeout[ \\t]+[^\\s;&|(`]+)[ \\t]+|\\w+=[^\\s;&|(`]*[ \\t]+){0,16}";
+          const INTERP = "(?:[^\\s;&|(`]*/)?(?:python[0-9.]*|node|ruby|perl|deno|bun|tsx)";
+          // Blanks between words: spaces, tabs, or a backslash-newline.
+          const WS = "(?:[ \\t]|\\\\\\n)+";
+          const R_INLINE = new RegExp(POS + INTERP
+            + "(?:" + WS + "-[\\w=.-]+){0,16}?" + WS + "(?:-[a-zA-Z]*[ce]|--eval)\\b");
+          const R_HEREDOC = new RegExp(POS + INTERP
+            + "(?:[ \\t]+[^\\s<|;&(`]+){0,16}?[ \\t]*<<-?[ \\t]*(['\"]?)\\w+\\1");
+          // A file-writing CALL, not a mention. Every call whose first argument
+          // is a path refuses `(" ", ...)`: a temp target blanked to a space.
+          // There is no bare `cp(` — it matched a script's own helper named cp;
+          // Node's is `fs.cp` / `cpSync`, named in full. Bare `rename(`,
+          // `truncate(`, `rm(`, `mkdir(`, `unlink(` need an `fs.`/`fsp.` prefix
+          // or the `Sync` suffix: `df.rename(columns=...)` renames no file.
+          // `File.open(` needs its mode as the SECOND argument: `'app.rb'` is
+          // not mode `a`.
+          // The blanked-temp refusal allows a Python string prefix (`f' '`,
+          // `rb" "`): the blanking keeps the `f` that sat before the quote.
+          // `open (` with blanks before the paren is still a call.
+          const WRITE_API = /\bopen\s{0,8}\((?!\s*[fFrRbBu]{0,2}\\?['"]\s+\\?['"])[^,()]*(?:\([^()]*\)[^,()]*)?,\s*(?:mode\s*=\s*)?\\?['"][rbt]*[wax+][rwabxt+]*\\?['"]|\bFile\.open\((?!\s*[fFrRbBu]{0,2}\\?['"]\s+\\?['"])[^,()]*(?:\([^()]*\)[^,()]*)?,\s*['"][wa]|\.write_(?:text|bytes)\(|(?:\bshutil\.(?:copy\w*|move|rmtree)|\bos\.(?:rename|replace|remove|unlink|makedirs|mkdir|rmdir|truncate)|\b(?:writeFile|appendFile|copyFile)(?:Sync)?|\b(?:fs|fsp)(?:\.promises)?\.(?:rename|unlink|rm|rmdir|mkdir|truncate|cp)|\b(?:rename|unlink|rm|rmdir|mkdir|truncate|cp)Sync|\bcreateWriteStream|\bFile\.write|\bIO\.write)\((?!\s*[fFrRbBu]{0,2}\\?['"]\s+\\?['"])|\bFileUtils\.|\bopen(?:\s*\(\s*|\s+)(?:my\s+)?\$?\w+\s*,\s*['"]\+?>/;
+          // `cd` to a blanked temp dir, bare or still quoted (`cd "$TMPDIR"`
+          // leaves `cd " "`): every relative write after it lands in temp,
+          // not in the repo. Only a `cd` BEFORE the interpreter counts.
+          // `cd " " || exit 1` counts too: a failed cd runs nothing after it.
+          const CD_TEMP = /(?:^|[\n;&|][ \t]*)cd[ \t]*(?:"[ \t]*"[ \t]*|'[ \t]*'[ \t]*)?(?=&&|\|\||;|\n|$)/;
+
+          let shape = WRITES.some(r => r.test(probe));
+          if (!shape) {
+            const im = R_INLINE.exec(noTemp) || R_HEREDOC.exec(noTemp);
+            // `+ 1` keeps the separator the match starts on, so the `&&` after
+            // `cd " "` is still there for CD_TEMP's lookahead.
+            shape = im !== null && WRITE_API.test(noTemp)
+              && !CD_TEMP.test(noTemp.slice(0, im.index + 1));
+          }
+
+          // A script FILE run by an interpreter. Its path is read from the RAW
+          // command: `noTemp` blanks exactly the scratchpad paths these scripts
+          // live in. Quoted or bare; `$TMPDIR`, a bare `~` and a `NAME=value`
+          // set earlier in the same command are expanded (a value over 4096
+          // chars is dropped, not expanded). Anything else still holding a `$`
+          // is unresolvable here, and is let through. Only the first 4 script
+          // invocations of a command are looked at: past that, each one costs a
+          // rescan of everything before it.
+          const scripts = [];
+          if (!shape) {
+            const R_SCRIPT_RAW = new RegExp(POS + "(?:" + INTERP
+              + "|uv[ \\t]+run(?:[ \\t]+python[0-9.]*)?|(?:pnpm[ \\t]+(?:exec|dlx)|npx|pnpx)[ \\t]+(?:tsx|ts-node|vite-node|node))"
+              + "(?:" + WS + "(?:-[\\w-]+(?:=[^\\s;&|<>()]*)?|--import" + WS + "[^\\s;&|<>()-][^\\s;&|<>()]*|-r" + WS + "[^\\s;&|<>()-][^\\s;&|<>()]*)){0,16}" + WS
+              + "(?:\"([^\"\\n]+\\.(?:py|[cm]?js|[cm]?ts|rb|pl))\"|'([^'\\n]+\\.(?:py|[cm]?js|[cm]?ts|rb|pl))'"
+              + "|([^\\s;&|<>()'\"`-][^\\s;&|<>()'\"`]*\\.(?:py|[cm]?js|[cm]?ts|rb|pl)))(?=[\\s;&|)]|$)", "g");
+            // Quoted text that spans a newline is prose — a commit message
+            // listing `python3 /x/e.py` on its second line runs nothing. It is
+            // blanked to spaces of the same length, so offsets still line up
+            // with `command`.
+            // One left-to-right pass, so whichever starts first wins: a quote
+            // opens a span only at a word start (after a blank, `=`, `(` or a
+            // separator), never mid-word as in `don't`; a `#` at a word start
+            // outside quotes is a comment, blanked to the end of its line. An
+            // apostrophe in a comment paired with a later quote used to blank
+            // the script call between them.
+            const scan = command.replace(/(^|[\s=(;&|])('[^']*'|"[^"]*"|#[^\n]*)/g,
+              (q, pre, s) => pre + (s[0] !== "#" && s.indexOf("\n") === -1 ? s : " ".repeat(s.length)));
+            // The hook runs with the login $TMPDIR; a sandboxed Bash call has
+            // its own under /tmp/claude-<uid>. Each is tried, and the first
+            // under which the script exists wins. An unset or empty $TMPDIR is
+            // dropped, not tried: it would leave `$TMPDIR` in the path.
+            const uid = typeof process.getuid === "function" ? process.getuid() : null;
+            const tmpdirs = [process.env.TMPDIR];
+            if (uid !== null) tmpdirs.push("/tmp/claude-" + uid, "/private/tmp/claude-" + uid);
+            const tdCands = tmpdirs.filter(Boolean);
+            const ASSIGN = /(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:"([^"]*)"|'([^']*)'|([^\s;&|<>()'"`]*))/g;
+            let m;
+            let tries = 0;
+            while (tries++ < 4 && (m = R_SCRIPT_RAW.exec(scan)) !== null) {
+              const tds = /\$\{?TMPDIR\b/.test(command) ? tdCands : [tdCands[0]];
+              for (const td of tds) {
+                const vars = {};
+                const expand = s => s.replace(/\$(?:\{(\w+)\}|(\w+))/g, (all, a, b) => {
+                  const n = a || b;
+                  if (Object.prototype.hasOwnProperty.call(vars, n)) return vars[n];
+                  if (n === "TMPDIR" && td) return td;
+                  return all;
+                });
+                const before = command.slice(0, m.index);
+                ASSIGN.lastIndex = 0;
+                let a;
+                while ((a = ASSIGN.exec(before)) !== null) {
+                  const v = a[3] !== undefined ? a[3] : expand(a[2] !== undefined ? a[2] : a[4]);
+                  if (v.length <= 4096) vars[a[1]] = v;
+                  else delete vars[a[1]];
+                }
+                const lit = m[2] !== undefined;
+                let p = lit ? m[2] : expand(m[1] !== undefined ? m[1] : m[3]);
+                // Unresolved under this candidate: try the next, never stop.
+                if (!lit && /[$`]/.test(p)) continue;
+                // Bash expands `~` only unquoted.
+                if (m[3] !== undefined && (p === "~" || p.startsWith("~/"))) p = os.homedir() + p.slice(1);
+                const abs = path.resolve(process.cwd(), p);
+                if (fs.existsSync(abs)) { scripts.push(abs); break; }
+              }
+            }
+            if (scripts.length === 0) process.exit(0);
+          }
 
           // Only guard writes aimed at a repo. The cwd is the best signal a
           // hook has: it cannot resolve every target path in a shell string.
           try {
             execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" });
           } catch { process.exit(0); }
+
+          // The script branch denies only a script OUTSIDE the repo that both
+          // writes and names this repo's toplevel — as a whole path, so
+          // `<top>-tools/x` is not `<top>`. An in-repo script passed the gate
+          // when it was created. Both sides are realpath'd: git answers
+          // /private/var where the command may say /var. The file is opened
+          // ONCE, non-blocking (a FIFO named x.py must not hang the hook), and
+          // type and size are read from that same descriptor.
+          if (scripts.length > 0) {
+            const top = fs.realpathSync(execSync("git rev-parse --show-toplevel", { encoding: "utf8", stdio: "pipe" }).trim());
+            const NAMES_TOP = new RegExp(top.replace(/[.*+?^$()[\]{}|\\]/g, "\\$&") + "(?![\\w.-])");
+            let hit = false;
+            for (const s of scripts) {
+              try {
+                const real = fs.realpathSync(s);
+                if (real === top || real.startsWith(top + "/")) continue;
+                const fd = fs.openSync(real, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+                let src = "";
+                try {
+                  const st = fs.fstatSync(fd);
+                  if (!st.isFile() || st.size > 262144) continue;
+                  const buf = Buffer.alloc(st.size);
+                  src = buf.toString("utf8", 0, fs.readSync(fd, buf, 0, st.size, 0));
+                } finally { fs.closeSync(fd); }
+                if (WRITE_API.test(src) && NAMES_TOP.test(src)) { hit = true; break; }
+              } catch (e) {
+                // Unreadable or vanished: this script proves nothing, and an
+                // error never denies. The next one is still looked at.
+              }
+            }
+            if (!hit) process.exit(0);
+          }
         } else {
           // NotebookEdit sends notebook_path, not file_path. It has been in the
           // matcher and unread the whole time — a dead letter until now.
@@ -225,7 +418,9 @@
         // edit modifies a project file" there is simply false, and it sent a
         // reader hunting for a file that was never touched.
         const reason = "BLOCKED: this command has a file-writing SHAPE (redirect, in-place "
-          + "edit, heredoc, cp/mv/tee) inside a repo, and APEX has not run for THIS request. "
+          + "edit, heredoc, cp/mv/tee, or a python/node/ruby/perl script that calls a write "
+          + "API — inline code, a heredoc, or a script outside the repo that names this repo) "
+          + "inside a repo, and APEX has not run for THIS request. "
           + "The gate matches shapes, not proven writes — a heredoc trips it even with no "
           + "redirect, so prefer the Write tool. "
           + "Invoke the apex skill first — nothing to type: the Mode Gate picks the depth on "

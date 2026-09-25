@@ -518,6 +518,15 @@ must leave it silent, including every input it cannot read — and its
 `--mutants` mode rebuilds the hook three ways to prove the harness still goes
 red on a declared set of cases rather than on everything.
 
+`checks/require-apex-probe.sh` does the same for the require-apex gate's Bash
+door, in a throwaway git repo it builds: inline `python3 -c` / `node -e` /
+`ruby -e` code and interpreter heredocs that call a write API, `perl -0pi`, and
+scripts outside the repo that write and name it must be denied; read-only
+calls, in-repo scripts, a helper merely named `cp`, oversized or missing
+scripts and a `cd` into temp must pass, and a plain `ls` must not spawn git at
+all. Its `--mutants` mode grades every mutant on its declared red set, and the
+hook as it stood before these rules goes red on it.
+
 ### Usage
 
 ```

@@ -1474,7 +1474,7 @@
   # table over there, grep for this line.
   hookApexReminder = ''
     #!/usr/bin/env bash
-    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -e vérif externe. Majuscule désactive. Question sans modification → réponse directe."
+    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -pr -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -e vérif externe. Majuscule désactive. Question sans modification → réponse directe."
     exit 0
   '';
 

@@ -96,13 +96,18 @@ in
 
     sandbox = {
       enabled = true;
-      # Commands that run OUTSIDE the sandbox → normal permission prompt (ask)
-      # instead of being hard-blocked with "operation not permitted".
-      # Lets Claude run `sudo darwin-rebuild ...` with a confirmation box,
-      # so the user no longer has to retype it with a leading `!`.
+      # Commands that run OUTSIDE the sandbox, then through the normal permission
+      # rules (allow / ask / auto classifier) instead of failing with
+      # "operation not permitted". sudo/darwin-rebuild: `ask` still shows a box.
+      # codex/gh/git push need the keychain or the ~/.ssh key the sandbox denies.
+      # deny/ask below are TEXTUAL filtering (guardrail, not a barrier); the
+      # server-side barrier is the GitHub ruleset `protect-master` (id 24043808).
       excludedCommands = [
         "sudo *"
         "darwin-rebuild *"
+        "codex *"
+        "gh *"
+        "git push *"
       ];
       filesystem = {
         denyWrite = [
@@ -248,6 +253,12 @@ in
       # here fires on every out-of-sandbox command → box spammée, don't add it.
       ask = [
         "Bash(sudo *)"
+        # Merge paths — textual filtering = guardrail; server-side barrier =
+        # GitHub ruleset `protect-master` (id 24043808).
+        "Bash(gh pr merge*)"
+        "Bash(gh api *merge*)"
+        "Bash(gh api *-X *)"
+        "Bash(gh api *--method*)"
       ];
       allow = [
         "Read(*)"
@@ -334,15 +345,8 @@ in
         "Bash(rg *)"
         "Bash(bat *)"
         "Bash(eza *)"
-        # WebFetch allowlist
-        "WebFetch(domain:github.com)"
-        "WebFetch(domain:raw.githubusercontent.com)"
-        "WebFetch(domain:nix-darwin.github.io)"
-        "WebFetch(domain:nixos.org)"
-        "WebFetch(domain:search.nixos.org)"
-        "WebFetch(domain:*.npmjs.org)"
-        "WebFetch(domain:docs.anthropic.com)"
-        "WebFetch(domain:code.claude.com)"
+        # WebFetch — every domain (research is never blocked; denyRead still guards secrets)
+        "WebFetch"
       ];
       deny = [
         # Shell bypass — prevent permission/hook circumvention
@@ -364,9 +368,28 @@ in
         "Bash(git push --force *)"
         "Bash(git push -f *)"
         "Bash(git push --force-with-lease *)"
-        # Note: merge/push to master/main is NOT hard-denied — the block-main-bash
-        # hook turns those into a confirmation box (ask) so the user approves
-        # in-place. commit/rebase on master stay denied by that hook.
+        # Force-push / master target placed after the remote, gh/codex escape
+        # hatches. Textual filtering = guardrail, not a barrier; server-side
+        # barrier = GitHub ruleset `protect-master` (id 24043808).
+        "Bash(git push *--force*)"
+        "Bash(git push * -f*)"
+        "Bash(git push *+*)"
+        "Bash(git push *:master*)"
+        "Bash(git push *:main*)"
+        "Bash(git push * master)"
+        "Bash(git push * main)"
+        "Bash(gh repo delete*)"
+        "Bash(gh auth token*)"
+        "Bash(gh auth *--show-token*)"
+        "Read(${homeDirectory}/.codex/auth.json)"
+        "Bash(codex *danger-full-access*)"
+        "Bash(codex *dangerously*)"
+        "Bash(codex *sandbox_mode*)"
+        "Bash(codex *sandbox_permissions*)"
+        # Note: commit/push/merge/rebase while ON master/main are hard-DENIED by
+        # the block-main-bash hook (permissionDecision "deny", not a confirmation
+        # box). deny/ask are textual filtering (guardrail, not a barrier); the
+        # server-side barrier is the GitHub ruleset `protect-master` (id 24043808).
         "Bash(git reset --hard *)"
         "Bash(git clean -fdx *)"
         "Bash(git clean -fxd *)"
@@ -395,11 +418,6 @@ in
 
     hooks = {
       PreToolUse = [
-        {
-          matcher = "Bash";
-          hooks = [
-          ];
-        }
         {
           matcher = "Edit|Write";
           hooks = [

@@ -22,7 +22,7 @@ let
   agents = import ../home/claude-code/agents.nix;
   rules = import ../home/claude-code/rules.nix;
 
-  inherit (pkgs.lib) hasInfix hasSuffix;
+  inherit (pkgs.lib) hasInfix hasPrefix hasSuffix;
 
   # --- settings.json -------------------------------------------------------
   parsed = builtins.tryEval (builtins.fromJSON settings.settingsJson);
@@ -218,6 +218,71 @@ let
   ) (afterMarker "scrapling[shell]==" scraplingSkill);
   scraplingDrift = builtins.filter (v: v != scraplingPin) scraplingSkillPins;
 
+  # --- autonomous delivery (A12-A20) --------------------------------------
+  permList = key: pkgs.lib.attrByPath [ "permissions" key ] [ ] settingsAttrs;
+  allow = permList "allow";
+  deny = permList "deny";
+  ask = permList "ask";
+  excludedCommands = pkgs.lib.attrByPath [ "sandbox" "excludedCommands" ] [ ] settingsAttrs;
+  preToolUse = pkgs.lib.attrByPath [ "hooks" "PreToolUse" ] [ ] settingsAttrs;
+
+  agentsOnHaiku = builtins.filter (n: agentField "model" n == "haiku") agentNames;
+
+  webFetchScoped = builtins.filter (e: builtins.isString e && hasPrefix "WebFetch(" e) allow;
+  # Bare or scoped: any WebFetch in deny/ask blocks or prompts the run's fetches.
+  webFetchGated = builtins.filter (e: builtins.isString e && hasPrefix "WebFetch" e) (deny ++ ask);
+  webFetchBad = webFetchScoped ++ webFetchGated;
+
+  codexAllowed = builtins.filter (e: builtins.isString e && hasPrefix "Bash(codex" e) allow;
+
+  requiredExcluded = [
+    "sudo *"
+    "darwin-rebuild *"
+    "codex *"
+    "gh *"
+    "git push *"
+  ];
+  missingExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) requiredExcluded;
+
+  requiredDeny = [
+    "Bash(git push --force *)"
+    "Bash(git push -f *)"
+    "Bash(git push --force-with-lease *)"
+    "Bash(git reset --hard *)"
+    "Bash(git push *--force*)"
+    "Bash(git push * -f*)"
+    "Bash(git push *+*)"
+    "Bash(git push *:master*)"
+    "Bash(git push *:main*)"
+    "Bash(git push * master)"
+    "Bash(git push * main)"
+    "Bash(gh repo delete*)"
+    "Bash(gh auth token*)"
+    "Bash(gh auth *--show-token*)"
+    "Read(/Users/alx/.codex/auth.json)"
+    "Bash(codex *danger-full-access*)"
+    "Bash(codex *dangerously*)"
+    "Bash(codex *sandbox_mode*)"
+    "Bash(codex *sandbox_permissions*)"
+  ];
+  missingDeny = builtins.filter (d: !(builtins.elem d deny)) requiredDeny;
+
+  requiredAsk = [
+    "Bash(gh pr merge*)"
+    "Bash(gh api *merge*)"
+    "Bash(gh api *-X *)"
+    "Bash(gh api *--method*)"
+  ];
+  missingAsk = builtins.filter (a: !(builtins.elem a ask)) requiredAsk;
+
+  emptyHookGroups = builtins.filter (g: (g.hooks or null) == [ ]) preToolUse;
+
+  # Flags READ from the Mode Gate table in step-00, never restated here — same
+  # extraction as apex-consistency's rowFlags. null = table reformatted.
+  diagnosisRow = builtins.match ".*\\| Diagnosis \\| `([^`]*)` \\|.*" (skills.apexStep00Init or "");
+  diagnosisFlags = if diagnosisRow == null then null else builtins.head diagnosisRow;
+  readme = builtins.readFile ../README.md;
+
   # Each entry fails on its own, with what broke and why it matters.
   assertions = [
     {
@@ -339,6 +404,81 @@ let
         + " | listed in footerExempt but now carrying a footer, or gone from the manifest: "
         + builtins.concatStringsSep ", " deadFooterExempt
         + " — a skill that ships without its footer ships without a contract: the model gets no statement of what the skill expects and produces, no boundary saying when NOT to use it, and no routing to the skill that should take over, so it improvises all three. The mechanism is nix again: a `''` block closed too early ends the attribute mid-document and the trailing sections land inside the NEXT attribute — it parses, A10 still sees a frontmatter at column 0, C1 still maps every attribute to a manifest entry, the 500-line ceiling is still met, and the text is simply deployed to the wrong file. That is how scrapling lost its guardrails and its contract with an all-green build. A DEAD exemption is the same failure one level up: a hand-maintained list cannot fail loudly, only be silently wrong";
+    }
+    {
+      name = "A12 agents: no agent runs on haiku";
+      ok = agentsOnHaiku == [ ];
+      msg =
+        "agent(s) with `model: haiku`: "
+        + builtins.concatStringsSep ", " agentsOnHaiku
+        + " — the mechanical tier moved to sonnet; a haiku agent reintroduces the tier the routing table (ORCHESTRATION) and the Codex translation (no more haiku→gpt-5.6-luna rule) no longer know, so the two sides disagree on what that agent costs and can do";
+    }
+    {
+      name = "A13 settings: WebFetch is allowed on every domain";
+      ok = builtins.elem "WebFetch" allow && webFetchBad == [ ];
+      msg =
+        "permissions.allow lacks bare \"WebFetch\", a domain-scoped entry is back in allow, or a WebFetch (bare or scoped) sits in deny/ask: "
+        + builtins.concatStringsSep ", " webFetchBad
+        + " — research must never stall on a permission box for an unlisted domain (an autonomous run has nobody to click it); a `WebFetch(domain:…)` in allow re-narrows nothing but signals the allowlist is back, and one in deny/ask blocks or prompts exactly the fetches the run needs. Secrets stay guarded by denyRead and the Read denies, not by the fetch allowlist";
+    }
+    {
+      name = "A14 sandbox: excludedCommands covers keychain/SSH-bound commands";
+      ok = missingExcluded == [ ];
+      msg =
+        "sandbox.excludedCommands is missing: "
+        + builtins.concatStringsSep ", " missingExcluded
+        + " — codex/gh need the keychain and `git push` the ~/.ssh key, both denied inside the sandbox; without the exclusion they fail with \"operation not permitted\" and step-09 cannot ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
+    }
+    {
+      name = "A15 settings: force-push, master-target push, gh/codex escape hatches stay denied";
+      ok = missingDeny == [ ];
+      msg =
+        "permissions.deny lost: "
+        + builtins.concatStringsSep ", " missingDeny
+        + " — `git push *`, gh and codex run OUTSIDE the sandbox and commit/push/PR are pre-authorized; deny is a textual guardrail (prefix/glob match, not a barrier — the server-side barrier is the GitHub ruleset `protect-master`), and without it nothing local stops a rewritten remote history, a wiped worktree, a leaked gh/codex token or a codex run with its sandbox switched off";
+    }
+    {
+      name = "A19 settings: merge paths and mutating gh api stay behind ask";
+      ok = missingAsk == [ ];
+      msg =
+        "permissions.ask lost: "
+        + builtins.concatStringsSep ", " missingAsk
+        + " — `gh *` is allowed and runs outside the sandbox; ask (> allow) is the textual guardrail that still shows a box, even in auto mode, before a PR is merged or a mutating API call lands";
+    }
+    {
+      name = "A20 settings: codex is not blanket-allowed";
+      ok = codexAllowed == [ ];
+      msg =
+        "permissions.allow grants codex: "
+        + builtins.concatStringsSep ", " codexAllowed
+        + " — codex runs OUTSIDE the sandbox (excludedCommands); allowed on top of that, any codex call bypasses the whole deny list's intent and the auto classifier never sees it";
+    }
+    {
+      name = "A16 settings: no PreToolUse group with an empty hooks list";
+      ok = emptyHookGroups == [ ];
+      msg =
+        "hooks.PreToolUse has group(s) with `hooks = [ ]` for matcher(s): "
+        + builtins.concatStringsSep ", " (map (g: g.matcher or "<none>") emptyHookGroups)
+        + " — an empty group runs nothing but reads as a guard: whoever audits settings.json believes that matcher is hooked when no hook runs there";
+    }
+    {
+      name = "A17 apex: no unconditional approval wait in step-02, step-02c, step-09";
+      ok =
+        !(hasInfix "wait for the answer" skills.apexStep09Finish)
+        && !(hasInfix "always — and wait for the answer" skills.apexStep02cVerify)
+        && !(hasInfix "Always, no opt-out" skills.apexStep02Plan);
+      msg = "an unconditional wait is back in step-09 (\"wait for the answer\"), step-02c (\"always — and wait for the answer\") or step-02 (\"Always, no opt-out\") — every run then stalls on a user round trip the `-pr` default already authorized; only high-stakes or `-q` may wait";
+    }
+    {
+      name = "A18 apex: diagnosis ships a PR, and README says so";
+      ok =
+        diagnosisFlags != null
+        && builtins.elem "-pr" (pkgs.lib.splitString " " diagnosisFlags)
+        && hasInfix ("| Diagnosis | `" + diagnosisFlags + "` |") readme;
+      msg =
+        "Mode Gate diagnosis flags read from apexStep00Init: "
+        + (if diagnosisFlags == null then "<row not found — table reformatted?>" else "`${diagnosisFlags}`")
+        + " — either `-pr` is missing (a diagnosis fix then stops on its branch and needs a manual ship) or README.md no longer carries `| Diagnosis | `<same flags>` |`, so the documented flags drift from the ones the skill applies";
     }
   ];
 

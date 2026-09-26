@@ -24,8 +24,8 @@
 # become `GPT-5.6 is the workhorse`, so every anchor quoting it stops matching
 # — and a `from` that does not match is not an error, it is a silent no-op that
 # leaves the untranslated passage in place. Overrides first also means an
-# override's `to` is itself substituted afterwards: writing `haiku` in a
-# replacement is a way to reach `gpt-5.6-luna`, and writing `Opus 5.5` there by
+# override's `to` is itself substituted afterwards: writing `sonnet` in a
+# replacement is a way to reach `gpt-5.6-terra`, and writing `Opus 5.5` there by
 # accident is a way to get `GPT-5.6` you did not intend. stripFrontmatter runs
 # before dedent so that every frontmatter, flush-left or indented, is parsed by
 # the same code path.
@@ -161,14 +161,9 @@ let
       why = "The `model:` identifier passed to a spawn. Codex documents `gpt-5.6` as the demanding-agent default, so it is the counterpart of the workhorse identifier.";
     }
     {
-      from = "haiku";
-      to = "gpt-5.6-luna";
-      why = "The mechanical/narrow tier. Codex documents `gpt-5.6-luna` as `fast, narrowly scoped agents`, the same role haiku plays in the routing table.";
-    }
-    {
       from = "sonnet";
       to = "gpt-5.6-terra";
-      why = "The bulk/large-context tier. Codex documents `gpt-5.6-terra` as `faster, lower-cost, lighter subagent work`.";
+      why = "The mechanical and bulk tier. Codex documents `gpt-5.6-terra` as `faster, lower-cost, lighter subagent work`.";
     }
     {
       from = "fable";
@@ -641,12 +636,12 @@ let
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
       from = ''
-        | Analyze fan-out | Explore / codebase-navigator | haiku |
+        | Analyze fan-out | Explore / codebase-navigator | sonnet |
       '';
       to = ''
-        | Analyze fan-out | explorer subagents (no agent file to name) | haiku |
+        | Analyze fan-out | explorer subagents (no agent file to name) | sonnet |
       '';
-      why = "O12c. `Explore` and `codebase-navigator` are Claude agent definitions; naming them here would send the reader looking for files that are not on this host. The model column is left alone on purpose so the substitution table translates it — that is what keeps the mechanical tier rule alive rather than burying it in a replacement string.";
+      why = "O12c. `Explore` and `codebase-navigator` are Claude agent definitions; naming them here would send the reader looking for files that are not on this host. The model column is left alone on purpose so the substitution table translates it — that is what keeps the sonnet tier rule alive rather than burying it in a replacement string.";
     }
     {
       skill = "apex";
@@ -666,15 +661,15 @@ let
       from = ''
         Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
         models — a model switch pays the ~15× subagent/context tax. Switch model only
-        when the tier gap is real (haiku mechanical, sonnet bulk).
+        when the tier gap is real (sonnet for mechanical and bulk work).
       '';
       to = ''
         Effort-tiering first: prefer dialing the effort (low↔ultra) over switching
         models — a model switch pays the subagent/context tax either way (the ~15×
         figure comes from the Claude register and has not been re-measured here).
-        Switch model only when the tier gap is real (haiku mechanical, sonnet bulk).
+        Switch model only when the tier gap is real (sonnet for mechanical and bulk work).
       '';
-      why = "O12e. The effort range is wider here (six levels, up to `ultra`) so `low↔max` understates the dial. The multiplier is kept because the shape of the advice depends on it, but it is now attributed: it was measured on the other host, and this file may not present another host's measurement as its own. The last sentence keeps its two tier words so the substitution table renders them, which is also what keeps those two rules alive.";
+      why = "O12e. The effort range is wider here (six levels, up to `ultra`) so `low↔max` understates the dial. The multiplier is kept because the shape of the advice depends on it, but it is now attributed: it was measured on the other host, and this file may not present another host's measurement as its own. The last sentence keeps its tier word so the substitution table renders it, which is also what keeps that rule alive.";
     }
     {
       skill = "apex";
@@ -1027,8 +1022,10 @@ let
         Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
         list (long or password-interactive). Local Git writes are permitted by
         the `git-workspace` profile on a feature branch; on main/master the hook
-        permits only exact validated new-branch creation. Commit/push still need
-        explicit user prose, and push/network may remain unavailable.
+        permits only exact validated new-branch creation. Commit, push and
+        `gh pr create` on the run's feature branch follow the apex `-pr` default
+        — no user prose needed; push/network may still be unavailable (then:
+        "Run yourself" list).
         Sandbox-blocked commands (`git push` over SSH, docker, local DB sockets):
         there is no
         mid-run escalation on this host — `approval_policy = "never"` means an
@@ -1037,7 +1034,7 @@ let
         Never weaken the sandbox config itself. See the classification rule in
         ORCHESTRATION.md.
       '';
-      why = "O20a. `dangerouslyDisableSandbox` has no Codex counterpart. The translation distinguishes permitted local Git under `git-workspace` from genuinely blocked network/socket access, keeps protected-branch mutation narrow, and preserves explicit authorization for commit/push.";
+      why = "O20a. `dangerouslyDisableSandbox` has no Codex counterpart. The translation distinguishes permitted local Git under `git-workspace` from genuinely blocked network/socket access, keeps protected-branch mutation narrow, and lets commit, push and PR creation on the feature branch follow the apex `-pr` default, as on the Claude side.";
     }
     {
       skill = "apex";
@@ -1067,10 +1064,11 @@ let
 
           Local Git writes are permitted by `git-workspace` on feature branches.
           On main/master, only exact validated new-branch creation may mutate Git.
-          Commit/push still require explicit user prose; push/network may remain
-          unavailable even after authorization.
+          Commit, push and `gh pr create` on the run's feature branch follow the
+          apex `-pr` default — no user prose needed; push/network may still be
+          unavailable (then: "Run yourself" list).
       '';
-      why = "O20b. Second absent-escalation site. Network and socket denials remain sandbox-blocked; local Git is classified separately according to profile, protected-branch hook, and explicit commit/push authorization.";
+      why = "O20b. Second absent-escalation site. Network and socket denials remain sandbox-blocked; local Git is classified separately according to profile and protected-branch hook. Commit, push and PR creation on the feature branch follow the apex `-pr` default, as on the Claude side — no per-run user prose.";
     }
     {
       skill = "obsidian";
@@ -1224,8 +1222,10 @@ let
         - **Safe** — read-only, parse, test, edit a file in the repo, `git status`,
           `git diff`, `nix-instantiate --parse`, grep, build steps that do not touch
           the system: execute directly. `git add` is local and permitted on a
-          feature branch; commit and push still require explicit user prose.'';
-      why = "O25. Local Git writes now belong to `git-workspace`; staging is safe after the protected-branch escape, while commit/push retain their explicit-user-prose gate.";
+          feature branch. Commit, push and `gh pr create` on the run's feature
+          branch follow the apex `-pr` default — no user prose needed;
+          push/network may still be unavailable (then: "Run yourself" list).'';
+      why = "O25. Local Git writes now belong to `git-workspace`; staging is safe after the protected-branch escape, and commit/push/PR on the feature branch follow the apex `-pr` default, as on the Claude side.";
     }
     {
       skill = "nix-darwin";
@@ -1259,8 +1259,8 @@ let
       skill = "autoresearch";
       file = "SKILL.md";
       from = "- On keep: `git add -A && git commit`. On discard: `git checkout -- . && git clean -fd`";
-      to = "- On keep: `git add -A`; commit only when explicitly requested in user prose. On discard: `git diff --binary | git apply -R && git clean -fd`.";
-      why = "O24c. `git-workspace` permits staging and worktree reset on the experiment feature branch. Commit remains conditional on explicit user prose; discard stays local.";
+      to = "- On keep: `git add -A && git commit` on the experiment branch. On discard: `git diff --binary | git apply -R && git clean -fd`.";
+      why = "O24c. `git-workspace` permits staging, commit and worktree reset on the experiment feature branch, so keep commits there as on the Claude side; discard stays local.";
     }
     {
       skill = "apex";
@@ -1301,14 +1301,13 @@ let
 
         1. **Stage**: `git add` modified/created files, named explicitly
         2. **Commit**: conventional format — `feat: {description}`,
-           `fix: {description}`; only after explicit user request
+           `fix: {description}`
         3. **Push**: `git push -u origin {branch-name}`
-           only after explicit user request
 
         ## Create Pull Request
 
-        Run `gh pr create` only when explicitly requested. Use:'';
-      why = "O24. `git-workspace` permits local staging and authorized commit operations on feature branches. The translation keeps commit, push, and PR creation conditional on explicit user prose; network availability remains a separate runtime constraint.";
+        Use `gh pr create` with:'';
+      why = "O24. `git-workspace` permits local staging and commit operations on feature branches. Commit, push and PR creation follow the apex `-pr` default, as on the Claude side; network availability remains a separate runtime constraint.";
     }
     {
       skill = "scrapling";

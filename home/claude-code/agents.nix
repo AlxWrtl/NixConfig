@@ -3,7 +3,7 @@
 # Domain knowledge stays in project SKILL.md files — agents stay generic
 # Models — Opus 5.5 is the workhorse (coordinates, plans, codes, self-verifies);
 #          Fable is an independent read-only verifier on high-stakes diffs only:
-#         Haiku (quick-fix, git-ship, codebase-navigator, test-runner, security-auditor)
+#         Sonnet (quick-fix, git-ship, codebase-navigator, test-runner, security-auditor)
 #         Opus  (frontend-expert, backend-expert, nix-expert, debugger — executors)
 #         Fable (code-reviewer — spec compliance + critical security, pre-merge only)
 # Removed in f98ef95 (do not reference): architecture-expert, performance-expert, team-lead
@@ -101,7 +101,7 @@
   agentNavigator = ''
     ---
     name: codebase-navigator
-    model: haiku
+    model: sonnet
     effort: low
     description: "Explores and maps codebases without modifying files. Use proactively when tasks say where is, find, locate, how does X work, trace, entrypoint, audit, or when understanding structure before delegating."
     tools: Grep, Glob, Read, WebFetch
@@ -214,7 +214,7 @@
   agentQuickFix = ''
     ---
     name: quick-fix
-    model: haiku
+    model: sonnet
     effort: low
     description: "Applies small targeted changes under 20 lines. Use proactively when tasks say fix typo, rename, small change, tweak, cleanup, or when the fix is obvious and contained to 1-2 files."
     tools: Read, Edit, Grep, Bash
@@ -292,7 +292,7 @@
   agentGitShip = ''
     ---
     name: git-ship
-    model: haiku
+    model: sonnet
     effort: low
     description: "Stages, commits, and pushes git changes. Use proactively when tasks say commit, push, ship, stage, or after implementation is verified and ready for version control."
     tools: Bash, Read
@@ -324,7 +324,7 @@
     - Body: 2-5 bullets, start with "-"
 
     You run non-interactively as a subagent — you CANNOT ask the user questions.
-    Act only on what the task prompt authorizes; when unsure, stop and report.
+    Act within the task prompt's scope and the defaults below; when unsure, stop and report.
 
     Steps:
     1) Run:
@@ -340,8 +340,8 @@
        your report. Never blind `git add -A` when unrelated changes exist.
     5) Write commit msg (type: feat|fix|chore|refactor|perf|test|docs|ci|build).
       - Before finalizing: ensure no banned words; rewrite if needed.
-    6) Commit ONLY if the task prompt says commit: git commit -m "<title>" -m "<bullets>"
-    7) Push ONLY if the task prompt says push:
+    6) Commit — authorized by default on a feature branch; skip only if the task prompt says not to: git commit -m "<title>" -m "<bullets>"
+    7) Push — same default; never --force, never to main/master:
       - if no upstream: git push -u origin HEAD
       - else: git push
     8) Report: short SHA + branch + staged files + skipped (unrelated) files.
@@ -351,7 +351,7 @@
   agentTestRunner = ''
     ---
     name: test-runner
-    model: haiku
+    model: sonnet
     effort: low
     description: "Runs tests and analyzes results. Use proactively after code changes to verify correctness, or when tasks mention test, spec, coverage, or CI."
     tools: Bash, Read, Grep, Glob
@@ -387,7 +387,7 @@
   agentSecurityAuditor = ''
     ---
     name: security-auditor
-    model: haiku
+    model: sonnet
     effort: max
     description: "Audits code for security vulnerabilities (OWASP top 10, deps, secrets). Use proactively before merging, or when tasks mention security, audit, vulnerability, CVE, or dependency check."
     tools: Read, Grep, Glob, Bash

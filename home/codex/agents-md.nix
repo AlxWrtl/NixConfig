@@ -46,13 +46,17 @@ let
           mutation allowed there; linked worktrees whose metadata lives outside
           workspace roots remain unsupported.
         - master is reached through a PR on GitHub, never by a local merge.
-        - No `git commit`/`push` unless explicitly requested in user prose.
+        - On the run's feature branch, commit/push and PR creation need no ask;
+          push/network may be unavailable here → "Run yourself" list.
+        - Always ask first: any merge into master/main, any force-push, any history
+          rewrite.
       '';
     }
     {
       name = "Ask First (sandbox Codex)";
       body = ''
-        - En plus de la liste du tronc : tout appel réseau. La sortie réseau est
+        - En plus de la liste du tronc : tout appel réseau, sauf push et
+          `gh pr create` du run sur sa branche feature (voir Git). La sortie réseau est
           filtrée ici, un appel qui part sans accord échoue tard et en silence.
       '';
     }

@@ -393,6 +393,33 @@ let
       needle = "**Record in the plan which Fable passes will run**";
       scope = skills.apexStep02Plan;
     }
+    {
+      # Plan approval waits for the user ONLY in high-stakes or under `-q`.
+      # Losing the condition turns it back into an unconditional round trip
+      # (every run stalls at approval, the autonomous-delivery regression) or,
+      # reworded away, into no premise question at all. Scoped to ORCHESTRATION
+      # because that is where the coordinator — the one with a user channel —
+      # reads its approval duty.
+      name = "orchestration: plan approval waits only in high-stakes or under -q";
+      needle = "In high-stakes mode or under `-q`";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Same condition, second site: step-02 is what the plan phase reads. The
+      # two copies must agree; a needle per scope keeps one from drifting while
+      # the other keeps a corpus-wide needle green.
+      name = "plan: the approval wait is conditional on high-stakes or -q";
+      needle = "In high-stakes mode or under `-q`";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # Third site: step-02c (`-v`) presents its changes and waits under the
+      # same condition. Without its own needle it could revert to an
+      # unconditional wait while the two scopes above stay green.
+      name = "verify: the -v wait is conditional on high-stakes or -q";
+      needle = "In high-stakes mode or under `-q`";
+      scope = skills.apexStep02cVerify;
+    }
   ];
 
   # Non-vacuity, asserted at the DEFINITION and not at the use site. `hasInfix

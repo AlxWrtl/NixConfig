@@ -206,7 +206,7 @@ in
 
     | Mode | Default flags |
     |------|---------------|
-    | Diagnosis | `-x -o -n` |
+    | Diagnosis | `-x -pr -o -n` |
     | Standard / complex | `-t -pr -o -n` |
     | High-stakes | `-t -x -pr -o -n` |
     | Pure research | none |
@@ -232,8 +232,9 @@ in
       orchestrate.
     - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
       the error first; execute phase spawns the debugger agent (`model: opus`)
-      as implementer. Stays inside APEX. No `-pr`: a fix lands on its branch and
-      stops there — shipping it is a separate, explicit call.
+      as implementer. Stays inside APEX. Ships like the other modes: `-pr` is a
+      default, so the fix ends as a PR on its branch — never merged without the
+      user.
     - **Standard / complex**: full orchestration per ORCHESTRATION.md.
     - **High-stakes** — irreversible / security / architecture / prod: adds the
       adversarial pass, plus the Fable read-only verify on the real diff.
@@ -826,13 +827,15 @@ in
 
     ## User Approval
 
-    Always, no opt-out:
-    - **Present the Premises FIRST**, before the task list. Ask explicitly
-      whether any of them is wrong — that is the question worth a round trip.
-      An unsourced premise must be visible in the transcript before the code
-      that rests on it exists.
+    The coordinator, not this planner, talks to the user (ORCHESTRATION.md "Plan approval"):
+    - **Present the Premises FIRST**, before the task list. An unsourced premise
+      must be visible in the transcript before the code that rests on it exists.
     - Then present the rest of the plan
-    - Wait for approval before proceeding
+    - In high-stakes mode or under `-q`: ask explicitly whether any premise is
+      wrong — that is the question worth a round trip — and wait for approval
+      before proceeding.
+    - Every other mode: show them and proceed without waiting; a contradiction
+      raised later follows the rule below.
 
     **Whenever the user contradicts a premise — at plan approval or later, mid-run
     — persist the correction before execute proceeds.** The rule holds at any
@@ -925,7 +928,8 @@ in
 
     ## If issues found:
     Update the plan and TodoWrite checklist to reflect corrections.
-    Present the changes for user approval, always — and wait for the answer.
+    Present the changes to the user. In high-stakes mode or under `-q`, wait for
+    their answer before execute; otherwise proceed.
 
     ## Trace or nothing (what makes `-v` real)
 
@@ -1353,7 +1357,10 @@ in
       - ## Acceptance Criteria (checklist from plan)
 
     ## Before creating it
-    Show the PR title and body for approval, always — and wait for the answer.
+    Show the PR title and body in the transcript, then create it — no approval
+    wait: the `-pr` default already authorizes commit, push and PR on the run's
+    branch. Never merge it; merging into master, force-pushing and rewriting
+    history always need the user's explicit go.
 
     ## COMPLETE
 
@@ -1656,7 +1663,7 @@ in
             {"type": "pattern", "value": "[Gg]ate|[Dd]iagnos", "description": "Mode Gate must pick the diagnosis mode"},
             {"type": "pattern", "value": "[Rr]eproduc", "description": "Diagnosis analyze reproduces the error before planning a fix"},
             {"type": "pattern", "value": "debugger agent", "description": "Execute phase spawns the debugger agent as implementer"},
-            {"type": "excludes", "value": "open a pull request", "description": "Diagnosis mode ships nothing: the fix stops on its branch"}
+            {"type": "pattern", "value": "[Pp]ull request|gh pr create", "description": "Diagnosis ships its fix: -pr is a default, the run ends on a PR"}
           ]
         },
         {
@@ -1902,26 +1909,28 @@ in
 
     | Phase | Agent | model |
     |-------|-------|-------|
-    | Analyze fan-out | Explore / codebase-navigator | haiku |
+    | Analyze fan-out | Explore / codebase-navigator | sonnet |
     | Analyze synthesis | analyzer phase agent | `opus` (effort high) |
     | Plan | plan phase agent | `opus` (effort high/max) |
     | Execute (parallel waves under `-k`, coordinator's call) | implementer agents | `opus` (low effort mechanical) |
     | Bulk / large-context execute | implementer agents | `sonnet` |
-    | Run tests | test-runner | haiku |
+    | Run tests | test-runner | sonnet |
     | Self-verify (every task) | COORDINATOR inline (Opus 5.5) | none — fresh-context adversarial pass |
     | High-stakes verify | fable verifier subagent | `fable` — READ-ONLY, bounded verdict |
     | External verify (`-e`, opt-in) | codex CLI subprocess, not an Agent spawn | `gpt-6-astra` → `gpt-5.6-terra` — READ-ONLY, bounded verdict |
 
     Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
     models — a model switch pays the ~15× subagent/context tax. Switch model only
-    when the tier gap is real (haiku mechanical, sonnet bulk).
+    when the tier gap is real (sonnet for mechanical and bulk work).
 
     Plan approval: the coordinator reads the returned plan, checks it against the
     task + analyze summary, then approves it or re-briefs the planner. Execute
     never starts on an unapproved plan. The planner drafts the premises but never
     talks to the user — it has no user channel. So it is the COORDINATOR that
-    presents the plan's Premises to the user at approval time, asks explicitly
-    whether any is wrong, and collects the contradiction. When one comes back, the
+    presents the plan's Premises to the user at approval time.
+    In high-stakes mode or under `-q`, it asks explicitly whether any is wrong and
+    waits for the answer; in every other mode it shows them and proceeds. It
+    collects any contradiction, whenever it comes. When one comes back, the
     coordinator persists the correction itself, per the rule in step-02-plan, and
     does so BEFORE spawning execute — the same applies to a contradiction raised
     later, mid-run.

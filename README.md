@@ -295,7 +295,7 @@ flag set, applied to every flag you did not type.
 
 | Mode | Default flags | Notes |
 |------|---------------|-------|
-| Diagnosis | `-x -o -n` | bug/crash — reproduce first, debugger agent implements. No PR |
+| Diagnosis | `-x -pr -o -n` | bug/crash — reproduce first, debugger agent implements, ships as a PR |
 | Standard | `-t -pr -o -n` | full orchestration |
 | High-stakes | `-t -x -pr -o -n` | irreversible / security / architecture / prod — adds the adversarial pass and an independent read-only verify on the real diff |
 | Pure research | none | analyze only, no branch |

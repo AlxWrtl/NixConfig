@@ -363,6 +363,37 @@ S_HELP_WEB=$(sh_payload sh-help-web "$FIX_MASTER" "\"git help --web status\"")
 # /dev/null carve-out: `> /dev/null 2>&1` is a redirection and must not count.
 S_STATUS=$(sh_payload sh-status "$FIX_MASTER" "\"git status --short\"")
 S_LS=$(sh_payload sh-ls "$FIX_MASTER" "\"ls -la > /dev/null 2>&1\"")
+# A push whose destination names main/master is refused from ANY branch, so
+# these run on the FEATURE fixture, where only rule push-protected-ref can
+# deny. P* must deny, N* must pass; a hook copy whose predicate is `false`
+# turns every P* red and leaves every N* green.
+S_PUSH_P1=$(sh_payload sh-push-p1 "$FIX_FEAT" "\"git push origin master\"")
+S_PUSH_P1_NOREPO=$(sh_payload sh-push-p1-norepo "$NOT_REPO" "\"git push origin master\"")
+S_PUSH_P3=$(sh_payload sh-push-p3 "$FIX_FEAT" "\"git push origin HEAD:master\"")
+S_PUSH_P5=$(sh_payload sh-push-p5 "$FIX_FEAT" "\"git push --force origin +HEAD:main\"")
+S_PUSH_P7=$(sh_payload sh-push-p7 "$FIX_FEAT" "\"git push origin :master\"")
+S_PUSH_P9=$(sh_payload sh-push-p9 "$FIX_FEAT" "\"git push origin 'master'\"")
+S_PUSH_P11=$(sh_payload sh-push-p11 "$FIX_FEAT" "\"git add -A && git push origin master\"")
+S_PUSH_P13=$(sh_payload sh-push-p13 "$FIX_FEAT" "\"bash -c \\\"git push origin master\\\"\"")
+# KNOWN FALSE POSITIVE, accepted fail-closed: an EXECUTOR word (`env`) leaves
+# stripInertText's view raw, so the commit message text reads as a push.
+S_PUSH_K1=$(sh_payload sh-push-k1 "$FIX_FEAT" "\"env X=1 git commit -m \\\"git push origin master\\\"\"")
+S_PUSH_N1=$(sh_payload sh-push-n1 "$FIX_FEAT" "\"git push origin feat/probe\"")
+S_PUSH_N2=$(sh_payload sh-push-n2 "$FIX_FEAT" "\"git push -u origin HEAD\"")
+S_PUSH_N3=$(sh_payload sh-push-n3 "$FIX_FEAT" "\"git push origin master-foo\"")
+S_PUSH_N4=$(sh_payload sh-push-n4 "$FIX_FEAT" "\"git push origin feat/master\"")
+S_PUSH_N7=$(sh_payload sh-push-n7 "$FIX_FEAT" "\"git commit -m \\\"doc: never run git push origin master\\\"\"")
+S_PUSH_N9=$(sh_payload sh-push-n9 "$FIX_FEAT" "\"git push origin feat/x && git log master\"")
+# Spellings the destination can take: glued to a redirection (the lookahead
+# must admit `>`), refs/heads/ and heads/ on a refspec's right side.
+S_PUSH_P14=$(sh_payload sh-push-p14 "$FIX_FEAT" "\"git push origin master>/dev/null\"")
+S_PUSH_P4=$(sh_payload sh-push-p4 "$FIX_FEAT" "\"git push origin HEAD:refs/heads/master\"")
+S_PUSH_P8=$(sh_payload sh-push-p8 "$FIX_FEAT" "\"git push origin HEAD:heads/main\"")
+# 128 KiB of `git push ` with no separator, just under MAX_CMD so it is
+# inspected, not refused. The old lazy scan was quadratic on it; the linear
+# one must pass it (feature branch, no protected destination) inside 1 s.
+FAST_CMD=$(printf 'git push %.0s' $(seq 14563))
+S_PUSH_FAST=$(sh_payload sh-push-fast "$FIX_FEAT" "\"$FAST_CMD\"")
 S_NOCMD=$(pay sh-nocmd "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"shell\",\"cwd\":\"$FIX_MASTER\",\"tool_input\":{\"description\":\"list files\"}}")
 
 qg_payload() { # qg_payload <name> <cwd> <stop_hook_active>
@@ -581,6 +612,25 @@ bs-readonly-git-status|bs|$FIX_MASTER|base|$S_STATUS|0|-|-|
 bs-readonly-ls-devnull|bs|$FIX_MASTER|base|$S_LS|0|-|-|
 bs-feature-branch|bs|$FIX_FEAT|base|$S_PERL_FEAT|0|-|-|
 bs-not-a-repo|bs|$NOT_REPO|base|$S_PERL_NOREPO|0|-|-|
+bs-push-p1-deny|bs|$FIX_FEAT|base|$S_PUSH_P1|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p1-norepo-deny|bs|$NOT_REPO|base|$S_PUSH_P1_NOREPO|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p3-deny|bs|$FIX_FEAT|base|$S_PUSH_P3|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p5-deny|bs|$FIX_FEAT|base|$S_PUSH_P5|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p7-deny|bs|$FIX_FEAT|base|$S_PUSH_P7|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p9-deny|bs|$FIX_FEAT|base|$S_PUSH_P9|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p11-deny|bs|$FIX_FEAT|base|$S_PUSH_P11|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p13-bash-c-deny|bs|$FIX_FEAT|base|$S_PUSH_P13|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-k1-env-deny|bs|$FIX_FEAT|base|$S_PUSH_K1|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p14-glued-deny|bs|$FIX_FEAT|base|$S_PUSH_P14|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p4-refs-heads-deny|bs|$FIX_FEAT|base|$S_PUSH_P4|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-p8-heads-deny|bs|$FIX_FEAT|base|$S_PUSH_P8|2|.hookSpecificOutput.permissionDecision == "deny"|push-protected-ref|
+bs-push-n1-pass|bs|$FIX_FEAT|base|$S_PUSH_N1|0|-|-|
+bs-push-n2-pass|bs|$FIX_FEAT|base|$S_PUSH_N2|0|-|-|
+bs-push-n3-pass|bs|$FIX_FEAT|base|$S_PUSH_N3|0|-|-|
+bs-push-n4-pass|bs|$FIX_FEAT|base|$S_PUSH_N4|0|-|-|
+bs-push-n7-pass|bs|$FIX_FEAT|base|$S_PUSH_N7|0|-|-|
+bs-push-n9-pass|bs|$FIX_FEAT|base|$S_PUSH_N9|0|-|-|
+bs-push-fast|bs|$FIX_FEAT|base|$S_PUSH_FAST|0|-|-|1
 bs-malformed-stdin|bs|$FIX_MASTER|base|$P_BROKEN|2|.hookSpecificOutput.permissionDecision == "deny"|-|
 bs-missing-command|bs|$FIX_MASTER|base|$S_NOCMD|2|.hookSpecificOutput.permissionDecision == "deny"|-|
 bs-no-git-on-path|bs|$FIX_MASTER|nogit|$S_PERL|2|.hookSpecificOutput.permissionDecision == "deny"|-|

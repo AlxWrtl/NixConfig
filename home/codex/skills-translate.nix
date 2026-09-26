@@ -1013,10 +1013,21 @@ let
       file = "steps/step-00-init.md";
       from = ''
         Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-        list (long or password-interactive). Sandbox-blocked commands (`git push`
-        over SSH, docker, local DB): retry ONCE with dangerouslyDisableSandbox —
-        the permission box lets the user approve or refuse. Never weaken the
-        sandbox config itself. See the classification rule in ORCHESTRATION.md.
+        list (long or password-interactive). `git push`, `git commit`, `git pull`,
+        `git fetch`, `gh`, `codex` and bare `nix flake check` are excluded from
+        the sandbox — run them as standalone commands: one per Bash call, from the repo cwd, no
+        `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
+        (multi-line text: `git commit -F <file>`,
+        `gh pr create --body-file <file>`); any of those keeps the call sandboxed
+        and it fails. Inside the sandbox, `.git/config` and `.git/hooks` are
+        read-only in every repo: `git branch -d/-m/-u`,
+        `git checkout -b <x> origin/<y>`, `git remote`, `git config --local`,
+        `git init` and `git clone` fail there — run them with
+        dangerouslyDisableSandbox (one retry, permission box).
+        Other sandbox-blocked commands (docker, local DB sockets):
+        retry ONCE with dangerouslyDisableSandbox — the permission box lets the
+        user approve or refuse. Never weaken the sandbox config itself. See the
+        classification rule in ORCHESTRATION.md.
       '';
       to = ''
         Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
@@ -1040,7 +1051,18 @@ let
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
       from = ''
-        - **Sandbox-blocked** — `git push` over SSH, docker, local DB sockets, or any
+        - **Sandbox-excluded** — `git push`, `git commit`, `git pull`, `git fetch`,
+          `gh`, `codex` and bare `nix flake check` run OUTSIDE the sandbox only when the Bash call is that
+          command alone: run them as standalone commands from the repo cwd — no
+          `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
+          (multi-line text: `-F <file>` / `--body-file <file>`). If one fails on
+          sandbox evidence, fix the shape; do not escalate.
+          Inside the sandbox, `.git/config` and `.git/hooks` are read-only in
+          every repo: `git branch -d/-m/-u`, `git checkout -b <x> origin/<y>`,
+          `git remote`, `git config --local`, `git init` and `git clone` fail
+          there — run them with dangerouslyDisableSandbox (one retry, permission
+          box).
+        - **Sandbox-blocked** — docker, local DB sockets, or any
           command that just failed with clear sandbox evidence (permission denied on
           allowed work, socket/auth failure): retry ONCE with
           `dangerouslyDisableSandbox: true`. The `ask` permission rule shows the user
@@ -1291,11 +1313,18 @@ let
            - `feat: {description}` for new features
            - `fix: {description}` for bug fixes
            - Include a body with key changes if the diff is large
+           - Write the message to a file first (Write tool), then
+             `git commit -F <file>`
         3. **Push**: `git push -u origin {branch-name}`
+
+        Each git/gh command is ONE standalone Bash call from the repo cwd (see
+        step-00): no `cd … &&`, no `git -C`, no heredoc or `$(…)` — otherwise it
+        stays sandboxed and fails.
 
         ## Create Pull Request
 
-        Use `gh pr create` with:'';
+        Write the PR body to a file first (Write tool), then
+        `gh pr create --title "<title>" --body-file <file>`, with:'';
       to = ''
         ## Git Operations
 

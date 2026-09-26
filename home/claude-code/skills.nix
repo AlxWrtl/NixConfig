@@ -163,10 +163,21 @@ in
     every phase. There is no inline mode to fall back on.
 
     Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-    list (long or password-interactive). Sandbox-blocked commands (`git push`
-    over SSH, docker, local DB): retry ONCE with dangerouslyDisableSandbox —
-    the permission box lets the user approve or refuse. Never weaken the
-    sandbox config itself. See the classification rule in ORCHESTRATION.md.
+    list (long or password-interactive). `git push`, `git commit`, `git pull`,
+    `git fetch`, `gh`, `codex` and bare `nix flake check` are excluded from
+    the sandbox — run them as standalone commands: one per Bash call, from the repo cwd, no
+    `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
+    (multi-line text: `git commit -F <file>`,
+    `gh pr create --body-file <file>`); any of those keeps the call sandboxed
+    and it fails. Inside the sandbox, `.git/config` and `.git/hooks` are
+    read-only in every repo: `git branch -d/-m/-u`,
+    `git checkout -b <x> origin/<y>`, `git remote`, `git config --local`,
+    `git init` and `git clone` fail there — run them with
+    dangerouslyDisableSandbox (one retry, permission box).
+    Other sandbox-blocked commands (docker, local DB sockets):
+    retry ONCE with dangerouslyDisableSandbox — the permission box lets the
+    user approve or refuse. Never weaken the sandbox config itself. See the
+    classification rule in ORCHESTRATION.md.
 
     ## Parse Flags
 
@@ -1344,11 +1355,18 @@ in
        - `feat: {description}` for new features
        - `fix: {description}` for bug fixes
        - Include a body with key changes if the diff is large
+       - Write the message to a file first (Write tool), then
+         `git commit -F <file>`
     3. **Push**: `git push -u origin {branch-name}`
+
+    Each git/gh command is ONE standalone Bash call from the repo cwd (see
+    step-00): no `cd … &&`, no `git -C`, no heredoc or `$(…)` — otherwise it
+    stays sandboxed and fails.
 
     ## Create Pull Request
 
-    Use `gh pr create` with:
+    Write the PR body to a file first (Write tool), then
+    `gh pr create --title "<title>" --body-file <file>`, with:
     - **Title**: conventional format matching the commit
     - **Body**: structured with:
       - ## Summary (what was done)
@@ -2255,7 +2273,18 @@ in
       system package installs: DO NOT execute; add the exact command to a
       **"Run yourself" list** in the phase summary / final output (a 10-15 min
       build or a password prompt is better in the user's terminal).
-    - **Sandbox-blocked** — `git push` over SSH, docker, local DB sockets, or any
+    - **Sandbox-excluded** — `git push`, `git commit`, `git pull`, `git fetch`,
+      `gh`, `codex` and bare `nix flake check` run OUTSIDE the sandbox only when the Bash call is that
+      command alone: run them as standalone commands from the repo cwd — no
+      `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
+      (multi-line text: `-F <file>` / `--body-file <file>`). If one fails on
+      sandbox evidence, fix the shape; do not escalate.
+      Inside the sandbox, `.git/config` and `.git/hooks` are read-only in
+      every repo: `git branch -d/-m/-u`, `git checkout -b <x> origin/<y>`,
+      `git remote`, `git config --local`, `git init` and `git clone` fail
+      there — run them with dangerouslyDisableSandbox (one retry, permission
+      box).
+    - **Sandbox-blocked** — docker, local DB sockets, or any
       command that just failed with clear sandbox evidence (permission denied on
       allowed work, socket/auth failure): retry ONCE with
       `dangerouslyDisableSandbox: true`. The `ask` permission rule shows the user
@@ -2987,7 +3016,7 @@ in
     ## Safety carve-outs (resume full prose)
 
     - Security warnings
-    - Irreversible action confirmations (delete, push, deploy)
+    - Irreversible action confirmations (delete, merge into master, force-push, deploy)
     - User confused or repeating question
 
     ## Intensity levels

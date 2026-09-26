@@ -32,10 +32,27 @@
 # EVERY RUN IS BOUNDED. The hook runs under a 10 s alarm: a regex that
 # backtracks for minutes, or an open() that blocks on a FIFO, is a red case
 # with its exit status, not a probe that never returns. `pass-fast` cases
-# bound the run at 1000 ms.
+# bound the run at 1000 ms; the fast-* shapes (64 KB words, newline runs,
+# `$(` runs, `/.claude/projects/` repeats, `sed ` runs, codex flag runs, and
+# one just under the 256 K command cap, a 13 000-`cd` chain, a 64 KB run of
+# `codex exec` calls, a `$B$B…` expansion bomb, a run of `"$(` after a codex
+# call) measure under 200 ms against
+# that 1000 ms bound; the non-codex ones took 1.7 s to over 30 s before the
+# hardening pass.
+#
+# `$PWD` follows the `cd`s before the script (`script-cd-pwd`): /bin/sh sets
+# PWD on every `cd`, so the hook's inherited one is never what the call sees.
+#
+# THE CODEX EXEMPTION IS A WHITELIST. Every `codex-cd-*` / `codex-subshell-*`
+# deny case breaks exactly one of its conditions (top-level cd, resolved,
+# existing, under a temp root, not a repo, no `-C`, no danger flag).
+# Every fixture of this probe lives under a temp root, so the non-temp
+# directory is `/usr`.
 #
 # KNOWN GAPS, asserted as PASS so they cannot be mistaken for coverage:
-# `unresolved-var-known-gap` (a script path in a `$VAR` the hook cannot see)
+# `unresolved-var-known-gap` (a script path in a `$VAR` neither set in the
+# command nor in the hook's environment, run with `-u OTHER`: the same blind
+# spot as a loop var, `read`, `$1` or `$(...)`)
 # and `git-commit-heredoc-hash-body` (the interpreter heredoc rule is scoped to
 # interpreters; widening the generic heredoc test was measured at +120 false
 # positives and rejected).
@@ -71,7 +88,7 @@
 #   m24 `~` expanded inside quotes too.
 #   m25 the unresolved-`$` guard removed.
 #   m26 the script path no longer realpath'd.
-#   m27 the 4096-char cap on an expanded variable removed.
+#   m27 the 4096-char caps on a value and on an expansion both removed.
 #   m28 the script scan's quote blanking back to pairing ANY two quotes, with
 #       no `#` comment pass (an apostrophe in a comment hid a script call).
 #   m29 an unset or empty $TMPDIR tried again, and an unresolved `$` stops the
@@ -80,6 +97,51 @@
 #   m31 the Python string prefix (`f' '`) refused by the blanked-temp test.
 #   m32 `rmdir` dropped from the fs./Sync write calls.
 #   m33 `open (` with a blank before the paren no longer a call.
+#   m34 the noTemp word-start lookbehind removed (a 64 KB word is quadratic).
+#   m35 the memory-dir class admits `/` again (`/.claude/projects/` nests at 256 K).
+#   m36 AT_CMD blanks back to `\s*` (a newline run is quadratic).
+#   m37 the `sed -i` gap uncapped again (`sed ` x16 384).
+#   m38 the 256 K command cap removed.
+#   m39 the environment fallback for a name the command never sets removed.
+#   m40 a relative script path read from the cwd again, not after each `cd`.
+#   m41 the separate-argument flags (`-W ignore`, `-r esm`) read as plain flags.
+#   m42 the quoted-head, bare-tail script path (`"$TMPDIR"/e.py`) not read.
+#   m43 the `codex exec` gate (R_CODEX) neutralised.
+#   m44 a widening flag or `-c sandbox...` no longer undoes `-s read-only`.
+#   m45 quoted prompt text no longer blanked ("use -s read-only" whitelists).
+#   m46 `codex exec --help` no longer exempt.
+#   m47 the `-C <dir>` repo no longer graded.
+#   m48 `$PWD` read from the hook's environment, not from the `cd` fold.
+#   m49 the dir the `cd`s lead to no longer graded (only the session cwd).
+#   m50 a danger flag no longer voids the temp-dir exemption.
+#   m51 a `-c sandbox...` key no longer DANGER (widens read-only only).
+#   m52 `-p <profile>` no longer DANGER.
+#   m53 option values read from the blanked text again (`-s "read-only"`).
+#   m54 a `cd` inside `(...)` / `$(...)` counts as moving the shell again.
+#   m55 `cd -` / an unresolved `cd` skipped, not voiding the exemption.
+#   m56 the exempt dir no longer has to exist.
+#   m57 the exempt dir no longer has to be under a temp root.
+#   m58 the exempt dir may be a git repo (every fixture sits under a temp
+#       root, so this test alone keeps each in-repo call from the exemption).
+#   m59 `-C` no longer voids the exemption.
+#   m60 a `cd` word the fold cannot read (`then cd x`) no longer voids it.
+#   m61 a backslash-newline cuts the call again.
+#   m62 `--yolo` and `--add-dir` no longer DANGER.
+#   m63 attached short values (`-sX`, `-CX`) no longer read.
+#   m64 `$(...)` inside double quotes blanked again.
+#   m65 every `codex` word counts toward the 4-call cap again.
+#   m66 calls past the cap no longer graded at the session cwd.
+#   m67 the 64-`cd` fold cap removed (`;cd a` x13 000 is quadratic).
+#   m68 the 4096-char expansion budget removed (`$B$B…` bomb).
+#   m69 a same-command value over 4096 chars falls back to the environment.
+#   m70 `-m` taken as a separate-argument flag (SEP_ARG).
+#   m71 `-s read-only` never passes.
+#   m72 a second `-s <other>` no longer undoes `-s read-only`.
+#   m73 the `$(` span inside double quotes back to a first-paren stop, and
+#       an unclosed span blanked (`"$(codex exec "fix (this) now")"`).
+#   m74 an unclosed `$(` span blanked again instead of left visible.
+#   m75 a bare `--` no longer ends the options (`-- -s read-only` whitelists).
+#   m76 a `-c` key after a leading blank (`' sandbox_mode=...'`) read as "".
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
@@ -94,7 +156,7 @@
 #
 # usage: require-apex-probe.sh [hook.js]
 #        require-apex-probe.sh --mutants
-#        require-apex-probe.sh --mutant m1..m33
+#        require-apex-probe.sh --mutant m1..m76
 
 set -euo pipefail
 
@@ -108,7 +170,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76"
 
 MODE="run"
 ONE_MUTANT=""
@@ -247,16 +309,16 @@ fi
 # repository. The runtime-case count is read back from the child run.
 
 M1_EXPECT="perl-0pi-in-place"
-M2_EXPECT="cd-temp-after-inline-write node-e-rmdirsync node-e-writefilesync python-c-open-space python-c-writes-package-json ruby-e-file-write"
+M2_EXPECT="cd-temp-after-inline-write node-e-rmdirsync node-e-writefilesync node-r-then-e-write python-W-ignore-c-write python-c-open-space python-c-writes-package-json ruby-e-file-write"
 M3_EXPECT="heredoc-quoted-hash-body"
-M4_EXPECT="comment-apostrophe-then-script multi-script-second-writes script-dollar-brace-var script-newline-var script-npx-tsx script-out-of-repo-plain script-out-of-repo-quoted script-same-command-var script-single-quoted script-tilde-unquoted script-tmpdir-empty script-tmpdir-split script-tmpdir-unset script-tmpdir-var"
+M4_EXPECT="comment-apostrophe-then-script multi-script-second-writes script-W-ignore script-cd-chain script-cd-relative script-dollar-brace-var script-newline-var script-npx-tsx script-out-of-repo-plain script-out-of-repo-quoted script-env-home script-cd-pwd script-quoted-var-bare-tail script-same-command-var script-single-quoted script-tilde-unquoted script-tmpdir-empty script-tmpdir-split script-tmpdir-unset script-tmpdir-var"
 M5_EXPECT="cp-helper-not-a-write"
-M6_EXPECT="script-dollar-brace-var script-newline-var script-same-command-var script-tmpdir-empty script-tmpdir-split script-tmpdir-unset script-tmpdir-var"
-M7_EXPECT="script-in-repo script-in-repo-via-symlink"
-M8_EXPECT="script-names-sibling-prefix script-out-of-repo-no-repo-path"
+M6_EXPECT="script-dollar-brace-var script-env-home script-newline-var script-cd-pwd script-quoted-var-bare-tail script-same-command-var script-tmpdir-empty script-tmpdir-split script-tmpdir-unset script-tmpdir-var"
+M7_EXPECT="cd-subdir-in-repo script-in-repo script-in-repo-via-symlink"
+M8_EXPECT="cd-relative-noname script-names-sibling-prefix script-out-of-repo-no-repo-path"
 M9_EXPECT="script-over-256k"
 M10_EXPECT="cd-quoted-temp-then-inline-write cd-temp-or-exit-then-inline-write cd-temp-then-inline-write"
-M11_EXPECT="bounded-64k-separators script-same-command-var"
+M11_EXPECT="assign-over-4096-env-unresolved bounded-64k-separators fast-64k-dollar-paren fast-64k-newlines script-same-command-var fast-64k-dq-subst"
 M12_EXPECT="flags-28-fast"
 M13_EXPECT="script-newline-var"
 M14_EXPECT="dollar-paren-node-64k-fast heredoc-after-newline-not-interp node-newlines-64k-fast"
@@ -272,13 +334,56 @@ M23_EXPECT="script-names-sibling-prefix"
 M24_EXPECT="script-tilde-quoted-not-expanded"
 M25_EXPECT="dollar-guard-dotdot"
 M26_EXPECT="script-in-repo-via-symlink"
-M27_EXPECT="assign-over-4096-dropped"
+M27_EXPECT="assign-over-4096-dropped assign-over-4096-env-unresolved fast-expand-bomb"
 M28_EXPECT="comment-apostrophe-then-script"
 M29_EXPECT="script-tmpdir-empty script-tmpdir-unset"
 M30_EXPECT="cd-temp-or-exit-then-inline-write"
 M31_EXPECT="inline-fstring-temp-write"
 M32_EXPECT="node-e-rmdirsync"
 M33_EXPECT="python-c-open-space"
+M34_EXPECT="fast-64k-claude-projects fast-64k-dollar-paren fast-64k-word fast-cap-claude-projects fast-expand-bomb"
+M35_EXPECT="fast-cap-claude-projects"
+M36_EXPECT="fast-64k-newlines"
+M37_EXPECT="fast-64k-sed"
+M38_EXPECT="huge-command-denied"
+M39_EXPECT="script-env-home"
+M40_EXPECT="script-cd-chain script-cd-relative"
+M41_EXPECT="node-r-then-e-write python-W-ignore-c-write script-W-ignore"
+M42_EXPECT="script-quoted-var-bare-tail"
+M43_EXPECT="codex-C-repo-from-nogit codex-cd-repo-subdir codex-cd-temp-C-repo codex-cd-temp-danger codex-cd-temp-config-danger codex-cd-temp-profile-danger codex-after-separator codex-e-alias codex-exec-default codex-read-only-in-prompt codex-resume-default codex-ro-bypass codex-ro-config-sandbox codex-ro-profile codex-workspace-write codex-C-nonrepo-from-repo codex-cd-temp-C-nonrepo codex-subshell-cd codex-dollar-cd codex-cd-missing-dir codex-cd-dash codex-cd-nontemp codex-cd-temp-gitrepo codex-unread-cd codex-add-dir codex-yolo-temp codex-quoted-danger-temp codex-C-quoted-pwd-then-c codex-C-quoted-repo-from-nogit codex-attached-C codex-backslash-newline codex-ro-then-bsnl-danger codex-ro-then-ww codex-subst-in-dquotes codex-five-calls codex-five-exec-calls codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed codex-double-dash-ro codex-c-key-leading-blank"
+M44_EXPECT="codex-ro-bypass codex-ro-config-sandbox codex-ro-profile codex-ro-then-bsnl-danger"
+M45_EXPECT="codex-read-only-in-prompt"
+M46_EXPECT="codex-exec-help"
+M47_EXPECT="codex-C-repo-from-nogit codex-C-quoted-repo-from-nogit codex-attached-C"
+M48_EXPECT="script-cd-pwd"
+M49_EXPECT="codex-cd-repo-subdir"
+M50_EXPECT="codex-cd-temp-danger codex-cd-temp-config-danger codex-cd-temp-profile-danger codex-add-dir codex-yolo-temp codex-quoted-danger-temp codex-c-key-leading-blank"
+M51_EXPECT="codex-cd-temp-config-danger codex-c-key-leading-blank"
+M52_EXPECT="codex-cd-temp-profile-danger"
+M53_EXPECT="codex-ro-quoted codex-C-quoted-repo-from-nogit"
+M54_EXPECT="codex-subshell-cd codex-dollar-cd"
+M55_EXPECT="codex-cd-dash"
+M56_EXPECT="codex-cd-missing-dir"
+M57_EXPECT="codex-cd-nontemp"
+M58_EXPECT="codex-after-separator codex-backslash-newline codex-cd-repo-subdir codex-cd-temp-gitrepo codex-e-alias codex-exec-default codex-five-calls codex-read-only-in-prompt codex-resume-default codex-ro-then-ww codex-subst-in-dquotes codex-workspace-write codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed codex-double-dash-ro"
+M59_EXPECT="codex-attached-C codex-C-quoted-repo-from-nogit codex-C-repo-from-nogit codex-cd-temp-C-nonrepo codex-cd-temp-C-repo"
+M60_EXPECT="codex-unread-cd"
+M61_EXPECT="codex-backslash-newline codex-ro-then-bsnl-danger codex-ro-bsnl"
+M62_EXPECT="codex-add-dir codex-yolo-temp"
+M63_EXPECT="codex-attached-C codex-ro-attached"
+M64_EXPECT="codex-subst-in-dquotes codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed"
+M65_EXPECT="codex-five-calls-temp"
+M66_EXPECT="codex-five-exec-calls"
+M67_EXPECT="fast-64k-cd-chain"
+M68_EXPECT="fast-expand-bomb"
+M69_EXPECT="assign-over-4096-env-unresolved"
+M70_EXPECT="python-m-script-arg"
+M71_EXPECT="codex-ro-short codex-ro-eq-effort codex-ro-quoted codex-ro-attached codex-ro-bsnl fast-64k-codex-config"
+M72_EXPECT="codex-ro-then-ww"
+M73_EXPECT="codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed"
+M74_EXPECT="codex-subst-unclosed"
+M75_EXPECT="codex-double-dash-ro"
+M76_EXPECT="codex-c-key-leading-blank"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -299,7 +404,7 @@ build_mutant() { # build_mutant <mN> <destination>
     m3) from='const R_HEREDOC = new RegExp(' to='const R_HEREDOC = /(?!)/; const R_HEREDOC_OFF = new RegExp(' ;;
     m4) from='const R_SCRIPT_RAW = new RegExp(' to='const R_SCRIPT_RAW = /(?!)/g; const R_SCRIPT_OFF = new RegExp(' ;;
     m5) from='|\bcreateWriteStream|' to='|\bcp|\bcreateWriteStream|' ;;
-    m6) from='const expand = s => s.replace(' to='const expand = s => s; const expandOff = s => s.replace(' ;;
+    m6) from='const expand = s => {' to='const expand = s => s; const expandOff = s => {' ;;
     m7) from='if (real === top || real.startsWith(top + "/")) continue;' to='if (false) continue;' ;;
     m8) from='WRITE_API.test(src) && NAMES_TOP.test(src)' to='WRITE_API.test(src) && true' ;;
     m9) from='st.size > 262144' to='st.size > 1e12' ;;
@@ -312,7 +417,7 @@ build_mutant() { # build_mutant <mN> <destination>
       lit_sub "$dest.tmp" "$dest" "$from" "$to"
       rm -f "$dest.tmp"
       ;;
-    m12) from='"(?:" + WS + "-[\\w=.-]+){0,16}?"' to='"(?:" + WS + "--?[\\w=.-]+)*?"' ;;
+    m12) from='"(?:" + WS + "(?:" + SEP_ARG + "|-[\\w=.-]+)){0,16}?"' to='"(?:" + WS + "(?:" + SEP_ARG + "|--?[\\w=.-]+))*?"' ;;
     m13) from='\\w+=[^\\s;&|(`]*[ \\t]+){0,16}' to='\\w+=[^\\s;&|(`]*\\s+){0,16}' ;;
     m14) from='"(?:[ \\t]+[^\\s<|;&(`]+){0,16}?[ \\t]*<<' to='"(?:\\s+[^\\s<|;&]+)*?\\s*<<' ;;
     m15) from='if (uid !== null) tmpdirs.push(' to='if (false) tmpdirs.push(' ;;
@@ -327,7 +432,14 @@ build_mutant() { # build_mutant <mN> <destination>
     m24) from='if (m[3] !== undefined && (p === "~"' to='if ((p === "~"' ;;
     m25) from='if (!lit && /[$`]/.test(p)) continue;' to='if (false) continue;' ;;
     m26) from='const real = fs.realpathSync(s);' to='const real = s;' ;;
-    m27) from='if (v.length <= 4096) vars[a[1]] = v;' to='if (true) vars[a[1]] = v;' ;;
+    m27)
+      # Two substitutions: the value cap off, and the expansion budget off —
+      # the budget alone also stops a long value from resolving.
+      lit_sub "$ORIG" "$dest.tmp" 'if (v.length <= 4096) vars[a[1]] = v;' 'if (true) vars[a[1]] = v;'
+      from='if (len > 4096) { over = true; return ""; }' to='if (false) { over = true; return ""; }'
+      lit_sub "$dest.tmp" "$dest" "$from" "$to"
+      rm -f "$dest.tmp"
+      ;;
     m28) from='/(^|[\s=(;&|])('"'"'[^'"'"']*'"'"'|"[^"]*"|#[^\n]*)/g' to='/()('"'"'[^'"'"']*'"'"'|"[^"]*")/g' ;;
     m29)
       # Two substitutions: the empty-candidate filter off, and the `$` guard
@@ -341,8 +453,58 @@ build_mutant() { # build_mutant <mN> <destination>
     m31) from='[fFrRbBu]{0,2}' to='' ;;
     m32) from='rm|rmdir|' to='rm|' ;;
     m33) from='\bopen\s{0,8}\(' to='\bopen\(' ;;
+    m34) from='(?<![^\s'"'"'"|;&)])[^\s'"'"'"|;&)]*(\$\{?TMPDIR' to='[^\s'"'"'"|;&)]*(\$\{?TMPDIR' ;;
+    m35) from='\/\.claude\/projects\/[^\s'"'"'"|;&)\/]*\/memory\/' to='\/\.claude\/projects\/[^\s'"'"'"|;&)]*\/memory\/' ;;
+    m36) from='"(^|[\\n|;&][ \\t]*|\\$\\([ \\t]*|&&[ \\t]*|\\|\\|[ \\t]*)"' to='"(^|[\\n|;&]\\s*|\\$\\(\\s*|&&\\s*|\\|\\|\\s*)"' ;;
+    m37) from='[^|;&]{0,1024}\s-\w*i\b/' to='[^|;&]*\s-\w*i\b/' ;;
+    m38) from='command.length > 262144' to='command.length > 1e12' ;;
+    m39) from='if (n !== "TMPDIR" && process.env[n]' to='if (false && process.env[n]' ;;
+    m40) from='path.resolve(dir, p)' to='path.resolve(process.cwd(), p)' ;;
+    m41) from='const SEP_ARG = "(?:-[rWXI]|' to='const SEP_ARG = "(?!)"; const SEP_ARG_OFF = "(?:-[rWXI]|' ;;
+    m42) from='+ "|\"([^\"\\n]*)\"(' to='+ "|(?!)\"([^\"\\n]*)\"(' ;;
+    m43) from='const R_CODEX = new RegExp(' to='const R_CODEX = /(?!)/g; const R_CODEX_OFF = new RegExp(' ;;
+    m44) from='if (ro && !other && !wide) continue;' to='if (ro && !other) continue;' ;;
+    m45) from='} else if (ws && ch === "\"" && !noDq) {' to='} else if (false) {' ;;
+    m46) from='(?:-h|--help|-V|--version)' to='(?!)(?:-h|--help|-V|--version)' ;;
+    m47) from='if (cdir !== null) graded.add(' to='if (false) graded.add(' ;;
+    m48) from='else if (n === "PWD") v = expand.pwd;' to='else if (false) v = expand.pwd;' ;;
+    m49) from='graded.add(w.dir);' to='graded.add(process.cwd());' ;;
+    m50) from='const exempt = !danger && ' to='const exempt = ' ;;
+    m51) from='{ wide = true; danger = true; }' to='{ wide = true; }' ;;
+    m52) from='} else if (f === "p") danger = true;' to='} else if (false) danger = true;' ;;
+    m53) from='.exec(command.slice(q, q + 4098))' to='.exec(cq.slice(q, q + 4098))' ;;
+    m54) from='if (depth !== 0) ok = false;' to='if (false) ok = false;' ;;
+    m55) from='else if (arg === "-" || /[`$]/.test(arg)) ok = false;' to='else if (arg === "-" || /[`$]/.test(arg)) {}' ;;
+    m56) from='&& isDir(w.dir) &&' to='&& true &&' ;;
+    m57) from='&& underTemp(w.dir) &&' to='&& true &&' ;;
+    m58) from=' && !repoAt(w.dir);' to=' && true;' ;;
+    m59) from='&& !hasC && w.ok' to='&& w.ok' ;;
+    m60) from='if (c !== null || n !== any) ok = false;' to='if (c !== null) ok = false;' ;;
+    m61) from='const bs = command.replace(/\\\n/g, "  ");' to='const bs = command;' ;;
+    m62) from='(?:--yolo|--add-dir|' to='(?:' ;;
+    m63) from='(?:-([scCp])|--(' to='(?:-([scCp])(?=[ \t=]|$)|--(' ;;
+    m64) from='if (d === "$" && bs[k + 1] === "(") {' to='if (false) {' ;;
+    m65) from='if (++seen > 64) {' to='if (++seen > 64 || ++calls > 4) {' ;;
+    m66) from='if (capped) graded.add(process.cwd());' to='if (false) graded.add(process.cwd());' ;;
+    m67) from='while (n++ < 64 && (c = CD_ARG.exec(head)) !== null) {' to='while ((c = CD_ARG.exec(head)) !== null) {' ;;
+    m68) from='if (len > 4096) { over = true; return ""; }' to='if (false) { over = true; return ""; }' ;;
+    m69) from='else vars[a[1]] = null;' to='else delete vars[a[1]];' ;;
+    m70) from='const SEP_ARG = "(?:-[rWXI]|' to='const SEP_ARG = "(?:-[rWXIm]|' ;;
+    m71) from='if (ro && !other && !wide) continue;' to='if (false) continue;' ;;
+    m72) from='if (ro && !other && !wide) continue;' to='if (ro && !wide) continue;' ;;
+    m73)
+      # Two substitutions: the depth walk back to a first-paren stop, and
+      # an unclosed span blanked again (the pre-walk scanner).
+      lit_sub "$ORIG" "$dest.tmp" 'const j = substEnd(k);' 'let j = k + 2; while (j < bs.length && j < k + 4098 && bs[j] !== "(" && bs[j] !== ")") j++; if (bs[j] !== ")") j = -1;'
+      from='if (j === -1) break;' to='if (j === -1) { out += " "; k++; continue; }'
+      lit_sub "$dest.tmp" "$dest" "$from" "$to"
+      rm -f "$dest.tmp"
+      ;;
+    m74) from='if (j === -1) break;' to='if (j === -1) { out += " "; k++; continue; }' ;;
+    m75) from='if (dd !== -1) seg = seg.slice(0, dd);' to='if (false) seg = seg.slice(0, dd);' ;;
+    m76) from='/^['"'"'"]?[ \t]*([\w.-]*)/' to='/^['"'"'"]?([\w.-]*)/' ;;
   esac
-  if [ "$which" != "m11" ] && [ "$which" != "m29" ]; then
+  if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
       echo "probe: $which did not apply — the text it replaces moved (looked for: $from)" >&2
       return 1
@@ -461,6 +623,8 @@ BIN="$WORK/bin"     # the git shim
 mkdir -p "$REPO/tools" "$EXT" "$TMPD" "$HOMED" "$NOGIT" "$BIN"
 
 "$GIT" -C "$REPO" init -q
+# A git repo under a temp root: the codex exemption must still refuse it.
+mkdir -p "$TMPD/grepo" && "$GIT" -C "$TMPD/grepo" init -q
 TOP="$("$GIT" -C "$REPO" rev-parse --show-toplevel)"
 [ -n "$TOP" ] && [ -d "$TOP" ] || {
   echo "probe: the fixture repo has no toplevel — refusing to run" >&2
@@ -529,6 +693,36 @@ ASSIGN_NL="$(printf '%b' "$ASSIGN_NL")python3 \"\$a/edit.py\""
 # A value that doubles 28 times: 2^28 chars unless the 4096 cap drops it.
 DOUBLING="A=xy$(printf '; A=$A$A%.0s' $(seq 28)); python3 \"\$A/edit.py\""
 LONG_VAL="A=$EXT$(printf '/.%.0s' $(seq 2500)); python3 \"\$A/edit.py\""
+LONG_HOME="HOME=$EXT$(printf '/.%.0s' $(seq 2500)); python3 \"\$HOME/edit.py\""
+# The shell door's 64 KB shapes, each once seconds long or killed by the
+# alarm. `$(…)` strips trailing newlines, so the `x` fences of the newline run
+# are printed INSIDE it: fenced outside, the run collapses to `xx`.
+W64="$(head -c 65536 /dev/zero | tr '\0' 'x')"
+NL64="$(printf x; head -c 65534 /dev/zero | tr '\0' '\n'; printf x)"
+DP64="$(head -c 32768 /dev/zero | tr '\0' 'x' | sed 's/x/$(/g')"
+CP64="$(printf '/.claude/projects/%.0s' $(seq 3641))"
+# The same word just under the cap: the memory-dir class admitting `/` is
+# quadratic on it, 0.4 s at 64 KB (under the bound) but 6 s here.
+CPCAP="$(printf '/.claude/projects/%.0s' $(seq 14563))"
+SED64="$(head -c 16384 /dev/zero | tr '\0' 'x' | sed 's/x/sed /g')"
+# Over the 256 K cap, made of one-letter words: fast on every hook version,
+# so only the cap can turn it into a deny (a 300 K single word would hit the
+# old hook's alarm and redden the pass cases too).
+HUGE_CMD="$(head -c 150000 /dev/zero | tr '\0' 'x' | sed 's/x/a /g')"
+# The codex gate reads every command holding `codex`: a 78 KB run of the
+# word, and one read-only call carrying 9 000 `-c` keys to read.
+CODEX64="$(head -c 13000 /dev/zero | tr '\0' 'x' | sed 's/x/codex /g')"
+CODEXCFG64="codex exec -s read-only$(head -c 9000 /dev/zero | tr '\0' 'x' | sed 's/x/ -c a=b/g') x"
+# 13 000 `cd`s: the fold resolved a path 13 000 deep once per `cd` (6 s).
+CDCHAIN="$(head -c 13000 /dev/zero | tr '\0' 'x' | sed 's/x/;cd a/g') && python3 \"\$TMPDIR/x.py\""
+CODEXEXEC64="$(head -c 5041 /dev/zero | tr '\0' 'x' | sed 's/x/codex exec x;/g')"
+# The `$(` depth walk inside double quotes: `"$(` x20 000, the slowest of three
+# shapes timed (with `"$(` + `$(` x32 000 and `"$(` + 4098 `(`), all under 70 ms.
+DQSUBST64="codex exec x; $(head -c 20000 /dev/zero | tr '\0' 'x' | sed 's/x/"$(/g')"
+# One 4096-char value named ~15 000 times: megabytes unless the budget stops it.
+B4K="$(head -c 4096 /dev/zero | tr '\0' 'a')"
+EXPBOMB="B=$B4K; cd \"$(head -c 15000 /dev/zero | tr '\0' 'x' | sed 's/x/$B/g')\" && python3 \"\$TMPDIR/x.py\"; python3 \"\$TMPDIR/y.py\"; python3 \"\$TMPDIR/z.py\"; python3 \"\$TMPDIR/w.py\""
+NL=$'\n'
 
 # ==============================================================================
 # RUNNER
@@ -576,9 +770,9 @@ run_raw() { # run_raw <cwd> <payload> <stdout> <stderr>
   : > "$GIT_LOG"
   local t0 t1 tenv
   case "$TMPDIR_MODE" in
-    unset) tenv=(-u TMPDIR) ;;
-    empty) tenv=(TMPDIR=) ;;
-    *) tenv=(TMPDIR="$TMPD") ;;
+    unset) tenv=(-u OTHER -u TMPDIR) ;;
+    empty) tenv=(-u OTHER TMPDIR=) ;;
+    *) tenv=(-u OTHER TMPDIR="$TMPD") ;;
   esac
   t0="$(now_ms)"
   set +e
@@ -662,6 +856,19 @@ check script-tilde-unquoted deny "$REPO" "$T_NOAPEX" 'python3 ~/edit.py'
 check multi-script-second-writes deny "$REPO" "$T_NOAPEX" "python3 $EXT/noname.py; python3 $EXT/edit.py"
 # The comment's apostrophe must not pair with the quote after the script.
 check comment-apostrophe-then-script deny "$REPO" "$T_NOAPEX" "$CMT_APOS"
+# A name the command never sets, read from the environment the Bash call
+# inherits; a `cd` moves where a relative script path is read from.
+check script-env-home deny "$REPO" "$T_NOAPEX" 'python3 "$HOME/edit.py"'
+check script-cd-relative deny "$REPO" "$T_NOAPEX" "cd $EXT && python3 edit.py"
+check script-cd-chain deny "$REPO" "$T_NOAPEX" "cd $WORK && cd ext && python3 edit.py"
+# A flag with a separate argument, and a quoted head with a bare tail.
+check python-W-ignore-c-write deny "$REPO" "$T_NOAPEX" "python3 -W ignore -c \"open('package.json', 'w').write('{}')\""
+check script-W-ignore deny "$REPO" "$T_NOAPEX" "python3 -W ignore $EXT/edit.py"
+check node-r-then-e-write deny "$REPO" "$T_NOAPEX" "node -r esm -e \"require('fs').writeFileSync('a', '')\""
+check script-quoted-var-bare-tail deny "$REPO" "$T_NOAPEX" 'python3 "$TMPDIR"/edit.py'
+# `$PWD` is where the `cd`s leave the shell: read from the environment (or the
+# cwd), `$PWD/edit.py` would name the repo, where there is no edit.py.
+check script-cd-pwd deny "$REPO" "$T_NOAPEX" "cd $EXT && python3 \"\$PWD/edit.py\""
 # The hook itself without a $TMPDIR: the sandbox candidates still resolve.
 TMPDIR_MODE=unset
 check script-tmpdir-unset deny "$REPO" "$T_NOAPEX" "python3 \"\$TMPDIR/$SBX_REL/edit.py\""
@@ -690,6 +897,10 @@ check script-in-repo-via-symlink pass "$REPO" "$T_NOAPEX" "python3 $WORK/repolin
 check script-out-of-repo-no-repo-path pass "$REPO" "$T_NOAPEX" "python3 $EXT/noname.py"
 check script-out-of-repo-no-write-api pass "$REPO" "$T_NOAPEX" "python3 $EXT/nowrite.py"
 check script-names-sibling-prefix pass "$REPO" "$T_NOAPEX" "python3 $EXT/sibling.py"
+check cd-relative-noname pass "$REPO" "$T_NOAPEX" "cd $EXT && python3 noname.py"
+check cd-subdir-in-repo pass "$REPO" "$T_NOAPEX" 'cd tools && python3 edit.py'
+# `-m` ends the flag run: the path after it is the module's argument.
+check python-m-script-arg pass "$REPO" "$T_NOAPEX" "python3 -m pytest $EXT/edit.py"
 check cp-helper-not-a-write pass "$REPO" "$T_NOAPEX" "python3 $EXT/cphelper.py"
 check script-over-256k pass "$REPO" "$T_NOAPEX" "python3 $EXT/big.py"
 check script-missing pass "$REPO" "$T_NOAPEX" "python3 $EXT/missing.py"
@@ -702,11 +913,76 @@ check dollar-guard-dotdot pass "$REPO" "$T_NOAPEX" 'python3 "$OTHER/../../ext/ed
 # Over 4096 chars a value is dropped, so `$A` stays unresolved — though this
 # one, `/.` x2500 after the ext dir, would normalise to a real script.
 check assign-over-4096-dropped pass "$REPO" "$T_NOAPEX" "$LONG_VAL"
+# The same, set on a name the environment also has: the shell sees the long
+# value, so the hook must not fall back to its own $HOME (where edit.py is).
+check assign-over-4096-env-unresolved pass "$REPO" "$T_NOAPEX" "$LONG_HOME"
 # --- MUST PASS: the gate's own exits -----------------------------------------
 check apex-already-ran pass "$REPO" "$T_APEX" "python3 -c \"open('package.json', 'w').write('{}')\""
 check apex-already-ran-script pass "$REPO" "$T_APEX" "python3 $EXT/edit.py"
 check outside-git-inline pass "$NOGIT" "$T_NOAPEX" "python3 -c \"open('package.json', 'w').write('{}')\""
 check outside-git-script pass "$NOGIT" "$T_NOAPEX" "python3 $EXT/edit.py"
+# --- codex exec: denied unless an explicit, unwidened `-s read-only` --------
+check codex-exec-default deny "$REPO" "$T_NOAPEX" 'codex exec "fix it"'
+check codex-e-alias deny "$REPO" "$T_NOAPEX" 'codex e -m m "x"'
+check codex-after-separator deny "$REPO" "$T_NOAPEX" 'cd . && timeout 60 codex exec --json "x"'
+check codex-workspace-write deny "$REPO" "$T_NOAPEX" 'codex exec -s workspace-write "x"'
+check codex-read-only-in-prompt deny "$REPO" "$T_NOAPEX" 'codex exec "use -s read-only here"'
+check codex-ro-config-sandbox deny "$REPO" "$T_NOAPEX" 'codex exec -s read-only -c sandbox_mode=danger-full-access "x"'
+check codex-ro-profile deny "$REPO" "$T_NOAPEX" 'codex exec --sandbox read-only -p fast "x"'
+check codex-ro-bypass deny "$REPO" "$T_NOAPEX" 'codex exec -s read-only --dangerously-bypass-approvals-and-sandbox "x"'
+check codex-resume-default deny "$REPO" "$T_NOAPEX" 'codex exec resume --last "go"'
+check codex-C-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "codex exec -C $REPO \"x\""
+check codex-ro-short pass "$REPO" "$T_NOAPEX" 'codex exec -s read-only "x"'
+check codex-ro-eq-effort pass "$REPO" "$T_NOAPEX" 'codex exec --sandbox=read-only -c model_reasoning_effort=low "x"'
+check codex-exec-help pass "$REPO" "$T_NOAPEX" 'codex exec --help'
+check codex-grep-mention pass "$REPO" "$T_NOAPEX" 'grep -n "codex exec" README.md'
+check codex-apex pass "$REPO" "$T_APEX" 'codex exec "fix it"'
+check codex-nogit pass "$NOGIT" "$T_NOAPEX" 'codex exec "fix it"'
+# Graded where codex runs: the `cd`s before it, then `-C`.
+check codex-cd-temp-pass pass "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec \"x\""
+check codex-cd-temp-timeout-pass pass "$REPO" "$T_NOAPEX" "cd $TMPD && timeout 240 codex exec --skip-git-repo-check -m m -c model_reasoning_effort=low 'x'"
+check codex-cd-temp-danger deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -s danger-full-access \"x\""
+check codex-cd-temp-C-repo deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -C $REPO \"x\""
+check codex-cd-temp-config-danger deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -c sandbox_mode=danger-full-access \"x\""
+check codex-cd-temp-profile-danger deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -p yolo \"x\""
+check codex-cd-repo-subdir deny "$NOGIT" "$T_NOAPEX" "cd $REPO/tools && codex exec \"x\""
+# The exemption is a whitelist: each case below breaks one condition.
+check codex-C-nonrepo-from-repo deny "$REPO" "$T_NOAPEX" "codex exec -C $NOGIT \"x\""
+check codex-cd-temp-C-nonrepo deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -C $NOGIT \"x\""
+check codex-subshell-cd deny "$REPO" "$T_NOAPEX" "(cd $TMPD && ls); codex exec \"x\""
+check codex-dollar-cd deny "$REPO" "$T_NOAPEX" "x=\$(cd $TMPD && pwd) && codex exec \"x\""
+check codex-cd-missing-dir deny "$REPO" "$T_NOAPEX" "cd $TMPD/missing && codex exec \"x\""
+check codex-cd-dash deny "$REPO" "$T_NOAPEX" "cd $TMPD && cd - && codex exec \"x\""
+check codex-cd-nontemp deny "$REPO" "$T_NOAPEX" 'cd /usr && codex exec "x"'
+check codex-cd-temp-gitrepo deny "$REPO" "$T_NOAPEX" "cd $TMPD/grepo && codex exec \"x\""
+check codex-unread-cd deny "$REPO" "$T_NOAPEX" "cd $TMPD && if true; then cd $REPO; fi; codex exec \"x\""
+check codex-add-dir deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec --add-dir $REPO \"x\""
+check codex-yolo-temp deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec --yolo \"x\""
+check codex-quoted-danger-temp deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -s \"danger-full-access\" \"x\""
+# Option values read from the raw command: quoted, attached, after `\`+newline.
+check codex-C-quoted-pwd-then-c deny "$REPO" "$T_NOAPEX" 'codex exec --sandbox workspace-write -C "$(pwd)" -c x=1 "fix"'
+check codex-C-quoted-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "codex exec -C \"$REPO\" \"x\""
+check codex-attached-C deny "$NOGIT" "$T_NOAPEX" "codex exec -C$REPO \"x\""
+check codex-backslash-newline deny "$REPO" "$T_NOAPEX" "codex \\${NL}exec \"x\""
+check codex-ro-then-bsnl-danger deny "$REPO" "$T_NOAPEX" "codex exec -s read-only \\${NL}--dangerously-bypass-approvals-and-sandbox \"x\""
+check codex-ro-then-ww deny "$REPO" "$T_NOAPEX" 'codex exec -s read-only -s workspace-write "x"'
+check codex-subst-in-dquotes deny "$REPO" "$T_NOAPEX" 'out="$(codex exec "fix")"'
+# The span's end is found by paren depth, past nested quotes and `$(`.
+check codex-subst-nested deny "$REPO" "$T_NOAPEX" 'out="$(codex exec "$(cat p.txt)")"'
+check codex-subst-parens-in-prompt deny "$REPO" "$T_NOAPEX" 'out="$(codex exec "fix (this) now")"'
+# Unclosed: the string is left visible (fail closed), not blanked.
+check codex-subst-unclosed deny "$REPO" "$T_NOAPEX" 'out="$(codex exec "x"'
+check codex-parens-mention-pass pass "$REPO" "$T_NOAPEX" 'git commit -m "mention codex exec (docs)"'
+# A bare `--` ends the options: `-s read-only` after it is prompt text.
+check codex-double-dash-ro deny "$REPO" "$T_NOAPEX" 'codex exec -- -s read-only fix'
+check codex-c-key-leading-blank deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -c ' sandbox_mode=danger-full-access' \"x\""
+# Only exec calls count toward the cap of 4; past it, graded at the cwd.
+check codex-five-calls deny "$REPO" "$T_NOAPEX" 'codex --version; codex --version; codex --version; codex --version; codex exec "x"'
+check codex-five-exec-calls deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -s read-only a; codex exec -s read-only b; codex exec -s read-only c; codex exec -s read-only d; codex exec \"x\""
+check codex-five-calls-temp pass "$REPO" "$T_NOAPEX" "codex --version; codex --version; codex --version; codex --version; cd $TMPD && codex exec \"x\""
+check codex-ro-quoted pass "$REPO" "$T_NOAPEX" 'codex exec -s "read-only" "x"'
+check codex-ro-attached pass "$REPO" "$T_NOAPEX" 'codex exec -sread-only "x"'
+check codex-ro-bsnl pass "$REPO" "$T_NOAPEX" "codex exec \\${NL}-s read-only \"x\""
 # --- MUST PASS FAST: adversarial shapes --------------------------------------
 check bounded-64k-separators pass-fast "$REPO" "$T_NOAPEX" "$LONG"
 check flags-28-fast pass-fast "$REPO" "$T_NOAPEX" "$FLAGS28"
@@ -714,6 +990,22 @@ check node-newlines-64k-fast pass-fast "$REPO" "$T_NOAPEX" "$NODE_NL"
 check dollar-paren-node-64k-fast pass-fast "$REPO" "$T_NOAPEX" "$DOLLAR_NODE"
 check assign-newlines-16k-fast pass-fast "$REPO" "$T_NOAPEX" "$ASSIGN_NL"
 check assign-doubling-fast pass-fast "$REPO" "$T_NOAPEX" "$DOUBLING"
+check fast-64k-word pass-fast "$REPO" "$T_NOAPEX" "$W64"
+check fast-64k-newlines pass-fast "$REPO" "$T_NOAPEX" "$NL64"
+check fast-64k-dollar-paren pass-fast "$REPO" "$T_NOAPEX" "$DP64"
+check fast-64k-claude-projects pass-fast "$REPO" "$T_NOAPEX" "$CP64"
+check fast-64k-sed pass-fast "$REPO" "$T_NOAPEX" "$SED64"
+check fast-cap-claude-projects pass-fast "$REPO" "$T_NOAPEX" "$CPCAP"
+check fast-64k-codex pass-fast "$REPO" "$T_NOAPEX" "$CODEX64"
+check fast-64k-codex-config pass-fast "$REPO" "$T_NOAPEX" "$CODEXCFG64"
+check fast-64k-cd-chain pass-fast "$REPO" "$T_NOAPEX" "$CDCHAIN"
+check fast-64k-codex-exec-calls pass-fast "$NOGIT" "$T_NOAPEX" "$CODEXEXEC64"
+check fast-expand-bomb pass-fast "$REPO" "$T_NOAPEX" "$EXPBOMB"
+check fast-64k-dq-subst pass-fast "$NOGIT" "$T_NOAPEX" "$DQSUBST64"
+# --- OVER 256 K: denied unread, unless APEX ran or the cwd is not a repo -----
+check huge-command-denied deny "$REPO" "$T_NOAPEX" "$HUGE_CMD"
+check huge-command-apex pass "$REPO" "$T_APEX" "$HUGE_CMD"
+check huge-command-nogit pass "$NOGIT" "$T_NOAPEX" "$HUGE_CMD"
 
 # Malformed JSON: no payload builder, the raw bytes are the case.
 NCASES=$((NCASES + 1))

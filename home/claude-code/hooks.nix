@@ -72,25 +72,96 @@
   # those 66 into real edits and false positives has NOT been audited row by
   # row; a false positive costs one stray apex call. `perl -0pi` counts as
   # in-place (21 unique passes before).
+  # CORRECTION: +29, +66 and 42 were measured on a DRAFT of this hook, which
+  # read git's answer with `.toString().trim()`. The shipped hook reads it with
+  # `{ encoding }` + `.trim()`; that harness's fake execSync returned a Buffer
+  # whatever the options, so on the shipped hook `.trim()` threw into the
+  # silent catch and every script-rule deny was skipped. Those three figures
+  # are void for what shipped. Re-measured with the fixed harness (replay2),
+  # shipped hook against its predecessor, same 20 072 unique (cmd, cwd):
+  # 1966 earlier denies, 0 lost, +66 new (42 script runs, 5 inline writes, 19
+  # `perl -0pi` rows the classifier calls inline reads). +29 was not
+  # re-measured. The shipped hook's own baseline is 2032 denies.
   #
-  # What still goes through, named so it is not mistaken for coverage:
-  #   - a script path held in any `$VAR` other than `$TMPDIR` or a `NAME=value`
-  #     set earlier in the same command; a path built at run time;
-  #   - a `cd` followed by a relative script path;
-  #   - a write done by a CHILD: subprocess, os.system, exec of another tool;
+  # HARDENING (2026-09-25, second pass).
+  #   (a) Shell-door timing. Four quadratic regexes (noTemp twice, AT_CMD,
+  #       WRITES[0]) took 6.8 s on 64 KB shapes and over 30 s on
+  #       `/.claude/projects/` repeated: past the 5 s timeout, so fail-open.
+  #       Now under 200 ms on the probe's fast-* shapes. A command over 256 K
+  #       chars is denied without being read (the longest unique recorded
+  #       call is 44 497 chars).
+  #   (b) Script rule: env fallback for a name the command never sets, `cd`
+  #       tracking, separate-argument flags (SEP_ARG: -r -W -X -I, --import,
+  #       --require, --loader, --experimental-loader, --env-file), quoted
+  #       head + bare tail (`"$TMPDIR"/edit.py`).
+  #   (c) `codex exec`: denied without APEX when the session cwd, `-C <dir>`
+  #       or the dir the `cd`s lead to is a repo, unless an explicit,
+  #       unwidened `-s read-only`. One exemption, a whitelist that fails
+  #       closed: every `cd` before the call top level and resolved, landing
+  #       in an existing non-repo dir under a temp root, with no `-C` and no
+  #       danger flag (danger sandbox, bypass, `--yolo`, `--add-dir`, `-p`, a
+  #       `-c` key naming sandbox/approval/permission/profile).
+  #   Replay against the pre-PR hook, 20 072 unique (cmd, cwd): 0 lost; new
+  #   denies 6 = cd 4 (1 true, 3 false positives from the script rule's
+  #   "names the repo, writes anywhere" test; split read by audit.js and
+  #   audit2.js over the recovered scripts, recovered.json, in the hardening
+  #   session's scratchpad) + codex 2: `-C <portfolio>`
+  #   (true) and `cd <scratch> && codex exec … -C "$(pwd)"` (false positive:
+  #   codex runs in the scratch dir, but any `-C` voids the exemption).
+  #
+  # What still goes through, named so it is not mistaken for coverage.
+  # IRREDUCIBLE (no static reading decides it):
+  #   - a variable unset in the hook's environment and not assigned earlier in
+  #     the same command: loop var, `read`, `$1`, sourced or shell-snapshot
+  #     names, `$(...)`;
+  #   - a path built at run time;
+  #   - a write done by a CHILD: subprocess, os.system, exec of another tool.
+  #   - CDPATH: a relative `cd x` resolves through the SHELL's CDPATH, which
+  #     is not the hook's; the codex walk resolves it from the cwd.
+  # UNCODED (could be read, is not):
+  #   - script rule: `(cd x); python3 y.py` is read as if the `cd` moved the
+  #     shell (errs toward a false positive); for codex a `cd` inside `(...)`
+  #     or `$(...)` voids the temp exemption instead;
+  #   - `pushd`, `cd -`, `ruby -C` (script rule; codex fails closed on them);
   #   - `python3 <<< "code"` (a here-string) and `<<\EOF` (escaped delimiter);
   #   - `/usr/bin/env python3 -c`, `bun run` / `deno run` of a script,
   #     `uv run python -c`;
   #   - an interpreter after `then`, `do`, `{` or `!` — command position is
   #     read after separators and env/timeout/VAR= prefixes only;
-  #   - more than 16 flags before `-c`, or a 5th script in one command;
-  #   - a flag taking a SEPARATE argument before `-c` or the script
-  #     (`python3 -W ignore -c ...`): the argument reads as the script;
-  #   - a quoted variable followed by a bare tail (`python3 "$TMPDIR"/edit.py`);
-  #   - `codex exec`, deferred.
-  # And one imprecision the other way: the write API is looked for in the
-  # WHOLE command, so `python3 -c "print(1)"; echo "open(f, 'w')"` counts the
-  # echoed text against the interpreter.
+  #   - more than 16 flags before `-c`;
+  #   - a 5th script in one command: only 4 are read. Measured with
+  #     R_SCRIPT_RAW, uncapped, over 20 034 unique recorded commands: 16 hold
+  #     exactly 4 scripts and 10 hold 5 to 8, whose later scripts go unread;
+  #   - the codex gate reads 4 exec calls and 64 `codex` words; the rest are
+  #     graded at the session cwd, not read (most exec calls in one recorded
+  #     command: 4, once);
+  #   - a flag taking a separate argument outside the SEP_ARG set;
+  #   - a script path made of 3+ quoted and bare pieces;
+  #   - `codex apply`, `codex review`, `codex fork`, `codex "exec"` (a quoted
+  #     subcommand is blank), `codex $'exec'` and `ex""ec` (a word glued
+  #     from pieces is not read);
+  #   - a `cd` the fold cannot see: quoted or escaped (`\cd`, `"cd"`,
+  #     `c\d`) or run by `eval "cd ..."`; it moves the shell unseen, so the
+  #     codex walk grades the dir before it;
+  #   - codex after more than 16 `VAR=` / env prefixes;
+  #   - codex after `npx`, `pnpm dlx @openai/codex`, `command`, `sudo`,
+  #     `nice`, `xargs`, `env -u X`, `timeout -k N`, `then`, `do`, `{`, `!`
+  #     or `bash -c`: command position
+  #     is read past `env`/`nohup`/`time`/`exec`/`timeout N`/`VAR=` only;
+  #   - `-c sandbox_mode=...` whose key is an unresolved `$VAR`;
+  #   - `-s $VAR` is graded as not read-only (a false positive when it holds
+  #     read-only) and voids the temp exemption;
+  #   - `-o <file>` under `-s read-only`: codex writes its last message there;
+  #   - writable roots added by codex's own config: the git-workspace profile
+  #     adds the vault, whatever the command line says;
+  #   - AT_CMD no longer sees `;\rcp` or `$(\fcp` (blanks are `[ \t]` now);
+  #   - WRITES[0] misses an `-i` more than 1024 chars after `sed`/`perl`/`ruby`
+  #     with no separator between.
+  # And the other way: any `-C` voids the codex temp exemption, even
+  # `-C "$(pwd)"` right after a `cd` into scratch; the write API is looked for
+  # in the WHOLE command, so
+  # `python3 -c "print(1)"; echo "open(f, 'w')"` counts the echoed text
+  # against the interpreter.
   #
   # FAIL-OPEN on any error, unlike protect-main and block-main-bash. This is a
   # workflow hook, not a safety one: a missed APEX costs little, a session
@@ -114,6 +185,12 @@
         const command = typeof ti.command === "string" ? ti.command : null;
 
         if (command !== null) {
+          // Over 256 K characters the command is not read at all: every pass
+          // below is skipped and it counts as a write shape. No recorded
+          // call comes near (the longest unique one is 44 497 chars); only
+          // a repo without APEX pays for it, as a deny.
+          const HUGE = command.length > 262144;
+
           // THE SECOND DOOR. Edit/Write are not the only way to change a file:
           // `sed -i`, a heredoc or a plain redirection writes just as well, and
           // under bypass-permissions the agent is actively instructed to prefer
@@ -133,8 +210,12 @@
           // pair when a temp path sits INSIDE a larger quoted string, the prose
           // pass then finds nothing to pair, and the surviving text re-fires the
           // arrow FP. Real trigger: git commit -m "old -> new, log in /tmp/x".
-          const noTemp = command.replace(
-            /[^\s'"|;&)]*(\$\{?TMPDIR\}?|\/var\/folders\/|\/(private\/)?tmp\/|scratchpad|\/dev\/[a-z]+|\/\.claude\/projects\/[^\s'"|;&)]*\/memory\/)[^\s'"|;&)]*/g,
+          // The lookbehind starts a match only at a word start: without it
+          // every offset of a 64 KB word retried the whole word (quadratic,
+          // 6.8 s). The project-dir class refuses `/`, so `/.claude/projects/`
+          // repeated cannot nest one scan inside another (over 30 s).
+          const noTemp = HUGE ? "" : command.replace(
+            /(?<![^\s'"|;&)])[^\s'"|;&)]*(\$\{?TMPDIR\}?|\/var\/folders\/|\/(private\/)?tmp\/|scratchpad|\/dev\/[a-z]+|\/\.claude\/projects\/[^\s'"|;&)\/]*\/memory\/)[^\s'"|;&)]*/g,
             " "
           );
 
@@ -163,11 +244,15 @@
           // standing false positive given every reply here is in French.
           // `\n` belongs in the separator class: these transcripts routinely
           // send newline-joined compounds, and `^` is not multiline here.
-          const AT_CMD = "(^|[\\n|;&]\\s*|\\$\\(\\s*|&&\\s*|\\|\\|\\s*)";
+          // Blanks after a separator are `[ \t]`, not `\s`: `\s` also eats
+          // newlines, so 64 K of them was one `\n\s*` try per offset.
+          const AT_CMD = "(^|[\\n|;&][ \\t]*|\\$\\([ \\t]*|&&[ \\t]*|\\|\\|[ \\t]*)";
           const WRITES = [
             // `\w`, not `[a-zA-Z]`: `perl -0pi -e` puts a DIGIT before the
             // `i`, and the letter class let 21 recorded in-place edits through.
-            /\b(sed|perl|ruby)\b[^|;&]*\s-\w*i\b/,
+            // The gap is capped at 1024 chars: `sed ` x16 000 re-scanned the
+            // tail from every `sed` (1.7 s).
+            /\b(sed|perl|ruby)\b[^|;&]{0,1024}\s-\w*i\b/,
             // The argument class excludes separators, not just whitespace: once
             // a temp target is blanked the word is bare (`tee   && echo`), and
             // a plain \S would happily match the `&` of the next command.
@@ -200,14 +285,21 @@
           // (separators, newlines, `$(node `, `a=b` lines, flag runs, 40 K
           // spaces, `File.open(` x20 000, 64 shapes in all): every regex of
           // this door under 10 ms warm on each. That is a measurement on
-          // those shapes, not a proof of linearity — and the older shell-door
-          // passes above still take seconds on some of the same inputs.
+          // those shapes, not a proof of linearity. The shell-door passes
+          // above are held to the same bar by the probe's fast-64k-* cases.
           const POS = "(?:^|[\\n|;&(`][ \\t]*|\\$\\([ \\t]*)(?:(?:env|nohup|time|exec|timeout[ \\t]+[^\\s;&|(`]+)[ \\t]+|\\w+=[^\\s;&|(`]*[ \\t]+){0,16}";
           const INTERP = "(?:[^\\s;&|(`]*/)?(?:python[0-9.]*|node|ruby|perl|deno|bun|tsx)";
           // Blanks between words: spaces, tabs, or a backslash-newline.
           const WS = "(?:[ \\t]|\\\\\\n)+";
+          // A flag that takes its argument as the NEXT word: `-W ignore`,
+          // `-r esm`, `--import x`. Read as a plain flag, the argument ended
+          // the flag run, so `python3 -W ignore -c ...` and `-W ignore e.py`
+          // went unseen. The argument cannot start with `-`, so a flag run
+          // still splits one way. `-m` stays a plain flag: a module call ends
+          // the scan, and what follows it is the module's argument.
+          const SEP_ARG = "(?:-[rWXI]|--(?:import|require|loader|experimental-loader|env-file))" + WS + "[^\\s;&|<>()'\"-][^\\s;&|<>()]*";
           const R_INLINE = new RegExp(POS + INTERP
-            + "(?:" + WS + "-[\\w=.-]+){0,16}?" + WS + "(?:-[a-zA-Z]*[ce]|--eval)\\b");
+            + "(?:" + WS + "(?:" + SEP_ARG + "|-[\\w=.-]+)){0,16}?" + WS + "(?:-[a-zA-Z]*[ce]|--eval)\\b");
           const R_HEREDOC = new RegExp(POS + INTERP
             + "(?:[ \\t]+[^\\s<|;&(`]+){0,16}?[ \\t]*<<-?[ \\t]*(['\"]?)\\w+\\1");
           // A file-writing CALL, not a mention. Every call whose first argument
@@ -228,7 +320,368 @@
           // `cd " " || exit 1` counts too: a failed cd runs nothing after it.
           const CD_TEMP = /(?:^|[\n;&|][ \t]*)cd[ \t]*(?:"[ \t]*"[ \t]*|'[ \t]*'[ \t]*)?(?=&&|\|\||;|\n|$)/;
 
-          let shape = WRITES.some(r => r.test(probe));
+          // Shared by the script rule and the codex gate: where a command
+          // placed at offset `at` runs, and what its `$NAME`s expand to.
+          //
+          // Quoted text that spans a newline is prose — a commit message
+          // listing `python3 /x/e.py` on its second line runs nothing. It is
+          // blanked to spaces of the same length, so offsets still line up
+          // with `command`.
+          // One left-to-right pass, so whichever starts first wins: a quote
+          // opens a span only at a word start (after a blank, `=`, `(` or a
+          // separator), never mid-word as in `don't`; a `#` at a word start
+          // outside quotes is a comment, blanked to the end of its line. An
+          // apostrophe in a comment paired with a later quote used to blank
+          // the script call between them. Built once, on first use.
+          let scanMemo = null;
+          const scanOf = () => {
+            if (scanMemo === null) {
+              const scan = command.replace(/(^|[\s=(;&|])('[^']*'|"[^"]*"|#[^\n]*)/g,
+                (q, pre, s) => pre + (s[0] !== "#" && s.indexOf("\n") === -1 ? s : " ".repeat(s.length)));
+              scanMemo = scan;
+            }
+            return scanMemo;
+          };
+          // The hook runs with the login $TMPDIR; a sandboxed Bash call has
+          // its own under /tmp/claude-<uid>. Each is tried, and the first
+          // under which the script exists wins. An unset or empty $TMPDIR is
+          // dropped, not tried: it would leave `$TMPDIR` in the path.
+          const uid = typeof process.getuid === "function" ? process.getuid() : null;
+          const tmpdirs = [process.env.TMPDIR];
+          if (uid !== null) tmpdirs.push("/tmp/claude-" + uid, "/private/tmp/claude-" + uid);
+          const tdCands = tmpdirs.filter(Boolean);
+          const ASSIGN = /(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:"([^"]*)"|'([^']*)'|([^\s;&|<>()'"`]*))/g;
+          // `$NAME` as the shell at offset `at` sees it: a `NAME=value` set
+          // earlier in the same command (a value over 4096 chars stays
+          // UNRESOLVED: the shell has it, the hook does not, so it never
+          // falls back to the environment), else `$TMPDIR` as `td`, else the
+          // environment. `$PWD` is `expand.pwd`, which the `cd` fold moves.
+          // What the names expand to is capped at 4096 chars in all, counted
+          // as they are substituted: `$B$B…` over a 4096-char B would build
+          // megabytes first. Past the cap the result is `$`, unresolved.
+          const makeExpand = (at, td) => {
+            const vars = {};
+            const expand = s => {
+              let len = 0;
+              let over = false;
+              const r = s.replace(/\$(?:\{(\w+)\}|(\w+))/g, (all, a, b) => {
+                if (over) return "";
+                const n = a || b;
+                let v = all;
+                if (Object.prototype.hasOwnProperty.call(vars, n)) { if (vars[n] !== null) v = vars[n]; }
+                else if (n === "TMPDIR" && td) v = td;
+                // Not set in this command: the Bash call's shell inherits
+                // the hook's own environment (TMPDIR aside, handled above),
+                // so `$HOME` there is `$HOME` here. Same 4096 cap.
+                else if (n === "PWD") v = expand.pwd;
+                else if (n !== "TMPDIR" && process.env[n] && process.env[n].length <= 4096) v = process.env[n];
+                len += v.length;
+                if (len > 4096) { over = true; return ""; }
+                return v;
+              });
+              return over ? "$" : r;
+            };
+            expand.pwd = process.cwd();
+            const before = command.slice(0, at);
+            ASSIGN.lastIndex = 0;
+            let a;
+            while ((a = ASSIGN.exec(before)) !== null) {
+              const v = a[3] !== undefined ? a[3] : expand(a[2] !== undefined ? a[2] : a[4]);
+              if (v.length <= 4096) vars[a[1]] = v;
+              else vars[a[1]] = null;
+            }
+            return expand;
+          };
+          // A `cd` in command position, its one argument (double-quoted,
+          // single-quoted or bare) and nothing else before a separator.
+          // The bare argument is capped at 4096 chars; timed at 1-2 ms on
+          // 64 KB of blanks after `cd`, `cd ` x16 000 and `;cd ` x16 000.
+          // For the script rule `(cd x)` is read as moving the shell too,
+          // which errs toward a deny; the codex whitelist refuses it.
+          const CD_ARG = /(?:^|[\n;&|(][ \t]*)cd(?:[ \t]+(?:"([^"\n]*)"|'([^'\n]*)'|([^\s;&|<>()'"`]{1,4096})))?[ \t]*(?=&&|\|\||;|\n|\)|$)/g;
+          // Each `cd` in `head` moves the directory, in order, from the
+          // cwd. A bare `cd` goes home; `cd -`, or an argument still holding
+          // `$` or a backtick, leaves the directory where it was. `$PWD`
+          // follows the fold. Only the first 64 are folded: `;cd a` x13 000
+          // made a path 13 000 deep, resolved once per `cd` (6 s, fail-open).
+          const cdFold = (head, expand) => {
+            let dir = process.cwd();
+            CD_ARG.lastIndex = 0;
+            let c;
+            let n = 0;
+            while (n++ < 64 && (c = CD_ARG.exec(head)) !== null) {
+              expand.pwd = dir;
+              let arg;
+              if (c[2] !== undefined) arg = c[2];
+              else if (c[1] !== undefined) arg = expand(c[1]);
+              else if (c[3] !== undefined) {
+                arg = c[3] === "~" || c[3].startsWith("~/") ? os.homedir() + c[3].slice(1) : c[3];
+                arg = expand(arg);
+              } else arg = os.homedir();
+              if (arg === "-" || /[$`]/.test(arg)) continue;
+              dir = path.resolve(dir, arg);
+            }
+            expand.pwd = dir;
+            return dir;
+          };
+
+          // THE FOURTH DOOR: `codex exec` (or `e`, `exec resume`) is an agent
+          // that edits the repo itself unless it runs with an explicit
+          // `-s read-only` that nothing widens back: a `-c`/`--config` key
+          // naming sandbox, approval, permission or profile, `-p`, or a
+          // bypass/auto/worktree/add-dir flag. `--help`/`--version` pass.
+          // Quoted text and comments are blanked first (same length, so
+          // offsets line up with `command`): a prompt saying "-s read-only"
+          // whitelists nothing, and a quoted `codex exec` is a mention, not a
+          // call. A `$(...)` or backtick span inside double quotes is NOT
+          // blanked: `out="$(codex exec "x")"` runs codex. Its end is found
+          // by paren depth, past nested quotes and `$(`, within 4098 chars;
+          // unclosed by then, the whole string stays visible. After a bare
+          // `--` nothing is an option. A backslash-newline
+          // is two blanks, so a call split over lines is one call. Option
+          // VALUES are read from the raw command, quoted or bare, attached
+          // (`-sX`, `--sandbox=X`) or not. At most 64 `codex` words and 4
+          // exec calls are read; past either cap the unread rest is graded
+          // at the session cwd.
+          //
+          // WHERE IT IS GRADED: at the session cwd (a repo there denies), and
+          // at `-C <dir>` and the dir the `cd`s lead to when those are repos.
+          // ONE exemption, a whitelist that fails closed: no `-C`, no
+          // danger flag, every `cd` before the call at top level (not in a
+          // `(...)` or `$(...)`), at most 64 of them, each resolved, and the
+          // last one lands in an EXISTING dir under a temp root ($TMPDIR and
+          // the sandbox's, /tmp, /var/folders, a `scratchpad` segment) that
+          // is not a git repo. `cd <scratch> && codex exec` works there, not
+          // in the repo: 15 of the 16 new codex denies of an earlier draft
+          // were that (replay-c3-vs-head.log, new-c3-vs-head.jsonl in the
+          // hardening session's scratchpad). Anything the
+          // whitelist cannot establish grades at the session cwd.
+          // `git rev-parse --show-toplevel` decides, once per distinct dir,
+          // 3 dirs at most (past that, a dir counts as a repo); a dir that is
+          // gone is not a repo. A call graded nowhere in a repo is no hit,
+          // and the command's other shapes are graded as usual.
+          let codexHit = false;
+          if (!HUGE && command.indexOf("codex") !== -1) {
+            const bs = command.replace(/\\\n/g, "  ");
+            // One left-to-right pass, linear: a quote opens only at a word
+            // start; once a quote finds no partner none later can, so it is
+            // not searched for again.
+            let cq = "";
+            {
+              let i = 0;
+              let noSq = false;
+              let noDq = false;
+              let noBt = false;
+              const blankIn = t => t.replace(/'[^']*'|"[^"]*"/g, u => " ".repeat(u.length));
+              // The `)` closing the `$(` at `k`, or -1 if none within 4098
+              // chars. Counts paren depth, skipping quoted sub-strings and
+              // nested `$(` (one stack: "p" a paren, "d" a double quote).
+              const substEnd = k => {
+                const lim = Math.min(bs.length, k + 4098);
+                const st = ["p"];
+                let j = k + 2;
+                while (j < lim) {
+                  const d = bs[j];
+                  if (d === "\\") { j += 2; continue; }
+                  if (st[st.length - 1] === "d") {
+                    if (d === "\"") st.pop();
+                    else if (d === "$" && bs[j + 1] === "(") { st.push("p"); j += 2; continue; }
+                  } else if (d === "'") {
+                    let e = j + 1;
+                    while (e < lim && bs[e] !== "'") e++;
+                    if (e >= lim) return -1;
+                    j = e;
+                  } else if (d === "\"") st.push("d");
+                  else if (d === "(") st.push("p");
+                  else if (d === ")") { st.pop(); if (st.length === 0) return j; }
+                  j++;
+                }
+                return -1;
+              };
+              while (i < bs.length) {
+                const ch = bs[i];
+                const ws = i === 0 || /[\s=(;&|`]/.test(bs[i - 1]);
+                if (ws && ch === "#") {
+                  const e = bs.indexOf("\n", i);
+                  const j = e === -1 ? bs.length : e;
+                  cq += " ".repeat(j - i);
+                  i = j;
+                } else if (ws && ch === "'" && !noSq) {
+                  const e = bs.indexOf("'", i + 1);
+                  if (e === -1) { noSq = true; cq += ch; i++; }
+                  else { cq += " ".repeat(e + 1 - i); i = e + 1; }
+                } else if (ws && ch === "\"" && !noDq) {
+                  let k = i + 1;
+                  let out = " ";
+                  let closed = false;
+                  while (k < bs.length) {
+                    const d = bs[k];
+                    if (d === "\"") { closed = true; break; }
+                    if (d === "\\" && k + 1 < bs.length) { out += "  "; k += 2; continue; }
+                    if (d === "$" && bs[k + 1] === "(") {
+                      const j = substEnd(k);
+                      // Unclosed within the bound: the string is not blanked
+                      // (fail closed), as if its quote never closed.
+                      if (j === -1) break;
+                      out += blankIn(bs.slice(k, j + 1));
+                      k = j + 1;
+                      continue;
+                    } else if (d === "`" && !noBt) {
+                      const e = bs.indexOf("`", k + 1);
+                      if (e === -1) noBt = true;
+                      else { out += blankIn(bs.slice(k, e + 1)); k = e + 1; continue; }
+                    }
+                    out += " ";
+                    k++;
+                  }
+                  if (!closed) { noDq = true; cq += ch; i++; }
+                  else { cq += out + " "; i = k + 1; }
+                } else { cq += ch; i++; }
+              }
+            }
+            const R_CODEX = new RegExp(POS + "(?:[^\\s;&|(`<>]*/)?codex(?=[ \\t])", "g");
+            // Flags that can write outside the dir codex runs in: no
+            // exemption. WIDE only undoes `-s read-only`.
+            const DANGER = /(?:^|[ \t])(?:--yolo|--add-dir|--dangerously-bypass-approvals-and-sandbox|--approve-for-me|--dangerously-bypass-hook-trust)(?=[ \t=]|$)/;
+            const WIDE = /(?:^|[ \t])(?:-p|--profile|--full-auto|--worktree)(?=[ \t=]|$)/;
+            const OPT = /(?:^|[ \t])(?:-([scCp])|--(sandbox|config|cd|profile)(?=[ \t=]|$))/g;
+            const LONG = { sandbox: "s", config: "c", cd: "C", profile: "p" };
+            const blankRaw = q => command[q] === " " || command[q] === "\t" || (command[q] === "\\" && command[q + 1] === "\n");
+            // Every `cd`-like word, counted on the blanked text: one the
+            // fold below cannot read (`cd -P x`, `then cd x`, `pushd`) voids
+            // the exemption.
+            const CD_ANY = /(?:^|[\s;&|(`])(?:cd|pushd|popd)(?=[\s;&|)]|$)/g;
+            const TEMP_ROOTS = tdCands.filter(t => t.length > 1).map(t => path.resolve(t))
+              .concat(["/tmp", "/private/tmp", "/var/folders", "/private/var/folders"]);
+            const underTemp = d => TEMP_ROOTS.some(r => d === r || d.startsWith(r + "/")) || /\/scratchpad(?:\/|$)/.test(d);
+            const isDir = d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } };
+            // Where the `cd`s before offset `end` leave the shell, and
+            // whether that is established: every one top level, read, resolved.
+            const cdWalk = (end, expand) => {
+              const qh = cq.slice(0, end + 1);
+              let any = 0;
+              CD_ANY.lastIndex = 0;
+              while (CD_ANY.exec(qh) !== null) if (++any > 64) return { dir: process.cwd(), ok: false };
+              const head = scanOf().slice(0, end + 1);
+              let dir = process.cwd();
+              let ok = true;
+              let n = 0;
+              let tries = 0;
+              let depth = 0;
+              let dp = 0;
+              CD_ARG.lastIndex = 0;
+              let c = null;
+              while (tries++ < 256 && (c = CD_ARG.exec(head)) !== null) {
+                const at = c.index + c[0].indexOf("cd");
+                // Blank in `cq`: inside quotes, not a command.
+                if (qh.slice(at, at + 2) !== "cd") continue;
+                n++;
+                for (; dp < at; dp++) {
+                  if (qh[dp] === "(") depth++;
+                  else if (qh[dp] === ")") depth--;
+                }
+                expand.pwd = dir;
+                let arg;
+                if (c[2] !== undefined) arg = c[2];
+                else if (c[1] !== undefined) arg = expand(c[1]);
+                else if (c[3] !== undefined) {
+                  arg = c[3] === "~" || c[3].startsWith("~/") ? os.homedir() + c[3].slice(1) : c[3];
+                  arg = expand(arg);
+                } else arg = os.homedir();
+                if (depth !== 0) ok = false;
+                else if (arg === "-" || /[`$]/.test(arg)) ok = false;
+                else dir = path.resolve(dir, arg);
+              }
+              if (c !== null || n !== any) ok = false;
+              expand.pwd = dir;
+              return { dir, ok };
+            };
+            const inRepo = new Map();
+            let probes = 0;
+            const repoAt = dir => {
+              if (!inRepo.has(dir)) {
+                let ok = true;
+                if (++probes <= 3) {
+                  try { execSync("git rev-parse --show-toplevel", { cwd: dir, stdio: "pipe" }); } catch { ok = false; }
+                }
+                inRepo.set(dir, ok);
+              }
+              return inRepo.get(dir);
+            };
+            const graded = new Set();
+            let x;
+            let seen = 0;
+            let calls = 0;
+            let capped = false;
+            while ((x = R_CODEX.exec(cq)) !== null) {
+              if (++seen > 64) { capped = true; break; }
+              const from = x.index + x[0].length;
+              const stop = cq.slice(from).search(/[\n;&|]/);
+              // A `$(...)` or backtick span after the call is an argument,
+              // never an option.
+              let seg = cq.slice(from, stop === -1 ? cq.length : from + stop)
+                .replace(/\$\([^()]*\)|`[^`]*`/g, t => " ".repeat(t.length));
+              if (!/(?:^|[ \t])(?:exec|e)(?=[ \t]|$)/.test(seg)) continue;
+              // A bare `--` ends the options: what follows is the prompt.
+              const dd = seg.search(/(?:^|[ \t])--(?=[ \t]|$)/);
+              if (dd !== -1) seg = seg.slice(0, dd);
+              if (/(?:^|[ \t])(?:-h|--help|-V|--version)(?=[ \t]|$)/.test(seg)) continue;
+              if (++calls > 4) { capped = true; break; }
+              let ro = false;
+              let other = false;
+              let danger = DANGER.test(seg);
+              let wide = WIDE.test(seg);
+              let hasC = false;
+              let cdir = null;
+              const expand = makeExpand(x.index, tdCands[0]);
+              let o;
+              OPT.lastIndex = 0;
+              while ((o = OPT.exec(seg)) !== null) {
+                const f = o[1] || LONG[o[2]];
+                // The value's first char, in the RAW command.
+                let q = from + OPT.lastIndex;
+                if (command[q] === "=") q++;
+                else if (!o[1] || blankRaw(q) || q >= command.length) {
+                  let k = 0;
+                  while (k++ < 4096 && blankRaw(q)) q += command[q] === "\\" ? 2 : 1;
+                }
+                const rv = /^(?:'([^'\n]*)'|"([^"\n]*)"|([^\s;&|<>()'"`]*))/.exec(command.slice(q, q + 4098));
+                if (f === "s") {
+                  const sv = rv[1] !== undefined ? rv[1] : rv[2] !== undefined ? rv[2] : rv[3];
+                  if (sv === "read-only") ro = true;
+                  else {
+                    other = true;
+                    // Unresolved, empty or unknown: fail closed.
+                    if (sv !== "workspace-write") danger = true;
+                  }
+                } else if (f === "c") {
+                  const key = /^['"]?[ \t]*([\w.-]*)/.exec(command.slice(q, q + 256))[1];
+                  if (/sandbox|approval|permission|profile/i.test(key)) { wide = true; danger = true; }
+                } else if (f === "C") {
+                  hasC = true;
+                  let dp = rv[1] !== undefined ? rv[1] : rv[2] !== undefined ? expand(rv[2]) : rv[3];
+                  if (rv[3] !== undefined) {
+                    if (dp === "~" || dp.startsWith("~/")) dp = os.homedir() + dp.slice(1);
+                    dp = expand(dp);
+                  }
+                  if (dp !== "" && (rv[1] !== undefined || !/[$`]/.test(dp))) cdir = dp;
+                } else if (f === "p") danger = true;
+              }
+              if (danger) wide = true;
+              if (ro && !other && !wide) continue;
+              const w = cdWalk(x.index, expand);
+              const exempt = !danger && !hasC && w.ok && isDir(w.dir) && underTemp(w.dir) && !repoAt(w.dir);
+              if (exempt) continue;
+              graded.add(process.cwd());
+              graded.add(w.dir);
+              if (cdir !== null) graded.add(path.resolve(w.dir, cdir));
+            }
+            if (capped) graded.add(process.cwd());
+            // The session cwd first: in a repo, one git call settles it.
+            codexHit = (graded.has(process.cwd()) && repoAt(process.cwd())) || [...graded].some(repoAt);
+          }
+
+          let shape = HUGE || codexHit || WRITES.some(r => r.test(probe));
           if (!shape) {
             const im = R_INLINE.exec(noTemp) || R_HEREDOC.exec(noTemp);
             // `+ 1` keeps the separator the match starts on, so the `&&` after
@@ -249,57 +702,29 @@
           if (!shape) {
             const R_SCRIPT_RAW = new RegExp(POS + "(?:" + INTERP
               + "|uv[ \\t]+run(?:[ \\t]+python[0-9.]*)?|(?:pnpm[ \\t]+(?:exec|dlx)|npx|pnpx)[ \\t]+(?:tsx|ts-node|vite-node|node))"
-              + "(?:" + WS + "(?:-[\\w-]+(?:=[^\\s;&|<>()]*)?|--import" + WS + "[^\\s;&|<>()-][^\\s;&|<>()]*|-r" + WS + "[^\\s;&|<>()-][^\\s;&|<>()]*)){0,16}" + WS
+              + "(?:" + WS + "(?:-[\\w-]+(?:=[^\\s;&|<>()]*)?|" + SEP_ARG + ")){0,16}" + WS
               + "(?:\"([^\"\\n]+\\.(?:py|[cm]?js|[cm]?ts|rb|pl))\"|'([^'\\n]+\\.(?:py|[cm]?js|[cm]?ts|rb|pl))'"
-              + "|([^\\s;&|<>()'\"`-][^\\s;&|<>()'\"`]*\\.(?:py|[cm]?js|[cm]?ts|rb|pl)))(?=[\\s;&|)]|$)", "g");
-            // Quoted text that spans a newline is prose — a commit message
-            // listing `python3 /x/e.py` on its second line runs nothing. It is
-            // blanked to spaces of the same length, so offsets still line up
-            // with `command`.
-            // One left-to-right pass, so whichever starts first wins: a quote
-            // opens a span only at a word start (after a blank, `=`, `(` or a
-            // separator), never mid-word as in `don't`; a `#` at a word start
-            // outside quotes is a comment, blanked to the end of its line. An
-            // apostrophe in a comment paired with a later quote used to blank
-            // the script call between them.
-            const scan = command.replace(/(^|[\s=(;&|])('[^']*'|"[^"]*"|#[^\n]*)/g,
-              (q, pre, s) => pre + (s[0] !== "#" && s.indexOf("\n") === -1 ? s : " ".repeat(s.length)));
-            // The hook runs with the login $TMPDIR; a sandboxed Bash call has
-            // its own under /tmp/claude-<uid>. Each is tried, and the first
-            // under which the script exists wins. An unset or empty $TMPDIR is
-            // dropped, not tried: it would leave `$TMPDIR` in the path.
-            const uid = typeof process.getuid === "function" ? process.getuid() : null;
-            const tmpdirs = [process.env.TMPDIR];
-            if (uid !== null) tmpdirs.push("/tmp/claude-" + uid, "/private/tmp/claude-" + uid);
-            const tdCands = tmpdirs.filter(Boolean);
-            const ASSIGN = /(?:^|[\s;&|(])([A-Za-z_]\w*)=(?:"([^"]*)"|'([^']*)'|([^\s;&|<>()'"`]*))/g;
+              + "|([^\\s;&|<>()'\"`-][^\\s;&|<>()'\"`]*\\.(?:py|[cm]?js|[cm]?ts|rb|pl))"
+              // A quoted head with a bare tail, `"$TMPDIR"/edit.py`: groups 4
+              // and 5, joined before expansion. Three or more pieces are not read.
+              + "|\"([^\"\\n]*)\"([^\\s;&|<>()'\"`]+\\.(?:py|[cm]?js|[cm]?ts|rb|pl)))(?=[\\s;&|)]|$)", "g");
+            const scan = scanOf();
             let m;
             let tries = 0;
             while (tries++ < 4 && (m = R_SCRIPT_RAW.exec(scan)) !== null) {
               const tds = /\$\{?TMPDIR\b/.test(command) ? tdCands : [tdCands[0]];
               for (const td of tds) {
-                const vars = {};
-                const expand = s => s.replace(/\$(?:\{(\w+)\}|(\w+))/g, (all, a, b) => {
-                  const n = a || b;
-                  if (Object.prototype.hasOwnProperty.call(vars, n)) return vars[n];
-                  if (n === "TMPDIR" && td) return td;
-                  return all;
-                });
-                const before = command.slice(0, m.index);
-                ASSIGN.lastIndex = 0;
-                let a;
-                while ((a = ASSIGN.exec(before)) !== null) {
-                  const v = a[3] !== undefined ? a[3] : expand(a[2] !== undefined ? a[2] : a[4]);
-                  if (v.length <= 4096) vars[a[1]] = v;
-                  else delete vars[a[1]];
-                }
+                const expand = makeExpand(m.index, td);
+                // The directory the relative path is read from. `+ 1` keeps
+                // the separator the match starts on, for CD_ARG's lookahead.
+                const dir = cdFold(scan.slice(0, m.index + 1), expand);
                 const lit = m[2] !== undefined;
-                let p = lit ? m[2] : expand(m[1] !== undefined ? m[1] : m[3]);
+                let p = lit ? m[2] : expand(m[1] !== undefined ? m[1] : m[3] !== undefined ? m[3] : m[4] + m[5]);
                 // Unresolved under this candidate: try the next, never stop.
                 if (!lit && /[$`]/.test(p)) continue;
                 // Bash expands `~` only unquoted.
                 if (m[3] !== undefined && (p === "~" || p.startsWith("~/"))) p = os.homedir() + p.slice(1);
-                const abs = path.resolve(process.cwd(), p);
+                const abs = path.resolve(dir, p);
                 if (fs.existsSync(abs)) { scripts.push(abs); break; }
               }
             }
@@ -308,9 +733,12 @@
 
           // Only guard writes aimed at a repo. The cwd is the best signal a
           // hook has: it cannot resolve every target path in a shell string.
-          try {
-            execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" });
-          } catch { process.exit(0); }
+          // A codex hit was already graded where codex runs.
+          if (!codexHit) {
+            try {
+              execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" });
+            } catch { process.exit(0); }
+          }
 
           // The script branch denies only a script OUTSIDE the repo that both
           // writes and names this repo's toplevel — as a whole path, so
@@ -419,7 +847,8 @@
         // reader hunting for a file that was never touched.
         const reason = "BLOCKED: this command has a file-writing SHAPE (redirect, in-place "
           + "edit, heredoc, cp/mv/tee, or a python/node/ruby/perl script that calls a write "
-          + "API — inline code, a heredoc, or a script outside the repo that names this repo) "
+          + "API — inline code, a heredoc, or a script outside the repo that names this repo; "
+          + "or `codex exec` without an explicit, unwidened `-s read-only`) "
           + "inside a repo, and APEX has not run for THIS request. "
           + "The gate matches shapes, not proven writes — a heredoc trips it even with no "
           + "redirect, so prefer the Write tool. "

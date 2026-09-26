@@ -241,8 +241,17 @@ let
     "codex *"
     "gh *"
     "git push *"
+    "git commit *"
+    "git pull *"
+    "git fetch *"
   ];
   missingExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) requiredExcluded;
+
+  requiredNixExcluded = [ "nix flake check" ];
+  missingNixExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) requiredNixExcluded;
+  nixCheckWildcard = builtins.elem "nix flake check *" excludedCommands;
+  sandboxNetwork = pkgs.lib.attrByPath [ "sandbox" "network" ] { } settingsAttrs;
+  nixSocketOpened = sandboxNetwork ? allowUnixSockets;
 
   requiredDeny = [
     "Bash(git push --force *)"
@@ -256,6 +265,10 @@ let
     "Bash(git push *:main*)"
     "Bash(git push * master)"
     "Bash(git push * main)"
+    "Bash(git fetch *--upl*)"
+    "Bash(git pull *--upl*)"
+    "Bash(git push *--rece*)"
+    "Bash(git push *--e*)"
     "Bash(gh repo delete*)"
     "Bash(gh auth token*)"
     "Bash(gh auth *--show-token*)"
@@ -266,6 +279,22 @@ let
     "Bash(codex *sandbox_permissions*)"
   ];
   missingDeny = builtins.filter (d: !(builtins.elem d deny)) requiredDeny;
+
+  denyWrite = pkgs.lib.attrByPath [ "sandbox" "filesystem" "denyWrite" ] [ ] settingsAttrs;
+  requiredGitDenyWrite = [
+    "/Users/alx/**/.git/hooks"
+    "/Users/alx/**/.git/config"
+    "/Users/alx/.gitconfig"
+    "/Users/alx/.config/git"
+  ];
+  missingGitDenyWrite = builtins.filter (p: !(builtins.elem p denyWrite)) requiredGitDenyWrite;
+  requiredGitEditDeny = [
+    "Edit(**/.git/hooks/**)"
+    "Edit(**/.git/config)"
+  ];
+  missingGitEditDeny = builtins.filter (d: !(builtins.elem d deny)) requiredGitEditDeny;
+  # Write(path) is accepted but never consulted: it reads as a guard, guards nothing.
+  inertWriteDeny = builtins.filter (e: builtins.isString e && hasPrefix "Write(" e) deny;
 
   requiredAsk = [
     "Bash(gh pr merge*)"
@@ -427,15 +456,49 @@ let
       msg =
         "sandbox.excludedCommands is missing: "
         + builtins.concatStringsSep ", " missingExcluded
-        + " — codex/gh need the keychain and `git push` the ~/.ssh key, both denied inside the sandbox; without the exclusion they fail with \"operation not permitted\" and step-09 cannot ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
+        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
     }
     {
-      name = "A15 settings: force-push, master-target push, gh/codex escape hatches stay denied";
+      name = "A14b sandbox: bare nix flake check is excluded, no wildcard, the daemon socket stays closed";
+      ok = missingNixExcluded == [ ] && !nixCheckWildcard && !nixSocketOpened;
+      msg =
+        "sandbox.excludedCommands is missing: "
+        + builtins.concatStringsSep ", " missingNixExcluded
+        + (
+          if nixCheckWildcard then
+            " / \"nix flake check *\" is excluded — an argument can name a remote flake or --override-input, i.e. arbitrary nix code evaluated unsandboxed by a trusted user"
+          else
+            ""
+        )
+        + (if nixSocketOpened then " / sandbox.network.allowUnixSockets is set" else "")
+        + " — sandboxed, `nix flake check` fails with EPERM on the nix daemon socket and on the ~/.cache/nix sqlite, so the verify step cannot run it. The fix is excluding that one command, never opening the socket: the user is in trusted-users (@admin), so allowUnixSockets on the daemon socket hands every sandboxed command a root-equivalent channel";
+    }
+    {
+      name = "A14c skills: caveman names merge-into-master and force-push as irreversible, not plain push";
+      ok =
+        hasInfix "(delete, merge into master, force-push, deploy)" (skills.skillCaveman or "")
+        && !(hasInfix "(delete, push, deploy)" (skills.skillCaveman or ""));
+      msg = "skillCaveman still lists `(delete, push, deploy)` as irreversible confirmations (or lost `(delete, merge into master, force-push, deploy)`) — push to a feature branch is pre-authorized and reversible; left in, caveman mode drops its terse style and asks for confirmation on every routine push, contradicting the git policy";
+    }
+    {
+      name = "A15 settings: force-push, master-target push, remote-program override, gh/codex escape hatches stay denied";
       ok = missingDeny == [ ];
       msg =
         "permissions.deny lost: "
         + builtins.concatStringsSep ", " missingDeny
-        + " — `git push *`, gh and codex run OUTSIDE the sandbox and commit/push/PR are pre-authorized; deny is a textual guardrail (prefix/glob match, not a barrier — the server-side barrier is the GitHub ruleset `protect-master`), and without it nothing local stops a rewritten remote history, a wiped worktree, a leaked gh/codex token or a codex run with its sandbox switched off";
+        + " — `git push *`, gh and codex run OUTSIDE the sandbox and commit/push/PR are pre-authorized; deny is a textual guardrail (prefix/glob match, not a barrier — the server-side barrier is the GitHub ruleset `protect-master`), and without it nothing local stops a rewritten remote history, a wiped worktree, a leaked gh/codex token, a codex run with its sandbox switched off, or an arbitrary command smuggled as --upload-pack/--receive-pack/--exec into an unsandboxed git fetch/pull/push. Those denies must stay on the SHORTEST unambiguous prefix (`--upl`, `--rece`, `--e`): git accepts any unique abbreviation of a long option, so `--upload-pack` alone lets `--upl=CMD` through";
+    }
+    {
+      name = "A22 sandbox: repo .git hooks/config and global git config stay unwritable (denyWrite + Edit deny)";
+      ok = missingGitDenyWrite == [ ] && missingGitEditDeny == [ ] && inertWriteDeny == [ ];
+      msg =
+        "sandbox.filesystem.denyWrite lost: "
+        + builtins.concatStringsSep ", " missingGitDenyWrite
+        + " / permissions.deny lost: "
+        + builtins.concatStringsSep ", " missingGitEditDeny
+        + " / inert Write(...) deny rule(s): "
+        + builtins.concatStringsSep ", " inertWriteDeny
+        + " — git commit/push/fetch/pull run OUTSIDE the sandbox and execute the repo's hooks and config (core.hooksPath, core.fsmonitor, core.sshCommand); one sandboxed write there becomes code run unsandboxed on the next git call — same for the global ~/.gitconfig and ~/.config/git. Built-in protection covers only the cwd's .git. denyWrite must stay absolute: unprefixed, a user-settings path resolves under ~/.claude. Write(path) rules are accepted but never consulted — Edit(path) is the rule that guards the file tools";
     }
     {
       name = "A19 settings: merge paths and mutating gh api stay behind ask";

@@ -168,6 +168,29 @@ let
       scope = skills.apexStep00Init;
     }
     {
+      # excludedCommands matches the WHOLE Bash call. A `cd … &&` prefix or a
+      # `$(…)` keeps git/gh/codex sandboxed, where they fail on the network or
+      # the signing agent. Scoped: step-00 is what the coordinator reads first.
+      name = "init: sandbox-excluded commands run standalone";
+      needle = "run them as standalone commands";
+      scope = steps."step-00-init";
+    }
+    {
+      # The classification a phase agent consults before escalating. Without
+      # the shape rule, an excluded command that failed looks sandbox-blocked
+      # and gets escalated instead of rewritten.
+      name = "orchestration: sandbox-excluded commands run standalone";
+      needle = "run them as standalone commands";
+      scope = steps.ORCHESTRATION;
+    }
+    {
+      # A multi-line PR body passed inline needs a heredoc or `$(…)`, which
+      # keeps `gh` sandboxed. Scoped to step-09: the only step that ships.
+      name = "finish: PR body goes through a file, not inline";
+      needle = "--body-file";
+      scope = skills.apexStep09Finish;
+    }
+    {
       # Recorded and never read is the same as not recorded. This is the only
       # clause that makes the baseline do anything.
       name = "validate: the baseline verdict is consumed, not just stored";

@@ -608,6 +608,28 @@ const dequoteTight = (s) =>
     (m, keep, a, b) => (keep ? m : a === undefined ? b : a),
   );
 
+// A push whose destination names main/master, from ANY branch: the branch
+// checks below only see the CURRENT branch, and `git push origin HEAD:master`
+// from a feature branch moves master all the same. Ported from
+// hookBlockMainBash. The destination is a refspec's right side (or a bare
+// ref), optionally forced with `+` and spelled refs/heads/ or heads/; the
+// lookahead keeps `master-foo` and `mainline` out, and admits a closing quote
+// because an EXECUTOR word (`bash -c "..."`) leaves stripInertText's view raw.
+// The argument run is bounded by shell separators, so
+// `git push origin feat/x && git log master` passes.
+const PROTECTED_DST =
+  /\+?(?:[^\s:;&|<>()]*:)?(?:refs\/heads\/|heads\/)?(?:master|main)(?=[\s;&|()<>"'`]|$)/;
+// Linear: one greedy run per push segment, then one test inside it. The old
+// lazy `[^;&|\n()]*?\s` retried from every offset and went quadratic on a
+// long run of `git push git push ...` with no separator.
+const PUSH_SEG = new RegExp(src(GIT) + "push" + src(EOW) + "([^;&|\\n()]*)", "g");
+const DST_WORD = new RegExp("\\s" + src(PROTECTED_DST));
+const scan = (v) => [...v.matchAll(PUSH_SEG)].some((m) => DST_WORD.test(m[1]));
+const pushTargetsProtectedRef = (c) => {
+  const v = c.replace(/\\\n/g, " ");
+  return scan(stripInertText(v)) || scan(stripInertText(dequoteTight(v)));
+};
+
 // Every rule that fires, on either view. The deadline is re-checked between
 // rules: a pathological regex cannot be interrupted by the async watchdog, so
 // the loop refuses on its own once the budget is spent.
@@ -942,6 +964,13 @@ function main() {
   }
 
   if (tryBranchEscape(dirs, cmd)) return;
+
+  // Unconditional: no repo, remote or branch lookup decides this one.
+  if (pushTargetsProtectedRef(cmd))
+    deny(
+      "BLOCKED: this shell command pushes to main/master (rule push-protected-ref). " +
+        "Push your own branch by name (git push -u origin <your-branch>) and merge via a PR on GitHub.",
+    );
 
   // The read-only fast path: no write-shaped rule fires, so there is nothing
   // to refuse and not one git call is spent on it.

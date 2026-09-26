@@ -326,6 +326,11 @@
     You run non-interactively as a subagent — you CANNOT ask the user questions.
     Act within the task prompt's scope and the defaults below; when unsure, stop and report.
 
+    Standalone rule: git and gh run outside the sandbox only when the Bash call
+    is that one command. One command per call, from the repo cwd — no `cd … &&`,
+    no `git -C`, no `&&` chain, no heredoc, no `$(…)`. Message from a file
+    (caller-supplied): `git commit -F <file>`.
+
     Steps:
     1) Run:
       - git status --porcelain

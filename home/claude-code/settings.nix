@@ -102,12 +102,27 @@ in
       # codex/gh/git push need the keychain or the ~/.ssh key the sandbox denies.
       # deny/ask below are TEXTUAL filtering (guardrail, not a barrier); the
       # server-side barrier is the GitHub ruleset `protect-master` (id 24043808).
+      # git commit/pull/fetch: signing key + SSH remote, both denied inside.
+      # An exclusion only applies when the Bash call is that command ALONE:
+      # `cd … &&`, `$(…)`, heredoc or redirection keep the call sandboxed.
+      # nix flake check: sandboxed it hits EPERM on the daemon socket
+      # (/nix/var/nix/daemon-socket/socket) and on ~/.cache/nix sqlite.
+      # Excluding the one command, NOT allowUnixSockets: the user is in
+      # trusted-users (@admin), so an open daemon socket would hand every
+      # sandboxed command a root-equivalent channel.
+      # Bare form ONLY, never "nix flake check *": an argument can name a remote
+      # flake or `--override-input`, i.e. arbitrary nix code evaluated
+      # unsandboxed by a trusted user.
       excludedCommands = [
         "sudo *"
         "darwin-rebuild *"
         "codex *"
         "gh *"
         "git push *"
+        "git commit *"
+        "git pull *"
+        "git fetch *"
+        "nix flake check"
       ];
       filesystem = {
         denyWrite = [
@@ -131,6 +146,21 @@ in
           "${homeDirectory}/.codex/hooks"
           "${homeDirectory}/.codex/config.toml"
           "${homeDirectory}/.codex/AGENTS.md"
+          # git commit/push/fetch/pull run OUTSIDE the sandbox (excludedCommands)
+          # and execute the repo's hooks and config (core.hooksPath, fsmonitor,
+          # sshCommand…). A sandboxed write there = code run unsandboxed on the
+          # next git call. Built-in protection covers only the cwd's .git; this
+          # extends it to every repo under $HOME. Absolute on purpose: an
+          # unprefixed path in user settings resolves under ~/.claude, and
+          # denyWrite wildcards work on macOS only (docs: settings-reference
+          # #sandbox-path-prefixes).
+          "${homeDirectory}/**/.git/hooks"
+          "${homeDirectory}/**/.git/config"
+          # Same for the GLOBAL config (core.sshCommand, core.hooksPath…), read
+          # by every excluded git command. ~/.config/git is home-manager's
+          # (programs.git) — written at activation, outside this sandbox.
+          "${homeDirectory}/.gitconfig"
+          "${homeDirectory}/.config/git"
         ];
         denyRead = [
           # Sans cette entrée, la clé privée était lisible depuis le sandbox :
@@ -378,6 +408,21 @@ in
         "Bash(git push *:main*)"
         "Bash(git push * master)"
         "Bash(git push * main)"
+        # Remote-side program override = arbitrary command, run unsandboxed
+        # (git push/fetch/pull are excludedCommands). `--exec` = push alias of
+        # --receive-pack. Abbreviated prefixes: git accepts any unique prefix of
+        # a long option. Measured (git 2.55): `--up`/`--rec` are ambiguous and
+        # refused, but `--upl`, `--rece` and even `--e` (only push option in e)
+        # run CMD.
+        "Bash(git fetch *--upl*)"
+        "Bash(git pull *--upl*)"
+        "Bash(git push *--rece*)"
+        "Bash(git push *--e*)"
+        # Repo hooks/config execute on the next unsandboxed git call. Edit only:
+        # Write(path) rules are never consulted (docs: permissions#read-and-edit)
+        # and Edit denies are also merged into sandbox denyWrite.
+        "Edit(**/.git/hooks/**)"
+        "Edit(**/.git/config)"
         "Bash(gh repo delete*)"
         "Bash(gh auth token*)"
         "Bash(gh auth *--show-token*)"

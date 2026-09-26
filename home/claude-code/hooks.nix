@@ -1215,6 +1215,37 @@
     const hits = (c) => GUARD.some((re) => re.test(stripInertText(c)));
     const movesRefOnCurrentBranch = (c) => hits(c) || hits(dequoteTight(c));
 
+    // A push whose DESTINATION names master/main is refused from ANY branch,
+    // in any repo, with or without a remote: the branch test below only sees
+    // the CURRENT branch, so `git push origin master` from a feature branch
+    // (or `HEAD:master`, `+x:refs/heads/main`, `:master`) published straight
+    // to master unseen. The destination is a whole word: `master-foo`,
+    // `mainline` and `feat/master` are other branches. The scan stays inside
+    // one command (no `;`, `&`, `|`, newline or paren), so
+    // `git push origin feat/x && git log master` is not a push to master.
+    // Same two views as the rules: inert text masked, tight quotes dropped.
+    // A closing quote or backtick also ends the word: behind an EXECUTOR the
+    // raw string is scanned, and `bash -c "git push origin master"` ends on
+    // `master"`. Known, accepted: `env X=1 git commit -m "git push origin
+    // master"` keeps the raw string the same way, so that text denies.
+    // A redirection also ends the word: `git push origin master>/dev/null`
+    // still pushes to master, so `<` and `>` sit in the lookahead too.
+    const PROTECTED_DST = /\+?(?:[^\s:;&|<>()]*:)?(?:refs\/heads\/|heads\/)?(?:master|main)(?=[\s;&|()<>"'`]|$)/;
+    // LINEAR scan, in two passes. The first shape was ONE regex with a lazy
+    // `[^;&|\n()]*?\s` before the destination: every `git push` restarted it
+    // to the end of the segment, so 128 KB of `git push ` with no separator
+    // was quadratic. Now each push segment is cut ONCE, greedily (the global
+    // match resumes where the last one ended), and the destination word is
+    // looked for inside that segment alone. A `\` + newline is a line
+    // continuation to the shell, so it is folded to a space first.
+    const PUSH_SEG = new RegExp(src(GIT) + "push" + src(EOW) + "([^;&|\\n()]*)", "g");
+    const DST_WORD = new RegExp("\\s" + src(PROTECTED_DST));
+    const scan = (v) => [...v.matchAll(PUSH_SEG)].some((m) => DST_WORD.test(m[1]));
+    const pushTargetsProtectedRef = (c) => {
+      const v = c.replace(/\\\n/g, " ");
+      return scan(stripInertText(v)) || scan(stripInertText(dequoteTight(v)));
+    };
+
     let input = "";
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
@@ -1224,6 +1255,16 @@
       try {
         const data = JSON.parse(input);
         const cmd = (data.tool_input && data.tool_input.command) || "";
+        if (pushTargetsProtectedRef(cmd)) {
+          process.stdout.write(JSON.stringify({
+            hookSpecificOutput: {
+              hookEventName: "PreToolUse",
+              permissionDecision: "deny",
+              permissionDecisionReason: "BLOCKED: this push targets main/master. Push your own branch by name (git push -u origin <your-branch>) and merge via a PR on GitHub."
+            }
+          }));
+          process.exit(0);
+        }
         if (!movesRefOnCurrentBranch(cmd)) process.exit(0);
         // Check the branch of the repo the COMMAND targets, not the session cwd.
         // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading

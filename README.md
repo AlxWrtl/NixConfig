@@ -360,9 +360,11 @@ The lifecycle of one request, in order:
    re-arms on your next message. This is enforcement.
 4. **The model tries to commit** — the same event refuses the git verbs that
    put code on `main`/`master`: the ones that author a commit, and the ones
-   that move the branch ref onto an arbitrary object. It is a list, not a
-   seal — `pull`, `worktree add` and a refspec written straight onto the
-   local branch are outside it. Master moves through pull requests only.
+   that move the branch ref onto an arbitrary object; a push whose
+   destination names `main`/`master` is refused from any branch. It is a
+   list, not a seal — `pull`, `worktree add` and a refspec written straight
+   onto the local branch are outside it. Master moves through pull requests
+   only.
    GitHub enforces it: the `protect-master` ruleset (no bypass actors)
    requires a pull request and refuses force-push and deletion on this repo's
    default branch. It requires a pull request, not a review: zero approvals

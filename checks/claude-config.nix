@@ -225,6 +225,16 @@ let
   amListOk = l: builtins.isList l && l != [ ] && builtins.head l == "$defaults";
   amEnvText = if builtins.isList amEnv then builtins.concatStringsSep "\n" amEnv else "";
 
+  # --- codex plugin (A26) --------------------------------------------------
+  codexPluginEnabled =
+    pkgs.lib.attrByPath [ "enabledPlugins" "codex@openai-codex" ] null settingsAttrs == true;
+  codexMarketplaceRepo = pkgs.lib.attrByPath [
+    "extraKnownMarketplaces"
+    "openai-codex"
+    "source"
+    "repo"
+  ] null settingsAttrs;
+
   # --- autonomous delivery (A12-A20) --------------------------------------
   permList = key: pkgs.lib.attrByPath [ "permissions" key ] [ ] settingsAttrs;
   allow = permList "allow";
@@ -569,6 +579,16 @@ let
         + " / permissions.deny lost: "
         + builtins.concatStringsSep ", " missingSecretReadDeny
         + " — in a permission rule `/path` is relative to the settings source (user settings → ~/.claude), so \"Read(\${homeDirectory}/.ssh/**)\" guarded ~/.claude/Users/alx/.ssh and left ~/.ssh readable by the Read tool; use `~/path` or `//abs/path` (docs: permissions#read-and-edit)";
+    }
+    {
+      name = "A26 settings: codex plugin enabled from the official OpenAI marketplace";
+      ok = codexPluginEnabled && codexMarketplaceRepo == "openai/codex-plugin-cc";
+      msg =
+        "enabledPlugins.\"codex@openai-codex\" must be true (got "
+        + (if codexPluginEnabled then "true" else "not true")
+        + ") and extraKnownMarketplaces.\"openai-codex\".source.repo must be \"openai/codex-plugin-cc\" (got "
+        + builtins.toJSON codexMarketplaceRepo
+        + ") — the marketplace name must resolve to OpenAI's official repo, or the plugin id installs from wherever that name points";
     }
     {
       name = "A19 settings: merge paths and mutating gh api stay behind ask";

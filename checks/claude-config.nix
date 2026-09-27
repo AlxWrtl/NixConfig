@@ -218,6 +218,13 @@ let
   ) (afterMarker "scrapling[shell]==" scraplingSkill);
   scraplingDrift = builtins.filter (v: v != scraplingPin) scraplingSkillPins;
 
+  # --- auto mode classifier context (A23) ----------------------------------
+  autoModeList = key: pkgs.lib.attrByPath [ "autoMode" key ] [ ] settingsAttrs;
+  amEnv = autoModeList "environment";
+  amAllow = autoModeList "allow";
+  amListOk = l: builtins.isList l && l != [ ] && builtins.head l == "$defaults";
+  amEnvText = if builtins.isList amEnv then builtins.concatStringsSep "\n" amEnv else "";
+
   # --- autonomous delivery (A12-A20) --------------------------------------
   permList = key: pkgs.lib.attrByPath [ "permissions" key ] [ ] settingsAttrs;
   allow = permList "allow";
@@ -499,6 +506,15 @@ let
         + " / inert Write(...) deny rule(s): "
         + builtins.concatStringsSep ", " inertWriteDeny
         + " — git commit/push/fetch/pull run OUTSIDE the sandbox and execute the repo's hooks and config (core.hooksPath, core.fsmonitor, core.sshCommand); one sandboxed write there becomes code run unsandboxed on the next git call — same for the global ~/.gitconfig and ~/.config/git. Built-in protection covers only the cwd's .git. denyWrite must stay absolute: unprefixed, a user-settings path resolves under ~/.claude. Write(path) rules are accepted but never consulted — Edit(path) is the rule that guards the file tools";
+    }
+    {
+      name = "A23 settings: autoMode keeps $defaults, names protect-master, and activation force-overrides it";
+      ok =
+        amListOk amEnv
+        && amListOk amAllow
+        && hasInfix "protect-master" amEnvText
+        && hasInfix ".autoMode = $am" activationSrc;
+      msg = "autoMode.environment / autoMode.allow must be non-empty lists starting with \"$defaults\" (without it the list REPLACES the classifier's built-in rules — force-push, curl|bash, exfiltration blocks gone), environment must name the ruleset protect-master (the classifier's only evidence master is server-protected), and activation.nix must keep `.autoMode = $am` (jq `*` replaces arrays, so an entry written by /auto-mode-setup or /permissions would otherwise mask the nix list on every rebuild)";
     }
     {
       name = "A19 settings: merge paths and mutating gh api stay behind ask";

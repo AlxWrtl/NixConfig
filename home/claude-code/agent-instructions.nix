@@ -110,6 +110,8 @@ let
           never weaken a test to make it pass.
         - Lead with the outcome. Show the command output that proves it.
         - Fix what was asked. Adjacent problems: mention, do not touch.
+        - Never hand the user a command to type: if an automatic block stops it, ask « je le lance ? »
+          naming the action, then run it yourself on yes. A user's no is final; only sudo passwords go to them.
       '';
     }
     {

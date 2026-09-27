@@ -190,6 +190,15 @@ let
   ];
   missingPreAuth = builtins.filter (p: !(lib.hasInfix p.needle p.text)) preAuthNeedles;
 
+  # -------------------------------------------------------------------- G10
+  noHandBackNeedles = [
+    "Never hand the user a command to type"
+    "ask « je le lance ? »"
+  ];
+  missingNoHandBack = lib.concatMap (
+    o: map (n: "${o.label}: `${n}`") (builtins.filter (n: !(lib.hasInfix n o.text)) noHandBackNeedles)
+  ) outputs;
+
   labels = xs: builtins.concatStringsSep ", " (map (o: o.label) xs);
 
   assertions = [
@@ -288,6 +297,14 @@ let
         + " | ancien verrou prose encore présent: "
         + (if proseGateHits == [ ] then "aucun" else builtins.concatStringsSep ", " proseGateHits)
         + " — un verrou « demande explicite » fait caler chaque run apex sur un commit/push/PR que le défaut `-pr` autorise déjà, et l'agent sans canal utilisateur (Codex, sous-agent) ne peut jamais le lever. Inversement, sans la ligne ask-first, plus rien ne dit que merge sur master, force-push et réécriture d'historique restent soumis à l'utilisateur";
+    }
+    {
+      name = "G10 no hand-back: blocked or refused → ask « je le lance ? », never a command for the user to type";
+      ok = missingNoHandBack == [ ];
+      msg =
+        "absent: "
+        + builtins.concatStringsSep ", " missingNoHandBack
+        + " — sans cette ligne du tronc, un refus (classifieur, sandbox) se termine par une commande tendue à l'utilisateur au lieu d'une question qui nomme l'action ; seul un prompt de mot de passe sudo lui revient";
     }
   ];
 

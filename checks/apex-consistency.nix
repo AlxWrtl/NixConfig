@@ -184,6 +184,21 @@ let
       scope = steps.ORCHESTRATION;
     }
     {
+      # A blocked or refused command handed back as text to paste turns the
+      # user into the executor. Scoped to ORCHESTRATION: the classification a
+      # phase agent reads before deciding what goes to the user.
+      name = "orchestration: blocked or refused is never a hand-off";
+      needle = "Never hand the user a command to type";
+      scope = steps.ORCHESTRATION;
+    }
+    {
+      # The coordinator reads step-00 first: the ask must name the action so
+      # a yes is an answer to one command, not a blanket go-ahead.
+      name = "init: blocked or refused is asked about, naming the action";
+      needle = "je le lance";
+      scope = steps."step-00-init";
+    }
+    {
       # A multi-line PR body passed inline needs a heredoc or `$(…)`, which
       # keeps `gh` sandboxed. Scoped to step-09: the only step that ships.
       name = "finish: PR body goes through a file, not inline";

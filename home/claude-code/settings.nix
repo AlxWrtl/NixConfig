@@ -268,6 +268,21 @@ in
       "verify-feature" = "user-invocable-only";
     };
 
+    # Contexte du classifieur auto mode (https://code.claude.com/docs/en/auto-mode-config).
+    # Lu en scope utilisateur uniquement, jamais depuis .claude/settings*.json.
+    # "$defaults" en tête : sans lui, la liste REMPLACE les règles intégrées.
+    autoMode = {
+      environment = [
+        "$defaults"
+        "Organization: personal nix-darwin config repo AlxWrtl/NixConfig (github.com), cloned at ~/.config/nix-darwin; primary use: personal macOS system configuration."
+        "Source control: master is protected server-side by the GitHub ruleset protect-master (PR required, force-push and deletion refused, no bypass); the agent works on feature branches it creates itself."
+      ];
+      allow = [
+        "$defaults"
+        "Local branch housekeeping in ~/.config/nix-darwin (AlxWrtl/NixConfig): switching branches, and deleting LOCAL branches the agent created in this repo — including unmerged disposable/probe branches — and branches already merged. Never master; master is protected by protect-master."
+      ];
+    };
+
     permissions = {
       # `auto` délègue chaque décision de permission à un classifieur de sûreté
       # au lieu de demander à l'utilisateur — il remplace un mode choisi

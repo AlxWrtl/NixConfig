@@ -50,6 +50,8 @@ let
           push/network may be unavailable here → "Run yourself" list.
         - Always ask first: any merge into master/main, any force-push, any history
           rewrite.
+        - « je le lance ? » : ici un oui ne lève pas le sandbox (approval_policy=never)
+          → réseau/socket bloqué = liste « Run yourself ».
       '';
     }
     {

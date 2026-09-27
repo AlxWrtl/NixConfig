@@ -171,9 +171,13 @@ in
           "${homeDirectory}/.aws/credentials"
           "${homeDirectory}/.gnupg/private-keys-v1.d"
           # NOTE: la clé publique est ré-ouverte plus bas via allowRead.
-          "**/.env"
-          "**/.env.*"
-          "**/secrets"
+          # Ancrés sur $HOME : non préfixé, un chemin des settings user se
+          # résout sous ~/.claude (docs: settings-reference
+          # #sandbox-path-prefixes). Mesuré en « **/.env » : ouvrir
+          # ~/projects/Preliz/.env depuis le sandbox (`dd … count=0`) passait.
+          "${homeDirectory}/**/.env"
+          "${homeDirectory}/**/.env.*"
+          "${homeDirectory}/**/secrets"
         ];
         # Ré-ouvre la clé PUBLIQUE, que le denyRead sur ~/.ssh emportait aussi.
         # git signe les commits en SSH (`gpg.format=ssh`, signingkey
@@ -181,7 +185,17 @@ in
         # avec « Couldn't load public key ». Régression introduite par la PR
         # #101 et constatée au premier commit suivant. Une clé publique est
         # publique — la privée, elle, reste refusée.
-        allowRead = [ "${homeDirectory}/.ssh/id_ed25519.pub" ];
+        # Trello : le skill et /trello lisent la clé et le token par `cat` en
+        # Bash (skills.nix, commands.nix). `${homeDirectory}/**/secrets`
+        # ci-dessus et `Read(~/.config/secrets/**)` (fusionné au sandbox)
+        # les bloquent ; la règle au chemin le plus étroit l'emporte (docs:
+        # sandboxing), donc ces deux FICHIERS seuls sont ré-ouverts — le reste
+        # du répertoire reste refusé.
+        allowRead = [
+          "${homeDirectory}/.ssh/id_ed25519.pub"
+          "${homeDirectory}/.config/secrets/trello-api-key"
+          "${homeDirectory}/.config/secrets/trello-token"
+        ];
         # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the
         # default sandbox write-set (cwd + tmp) would kill it with "operation
@@ -441,7 +455,7 @@ in
         "Bash(gh repo delete*)"
         "Bash(gh auth token*)"
         "Bash(gh auth *--show-token*)"
-        "Read(${homeDirectory}/.codex/auth.json)"
+        "Read(~/.codex/auth.json)"
         "Bash(codex *danger-full-access*)"
         "Bash(codex *dangerously*)"
         "Bash(codex *sandbox_mode*)"
@@ -459,11 +473,14 @@ in
         # Note: `sudo` intentionally NOT denied — Claude may invoke it but each
         # call requires interactive confirmation (not in allow-list either).
         "Bash(chmod 777 *)"
-        # Secrets — absolute paths via Nix interpolation
-        "Read(${homeDirectory}/.ssh/**)"
-        "Read(${homeDirectory}/.aws/**)"
-        "Read(${homeDirectory}/.gnupg/**)"
-        "Read(${homeDirectory}/.config/secrets/**)"
+        # Secrets — `~/` anchors on $HOME. NOT "Read(${homeDirectory}/…)": in a
+        # rule, one leading slash is relative to the settings source (user
+        # settings → ~/.claude), so it guarded ~/.claude/Users/alx/.ssh;
+        # absolute needs `//` (docs: permissions#read-and-edit).
+        "Read(~/.ssh/**)"
+        "Read(~/.aws/**)"
+        "Read(~/.gnupg/**)"
+        "Read(~/.config/secrets/**)"
         "Read(**/.env)"
         "Read(**/.env.*)"
         "Read(**/secrets/**)"

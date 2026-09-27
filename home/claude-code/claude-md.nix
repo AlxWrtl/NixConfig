@@ -22,8 +22,10 @@ let
       body = ''
         - Branch FIRST — `git checkout -b <type>/<desc>` BEFORE coding; never
           commit on main/master (hooks deny it), master via PR only.
-        - End-of-run commit+PR is pre-authorized by the apex `-pr` default; any
-          other add/commit/push still needs an explicit ask.
+        - On the run's feature branch, add/commit/push and `gh pr create` are
+          pre-authorized — do them without asking.
+        - Always ask first: any merge into master/main, any force-push, any history
+          rewrite (rebase/amend/reset of pushed commits).
       '';
     }
     {

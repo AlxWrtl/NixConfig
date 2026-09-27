@@ -162,11 +162,28 @@ in
     summary — read [ORCHESTRATION.md](ORCHESTRATION.md) now and follow it for
     every phase. There is no inline mode to fall back on.
 
-    Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-    list (long or password-interactive). Sandbox-blocked commands (`git push`
-    over SSH, docker, local DB): retry ONCE with dangerouslyDisableSandbox —
-    the permission box lets the user approve or refuse. Never weaken the
-    sandbox config itself. See the classification rule in ORCHESTRATION.md.
+    Privileged commands: only `sudo …` (password prompt) goes to the
+    "Run yourself" list; bare `nix flake check` and `darwin-rebuild build`
+    you run yourself. `git push`, `git commit`, `git pull`,
+    `git fetch`, `gh`, `codex` and bare `nix flake check` are excluded from
+    the sandbox — run them as standalone commands: one per Bash call, from the repo cwd, no
+    `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
+    (multi-line text: `git commit -F <file>`,
+    `gh pr create --body-file <file>`); any of those keeps the call sandboxed
+    and it fails. Inside the sandbox, `.git/config` and `.git/hooks` are
+    read-only in every repo: `git branch -d/-m/-u`,
+    `git checkout -b <x> origin/<y>`, `git remote`, `git config --local`,
+    `git init` and `git clone` fail there — run them with
+    dangerouslyDisableSandbox (one retry, permission box).
+    Other sandbox-blocked commands (docker, local DB sockets):
+    retry ONCE with dangerouslyDisableSandbox — the permission box lets the
+    user approve or refuse. Never weaken the sandbox config itself.
+    Blocked automatically (classifier or sandbox) is not a hand-off: ask the
+    user in the conversation, naming the exact action (« je le lance ? … »),
+    and on their explicit yes run it yourself. A no from the user — in the
+    permission box or in the conversation — is final: do not ask again.
+    Never hand the user a command to type, never a `! cmd`.
+    See the classification rule in ORCHESTRATION.md.
 
     ## Parse Flags
 
@@ -206,7 +223,7 @@ in
 
     | Mode | Default flags |
     |------|---------------|
-    | Diagnosis | `-x -o -n` |
+    | Diagnosis | `-x -pr -o -n` |
     | Standard / complex | `-t -pr -o -n` |
     | High-stakes | `-t -x -pr -o -n` |
     | Pure research | none |
@@ -232,8 +249,9 @@ in
       orchestrate.
     - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
       the error first; execute phase spawns the debugger agent (`model: opus`)
-      as implementer. Stays inside APEX. No `-pr`: a fix lands on its branch and
-      stops there — shipping it is a separate, explicit call.
+      as implementer. Stays inside APEX. Ships like the other modes: `-pr` is a
+      default, so the fix ends as a PR on its branch — never merged without the
+      user.
     - **Standard / complex**: full orchestration per ORCHESTRATION.md.
     - **High-stakes** — irreversible / security / architecture / prod: adds the
       adversarial pass, plus the Fable read-only verify on the real diff.
@@ -272,11 +290,12 @@ in
         baseline — every other red is this run's.
       - **Dirty tree.** A baseline taken on a dirty tree measures someone
         else's uncommitted work. Record the tree as dirty beside the verdict.
-      - **Too slow or privileged.** `nix flake check` builds the whole system
-        here. Do NOT run it: put the exact command on the "Run yourself" list
-        per ORCHESTRATION.md and record `baseline: skipped — {command} —
-        {reason}`. A skipped baseline is an unknown one: nothing at validate
-        may then be dismissed as pre-existing.
+      - **Privileged.** Bare `nix flake check` runs outside the sandbox: run
+        it yourself (in the background if long). Only a `sudo` command goes on
+        the "Run yourself" list per ORCHESTRATION.md, then record
+        `baseline: skipped — {command} — {reason}`. A skipped baseline is an
+        unknown one: nothing at validate may then be dismissed as
+        pre-existing.
       - **Diagnosis mode.** The red baseline IS the subject of the run.
         Record it as the reproduction target, never as an excuse.
 
@@ -826,13 +845,15 @@ in
 
     ## User Approval
 
-    Always, no opt-out:
-    - **Present the Premises FIRST**, before the task list. Ask explicitly
-      whether any of them is wrong — that is the question worth a round trip.
-      An unsourced premise must be visible in the transcript before the code
-      that rests on it exists.
+    The coordinator, not this planner, talks to the user (ORCHESTRATION.md "Plan approval"):
+    - **Present the Premises FIRST**, before the task list. An unsourced premise
+      must be visible in the transcript before the code that rests on it exists.
     - Then present the rest of the plan
-    - Wait for approval before proceeding
+    - In high-stakes mode or under `-q`: ask explicitly whether any premise is
+      wrong — that is the question worth a round trip — and wait for approval
+      before proceeding.
+    - Every other mode: show them and proceed without waiting; a contradiction
+      raised later follows the rule below.
 
     **Whenever the user contradicts a premise — at plan approval or later, mid-run
     — persist the correction before execute proceeds.** The rule holds at any
@@ -925,7 +946,8 @@ in
 
     ## If issues found:
     Update the plan and TodoWrite checklist to reflect corrections.
-    Present the changes for user approval, always — and wait for the answer.
+    Present the changes to the user. In high-stakes mode or under `-q`, wait for
+    their answer before execute; otherwise proceed.
 
     ## Trace or nothing (what makes `-v` real)
 
@@ -1110,9 +1132,10 @@ in
        - TypeScript: typecheck (`pnpm typecheck` or `npx tsc --noEmit`)
        - Lint: `pnpm lint` or equivalent
        - Build: `pnpm build` or equivalent
-       - Nix: `nix-instantiate --parse` (safe). Do NOT run `darwin-rebuild
-         build`/`switch` — those are privileged; mark such ACs **deferred to
-         user** and add the command to the "Run yourself" list.
+       - Nix: `nix-instantiate --parse` (safe); run `darwin-rebuild build`
+         (no sudo) yourself. Only `sudo darwin-rebuild switch` is privileged:
+         mark such ACs **deferred to user** and add the command to the
+         "Run yourself" list.
 
     3. **Integration Check**: verify that:
        - All imports resolve
@@ -1340,11 +1363,18 @@ in
        - `feat: {description}` for new features
        - `fix: {description}` for bug fixes
        - Include a body with key changes if the diff is large
+       - Write the message to a file first (Write tool), then
+         `git commit -F <file>`
     3. **Push**: `git push -u origin {branch-name}`
+
+    Each git/gh command is ONE standalone Bash call from the repo cwd (see
+    step-00): no `cd … &&`, no `git -C`, no heredoc or `$(…)` — otherwise it
+    stays sandboxed and fails.
 
     ## Create Pull Request
 
-    Use `gh pr create` with:
+    Write the PR body to a file first (Write tool), then
+    `gh pr create --title "<title>" --body-file <file>`, with:
     - **Title**: conventional format matching the commit
     - **Body**: structured with:
       - ## Summary (what was done)
@@ -1353,7 +1383,10 @@ in
       - ## Acceptance Criteria (checklist from plan)
 
     ## Before creating it
-    Show the PR title and body for approval, always — and wait for the answer.
+    Show the PR title and body in the transcript, then create it — no approval
+    wait: the `-pr` default already authorizes commit, push and PR on the run's
+    branch. Never merge it; merging into master, force-pushing and rewriting
+    history always need the user's explicit go.
 
     ## COMPLETE
 
@@ -1656,7 +1689,7 @@ in
             {"type": "pattern", "value": "[Gg]ate|[Dd]iagnos", "description": "Mode Gate must pick the diagnosis mode"},
             {"type": "pattern", "value": "[Rr]eproduc", "description": "Diagnosis analyze reproduces the error before planning a fix"},
             {"type": "pattern", "value": "debugger agent", "description": "Execute phase spawns the debugger agent as implementer"},
-            {"type": "excludes", "value": "open a pull request", "description": "Diagnosis mode ships nothing: the fix stops on its branch"}
+            {"type": "pattern", "value": "[Pp]ull request|gh pr create", "description": "Diagnosis ships its fix: -pr is a default, the run ends on a PR"}
           ]
         },
         {
@@ -1902,26 +1935,28 @@ in
 
     | Phase | Agent | model |
     |-------|-------|-------|
-    | Analyze fan-out | Explore / codebase-navigator | haiku |
+    | Analyze fan-out | Explore / codebase-navigator | sonnet |
     | Analyze synthesis | analyzer phase agent | `opus` (effort high) |
     | Plan | plan phase agent | `opus` (effort high/max) |
     | Execute (parallel waves under `-k`, coordinator's call) | implementer agents | `opus` (low effort mechanical) |
     | Bulk / large-context execute | implementer agents | `sonnet` |
-    | Run tests | test-runner | haiku |
+    | Run tests | test-runner | sonnet |
     | Self-verify (every task) | COORDINATOR inline (Opus 5.5) | none — fresh-context adversarial pass |
     | High-stakes verify | fable verifier subagent | `fable` — READ-ONLY, bounded verdict |
     | External verify (`-e`, opt-in) | codex CLI subprocess, not an Agent spawn | `gpt-6-astra` → `gpt-5.6-terra` — READ-ONLY, bounded verdict |
 
     Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
     models — a model switch pays the ~15× subagent/context tax. Switch model only
-    when the tier gap is real (haiku mechanical, sonnet bulk).
+    when the tier gap is real (sonnet for mechanical and bulk work).
 
     Plan approval: the coordinator reads the returned plan, checks it against the
     task + analyze summary, then approves it or re-briefs the planner. Execute
     never starts on an unapproved plan. The planner drafts the premises but never
     talks to the user — it has no user channel. So it is the COORDINATOR that
-    presents the plan's Premises to the user at approval time, asks explicitly
-    whether any is wrong, and collects the contradiction. When one comes back, the
+    presents the plan's Premises to the user at approval time.
+    In high-stakes mode or under `-q`, it asks explicitly whether any is wrong and
+    waits for the answer; in every other mode it shows them and proceeds. It
+    collects any contradiction, whenever it comes. When one comes back, the
     coordinator persists the correction itself, per the rule in step-02-plan, and
     does so BEFORE spawning execute — the same applies to a contradiction raised
     later, mid-run.
@@ -2242,11 +2277,30 @@ in
     - **Safe** — read-only, parse, test, edit a file in the repo, `git status/add`,
       `nix-instantiate --parse`, grep, build steps that do not touch the system:
       execute directly.
-    - **Long or password-interactive** — `sudo`, `darwin-rebuild build`/`switch`,
-      system package installs: DO NOT execute; add the exact command to a
-      **"Run yourself" list** in the phase summary / final output (a 10-15 min
-      build or a password prompt is better in the user's terminal).
-    - **Sandbox-blocked** — `git push` over SSH, docker, local DB sockets, or any
+    - **Password-interactive** — `sudo …` (including `sudo darwin-rebuild
+      switch`) and system package installs that prompt for a password: DO NOT
+      execute; add the exact command to a **"Run yourself" list** in the phase
+      summary / final output. Only this bullet goes to that list.
+    - **Blocked automatically** (classifier or sandbox) — not a hand-off: ask
+      the user in the conversation, naming the exact action
+      (« je le lance ? … »), and on their explicit yes run it yourself. A no
+      from the user — in the permission box or in the conversation — is final:
+      do not ask again.
+      Never hand the user a command to type, never a `! cmd`. Bare
+      `nix flake check` and `darwin-rebuild build` (no sudo) you run
+      yourself, long ones with run_in_background.
+    - **Sandbox-excluded** — `git push`, `git commit`, `git pull`, `git fetch`,
+      `gh`, `codex` and bare `nix flake check` run OUTSIDE the sandbox only when the Bash call is that
+      command alone: run them as standalone commands from the repo cwd — no
+      `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
+      (multi-line text: `-F <file>` / `--body-file <file>`). If one fails on
+      sandbox evidence, fix the shape; do not escalate.
+      Inside the sandbox, `.git/config` and `.git/hooks` are read-only in
+      every repo: `git branch -d/-m/-u`, `git checkout -b <x> origin/<y>`,
+      `git remote`, `git config --local`, `git init` and `git clone` fail
+      there — run them with dangerouslyDisableSandbox (one retry, permission
+      box).
+    - **Sandbox-blocked** — docker, local DB sockets, or any
       command that just failed with clear sandbox evidence (permission denied on
       allowed work, socket/auth failure): retry ONCE with
       `dangerouslyDisableSandbox: true`. The `ask` permission rule shows the user
@@ -2258,8 +2312,8 @@ in
     - **In doubt** — ask the user, unless already durably authorized this session.
 
     Why: the confirmation box keeps the user in control while avoiding dead-end
-    "Run yourself" lists for one-click approvals. Long builds stay delegated
-    (the sandbox throttles them and they may need a password). Acceptance
+    "Run yourself" lists for one-click approvals. Only password prompts stay
+    delegated (the password belongs in the user's terminal). Acceptance
     criteria that need a delegated command (e.g. "switch applied") are marked
     **deferred to user** in the validate summary, not failed.
 
@@ -2978,7 +3032,7 @@ in
     ## Safety carve-outs (resume full prose)
 
     - Security warnings
-    - Irreversible action confirmations (delete, push, deploy)
+    - Irreversible action confirmations (delete, merge into master, force-push, deploy)
     - User confused or repeating question
 
     ## Intensity levels

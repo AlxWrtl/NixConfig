@@ -22,7 +22,7 @@ let
   agents = import ../home/claude-code/agents.nix;
   rules = import ../home/claude-code/rules.nix;
 
-  inherit (pkgs.lib) hasInfix hasSuffix;
+  inherit (pkgs.lib) hasInfix hasPrefix hasSuffix;
 
   # --- settings.json -------------------------------------------------------
   parsed = builtins.tryEval (builtins.fromJSON settings.settingsJson);
@@ -218,6 +218,141 @@ let
   ) (afterMarker "scrapling[shell]==" scraplingSkill);
   scraplingDrift = builtins.filter (v: v != scraplingPin) scraplingSkillPins;
 
+  # --- auto mode classifier context (A23) ----------------------------------
+  autoModeList = key: pkgs.lib.attrByPath [ "autoMode" key ] [ ] settingsAttrs;
+  amEnv = autoModeList "environment";
+  amAllow = autoModeList "allow";
+  amListOk = l: builtins.isList l && l != [ ] && builtins.head l == "$defaults";
+  amEnvText = if builtins.isList amEnv then builtins.concatStringsSep "\n" amEnv else "";
+
+  # --- autonomous delivery (A12-A20) --------------------------------------
+  permList = key: pkgs.lib.attrByPath [ "permissions" key ] [ ] settingsAttrs;
+  allow = permList "allow";
+  deny = permList "deny";
+  ask = permList "ask";
+  excludedCommands = pkgs.lib.attrByPath [ "sandbox" "excludedCommands" ] [ ] settingsAttrs;
+  preToolUse = pkgs.lib.attrByPath [ "hooks" "PreToolUse" ] [ ] settingsAttrs;
+
+  agentsOnHaiku = builtins.filter (n: agentField "model" n == "haiku") agentNames;
+
+  webFetchScoped = builtins.filter (e: builtins.isString e && hasPrefix "WebFetch(" e) allow;
+  # Bare or scoped: any WebFetch in deny/ask blocks or prompts the run's fetches.
+  webFetchGated = builtins.filter (e: builtins.isString e && hasPrefix "WebFetch" e) (deny ++ ask);
+  webFetchBad = webFetchScoped ++ webFetchGated;
+
+  codexAllowed = builtins.filter (e: builtins.isString e && hasPrefix "Bash(codex" e) allow;
+
+  requiredExcluded = [
+    "sudo *"
+    "darwin-rebuild *"
+    "codex *"
+    "gh *"
+    "git push *"
+    "git commit *"
+    "git pull *"
+    "git fetch *"
+  ];
+  missingExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) requiredExcluded;
+
+  requiredNixExcluded = [ "nix flake check" ];
+  missingNixExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) requiredNixExcluded;
+  nixCheckWildcard = builtins.elem "nix flake check *" excludedCommands;
+  sandboxNetwork = pkgs.lib.attrByPath [ "sandbox" "network" ] { } settingsAttrs;
+  nixSocketOpened = sandboxNetwork ? allowUnixSockets;
+
+  requiredDeny = [
+    "Bash(git push --force *)"
+    "Bash(git push -f *)"
+    "Bash(git push --force-with-lease *)"
+    "Bash(git reset --hard *)"
+    "Bash(git push *--force*)"
+    "Bash(git push * -f*)"
+    "Bash(git push *+*)"
+    "Bash(git push *:master*)"
+    "Bash(git push *:main*)"
+    "Bash(git push * master)"
+    "Bash(git push * main)"
+    "Bash(git fetch *--upl*)"
+    "Bash(git pull *--upl*)"
+    "Bash(git push *--rece*)"
+    "Bash(git push *--e*)"
+    "Bash(gh repo delete*)"
+    "Bash(gh auth token*)"
+    "Bash(gh auth *--show-token*)"
+    "Read(~/.codex/auth.json)"
+    "Bash(codex *danger-full-access*)"
+    "Bash(codex *dangerously*)"
+    "Bash(codex *sandbox_mode*)"
+    "Bash(codex *sandbox_permissions*)"
+  ];
+  missingDeny = builtins.filter (d: !(builtins.elem d deny)) requiredDeny;
+
+  denyWrite = pkgs.lib.attrByPath [ "sandbox" "filesystem" "denyWrite" ] [ ] settingsAttrs;
+  requiredGitDenyWrite = [
+    "/Users/alx/**/.git/hooks"
+    "/Users/alx/**/.git/config"
+    "/Users/alx/.gitconfig"
+    "/Users/alx/.config/git"
+  ];
+  missingGitDenyWrite = builtins.filter (p: !(builtins.elem p denyWrite)) requiredGitDenyWrite;
+  requiredGitEditDeny = [
+    "Edit(**/.git/hooks/**)"
+    "Edit(**/.git/config)"
+  ];
+  missingGitEditDeny = builtins.filter (d: !(builtins.elem d deny)) requiredGitEditDeny;
+  # Write(path) is accepted but never consulted: it reads as a guard, guards nothing.
+  inertWriteDeny = builtins.filter (e: builtins.isString e && hasPrefix "Write(" e) deny;
+
+  # Every sandbox path must be absolute: unprefixed ("**/.env"), a user-settings
+  # path resolves under ~/.claude and guards nothing elsewhere under $HOME.
+  sandboxPaths =
+    builtins.concatMap (k: pkgs.lib.attrByPath [ "sandbox" "filesystem" k ] [ ] settingsAttrs)
+      [
+        "allowWrite"
+        "denyWrite"
+        "allowRead"
+        "denyRead"
+      ];
+  unanchoredSandboxPaths = builtins.filter (
+    p: !(builtins.isString p && hasPrefix "/" p)
+  ) sandboxPaths;
+  requiredSecretDenyRead = [
+    "/Users/alx/**/.env"
+    "/Users/alx/**/.env.*"
+    "/Users/alx/**/secrets"
+  ];
+  missingSecretDenyRead = builtins.filter (p: !(builtins.elem p denyRead)) requiredSecretDenyRead;
+
+  # Read/Edit rules: one leading slash is relative to the settings source
+  # (user settings → ~/.claude), NOT the filesystem root; absolute is `//`.
+  pathRules = builtins.filter (
+    e: builtins.isString e && (hasPrefix "Read(" e || hasPrefix "Edit(" e)
+  ) (allow ++ deny ++ ask);
+  singleSlashRules = builtins.filter (e: builtins.match "(Read|Edit)\\(/[^/].*" e != null) pathRules;
+  requiredSecretReadDeny = [
+    "Read(~/.ssh/**)"
+    "Read(~/.aws/**)"
+    "Read(~/.gnupg/**)"
+    "Read(~/.config/secrets/**)"
+  ];
+  missingSecretReadDeny = builtins.filter (d: !(builtins.elem d deny)) requiredSecretReadDeny;
+
+  requiredAsk = [
+    "Bash(gh pr merge*)"
+    "Bash(gh api *merge*)"
+    "Bash(gh api *-X *)"
+    "Bash(gh api *--method*)"
+  ];
+  missingAsk = builtins.filter (a: !(builtins.elem a ask)) requiredAsk;
+
+  emptyHookGroups = builtins.filter (g: (g.hooks or null) == [ ]) preToolUse;
+
+  # Flags READ from the Mode Gate table in step-00, never restated here — same
+  # extraction as apex-consistency's rowFlags. null = table reformatted.
+  diagnosisRow = builtins.match ".*\\| Diagnosis \\| `([^`]*)` \\|.*" (skills.apexStep00Init or "");
+  diagnosisFlags = if diagnosisRow == null then null else builtins.head diagnosisRow;
+  readme = builtins.readFile ../README.md;
+
   # Each entry fails on its own, with what broke and why it matters.
   assertions = [
     {
@@ -242,7 +377,7 @@ let
       ok =
         builtins.any (e: builtins.isString e && hasSuffix "/.aws/credentials" e) denyRead
         && builtins.any (e: builtins.isString e && hasInfix "gnupg/private-keys-v1.d" e) denyRead
-        && builtins.elem "**/.env" denyRead;
+        && builtins.any (e: builtins.isString e && hasSuffix "/**/.env" e) denyRead;
       msg = "sandbox.filesystem.denyRead lost one of .aws/credentials, gnupg/private-keys-v1.d, **/.env — adding the ~/.ssh entry must not shadow the pre-existing secret paths";
     }
     {
@@ -339,6 +474,144 @@ let
         + " | listed in footerExempt but now carrying a footer, or gone from the manifest: "
         + builtins.concatStringsSep ", " deadFooterExempt
         + " — a skill that ships without its footer ships without a contract: the model gets no statement of what the skill expects and produces, no boundary saying when NOT to use it, and no routing to the skill that should take over, so it improvises all three. The mechanism is nix again: a `''` block closed too early ends the attribute mid-document and the trailing sections land inside the NEXT attribute — it parses, A10 still sees a frontmatter at column 0, C1 still maps every attribute to a manifest entry, the 500-line ceiling is still met, and the text is simply deployed to the wrong file. That is how scrapling lost its guardrails and its contract with an all-green build. A DEAD exemption is the same failure one level up: a hand-maintained list cannot fail loudly, only be silently wrong";
+    }
+    {
+      name = "A12 agents: no agent runs on haiku";
+      ok = agentsOnHaiku == [ ];
+      msg =
+        "agent(s) with `model: haiku`: "
+        + builtins.concatStringsSep ", " agentsOnHaiku
+        + " — the mechanical tier moved to sonnet; a haiku agent reintroduces the tier the routing table (ORCHESTRATION) and the Codex translation (no more haiku→gpt-5.6-luna rule) no longer know, so the two sides disagree on what that agent costs and can do";
+    }
+    {
+      name = "A13 settings: WebFetch is allowed on every domain";
+      ok = builtins.elem "WebFetch" allow && webFetchBad == [ ];
+      msg =
+        "permissions.allow lacks bare \"WebFetch\", a domain-scoped entry is back in allow, or a WebFetch (bare or scoped) sits in deny/ask: "
+        + builtins.concatStringsSep ", " webFetchBad
+        + " — research must never stall on a permission box for an unlisted domain (an autonomous run has nobody to click it); a `WebFetch(domain:…)` in allow re-narrows nothing but signals the allowlist is back, and one in deny/ask blocks or prompts exactly the fetches the run needs. Secrets stay guarded by denyRead and the Read denies, not by the fetch allowlist";
+    }
+    {
+      name = "A14 sandbox: excludedCommands covers keychain/SSH-bound commands";
+      ok = missingExcluded == [ ];
+      msg =
+        "sandbox.excludedCommands is missing: "
+        + builtins.concatStringsSep ", " missingExcluded
+        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
+    }
+    {
+      name = "A14b sandbox: bare nix flake check is excluded, no wildcard, the daemon socket stays closed";
+      ok = missingNixExcluded == [ ] && !nixCheckWildcard && !nixSocketOpened;
+      msg =
+        "sandbox.excludedCommands is missing: "
+        + builtins.concatStringsSep ", " missingNixExcluded
+        + (
+          if nixCheckWildcard then
+            " / \"nix flake check *\" is excluded — an argument can name a remote flake or --override-input, i.e. arbitrary nix code evaluated unsandboxed by a trusted user"
+          else
+            ""
+        )
+        + (if nixSocketOpened then " / sandbox.network.allowUnixSockets is set" else "")
+        + " — sandboxed, `nix flake check` fails with EPERM on the nix daemon socket and on the ~/.cache/nix sqlite, so the verify step cannot run it. The fix is excluding that one command, never opening the socket: the user is in trusted-users (@admin), so allowUnixSockets on the daemon socket hands every sandboxed command a root-equivalent channel";
+    }
+    {
+      name = "A14c skills: caveman names merge-into-master and force-push as irreversible, not plain push";
+      ok =
+        hasInfix "(delete, merge into master, force-push, deploy)" (skills.skillCaveman or "")
+        && !(hasInfix "(delete, push, deploy)" (skills.skillCaveman or ""));
+      msg = "skillCaveman still lists `(delete, push, deploy)` as irreversible confirmations (or lost `(delete, merge into master, force-push, deploy)`) — push to a feature branch is pre-authorized and reversible; left in, caveman mode drops its terse style and asks for confirmation on every routine push, contradicting the git policy";
+    }
+    {
+      name = "A15 settings: force-push, master-target push, remote-program override, gh/codex escape hatches stay denied";
+      ok = missingDeny == [ ];
+      msg =
+        "permissions.deny lost: "
+        + builtins.concatStringsSep ", " missingDeny
+        + " — `git push *`, gh and codex run OUTSIDE the sandbox and commit/push/PR are pre-authorized; deny is a textual guardrail (prefix/glob match, not a barrier — the server-side barrier is the GitHub ruleset `protect-master`), and without it nothing local stops a rewritten remote history, a wiped worktree, a leaked gh/codex token, a codex run with its sandbox switched off, or an arbitrary command smuggled as --upload-pack/--receive-pack/--exec into an unsandboxed git fetch/pull/push. Those denies must stay on the SHORTEST unambiguous prefix (`--upl`, `--rece`, `--e`): git accepts any unique abbreviation of a long option, so `--upload-pack` alone lets `--upl=CMD` through";
+    }
+    {
+      name = "A22 sandbox: repo .git hooks/config and global git config stay unwritable (denyWrite + Edit deny)";
+      ok = missingGitDenyWrite == [ ] && missingGitEditDeny == [ ] && inertWriteDeny == [ ];
+      msg =
+        "sandbox.filesystem.denyWrite lost: "
+        + builtins.concatStringsSep ", " missingGitDenyWrite
+        + " / permissions.deny lost: "
+        + builtins.concatStringsSep ", " missingGitEditDeny
+        + " / inert Write(...) deny rule(s): "
+        + builtins.concatStringsSep ", " inertWriteDeny
+        + " — git commit/push/fetch/pull run OUTSIDE the sandbox and execute the repo's hooks and config (core.hooksPath, core.fsmonitor, core.sshCommand); one sandboxed write there becomes code run unsandboxed on the next git call — same for the global ~/.gitconfig and ~/.config/git. Built-in protection covers only the cwd's .git. denyWrite must stay absolute: unprefixed, a user-settings path resolves under ~/.claude. Write(path) rules are accepted but never consulted — Edit(path) is the rule that guards the file tools";
+    }
+    {
+      name = "A23 settings: autoMode keeps $defaults, names protect-master, and activation force-overrides it";
+      ok =
+        amListOk amEnv
+        && amListOk amAllow
+        && hasInfix "protect-master" amEnvText
+        && hasInfix ".autoMode = $am" activationSrc;
+      msg = "autoMode.environment / autoMode.allow must be non-empty lists starting with \"$defaults\" (without it the list REPLACES the classifier's built-in rules — force-push, curl|bash, exfiltration blocks gone), environment must name the ruleset protect-master (the classifier's only evidence master is server-protected), and activation.nix must keep `.autoMode = $am` (jq `*` replaces arrays, so an entry written by /auto-mode-setup or /permissions would otherwise mask the nix list on every rebuild)";
+    }
+    {
+      name = "A24 sandbox: every filesystem path is absolute and .env/secrets denyRead is anchored on $HOME";
+      ok = unanchoredSandboxPaths == [ ] && missingSecretDenyRead == [ ];
+      msg =
+        "sandbox.filesystem unanchored path(s): "
+        + builtins.concatStringsSep ", " (map builtins.toJSON unanchoredSandboxPaths)
+        + " / denyRead lost: "
+        + builtins.concatStringsSep ", " missingSecretDenyRead
+        + " — an unprefixed path in user settings resolves under ~/.claude (docs: settings-reference #sandbox-path-prefixes), so \"**/.env\" guarded nothing elsewhere: measured, `dd if=~/projects/Preliz/.env of=/dev/null count=0` opened the file from inside the sandbox. Anchor every allowWrite/denyWrite/allowRead/denyRead entry on \${homeDirectory} or another absolute path";
+    }
+    {
+      name = "A25 settings: Read/Edit rules are anchored with ~/ or //, never a single leading slash";
+      ok = singleSlashRules == [ ] && missingSecretReadDeny == [ ];
+      msg =
+        "single-slash Read/Edit rule(s): "
+        + builtins.concatStringsSep ", " singleSlashRules
+        + " / permissions.deny lost: "
+        + builtins.concatStringsSep ", " missingSecretReadDeny
+        + " — in a permission rule `/path` is relative to the settings source (user settings → ~/.claude), so \"Read(\${homeDirectory}/.ssh/**)\" guarded ~/.claude/Users/alx/.ssh and left ~/.ssh readable by the Read tool; use `~/path` or `//abs/path` (docs: permissions#read-and-edit)";
+    }
+    {
+      name = "A19 settings: merge paths and mutating gh api stay behind ask";
+      ok = missingAsk == [ ];
+      msg =
+        "permissions.ask lost: "
+        + builtins.concatStringsSep ", " missingAsk
+        + " — `gh *` is allowed and runs outside the sandbox; ask (> allow) is the textual guardrail that still shows a box, even in auto mode, before a PR is merged or a mutating API call lands";
+    }
+    {
+      name = "A20 settings: codex is not blanket-allowed";
+      ok = codexAllowed == [ ];
+      msg =
+        "permissions.allow grants codex: "
+        + builtins.concatStringsSep ", " codexAllowed
+        + " — codex runs OUTSIDE the sandbox (excludedCommands); allowed on top of that, any codex call bypasses the whole deny list's intent and the auto classifier never sees it";
+    }
+    {
+      name = "A16 settings: no PreToolUse group with an empty hooks list";
+      ok = emptyHookGroups == [ ];
+      msg =
+        "hooks.PreToolUse has group(s) with `hooks = [ ]` for matcher(s): "
+        + builtins.concatStringsSep ", " (map (g: g.matcher or "<none>") emptyHookGroups)
+        + " — an empty group runs nothing but reads as a guard: whoever audits settings.json believes that matcher is hooked when no hook runs there";
+    }
+    {
+      name = "A17 apex: no unconditional approval wait in step-02, step-02c, step-09";
+      ok =
+        !(hasInfix "wait for the answer" skills.apexStep09Finish)
+        && !(hasInfix "always — and wait for the answer" skills.apexStep02cVerify)
+        && !(hasInfix "Always, no opt-out" skills.apexStep02Plan);
+      msg = "an unconditional wait is back in step-09 (\"wait for the answer\"), step-02c (\"always — and wait for the answer\") or step-02 (\"Always, no opt-out\") — every run then stalls on a user round trip the `-pr` default already authorized; only high-stakes or `-q` may wait";
+    }
+    {
+      name = "A18 apex: diagnosis ships a PR, and README says so";
+      ok =
+        diagnosisFlags != null
+        && builtins.elem "-pr" (pkgs.lib.splitString " " diagnosisFlags)
+        && hasInfix ("| Diagnosis | `" + diagnosisFlags + "` |") readme;
+      msg =
+        "Mode Gate diagnosis flags read from apexStep00Init: "
+        + (if diagnosisFlags == null then "<row not found — table reformatted?>" else "`${diagnosisFlags}`")
+        + " — either `-pr` is missing (a diagnosis fix then stops on its branch and needs a manual ship) or README.md no longer carries `| Diagnosis | `<same flags>` |`, so the documented flags drift from the ones the skill applies";
     }
   ];
 

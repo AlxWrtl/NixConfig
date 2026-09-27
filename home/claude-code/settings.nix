@@ -117,6 +117,20 @@ in
         "sudo *"
         "darwin-rebuild *"
         "codex *"
+        # codex plugin: commands/agents call `node "${CLAUDE_PLUGIN_ROOT}/…/
+        # codex-companion.mjs" …`, substituted to the absolute path BEFORE the
+        # Bash call (docs: plugins-reference#where-each-variable-resolves).
+        # Measured: sandboxed → loggedIn false (auth.json denyRead, network);
+        # unsandboxed → ready. Version pinned, no `*` before the arguments: a
+        # `*/` or `../` there would let `node <any script>` (e.g. a fake one in
+        # $TMPDIR) leave the sandbox; ~/.claude/plugins is denyWrite inside it.
+        # Plugin update = new version dir → bump 1.0.6 here (A27 reminds).
+        # `--cwd` = same rights as `codex *` already excluded. Closed below:
+        # git config/hooks under /tmp (denyWrite, real barrier), `--prompt-file`
+        # (reads any file unsandboxed, unused by the plugin) and a NODE_OPTIONS
+        # preload scoped to the companion — plain `NODE_OPTIONS=… pnpm build`
+        # stays allowed (permissions.deny, textual guardrails).
+        "node \"${homeDirectory}/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs\" *"
         "gh *"
         "git push *"
         "git commit *"
@@ -156,6 +170,14 @@ in
           # #sandbox-path-prefixes).
           "${homeDirectory}/**/.git/hooks"
           "${homeDirectory}/**/.git/config"
+          # $TMPDIR (/tmp/claude-<uid>, /private/tmp/claude-…) is writable from
+          # the sandbox: a repo created there could get core.fsmonitor/hooksPath
+          # or a hook, then run by an excluded git command or the codex
+          # companion's `review --cwd`. Real barrier, not a textual guardrail.
+          "/tmp/**/.git/config"
+          "/tmp/**/.git/hooks"
+          "/private/tmp/**/.git/config"
+          "/private/tmp/**/.git/hooks"
           # Same for the GLOBAL config (core.sshCommand, core.hooksPath…), read
           # by every excluded git command. ~/.config/git is home-manager's
           # (programs.git) — written at activation, outside this sandbox.
@@ -482,6 +504,8 @@ in
         "Bash(codex *dangerously*)"
         "Bash(codex *sandbox_mode*)"
         "Bash(codex *sandbox_permissions*)"
+        "Bash(node *codex-companion.mjs*prompt-file*)"
+        "Bash(*NODE_OPTIONS=*codex-companion.mjs*)"
         # Note: commit/push/merge/rebase while ON master/main are hard-DENIED by
         # the block-main-bash hook (permissionDecision "deny", not a confirmation
         # box). deny/ask are textual filtering (guardrail, not a barrier); the

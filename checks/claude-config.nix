@@ -279,7 +279,7 @@ let
     "Bash(gh repo delete*)"
     "Bash(gh auth token*)"
     "Bash(gh auth *--show-token*)"
-    "Read(/Users/alx/.codex/auth.json)"
+    "Read(~/.codex/auth.json)"
     "Bash(codex *danger-full-access*)"
     "Bash(codex *dangerously*)"
     "Bash(codex *sandbox_mode*)"
@@ -302,6 +302,40 @@ let
   missingGitEditDeny = builtins.filter (d: !(builtins.elem d deny)) requiredGitEditDeny;
   # Write(path) is accepted but never consulted: it reads as a guard, guards nothing.
   inertWriteDeny = builtins.filter (e: builtins.isString e && hasPrefix "Write(" e) deny;
+
+  # Every sandbox path must be absolute: unprefixed ("**/.env"), a user-settings
+  # path resolves under ~/.claude and guards nothing elsewhere under $HOME.
+  sandboxPaths =
+    builtins.concatMap (k: pkgs.lib.attrByPath [ "sandbox" "filesystem" k ] [ ] settingsAttrs)
+      [
+        "allowWrite"
+        "denyWrite"
+        "allowRead"
+        "denyRead"
+      ];
+  unanchoredSandboxPaths = builtins.filter (
+    p: !(builtins.isString p && hasPrefix "/" p)
+  ) sandboxPaths;
+  requiredSecretDenyRead = [
+    "/Users/alx/**/.env"
+    "/Users/alx/**/.env.*"
+    "/Users/alx/**/secrets"
+  ];
+  missingSecretDenyRead = builtins.filter (p: !(builtins.elem p denyRead)) requiredSecretDenyRead;
+
+  # Read/Edit rules: one leading slash is relative to the settings source
+  # (user settings → ~/.claude), NOT the filesystem root; absolute is `//`.
+  pathRules = builtins.filter (
+    e: builtins.isString e && (hasPrefix "Read(" e || hasPrefix "Edit(" e)
+  ) (allow ++ deny ++ ask);
+  singleSlashRules = builtins.filter (e: builtins.match "(Read|Edit)\\(/[^/].*" e != null) pathRules;
+  requiredSecretReadDeny = [
+    "Read(~/.ssh/**)"
+    "Read(~/.aws/**)"
+    "Read(~/.gnupg/**)"
+    "Read(~/.config/secrets/**)"
+  ];
+  missingSecretReadDeny = builtins.filter (d: !(builtins.elem d deny)) requiredSecretReadDeny;
 
   requiredAsk = [
     "Bash(gh pr merge*)"
@@ -343,7 +377,7 @@ let
       ok =
         builtins.any (e: builtins.isString e && hasSuffix "/.aws/credentials" e) denyRead
         && builtins.any (e: builtins.isString e && hasInfix "gnupg/private-keys-v1.d" e) denyRead
-        && builtins.elem "**/.env" denyRead;
+        && builtins.any (e: builtins.isString e && hasSuffix "/**/.env" e) denyRead;
       msg = "sandbox.filesystem.denyRead lost one of .aws/credentials, gnupg/private-keys-v1.d, **/.env — adding the ~/.ssh entry must not shadow the pre-existing secret paths";
     }
     {
@@ -515,6 +549,26 @@ let
         && hasInfix "protect-master" amEnvText
         && hasInfix ".autoMode = $am" activationSrc;
       msg = "autoMode.environment / autoMode.allow must be non-empty lists starting with \"$defaults\" (without it the list REPLACES the classifier's built-in rules — force-push, curl|bash, exfiltration blocks gone), environment must name the ruleset protect-master (the classifier's only evidence master is server-protected), and activation.nix must keep `.autoMode = $am` (jq `*` replaces arrays, so an entry written by /auto-mode-setup or /permissions would otherwise mask the nix list on every rebuild)";
+    }
+    {
+      name = "A24 sandbox: every filesystem path is absolute and .env/secrets denyRead is anchored on $HOME";
+      ok = unanchoredSandboxPaths == [ ] && missingSecretDenyRead == [ ];
+      msg =
+        "sandbox.filesystem unanchored path(s): "
+        + builtins.concatStringsSep ", " (map builtins.toJSON unanchoredSandboxPaths)
+        + " / denyRead lost: "
+        + builtins.concatStringsSep ", " missingSecretDenyRead
+        + " — an unprefixed path in user settings resolves under ~/.claude (docs: settings-reference #sandbox-path-prefixes), so \"**/.env\" guarded nothing elsewhere: measured, `dd if=~/projects/Preliz/.env of=/dev/null count=0` opened the file from inside the sandbox. Anchor every allowWrite/denyWrite/allowRead/denyRead entry on \${homeDirectory} or another absolute path";
+    }
+    {
+      name = "A25 settings: Read/Edit rules are anchored with ~/ or //, never a single leading slash";
+      ok = singleSlashRules == [ ] && missingSecretReadDeny == [ ];
+      msg =
+        "single-slash Read/Edit rule(s): "
+        + builtins.concatStringsSep ", " singleSlashRules
+        + " / permissions.deny lost: "
+        + builtins.concatStringsSep ", " missingSecretReadDeny
+        + " — in a permission rule `/path` is relative to the settings source (user settings → ~/.claude), so \"Read(\${homeDirectory}/.ssh/**)\" guarded ~/.claude/Users/alx/.ssh and left ~/.ssh readable by the Read tool; use `~/path` or `//abs/path` (docs: permissions#read-and-edit)";
     }
     {
       name = "A19 settings: merge paths and mutating gh api stay behind ask";

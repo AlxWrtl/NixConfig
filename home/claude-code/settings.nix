@@ -96,13 +96,33 @@ in
 
     sandbox = {
       enabled = true;
-      # Commands that run OUTSIDE the sandbox → normal permission prompt (ask)
-      # instead of being hard-blocked with "operation not permitted".
-      # Lets Claude run `sudo darwin-rebuild ...` with a confirmation box,
-      # so the user no longer has to retype it with a leading `!`.
+      # Commands that run OUTSIDE the sandbox, then through the normal permission
+      # rules (allow / ask / auto classifier) instead of failing with
+      # "operation not permitted". sudo/darwin-rebuild: `ask` still shows a box.
+      # codex/gh/git push need the keychain or the ~/.ssh key the sandbox denies.
+      # deny/ask below are TEXTUAL filtering (guardrail, not a barrier); the
+      # server-side barrier is the GitHub ruleset `protect-master` (id 24043808).
+      # git commit/pull/fetch: signing key + SSH remote, both denied inside.
+      # An exclusion only applies when the Bash call is that command ALONE:
+      # `cd … &&`, `$(…)`, heredoc or redirection keep the call sandboxed.
+      # nix flake check: sandboxed it hits EPERM on the daemon socket
+      # (/nix/var/nix/daemon-socket/socket) and on ~/.cache/nix sqlite.
+      # Excluding the one command, NOT allowUnixSockets: the user is in
+      # trusted-users (@admin), so an open daemon socket would hand every
+      # sandboxed command a root-equivalent channel.
+      # Bare form ONLY, never "nix flake check *": an argument can name a remote
+      # flake or `--override-input`, i.e. arbitrary nix code evaluated
+      # unsandboxed by a trusted user.
       excludedCommands = [
         "sudo *"
         "darwin-rebuild *"
+        "codex *"
+        "gh *"
+        "git push *"
+        "git commit *"
+        "git pull *"
+        "git fetch *"
+        "nix flake check"
       ];
       filesystem = {
         denyWrite = [
@@ -126,6 +146,21 @@ in
           "${homeDirectory}/.codex/hooks"
           "${homeDirectory}/.codex/config.toml"
           "${homeDirectory}/.codex/AGENTS.md"
+          # git commit/push/fetch/pull run OUTSIDE the sandbox (excludedCommands)
+          # and execute the repo's hooks and config (core.hooksPath, fsmonitor,
+          # sshCommand…). A sandboxed write there = code run unsandboxed on the
+          # next git call. Built-in protection covers only the cwd's .git; this
+          # extends it to every repo under $HOME. Absolute on purpose: an
+          # unprefixed path in user settings resolves under ~/.claude, and
+          # denyWrite wildcards work on macOS only (docs: settings-reference
+          # #sandbox-path-prefixes).
+          "${homeDirectory}/**/.git/hooks"
+          "${homeDirectory}/**/.git/config"
+          # Same for the GLOBAL config (core.sshCommand, core.hooksPath…), read
+          # by every excluded git command. ~/.config/git is home-manager's
+          # (programs.git) — written at activation, outside this sandbox.
+          "${homeDirectory}/.gitconfig"
+          "${homeDirectory}/.config/git"
         ];
         denyRead = [
           # Sans cette entrée, la clé privée était lisible depuis le sandbox :
@@ -136,9 +171,13 @@ in
           "${homeDirectory}/.aws/credentials"
           "${homeDirectory}/.gnupg/private-keys-v1.d"
           # NOTE: la clé publique est ré-ouverte plus bas via allowRead.
-          "**/.env"
-          "**/.env.*"
-          "**/secrets"
+          # Ancrés sur $HOME : non préfixé, un chemin des settings user se
+          # résout sous ~/.claude (docs: settings-reference
+          # #sandbox-path-prefixes). Mesuré en « **/.env » : ouvrir
+          # ~/projects/Preliz/.env depuis le sandbox (`dd … count=0`) passait.
+          "${homeDirectory}/**/.env"
+          "${homeDirectory}/**/.env.*"
+          "${homeDirectory}/**/secrets"
         ];
         # Ré-ouvre la clé PUBLIQUE, que le denyRead sur ~/.ssh emportait aussi.
         # git signe les commits en SSH (`gpg.format=ssh`, signingkey
@@ -146,7 +185,17 @@ in
         # avec « Couldn't load public key ». Régression introduite par la PR
         # #101 et constatée au premier commit suivant. Une clé publique est
         # publique — la privée, elle, reste refusée.
-        allowRead = [ "${homeDirectory}/.ssh/id_ed25519.pub" ];
+        # Trello : le skill et /trello lisent la clé et le token par `cat` en
+        # Bash (skills.nix, commands.nix). `${homeDirectory}/**/secrets`
+        # ci-dessus et `Read(~/.config/secrets/**)` (fusionné au sandbox)
+        # les bloquent ; la règle au chemin le plus étroit l'emporte (docs:
+        # sandboxing), donc ces deux FICHIERS seuls sont ré-ouverts — le reste
+        # du répertoire reste refusé.
+        allowRead = [
+          "${homeDirectory}/.ssh/id_ed25519.pub"
+          "${homeDirectory}/.config/secrets/trello-api-key"
+          "${homeDirectory}/.config/secrets/trello-token"
+        ];
         # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the
         # default sandbox write-set (cwd + tmp) would kill it with "operation
@@ -233,6 +282,21 @@ in
       "verify-feature" = "user-invocable-only";
     };
 
+    # Contexte du classifieur auto mode (https://code.claude.com/docs/en/auto-mode-config).
+    # Lu en scope utilisateur uniquement, jamais depuis .claude/settings*.json.
+    # "$defaults" en tête : sans lui, la liste REMPLACE les règles intégrées.
+    autoMode = {
+      environment = [
+        "$defaults"
+        "Organization: personal nix-darwin config repo AlxWrtl/NixConfig (github.com), cloned at ~/.config/nix-darwin; primary use: personal macOS system configuration."
+        "Source control: master is protected server-side by the GitHub ruleset protect-master (PR required, force-push and deletion refused, no bypass); the agent works on feature branches it creates itself."
+      ];
+      allow = [
+        "$defaults"
+        "Local branch housekeeping in ~/.config/nix-darwin (AlxWrtl/NixConfig): switching branches, and deleting LOCAL branches the agent created in this repo — including unmerged disposable/probe branches — and branches already merged. Never master; master is protected by protect-master."
+      ];
+    };
+
     permissions = {
       # `auto` délègue chaque décision de permission à un classifieur de sûreté
       # au lieu de demander à l'utilisateur — il remplace un mode choisi
@@ -248,6 +312,12 @@ in
       # here fires on every out-of-sandbox command → box spammée, don't add it.
       ask = [
         "Bash(sudo *)"
+        # Merge paths — textual filtering = guardrail; server-side barrier =
+        # GitHub ruleset `protect-master` (id 24043808).
+        "Bash(gh pr merge*)"
+        "Bash(gh api *merge*)"
+        "Bash(gh api *-X *)"
+        "Bash(gh api *--method*)"
       ];
       allow = [
         "Read(*)"
@@ -334,15 +404,8 @@ in
         "Bash(rg *)"
         "Bash(bat *)"
         "Bash(eza *)"
-        # WebFetch allowlist
-        "WebFetch(domain:github.com)"
-        "WebFetch(domain:raw.githubusercontent.com)"
-        "WebFetch(domain:nix-darwin.github.io)"
-        "WebFetch(domain:nixos.org)"
-        "WebFetch(domain:search.nixos.org)"
-        "WebFetch(domain:*.npmjs.org)"
-        "WebFetch(domain:docs.anthropic.com)"
-        "WebFetch(domain:code.claude.com)"
+        # WebFetch — every domain (research is never blocked; denyRead still guards secrets)
+        "WebFetch"
       ];
       deny = [
         # Shell bypass — prevent permission/hook circumvention
@@ -364,9 +427,43 @@ in
         "Bash(git push --force *)"
         "Bash(git push -f *)"
         "Bash(git push --force-with-lease *)"
-        # Note: merge/push to master/main is NOT hard-denied — the block-main-bash
-        # hook turns those into a confirmation box (ask) so the user approves
-        # in-place. commit/rebase on master stay denied by that hook.
+        # Force-push / master target placed after the remote, gh/codex escape
+        # hatches. Textual filtering = guardrail, not a barrier; server-side
+        # barrier = GitHub ruleset `protect-master` (id 24043808).
+        "Bash(git push *--force*)"
+        "Bash(git push * -f*)"
+        "Bash(git push *+*)"
+        "Bash(git push *:master*)"
+        "Bash(git push *:main*)"
+        "Bash(git push * master)"
+        "Bash(git push * main)"
+        # Remote-side program override = arbitrary command, run unsandboxed
+        # (git push/fetch/pull are excludedCommands). `--exec` = push alias of
+        # --receive-pack. Abbreviated prefixes: git accepts any unique prefix of
+        # a long option. Measured (git 2.55): `--up`/`--rec` are ambiguous and
+        # refused, but `--upl`, `--rece` and even `--e` (only push option in e)
+        # run CMD.
+        "Bash(git fetch *--upl*)"
+        "Bash(git pull *--upl*)"
+        "Bash(git push *--rece*)"
+        "Bash(git push *--e*)"
+        # Repo hooks/config execute on the next unsandboxed git call. Edit only:
+        # Write(path) rules are never consulted (docs: permissions#read-and-edit)
+        # and Edit denies are also merged into sandbox denyWrite.
+        "Edit(**/.git/hooks/**)"
+        "Edit(**/.git/config)"
+        "Bash(gh repo delete*)"
+        "Bash(gh auth token*)"
+        "Bash(gh auth *--show-token*)"
+        "Read(~/.codex/auth.json)"
+        "Bash(codex *danger-full-access*)"
+        "Bash(codex *dangerously*)"
+        "Bash(codex *sandbox_mode*)"
+        "Bash(codex *sandbox_permissions*)"
+        # Note: commit/push/merge/rebase while ON master/main are hard-DENIED by
+        # the block-main-bash hook (permissionDecision "deny", not a confirmation
+        # box). deny/ask are textual filtering (guardrail, not a barrier); the
+        # server-side barrier is the GitHub ruleset `protect-master` (id 24043808).
         "Bash(git reset --hard *)"
         "Bash(git clean -fdx *)"
         "Bash(git clean -fxd *)"
@@ -376,11 +473,14 @@ in
         # Note: `sudo` intentionally NOT denied — Claude may invoke it but each
         # call requires interactive confirmation (not in allow-list either).
         "Bash(chmod 777 *)"
-        # Secrets — absolute paths via Nix interpolation
-        "Read(${homeDirectory}/.ssh/**)"
-        "Read(${homeDirectory}/.aws/**)"
-        "Read(${homeDirectory}/.gnupg/**)"
-        "Read(${homeDirectory}/.config/secrets/**)"
+        # Secrets — `~/` anchors on $HOME. NOT "Read(${homeDirectory}/…)": in a
+        # rule, one leading slash is relative to the settings source (user
+        # settings → ~/.claude), so it guarded ~/.claude/Users/alx/.ssh;
+        # absolute needs `//` (docs: permissions#read-and-edit).
+        "Read(~/.ssh/**)"
+        "Read(~/.aws/**)"
+        "Read(~/.gnupg/**)"
+        "Read(~/.config/secrets/**)"
         "Read(**/.env)"
         "Read(**/.env.*)"
         "Read(**/secrets/**)"
@@ -395,11 +495,6 @@ in
 
     hooks = {
       PreToolUse = [
-        {
-          matcher = "Bash";
-          hooks = [
-          ];
-        }
         {
           matcher = "Edit|Write";
           hooks = [

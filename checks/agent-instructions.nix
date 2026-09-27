@@ -164,6 +164,41 @@ let
     "CANNOT cut the branch"
   ];
 
+  # --------------------------------------------------------------------- G9
+  askFirstNeedle = "any merge into master/main, any force-push";
+  missingAskFirst = builtins.filter (o: !(lib.hasInfix askFirstNeedle o.text)) outputs;
+  proseGates = [
+    "still needs an explicit ask"
+    "explicitly requested in user prose"
+  ];
+  proseGateHits = lib.concatMap (
+    o: map (n: "${o.label}: `${n}`") (builtins.filter (n: lib.hasInfix n o.text) proseGates)
+  ) outputs;
+  # Positive needles: the absence list above stays green if the pre-authorization
+  # is reworded away entirely; these prove it is still SAID on each side.
+  preAuthNeedles = [
+    {
+      label = "claudeMdGlobal";
+      needle = "pre-authorized — do them without asking";
+      text = claudeOut;
+    }
+    {
+      label = "agentsMd";
+      needle = "need no ask";
+      text = codexOut;
+    }
+  ];
+  missingPreAuth = builtins.filter (p: !(lib.hasInfix p.needle p.text)) preAuthNeedles;
+
+  # -------------------------------------------------------------------- G10
+  noHandBackNeedles = [
+    "Never hand the user a command to type"
+    "ask « je le lance ? »"
+  ];
+  missingNoHandBack = lib.concatMap (
+    o: map (n: "${o.label}: `${n}`") (builtins.filter (n: !(lib.hasInfix n o.text)) noHandBackNeedles)
+  ) outputs;
+
   labels = xs: builtins.concatStringsSep ", " (map (o: o.label) xs);
 
   assertions = [
@@ -245,6 +280,31 @@ let
       name = "G8 codex Git guidance: automatic branch creation, no obsolete read-only handoff";
       ok = obsoleteCodexGit == [ ] && lib.hasInfix "git checkout -b <type>/<desc>" codexOut;
       msg = "obsolete guidance: ${builtins.concatStringsSep ", " obsoleteCodexGit}";
+    }
+    {
+      name = "G9 Git autonomy: feature-branch delivery pre-authorized, master/force-push still ask-first";
+      ok = missingAskFirst == [ ] && proseGateHits == [ ] && missingPreAuth == [ ];
+      msg =
+        "ligne ask-first (`${askFirstNeedle}`) absente de: "
+        + (if missingAskFirst == [ ] then "aucune" else labels missingAskFirst)
+        + " | pré-autorisation absente: "
+        + (
+          if missingPreAuth == [ ] then
+            "aucune"
+          else
+            builtins.concatStringsSep ", " (map (p: "${p.label} (`${p.needle}`)") missingPreAuth)
+        )
+        + " | ancien verrou prose encore présent: "
+        + (if proseGateHits == [ ] then "aucun" else builtins.concatStringsSep ", " proseGateHits)
+        + " — un verrou « demande explicite » fait caler chaque run apex sur un commit/push/PR que le défaut `-pr` autorise déjà, et l'agent sans canal utilisateur (Codex, sous-agent) ne peut jamais le lever. Inversement, sans la ligne ask-first, plus rien ne dit que merge sur master, force-push et réécriture d'historique restent soumis à l'utilisateur";
+    }
+    {
+      name = "G10 no hand-back: blocked or refused → ask « je le lance ? », never a command for the user to type";
+      ok = missingNoHandBack == [ ];
+      msg =
+        "absent: "
+        + builtins.concatStringsSep ", " missingNoHandBack
+        + " — sans cette ligne du tronc, un refus (classifieur, sandbox) se termine par une commande tendue à l'utilisateur au lieu d'une question qui nomme l'action ; seul un prompt de mot de passe sudo lui revient";
     }
   ];
 

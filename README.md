@@ -295,7 +295,7 @@ flag set, applied to every flag you did not type.
 
 | Mode | Default flags | Notes |
 |------|---------------|-------|
-| Diagnosis | `-x -o -n` | bug/crash — reproduce first, debugger agent implements. No PR |
+| Diagnosis | `-x -pr -o -n` | bug/crash — reproduce first, debugger agent implements, ships as a PR |
 | Standard | `-t -pr -o -n` | full orchestration |
 | High-stakes | `-t -x -pr -o -n` | irreversible / security / architecture / prod — adds the adversarial pass and an independent read-only verify on the real diff |
 | Pure research | none | analyze only, no branch |
@@ -348,6 +348,7 @@ declared in this repo decide what actually happens.
 | Skill | `home/claude-code/skills.nix` | Yes — it is context the model reads |
 | Hooks | `home/claude-code/hooks.nix`, wired in `home/claude-code/settings.nix` | No — the harness executes them |
 | Checks | `checks/` via `nix flake check` | No — they block the merge |
+| Server ruleset | GitHub `protect-master` on this repo's default branch | No — GitHub refuses the push |
 
 The lifecycle of one request, in order:
 
@@ -359,9 +360,19 @@ The lifecycle of one request, in order:
    re-arms on your next message. This is enforcement.
 4. **The model tries to commit** — the same event refuses the git verbs that
    put code on `main`/`master`: the ones that author a commit, and the ones
-   that move the branch ref onto an arbitrary object. It is a list, not a
-   seal — `pull`, `worktree add` and a refspec written straight onto the
-   local branch are outside it. Master moves through pull requests only.
+   that move the branch ref onto an arbitrary object; a push whose
+   destination names `main`/`master` is refused from any branch. It is a
+   list, not a seal — `pull`, `worktree add` and a refspec written straight
+   onto the local branch are outside it. Master moves through pull requests
+   only.
+   GitHub enforces it: the `protect-master` ruleset (no bypass actors)
+   requires a pull request and refuses force-push and deletion on this repo's
+   default branch. It requires a pull request, not a review: zero approvals
+   and no required checks, so an agent holding `gh` could open and merge one,
+   and the admin token can edit the ruleset itself — which is why
+   `gh pr merge` and mutating `gh api` calls sit behind `ask`. The hook and
+   the `deny`/`ask` rules in `home/claude-code/settings.nix` are textual
+   guardrails in front of it, not the barrier.
 5. **APEX runs** its chain, each phase in a subagent with a fresh context,
    phase summaries persisted under `.claude/output/apex/`.
 6. **`-o` reads the vault** before planning, through one of two MCP servers,

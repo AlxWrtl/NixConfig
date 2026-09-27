@@ -356,6 +356,16 @@ let
     )
   ) translated;
 
+  # --- C13 -----------------------------------------------------------------
+  proseGates = [
+    "explicit user prose"
+    "only when explicitly requested"
+    "only after explicit user request"
+  ];
+  proseGateResidue = builtins.concatMap (
+    f: map (n: "${idOf f}: `${n}`") (builtins.filter (n: has n f.text) proseGates)
+  ) translated;
+
   # --- the assertions ------------------------------------------------------
   assertions = [
     {
@@ -504,6 +514,14 @@ let
         + " | flag row(s) still present: "
         + showList eFlagRows
         + " — `apex-verify-external` is a Claude-side wrapper that does not exist on this host, and its flag would point this build at `codex exec`: a Codex verifying a Codex buys the round-trip and none of the independence. Three source sites carry it (the flag table O3a, the usage block O3b, the typed-flag list O6) plus the step-04 block O10 deletes; a residue here means one of those anchors went inert — see C5";
+    }
+    {
+      name = "C13 no prose gate on feature-branch delivery in the translated corpus";
+      ok = translated != [ ] && proseGateResidue == [ ];
+      msg =
+        "prose gate(s) still present: "
+        + showList proseGateResidue
+        + " — the Claude side pre-authorizes commit, push and `gh pr create` on the run's feature branch through the apex `-pr` default. A Codex copy that still demands explicit user prose makes the two agents disagree on the same step, and under `approval_policy = \"never\"` nobody is there to give that prose, so every Codex run stops short of its PR. The sites are the `to` of O20a, O20b, O24, O24c and O25 in home/codex/skills-translate.nix";
     }
   ];
 

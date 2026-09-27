@@ -24,8 +24,8 @@
 # become `GPT-5.6 is the workhorse`, so every anchor quoting it stops matching
 # — and a `from` that does not match is not an error, it is a silent no-op that
 # leaves the untranslated passage in place. Overrides first also means an
-# override's `to` is itself substituted afterwards: writing `haiku` in a
-# replacement is a way to reach `gpt-5.6-luna`, and writing `Opus 5.5` there by
+# override's `to` is itself substituted afterwards: writing `sonnet` in a
+# replacement is a way to reach `gpt-5.6-terra`, and writing `Opus 5.5` there by
 # accident is a way to get `GPT-5.6` you did not intend. stripFrontmatter runs
 # before dedent so that every frontmatter, flush-left or indented, is parsed by
 # the same code path.
@@ -161,14 +161,9 @@ let
       why = "The `model:` identifier passed to a spawn. Codex documents `gpt-5.6` as the demanding-agent default, so it is the counterpart of the workhorse identifier.";
     }
     {
-      from = "haiku";
-      to = "gpt-5.6-luna";
-      why = "The mechanical/narrow tier. Codex documents `gpt-5.6-luna` as `fast, narrowly scoped agents`, the same role haiku plays in the routing table.";
-    }
-    {
       from = "sonnet";
       to = "gpt-5.6-terra";
-      why = "The bulk/large-context tier. Codex documents `gpt-5.6-terra` as `faster, lower-cost, lighter subagent work`.";
+      why = "The mechanical and bulk tier. Codex documents `gpt-5.6-terra` as `faster, lower-cost, lighter subagent work`.";
     }
     {
       from = "fable";
@@ -641,12 +636,12 @@ let
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
       from = ''
-        | Analyze fan-out | Explore / codebase-navigator | haiku |
+        | Analyze fan-out | Explore / codebase-navigator | sonnet |
       '';
       to = ''
-        | Analyze fan-out | explorer subagents (no agent file to name) | haiku |
+        | Analyze fan-out | explorer subagents (no agent file to name) | sonnet |
       '';
-      why = "O12c. `Explore` and `codebase-navigator` are Claude agent definitions; naming them here would send the reader looking for files that are not on this host. The model column is left alone on purpose so the substitution table translates it — that is what keeps the mechanical tier rule alive rather than burying it in a replacement string.";
+      why = "O12c. `Explore` and `codebase-navigator` are Claude agent definitions; naming them here would send the reader looking for files that are not on this host. The model column is left alone on purpose so the substitution table translates it — that is what keeps the sonnet tier rule alive rather than burying it in a replacement string.";
     }
     {
       skill = "apex";
@@ -666,15 +661,15 @@ let
       from = ''
         Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
         models — a model switch pays the ~15× subagent/context tax. Switch model only
-        when the tier gap is real (haiku mechanical, sonnet bulk).
+        when the tier gap is real (sonnet for mechanical and bulk work).
       '';
       to = ''
         Effort-tiering first: prefer dialing the effort (low↔ultra) over switching
         models — a model switch pays the subagent/context tax either way (the ~15×
         figure comes from the Claude register and has not been re-measured here).
-        Switch model only when the tier gap is real (haiku mechanical, sonnet bulk).
+        Switch model only when the tier gap is real (sonnet for mechanical and bulk work).
       '';
-      why = "O12e. The effort range is wider here (six levels, up to `ultra`) so `low↔max` understates the dial. The multiplier is kept because the shape of the advice depends on it, but it is now attributed: it was measured on the other host, and this file may not present another host's measurement as its own. The last sentence keeps its two tier words so the substitution table renders them, which is also what keeps those two rules alive.";
+      why = "O12e. The effort range is wider here (six levels, up to `ultra`) so `low↔max` understates the dial. The multiplier is kept because the shape of the advice depends on it, but it is now attributed: it was measured on the other host, and this file may not present another host's measurement as its own. The last sentence keeps its tier word so the substitution table renders it, which is also what keeps that rule alive.";
     }
     {
       skill = "apex";
@@ -1017,18 +1012,40 @@ let
       skill = "apex";
       file = "steps/step-00-init.md";
       from = ''
-        Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-        list (long or password-interactive). Sandbox-blocked commands (`git push`
-        over SSH, docker, local DB): retry ONCE with dangerouslyDisableSandbox —
-        the permission box lets the user approve or refuse. Never weaken the
-        sandbox config itself. See the classification rule in ORCHESTRATION.md.
+        Privileged commands: only `sudo …` (password prompt) goes to the
+        "Run yourself" list; bare `nix flake check` and `darwin-rebuild build`
+        you run yourself. `git push`, `git commit`, `git pull`,
+        `git fetch`, `gh`, `codex` and bare `nix flake check` are excluded from
+        the sandbox — run them as standalone commands: one per Bash call, from the repo cwd, no
+        `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
+        (multi-line text: `git commit -F <file>`,
+        `gh pr create --body-file <file>`); any of those keeps the call sandboxed
+        and it fails. Inside the sandbox, `.git/config` and `.git/hooks` are
+        read-only in every repo: `git branch -d/-m/-u`,
+        `git checkout -b <x> origin/<y>`, `git remote`, `git config --local`,
+        `git init` and `git clone` fail there — run them with
+        dangerouslyDisableSandbox (one retry, permission box).
+        Other sandbox-blocked commands (docker, local DB sockets):
+        retry ONCE with dangerouslyDisableSandbox — the permission box lets the
+        user approve or refuse. Never weaken the sandbox config itself.
+        Blocked automatically (classifier or sandbox) is not a hand-off: ask the
+        user in the conversation, naming the exact action (« je le lance ? … »),
+        and on their explicit yes run it yourself. A no from the user — in the
+        permission box or in the conversation — is final: do not ask again.
+        Never hand the user a command to type, never a `! cmd`.
+        See the classification rule in ORCHESTRATION.md.
       '';
       to = ''
-        Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-        list (long or password-interactive). Local Git writes are permitted by
+        Privileged commands: `sudo`, and anything the sandbox blocks with no
+        escalation (network, daemon socket), go to the "Run yourself" list; try
+        bare `nix flake check` / `darwin-rebuild build` first, and if the
+        sandbox denies it, put the command on the "Run yourself" list.
+        Local Git writes are permitted by
         the `git-workspace` profile on a feature branch; on main/master the hook
-        permits only exact validated new-branch creation. Commit/push still need
-        explicit user prose, and push/network may remain unavailable.
+        permits only exact validated new-branch creation. Commit, push and
+        `gh pr create` on the run's feature branch follow the apex `-pr` default
+        — no user prose needed; push/network may still be unavailable (then:
+        "Run yourself" list).
         Sandbox-blocked commands (`git push` over SSH, docker, local DB sockets):
         there is no
         mid-run escalation on this host — `approval_policy = "never"` means an
@@ -1037,13 +1054,24 @@ let
         Never weaken the sandbox config itself. See the classification rule in
         ORCHESTRATION.md.
       '';
-      why = "O20a. `dangerouslyDisableSandbox` has no Codex counterpart. The translation distinguishes permitted local Git under `git-workspace` from genuinely blocked network/socket access, keeps protected-branch mutation narrow, and preserves explicit authorization for commit/push.";
+      why = "O20a. `dangerouslyDisableSandbox` has no Codex counterpart, and no mid-run approval exists either (`approval_policy = \"never\"`), so the Claude rule — ask in the conversation, then run it yourself — has nothing to act on here: nix builds and checks are tried first and fall back to the Run yourself list with every other sandbox denial. The translation distinguishes permitted local Git under `git-workspace` from genuinely blocked network/socket access, keeps protected-branch mutation narrow, and lets commit, push and PR creation on the feature branch follow the apex `-pr` default, as on the Claude side.";
     }
     {
       skill = "apex";
       file = "steps/ORCHESTRATION.md";
       from = ''
-        - **Sandbox-blocked** — `git push` over SSH, docker, local DB sockets, or any
+        - **Sandbox-excluded** — `git push`, `git commit`, `git pull`, `git fetch`,
+          `gh`, `codex` and bare `nix flake check` run OUTSIDE the sandbox only when the Bash call is that
+          command alone: run them as standalone commands from the repo cwd — no
+          `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
+          (multi-line text: `-F <file>` / `--body-file <file>`). If one fails on
+          sandbox evidence, fix the shape; do not escalate.
+          Inside the sandbox, `.git/config` and `.git/hooks` are read-only in
+          every repo: `git branch -d/-m/-u`, `git checkout -b <x> origin/<y>`,
+          `git remote`, `git config --local`, `git init` and `git clone` fail
+          there — run them with dangerouslyDisableSandbox (one retry, permission
+          box).
+        - **Sandbox-blocked** — docker, local DB sockets, or any
           command that just failed with clear sandbox evidence (permission denied on
           allowed work, socket/auth failure): retry ONCE with
           `dangerouslyDisableSandbox: true`. The `ask` permission rule shows the user
@@ -1067,10 +1095,85 @@ let
 
           Local Git writes are permitted by `git-workspace` on feature branches.
           On main/master, only exact validated new-branch creation may mutate Git.
-          Commit/push still require explicit user prose; push/network may remain
-          unavailable even after authorization.
+          Commit, push and `gh pr create` on the run's feature branch follow the
+          apex `-pr` default — no user prose needed; push/network may still be
+          unavailable (then: "Run yourself" list).
       '';
-      why = "O20b. Second absent-escalation site. Network and socket denials remain sandbox-blocked; local Git is classified separately according to profile, protected-branch hook, and explicit commit/push authorization.";
+      why = "O20b. Second absent-escalation site. Network and socket denials remain sandbox-blocked; local Git is classified separately according to profile and protected-branch hook. Commit, push and PR creation on the feature branch follow the apex `-pr` default, as on the Claude side — no per-run user prose.";
+    }
+    {
+      skill = "apex";
+      file = "steps/ORCHESTRATION.md";
+      from = ''
+        - **Password-interactive** — `sudo …` (including `sudo darwin-rebuild
+          switch`) and system package installs that prompt for a password: DO NOT
+          execute; add the exact command to a **"Run yourself" list** in the phase
+          summary / final output. Only this bullet goes to that list.
+        - **Blocked automatically** (classifier or sandbox) — not a hand-off: ask
+          the user in the conversation, naming the exact action
+          (« je le lance ? … »), and on their explicit yes run it yourself. A no
+          from the user — in the permission box or in the conversation — is final:
+          do not ask again.
+          Never hand the user a command to type, never a `! cmd`. Bare
+          `nix flake check` and `darwin-rebuild build` (no sudo) you run
+          yourself, long ones with run_in_background.
+      '';
+      to = ''
+        - **Password-interactive** — `sudo …` (including `sudo darwin-rebuild
+          switch`) and system package installs that prompt for a password: DO NOT
+          execute; add the exact command to a **"Run yourself" list** in the phase
+          summary / final output.
+        - **Nix build or check** — try bare `nix flake check` /
+          `darwin-rebuild build` (no sudo) yourself; if the sandbox denies it,
+          put the command on the "Run yourself" list. There is no mid-run
+          approval on this host (`approval_policy = "never"`).
+      '';
+      why = "O20c. Third absent-escalation site. The Claude bullet rests on an in-conversation approval followed by the agent running the command itself; this host has no mid-run approval, so the bullet is replaced by the Codex doctrine already stated in O20a/O20b: try the nix build or check, and on a sandbox denial, put it on the Run yourself list. `Only this bullet goes to that list` is dropped because sandbox denials go there too.";
+    }
+    {
+      skill = "apex";
+      file = "steps/ORCHESTRATION.md";
+      from = ''
+        Why: the confirmation box keeps the user in control while avoiding dead-end
+        "Run yourself" lists for one-click approvals. Only password prompts stay
+        delegated (the password belongs in the user's terminal). Acceptance
+      '';
+      to = ''
+        Why: this host shows no confirmation box, so what the sandbox denies is
+        recorded on the "Run yourself" list with its purpose and the run
+        continues with what does not depend on it; password prompts belong in
+        the user's terminal. Acceptance
+      '';
+      why = "O20d. The rationale paragraph names a confirmation box and one-click approvals that do not exist under `approval_policy = \"never\"`. Left verbatim it justifies a mechanism the reader cannot find, three bullets after O20b removed it.";
+    }
+    {
+      skill = "apex";
+      file = "steps/step-00-init.md";
+      from = ''
+        - **Privileged.** Bare `nix flake check` runs outside the sandbox: run
+            it yourself (in the background if long). Only a `sudo` command goes on
+            the "Run yourself" list per ORCHESTRATION.md, then record
+      '';
+      to = ''
+        - **Privileged.** Try bare `nix flake check` / `darwin-rebuild build`;
+            if the sandbox denies it, put the command on the "Run yourself" list
+            per ORCHESTRATION.md, as for any `sudo` command, then record
+      '';
+      why = "O20e. The baseline bullet says bare `nix flake check` runs outside the sandbox, which is a Claude `excludedCommands` fact. Here nothing is excluded, so the check is tried and, on a sandbox denial, delegated — the same doctrine as O20a. The skipped-baseline consequence that follows is kept verbatim.";
+    }
+    {
+      skill = "apex";
+      file = "steps/step-04-validate.md";
+      from = ''
+        - Nix: `nix-instantiate --parse` (safe); run `darwin-rebuild build`
+             (no sudo) yourself. Only `sudo darwin-rebuild switch` is privileged:
+      '';
+      to = ''
+        - Nix: `nix-instantiate --parse` (safe); try bare `darwin-rebuild build`
+             (no sudo); if the sandbox denies it, put the command on the
+             "Run yourself" list. `sudo darwin-rebuild switch` is privileged:
+      '';
+      why = "O20f. Same Claude-only premise as O20e at the validate build check: `darwin-rebuild build` is excluded from the sandbox on the Claude side only. Tried first here, delegated on a sandbox denial, as in O20a.";
     }
     {
       skill = "obsidian";
@@ -1224,8 +1327,10 @@ let
         - **Safe** — read-only, parse, test, edit a file in the repo, `git status`,
           `git diff`, `nix-instantiate --parse`, grep, build steps that do not touch
           the system: execute directly. `git add` is local and permitted on a
-          feature branch; commit and push still require explicit user prose.'';
-      why = "O25. Local Git writes now belong to `git-workspace`; staging is safe after the protected-branch escape, while commit/push retain their explicit-user-prose gate.";
+          feature branch. Commit, push and `gh pr create` on the run's feature
+          branch follow the apex `-pr` default — no user prose needed;
+          push/network may still be unavailable (then: "Run yourself" list).'';
+      why = "O25. Local Git writes now belong to `git-workspace`; staging is safe after the protected-branch escape, and commit/push/PR on the feature branch follow the apex `-pr` default, as on the Claude side.";
     }
     {
       skill = "nix-darwin";
@@ -1259,8 +1364,8 @@ let
       skill = "autoresearch";
       file = "SKILL.md";
       from = "- On keep: `git add -A && git commit`. On discard: `git checkout -- . && git clean -fd`";
-      to = "- On keep: `git add -A`; commit only when explicitly requested in user prose. On discard: `git diff --binary | git apply -R && git clean -fd`.";
-      why = "O24c. `git-workspace` permits staging and worktree reset on the experiment feature branch. Commit remains conditional on explicit user prose; discard stays local.";
+      to = "- On keep: `git add -A && git commit` on the experiment branch. On discard: `git diff --binary | git apply -R && git clean -fd`.";
+      why = "O24c. `git-workspace` permits staging, commit and worktree reset on the experiment feature branch, so keep commits there as on the Claude side; discard stays local.";
     }
     {
       skill = "apex";
@@ -1291,24 +1396,30 @@ let
            - `feat: {description}` for new features
            - `fix: {description}` for bug fixes
            - Include a body with key changes if the diff is large
+           - Write the message to a file first (Write tool), then
+             `git commit -F <file>`
         3. **Push**: `git push -u origin {branch-name}`
+
+        Each git/gh command is ONE standalone Bash call from the repo cwd (see
+        step-00): no `cd … &&`, no `git -C`, no heredoc or `$(…)` — otherwise it
+        stays sandboxed and fails.
 
         ## Create Pull Request
 
-        Use `gh pr create` with:'';
+        Write the PR body to a file first (Write tool), then
+        `gh pr create --title "<title>" --body-file <file>`, with:'';
       to = ''
         ## Git Operations
 
         1. **Stage**: `git add` modified/created files, named explicitly
         2. **Commit**: conventional format — `feat: {description}`,
-           `fix: {description}`; only after explicit user request
+           `fix: {description}`
         3. **Push**: `git push -u origin {branch-name}`
-           only after explicit user request
 
         ## Create Pull Request
 
-        Run `gh pr create` only when explicitly requested. Use:'';
-      why = "O24. `git-workspace` permits local staging and authorized commit operations on feature branches. The translation keeps commit, push, and PR creation conditional on explicit user prose; network availability remains a separate runtime constraint.";
+        Use `gh pr create` with:'';
+      why = "O24. `git-workspace` permits local staging and commit operations on feature branches. Commit, push and PR creation follow the apex `-pr` default, as on the Claude side; network availability remains a separate runtime constraint.";
     }
     {
       skill = "scrapling";

@@ -168,6 +168,44 @@ let
       scope = skills.apexStep00Init;
     }
     {
+      # excludedCommands matches the WHOLE Bash call. A `cd … &&` prefix or a
+      # `$(…)` keeps git/gh/codex sandboxed, where they fail on the network or
+      # the signing agent. Scoped: step-00 is what the coordinator reads first.
+      name = "init: sandbox-excluded commands run standalone";
+      needle = "run them as standalone commands";
+      scope = steps."step-00-init";
+    }
+    {
+      # The classification a phase agent consults before escalating. Without
+      # the shape rule, an excluded command that failed looks sandbox-blocked
+      # and gets escalated instead of rewritten.
+      name = "orchestration: sandbox-excluded commands run standalone";
+      needle = "run them as standalone commands";
+      scope = steps.ORCHESTRATION;
+    }
+    {
+      # A blocked or refused command handed back as text to paste turns the
+      # user into the executor. Scoped to ORCHESTRATION: the classification a
+      # phase agent reads before deciding what goes to the user.
+      name = "orchestration: blocked or refused is never a hand-off";
+      needle = "Never hand the user a command to type";
+      scope = steps.ORCHESTRATION;
+    }
+    {
+      # The coordinator reads step-00 first: the ask must name the action so
+      # a yes is an answer to one command, not a blanket go-ahead.
+      name = "init: blocked or refused is asked about, naming the action";
+      needle = "je le lance";
+      scope = steps."step-00-init";
+    }
+    {
+      # A multi-line PR body passed inline needs a heredoc or `$(…)`, which
+      # keeps `gh` sandboxed. Scoped to step-09: the only step that ships.
+      name = "finish: PR body goes through a file, not inline";
+      needle = "--body-file";
+      scope = skills.apexStep09Finish;
+    }
+    {
       # Recorded and never read is the same as not recorded. This is the only
       # clause that makes the baseline do anything.
       name = "validate: the baseline verdict is consumed, not just stored";
@@ -392,6 +430,33 @@ let
       name = "plan: the Fable passes that will run are recorded in the plan";
       needle = "**Record in the plan which Fable passes will run**";
       scope = skills.apexStep02Plan;
+    }
+    {
+      # Plan approval waits for the user ONLY in high-stakes or under `-q`.
+      # Losing the condition turns it back into an unconditional round trip
+      # (every run stalls at approval, the autonomous-delivery regression) or,
+      # reworded away, into no premise question at all. Scoped to ORCHESTRATION
+      # because that is where the coordinator — the one with a user channel —
+      # reads its approval duty.
+      name = "orchestration: plan approval waits only in high-stakes or under -q";
+      needle = "In high-stakes mode or under `-q`";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Same condition, second site: step-02 is what the plan phase reads. The
+      # two copies must agree; a needle per scope keeps one from drifting while
+      # the other keeps a corpus-wide needle green.
+      name = "plan: the approval wait is conditional on high-stakes or -q";
+      needle = "In high-stakes mode or under `-q`";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # Third site: step-02c (`-v`) presents its changes and waits under the
+      # same condition. Without its own needle it could revert to an
+      # unconditional wait while the two scopes above stay green.
+      name = "verify: the -v wait is conditional on high-stakes or -q";
+      needle = "In high-stakes mode or under `-q`";
+      scope = skills.apexStep02cVerify;
     }
   ];
 

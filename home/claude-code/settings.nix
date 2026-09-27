@@ -297,6 +297,28 @@ in
       ];
     };
 
+    # Plugin officiel OpenAI (/codex:review, /codex:adversarial-review,
+    # /codex:rescue), installé en arrière-plan au démarrage d'une session,
+    # scope user. Il passe par `node …/codex-companion.mjs` → `codex app-server`
+    # (JSON-RPC, sandbox read-only, workspace-write au plus pour /codex:rescue
+    # --write, approvalPolicy never, jamais danger-full-access). node n'est pas
+    # exclu : tout tourne DANS le Seatbelt de Claude, où le sandbox propre de
+    # Codex ne peut pas s'imbriquer — fonctionnement à mesurer après switch.
+    # Pas de review gate Stop pour l'instant.
+    # Maps : le deep merge d'activation ajoute ces clés sans écraser les
+    # plugins activés via /plugin — pas de force-override, voulu (A26).
+    extraKnownMarketplaces = {
+      "openai-codex" = {
+        source = {
+          source = "github";
+          repo = "openai/codex-plugin-cc";
+        };
+      };
+    };
+    enabledPlugins = {
+      "codex@openai-codex" = true;
+    };
+
     permissions = {
       # `auto` délègue chaque décision de permission à un classifieur de sûreté
       # au lieu de demander à l'utilisateur — il remplace un mode choisi

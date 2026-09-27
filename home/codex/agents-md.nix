@@ -48,8 +48,8 @@ let
         - master is reached through a PR on GitHub, never by a local merge.
         - On the run's feature branch, commit/push and PR creation need no ask;
           push/network may be unavailable here → "Run yourself" list.
-        - Always ask first: any merge into master/main, any force-push, any history
-          rewrite.
+        - Squash-merging your own PR once checks are green needs no ask either.
+        - Always ask first: any force-push, any history rewrite.
         - « je le lance ? » : ici un oui ne lève pas le sandbox (approval_policy=never)
           → réseau/socket bloqué = liste « Run yourself ».
       '';

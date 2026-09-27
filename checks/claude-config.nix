@@ -370,13 +370,9 @@ let
   ];
   missingSecretReadDeny = builtins.filter (d: !(builtins.elem d deny)) requiredSecretReadDeny;
 
-  requiredAsk = [
-    "Bash(gh pr merge*)"
-    "Bash(gh api *merge*)"
-    "Bash(gh api *-X *)"
-    "Bash(gh api *--method*)"
-  ];
-  missingAsk = builtins.filter (a: !(builtins.elem a ask)) requiredAsk;
+  # User decision 2026-09-28: the agent squash-merges its own green PRs; only
+  # sudo still shows a box.
+  expectedAsk = [ "Bash(sudo *)" ];
 
   emptyHookGroups = builtins.filter (g: (g.hooks or null) == [ ]) preToolUse;
 
@@ -548,11 +544,12 @@ let
         + " — sandboxed, `nix flake check` fails with EPERM on the nix daemon socket and on the ~/.cache/nix sqlite, so the verify step cannot run it. The fix is excluding that one command, never opening the socket: the user is in trusted-users (@admin), so allowUnixSockets on the daemon socket hands every sandboxed command a root-equivalent channel";
     }
     {
-      name = "A14c skills: caveman names merge-into-master and force-push as irreversible, not plain push";
+      name = "A14c skills: caveman names force-push and history rewrite as irreversible, not push or merge";
       ok =
-        hasInfix "(delete, merge into master, force-push, deploy)" (skills.skillCaveman or "")
-        && !(hasInfix "(delete, push, deploy)" (skills.skillCaveman or ""));
-      msg = "skillCaveman still lists `(delete, push, deploy)` as irreversible confirmations (or lost `(delete, merge into master, force-push, deploy)`) — push to a feature branch is pre-authorized and reversible; left in, caveman mode drops its terse style and asks for confirmation on every routine push, contradicting the git policy";
+        hasInfix "(delete, force-push, history rewrite, deploy)" (skills.skillCaveman or "")
+        && !(hasInfix "(delete, push, deploy)" (skills.skillCaveman or ""))
+        && !(hasInfix "merge into master, force-push" (skills.skillCaveman or ""));
+      msg = "skillCaveman must list `(delete, force-push, history rewrite, deploy)` as irreversible confirmations, without plain push or merge — push to a feature branch and squash-merging the agent's own green PR are pre-authorized (user decision 2026-09-28); listed, caveman mode asks for confirmation on every routine push or merge, contradicting the git policy";
     }
     {
       name = "A15 settings: force-push, master-target push, remote-program override, gh/codex escape hatches stay denied";
@@ -622,12 +619,14 @@ let
         + " — need exactly one, starting `node \"/` (absolute), containing `/openai-codex/codex/1.0.6/scripts/${companionNeedle}` and no `*` before it: a wildcard or relative path lets `node <any script>` leave the sandbox. Plugin updated? bump the version in settings.nix";
     }
     {
-      name = "A19 settings: merge paths and mutating gh api stay behind ask";
-      ok = missingAsk == [ ];
+      name = "A19 settings: ask holds sudo only (user decision 2026-09-28)";
+      ok = ask == expectedAsk;
       msg =
-        "permissions.ask lost: "
-        + builtins.concatStringsSep ", " missingAsk
-        + " — `gh *` is allowed and runs outside the sandbox; ask (> allow) is the textual guardrail that still shows a box, even in auto mode, before a PR is merged or a mutating API call lands";
+        "permissions.ask is "
+        + builtins.toJSON ask
+        + ", expected "
+        + builtins.toJSON expectedAsk
+        + " — the user removed the merge / mutating gh api asks himself: the agent merges its own green PRs, master stays guarded server-side by the protect-master ruleset. Any extra ask brings back a box that stalls an autonomous run";
     }
     {
       name = "A20 settings: codex is not blanket-allowed";

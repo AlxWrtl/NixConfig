@@ -356,12 +356,9 @@ in
       # here fires on every out-of-sandbox command → box spammée, don't add it.
       ask = [
         "Bash(sudo *)"
-        # Merge paths — textual filtering = guardrail; server-side barrier =
-        # GitHub ruleset `protect-master` (id 24043808).
-        "Bash(gh pr merge*)"
-        "Bash(gh api *merge*)"
-        "Bash(gh api *-X *)"
-        "Bash(gh api *--method*)"
+        # User decision 2026-09-28: no ask on `gh pr merge` / mutating `gh api`
+        # — the agent squash-merges its own green PRs. Server-side barrier for
+        # master = GitHub ruleset `protect-master` (id 24043808). A19 pins this.
       ];
       allow = [
         "Read(*)"

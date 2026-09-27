@@ -165,7 +165,7 @@ let
   ];
 
   # --------------------------------------------------------------------- G9
-  askFirstNeedle = "any merge into master/main, any force-push";
+  askFirstNeedle = "Always ask first: any force-push, any history rewrite";
   missingAskFirst = builtins.filter (o: !(lib.hasInfix askFirstNeedle o.text)) outputs;
   proseGates = [
     "still needs an explicit ask"

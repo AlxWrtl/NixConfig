@@ -252,6 +252,23 @@ let
 
   codexAllowed = builtins.filter (e: builtins.isString e && hasPrefix "Bash(codex" e) allow;
 
+  # --- codex plugin companion outside the sandbox (A27) --------------------
+  companionNeedle = "codex-companion.mjs\"";
+  companionExcluded = builtins.filter (
+    e: builtins.isString e && hasInfix "codex-companion.mjs" e
+  ) excludedCommands;
+  companionOk =
+    builtins.length companionExcluded == 1
+    && (
+      let
+        e = builtins.head companionExcluded;
+      in
+      hasPrefix "node \"/" e
+      && hasInfix ("/openai-codex/codex/1.0.6/scripts/" + companionNeedle) e
+      # `[^*]*` cannot cross a `*`: matches only if no wildcard precedes the script.
+      && builtins.match "[^*]*codex-companion\\.mjs\".*" e != null
+    );
+
   requiredExcluded = [
     "sudo *"
     "darwin-rebuild *"
@@ -294,6 +311,8 @@ let
     "Bash(codex *dangerously*)"
     "Bash(codex *sandbox_mode*)"
     "Bash(codex *sandbox_permissions*)"
+    "Bash(node *codex-companion.mjs*prompt-file*)"
+    "Bash(*NODE_OPTIONS=*codex-companion.mjs*)"
   ];
   missingDeny = builtins.filter (d: !(builtins.elem d deny)) requiredDeny;
 
@@ -301,6 +320,10 @@ let
   requiredGitDenyWrite = [
     "/Users/alx/**/.git/hooks"
     "/Users/alx/**/.git/config"
+    "/tmp/**/.git/config"
+    "/tmp/**/.git/hooks"
+    "/private/tmp/**/.git/config"
+    "/private/tmp/**/.git/hooks"
     "/Users/alx/.gitconfig"
     "/Users/alx/.config/git"
   ];
@@ -537,7 +560,7 @@ let
       msg =
         "permissions.deny lost: "
         + builtins.concatStringsSep ", " missingDeny
-        + " — `git push *`, gh and codex run OUTSIDE the sandbox and commit/push/PR are pre-authorized; deny is a textual guardrail (prefix/glob match, not a barrier — the server-side barrier is the GitHub ruleset `protect-master`), and without it nothing local stops a rewritten remote history, a wiped worktree, a leaked gh/codex token, a codex run with its sandbox switched off, or an arbitrary command smuggled as --upload-pack/--receive-pack/--exec into an unsandboxed git fetch/pull/push. Those denies must stay on the SHORTEST unambiguous prefix (`--upl`, `--rece`, `--e`): git accepts any unique abbreviation of a long option, so `--upload-pack` alone lets `--upl=CMD` through";
+        + " — `git push *`, gh and codex run OUTSIDE the sandbox and commit/push/PR are pre-authorized; deny is a textual guardrail (prefix/glob match, not a barrier — the server-side barrier is the GitHub ruleset `protect-master`), and without it nothing local stops a rewritten remote history, a wiped worktree, a leaked gh/codex token, a codex run with its sandbox switched off, or an arbitrary command smuggled as --upload-pack/--receive-pack/--exec into an unsandboxed git fetch/pull/push, a companion `--prompt-file` read of any file unsandboxed, or a NODE_OPTIONS preload into the excluded companion. Those denies must stay on the SHORTEST unambiguous prefix (`--upl`, `--rece`, `--e`): git accepts any unique abbreviation of a long option, so `--upload-pack` alone lets `--upl=CMD` through";
     }
     {
       name = "A22 sandbox: repo .git hooks/config and global git config stay unwritable (denyWrite + Edit deny)";
@@ -549,7 +572,7 @@ let
         + builtins.concatStringsSep ", " missingGitEditDeny
         + " / inert Write(...) deny rule(s): "
         + builtins.concatStringsSep ", " inertWriteDeny
-        + " — git commit/push/fetch/pull run OUTSIDE the sandbox and execute the repo's hooks and config (core.hooksPath, core.fsmonitor, core.sshCommand); one sandboxed write there becomes code run unsandboxed on the next git call — same for the global ~/.gitconfig and ~/.config/git. Built-in protection covers only the cwd's .git. denyWrite must stay absolute: unprefixed, a user-settings path resolves under ~/.claude. Write(path) rules are accepted but never consulted — Edit(path) is the rule that guards the file tools";
+        + " — git commit/push/fetch/pull run OUTSIDE the sandbox and execute the repo's hooks and config (core.hooksPath, core.fsmonitor, core.sshCommand); one sandboxed write there becomes code run unsandboxed on the next git call — same for the global ~/.gitconfig and ~/.config/git, and for repos under /tmp and /private/tmp (the sandbox $TMPDIR is writable). Built-in protection covers only the cwd's .git. denyWrite must stay absolute: unprefixed, a user-settings path resolves under ~/.claude. Write(path) rules are accepted but never consulted — Edit(path) is the rule that guards the file tools";
     }
     {
       name = "A23 settings: autoMode keeps $defaults, names protect-master, and activation force-overrides it";
@@ -589,6 +612,14 @@ let
         + ") and extraKnownMarketplaces.\"openai-codex\".source.repo must be \"openai/codex-plugin-cc\" (got "
         + builtins.toJSON codexMarketplaceRepo
         + ") — the marketplace name must resolve to OpenAI's official repo, or the plugin id installs from wherever that name points";
+    }
+    {
+      name = "A27 sandbox: codex companion excluded by absolute, version-pinned path only";
+      ok = companionOk;
+      msg =
+        "sandbox.excludedCommands entries naming codex-companion.mjs: "
+        + builtins.toJSON companionExcluded
+        + " — need exactly one, starting `node \"/` (absolute), containing `/openai-codex/codex/1.0.6/scripts/${companionNeedle}` and no `*` before it: a wildcard or relative path lets `node <any script>` leave the sandbox. Plugin updated? bump the version in settings.nix";
     }
     {
       name = "A19 settings: merge paths and mutating gh api stay behind ask";

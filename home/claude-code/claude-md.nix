@@ -22,10 +22,10 @@ let
       body = ''
         - Branch FIRST — `git checkout -b <type>/<desc>` BEFORE coding; never
           commit on main/master (hooks deny it), master via PR only.
-        - On the run's feature branch, add/commit/push and `gh pr create` are
-          pre-authorized — do them without asking.
-        - Always ask first: any merge into master/main, any force-push, any history
-          rewrite (rebase/amend/reset of pushed commits).
+        - On the run's feature branch, add/commit/push, `gh pr create` and squash-merging
+          your own PR once checks are green are pre-authorized — do them without asking.
+        - Always ask first: any force-push, any history rewrite (rebase/amend/reset
+          of pushed commits).
       '';
     }
     {

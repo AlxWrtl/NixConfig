@@ -1385,8 +1385,10 @@ in
     ## Before creating it
     Show the PR title and body in the transcript, then create it — no approval
     wait: the `-pr` default already authorizes commit, push and PR on the run's
-    branch. Never merge it; merging into master, force-pushing and rewriting
-    history always need the user's explicit go.
+    branch. Then, once the gate is green, merge it yourself — each a standalone
+    Bash call: `gh pr merge <n> --squash --delete-branch`, `git switch master`,
+    `git pull --ff-only`, `git branch -D <branch>`. Force-pushing and rewriting
+    pushed history still need the user's explicit go.
 
     ## COMPLETE
 
@@ -3032,7 +3034,7 @@ in
     ## Safety carve-outs (resume full prose)
 
     - Security warnings
-    - Irreversible action confirmations (delete, merge into master, force-push, deploy)
+    - Irreversible action confirmations (delete, force-push, history rewrite, deploy)
     - User confused or repeating question
 
     ## Intensity levels

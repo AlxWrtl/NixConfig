@@ -162,8 +162,9 @@ in
     summary — read [ORCHESTRATION.md](ORCHESTRATION.md) now and follow it for
     every phase. There is no inline mode to fall back on.
 
-    Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-    list (long or password-interactive). `git push`, `git commit`, `git pull`,
+    Privileged commands: only `sudo …` (password prompt) goes to the
+    "Run yourself" list; bare `nix flake check` and `darwin-rebuild build`
+    you run yourself. `git push`, `git commit`, `git pull`,
     `git fetch`, `gh`, `codex` and bare `nix flake check` are excluded from
     the sandbox — run them as standalone commands: one per Bash call, from the repo cwd, no
     `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
@@ -176,8 +177,13 @@ in
     dangerouslyDisableSandbox (one retry, permission box).
     Other sandbox-blocked commands (docker, local DB sockets):
     retry ONCE with dangerouslyDisableSandbox — the permission box lets the
-    user approve or refuse. Never weaken the sandbox config itself. See the
-    classification rule in ORCHESTRATION.md.
+    user approve or refuse. Never weaken the sandbox config itself.
+    Blocked automatically (classifier or sandbox) is not a hand-off: ask the
+    user in the conversation, naming the exact action (« je le lance ? … »),
+    and on their explicit yes run it yourself. A no from the user — in the
+    permission box or in the conversation — is final: do not ask again.
+    Never hand the user a command to type, never a `! cmd`.
+    See the classification rule in ORCHESTRATION.md.
 
     ## Parse Flags
 
@@ -284,11 +290,12 @@ in
         baseline — every other red is this run's.
       - **Dirty tree.** A baseline taken on a dirty tree measures someone
         else's uncommitted work. Record the tree as dirty beside the verdict.
-      - **Too slow or privileged.** `nix flake check` builds the whole system
-        here. Do NOT run it: put the exact command on the "Run yourself" list
-        per ORCHESTRATION.md and record `baseline: skipped — {command} —
-        {reason}`. A skipped baseline is an unknown one: nothing at validate
-        may then be dismissed as pre-existing.
+      - **Privileged.** Bare `nix flake check` runs outside the sandbox: run
+        it yourself (in the background if long). Only a `sudo` command goes on
+        the "Run yourself" list per ORCHESTRATION.md, then record
+        `baseline: skipped — {command} — {reason}`. A skipped baseline is an
+        unknown one: nothing at validate may then be dismissed as
+        pre-existing.
       - **Diagnosis mode.** The red baseline IS the subject of the run.
         Record it as the reproduction target, never as an excuse.
 
@@ -1125,9 +1132,10 @@ in
        - TypeScript: typecheck (`pnpm typecheck` or `npx tsc --noEmit`)
        - Lint: `pnpm lint` or equivalent
        - Build: `pnpm build` or equivalent
-       - Nix: `nix-instantiate --parse` (safe). Do NOT run `darwin-rebuild
-         build`/`switch` — those are privileged; mark such ACs **deferred to
-         user** and add the command to the "Run yourself" list.
+       - Nix: `nix-instantiate --parse` (safe); run `darwin-rebuild build`
+         (no sudo) yourself. Only `sudo darwin-rebuild switch` is privileged:
+         mark such ACs **deferred to user** and add the command to the
+         "Run yourself" list.
 
     3. **Integration Check**: verify that:
        - All imports resolve
@@ -2269,10 +2277,18 @@ in
     - **Safe** — read-only, parse, test, edit a file in the repo, `git status/add`,
       `nix-instantiate --parse`, grep, build steps that do not touch the system:
       execute directly.
-    - **Long or password-interactive** — `sudo`, `darwin-rebuild build`/`switch`,
-      system package installs: DO NOT execute; add the exact command to a
-      **"Run yourself" list** in the phase summary / final output (a 10-15 min
-      build or a password prompt is better in the user's terminal).
+    - **Password-interactive** — `sudo …` (including `sudo darwin-rebuild
+      switch`) and system package installs that prompt for a password: DO NOT
+      execute; add the exact command to a **"Run yourself" list** in the phase
+      summary / final output. Only this bullet goes to that list.
+    - **Blocked automatically** (classifier or sandbox) — not a hand-off: ask
+      the user in the conversation, naming the exact action
+      (« je le lance ? … »), and on their explicit yes run it yourself. A no
+      from the user — in the permission box or in the conversation — is final:
+      do not ask again.
+      Never hand the user a command to type, never a `! cmd`. Bare
+      `nix flake check` and `darwin-rebuild build` (no sudo) you run
+      yourself, long ones with run_in_background.
     - **Sandbox-excluded** — `git push`, `git commit`, `git pull`, `git fetch`,
       `gh`, `codex` and bare `nix flake check` run OUTSIDE the sandbox only when the Bash call is that
       command alone: run them as standalone commands from the repo cwd — no
@@ -2296,8 +2312,8 @@ in
     - **In doubt** — ask the user, unless already durably authorized this session.
 
     Why: the confirmation box keeps the user in control while avoiding dead-end
-    "Run yourself" lists for one-click approvals. Long builds stay delegated
-    (the sandbox throttles them and they may need a password). Acceptance
+    "Run yourself" lists for one-click approvals. Only password prompts stay
+    delegated (the password belongs in the user's terminal). Acceptance
     criteria that need a delegated command (e.g. "switch applied") are marked
     **deferred to user** in the validate summary, not failed.
 

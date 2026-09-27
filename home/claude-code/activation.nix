@@ -126,7 +126,7 @@
 
       # Intelligent merge: base provides defaults, existing preserves user changes
       # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox,
-      # effortLevel, alwaysThinkingEnabled, skillOverrides. NEVER force .model:
+      # effortLevel, alwaysThinkingEnabled, skillOverrides, autoMode. NEVER force .model:
       # /model and /fast are deliberate session choices that must survive rebuilds.
       # `.skillOverrides` est dans la liste par nécessité : sans force-override,
       # il n'arriverait que par le deep merge `.[0] * .[1]`, où le live gagne sur
@@ -146,6 +146,10 @@
       # récursif, donc toute sous-clé présente dans la base et absente du live
       # (ex. autoSubmit) est injectée, tandis qu'un `mode` changé en session
       # survit — même logique que .model.
+      # `.autoMode` : les listes jq ne fusionnent pas (`*` remplace un tableau),
+      # donc sans force-override une entrée ajoutée par /auto-mode-setup ou
+      # /permissions masquerait la liste nix. Base sans autoMode (null) : live
+      # laissé intact plutôt que d'y écrire `null`.
       if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
         TMP=$(mktemp)
         BASE_SL=$(jq -c '.statusLine' "$BASE")
@@ -156,9 +160,11 @@
         BASE_EFFORT=$(jq -c '.effortLevel' "$BASE")
         BASE_THINK=$(jq -c '.alwaysThinkingEnabled' "$BASE")
         BASE_SKILLOV=$(jq -c '.skillOverrides' "$BASE")
+        BASE_AM=$(jq -c '.autoMode' "$BASE")
         jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
-          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" --argjson so "$BASE_SKILLOV" \
+          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" --argjson so "$BASE_SKILLOV" --argjson am "$BASE_AM" \
             '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th | .skillOverrides = $so
+             | (if $am == null then . else .autoMode = $am end)
              # legacy: `voiceEnabled` (clé plate) est encore lue par le binaire
              # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas
              # garder deux sources de vérité qui peuvent diverger.

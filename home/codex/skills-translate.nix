@@ -1012,8 +1012,9 @@ let
       skill = "apex";
       file = "steps/step-00-init.md";
       from = ''
-        Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-        list (long or password-interactive). `git push`, `git commit`, `git pull`,
+        Privileged commands: only `sudo …` (password prompt) goes to the
+        "Run yourself" list; bare `nix flake check` and `darwin-rebuild build`
+        you run yourself. `git push`, `git commit`, `git pull`,
         `git fetch`, `gh`, `codex` and bare `nix flake check` are excluded from
         the sandbox — run them as standalone commands: one per Bash call, from the repo cwd, no
         `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
@@ -1026,12 +1027,20 @@ let
         dangerouslyDisableSandbox (one retry, permission box).
         Other sandbox-blocked commands (docker, local DB sockets):
         retry ONCE with dangerouslyDisableSandbox — the permission box lets the
-        user approve or refuse. Never weaken the sandbox config itself. See the
-        classification rule in ORCHESTRATION.md.
+        user approve or refuse. Never weaken the sandbox config itself.
+        Blocked automatically (classifier or sandbox) is not a hand-off: ask the
+        user in the conversation, naming the exact action (« je le lance ? … »),
+        and on their explicit yes run it yourself. A no from the user — in the
+        permission box or in the conversation — is final: do not ask again.
+        Never hand the user a command to type, never a `! cmd`.
+        See the classification rule in ORCHESTRATION.md.
       '';
       to = ''
-        Privileged commands: `sudo` and `darwin-rebuild` go to the "Run yourself"
-        list (long or password-interactive). Local Git writes are permitted by
+        Privileged commands: `sudo`, and anything the sandbox blocks with no
+        escalation (network, daemon socket), go to the "Run yourself" list; try
+        bare `nix flake check` / `darwin-rebuild build` first, and if the
+        sandbox denies it, put the command on the "Run yourself" list.
+        Local Git writes are permitted by
         the `git-workspace` profile on a feature branch; on main/master the hook
         permits only exact validated new-branch creation. Commit, push and
         `gh pr create` on the run's feature branch follow the apex `-pr` default
@@ -1045,7 +1054,7 @@ let
         Never weaken the sandbox config itself. See the classification rule in
         ORCHESTRATION.md.
       '';
-      why = "O20a. `dangerouslyDisableSandbox` has no Codex counterpart. The translation distinguishes permitted local Git under `git-workspace` from genuinely blocked network/socket access, keeps protected-branch mutation narrow, and lets commit, push and PR creation on the feature branch follow the apex `-pr` default, as on the Claude side.";
+      why = "O20a. `dangerouslyDisableSandbox` has no Codex counterpart, and no mid-run approval exists either (`approval_policy = \"never\"`), so the Claude rule — ask in the conversation, then run it yourself — has nothing to act on here: nix builds and checks are tried first and fall back to the Run yourself list with every other sandbox denial. The translation distinguishes permitted local Git under `git-workspace` from genuinely blocked network/socket access, keeps protected-branch mutation narrow, and lets commit, push and PR creation on the feature branch follow the apex `-pr` default, as on the Claude side.";
     }
     {
       skill = "apex";
@@ -1091,6 +1100,80 @@ let
           unavailable (then: "Run yourself" list).
       '';
       why = "O20b. Second absent-escalation site. Network and socket denials remain sandbox-blocked; local Git is classified separately according to profile and protected-branch hook. Commit, push and PR creation on the feature branch follow the apex `-pr` default, as on the Claude side — no per-run user prose.";
+    }
+    {
+      skill = "apex";
+      file = "steps/ORCHESTRATION.md";
+      from = ''
+        - **Password-interactive** — `sudo …` (including `sudo darwin-rebuild
+          switch`) and system package installs that prompt for a password: DO NOT
+          execute; add the exact command to a **"Run yourself" list** in the phase
+          summary / final output. Only this bullet goes to that list.
+        - **Blocked automatically** (classifier or sandbox) — not a hand-off: ask
+          the user in the conversation, naming the exact action
+          (« je le lance ? … »), and on their explicit yes run it yourself. A no
+          from the user — in the permission box or in the conversation — is final:
+          do not ask again.
+          Never hand the user a command to type, never a `! cmd`. Bare
+          `nix flake check` and `darwin-rebuild build` (no sudo) you run
+          yourself, long ones with run_in_background.
+      '';
+      to = ''
+        - **Password-interactive** — `sudo …` (including `sudo darwin-rebuild
+          switch`) and system package installs that prompt for a password: DO NOT
+          execute; add the exact command to a **"Run yourself" list** in the phase
+          summary / final output.
+        - **Nix build or check** — try bare `nix flake check` /
+          `darwin-rebuild build` (no sudo) yourself; if the sandbox denies it,
+          put the command on the "Run yourself" list. There is no mid-run
+          approval on this host (`approval_policy = "never"`).
+      '';
+      why = "O20c. Third absent-escalation site. The Claude bullet rests on an in-conversation approval followed by the agent running the command itself; this host has no mid-run approval, so the bullet is replaced by the Codex doctrine already stated in O20a/O20b: try the nix build or check, and on a sandbox denial, put it on the Run yourself list. `Only this bullet goes to that list` is dropped because sandbox denials go there too.";
+    }
+    {
+      skill = "apex";
+      file = "steps/ORCHESTRATION.md";
+      from = ''
+        Why: the confirmation box keeps the user in control while avoiding dead-end
+        "Run yourself" lists for one-click approvals. Only password prompts stay
+        delegated (the password belongs in the user's terminal). Acceptance
+      '';
+      to = ''
+        Why: this host shows no confirmation box, so what the sandbox denies is
+        recorded on the "Run yourself" list with its purpose and the run
+        continues with what does not depend on it; password prompts belong in
+        the user's terminal. Acceptance
+      '';
+      why = "O20d. The rationale paragraph names a confirmation box and one-click approvals that do not exist under `approval_policy = \"never\"`. Left verbatim it justifies a mechanism the reader cannot find, three bullets after O20b removed it.";
+    }
+    {
+      skill = "apex";
+      file = "steps/step-00-init.md";
+      from = ''
+        - **Privileged.** Bare `nix flake check` runs outside the sandbox: run
+            it yourself (in the background if long). Only a `sudo` command goes on
+            the "Run yourself" list per ORCHESTRATION.md, then record
+      '';
+      to = ''
+        - **Privileged.** Try bare `nix flake check` / `darwin-rebuild build`;
+            if the sandbox denies it, put the command on the "Run yourself" list
+            per ORCHESTRATION.md, as for any `sudo` command, then record
+      '';
+      why = "O20e. The baseline bullet says bare `nix flake check` runs outside the sandbox, which is a Claude `excludedCommands` fact. Here nothing is excluded, so the check is tried and, on a sandbox denial, delegated — the same doctrine as O20a. The skipped-baseline consequence that follows is kept verbatim.";
+    }
+    {
+      skill = "apex";
+      file = "steps/step-04-validate.md";
+      from = ''
+        - Nix: `nix-instantiate --parse` (safe); run `darwin-rebuild build`
+             (no sudo) yourself. Only `sudo darwin-rebuild switch` is privileged:
+      '';
+      to = ''
+        - Nix: `nix-instantiate --parse` (safe); try bare `darwin-rebuild build`
+             (no sudo); if the sandbox denies it, put the command on the
+             "Run yourself" list. `sudo darwin-rebuild switch` is privileged:
+      '';
+      why = "O20f. Same Claude-only premise as O20e at the validate build check: `darwin-rebuild build` is excluded from the sandbox on the Claude side only. Tried first here, delegated on a sandbox denial, as in O20a.";
     }
     {
       skill = "obsidian";

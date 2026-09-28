@@ -1277,7 +1277,8 @@
             + "the REAL diff plus the ACs, then apply its bounded fix-list. Fable is "
             + "read-only — it returns PASS or a fix-list and never edits. Unless -E was "
             + "typed, the external cross-vendor pass (-e) also runs, IN ADDITION TO the "
-            + "Fable pass, never instead of it; a BLOCKED external verdict is an unrun check."
+            + "Fable pass, never instead of it; a BLOCKED external verdict is an unrun check. "
+            + "Fast mode is NOT eligible for this run."
           : null;
 
         // Emit even when the flags are already right: without this the context
@@ -1947,7 +1948,7 @@
   # table over there, grep for this line.
   hookApexReminder = ''
     #!/usr/bin/env bash
-    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -pr -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n -e (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -e vérif externe (défaut haut-enjeu). Majuscule désactive. Question sans modification → réponse directe."
+    echo "Routage: fichier modifié → /apex. Modes: fast=-pr -n | diagnosis=-x -pr -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n -e (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -e vérif externe (défaut haut-enjeu). Majuscule désactive. Question sans modification → réponse directe."
     exit 0
   '';
 

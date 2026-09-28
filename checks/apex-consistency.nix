@@ -54,6 +54,28 @@ let
 
   existing = builtins.attrNames steps;
 
+  # The Fast bullet of the Mode Gate, alone. "never for Diagnosis" and the
+  # escalation triggers are only rules inside THAT bullet; step-00-wide they
+  # could be satisfied by another mode's prose. Both anchors must occur exactly
+  # once: a renamed bullet throws instead of widening the scope in silence.
+  fastBullet =
+    let
+      only =
+        marker: s:
+        let
+          parts = pkgs.lib.splitString marker s;
+        in
+        if builtins.length parts != 2 then
+          throw "apex-consistency: '${marker}' occurs ${
+            toString (builtins.length parts - 1)
+          } time(s) in step-00-init, expected exactly 1 — the Fast bullet cannot be isolated."
+        else
+          parts;
+    in
+    builtins.head (
+      only "- **Diagnosis** —" (builtins.elemAt (only "- **Fast** —" skills.apexStep00Init) 1)
+    );
+
   # Clauses whose loss would be silent and expensive. Each was added for a
   # reason; a config edit that drops one must fail loudly, not quietly.
   invariants = [
@@ -458,6 +480,100 @@ let
       needle = "In high-stakes mode or under `-q`";
       scope = skills.apexStep02cVerify;
     }
+    {
+      # Fast is the smallest mode, the one most tempted to run inline. The
+      # coordinator reads step-00 to pick it; a needle there keeps the gate honest.
+      name = "init: Fast still has a separate implementer";
+      needle = "never grades its own work";
+      scope = skills.apexStep00Init;
+    }
+    {
+      # Second site: ORCHESTRATION's "When this applies". A needle per scope,
+      # so one copy cannot drift while the other keeps the invariant green.
+      name = "orchestration: no inline mode, even for Fast";
+      needle = "never grades its own work";
+      scope = steps.ORCHESTRATION;
+    }
+    {
+      name = "init: no inline tier exists";
+      needle = "There is NO inline tier";
+      scope = skills.apexStep00Init;
+    }
+    {
+      name = "init: Fast is never chosen on a HIGH signal";
+      needle = "Fast is never chosen on a HIGH risk signal";
+      scope = skills.apexStep00Init;
+    }
+    {
+      name = "init: Fast escalates on a real diff that outgrows it";
+      needle = "Fast escalates to Standard";
+      scope = skills.apexStep00Init;
+    }
+    # One needle per escalation trigger and eligibility rule: the headline above
+    # survives the loss of any single clause under it.
+    {
+      name = "init: Fast escalates past 2 files or 20 lines";
+      needle = "exceeds 2 files or 20 changed lines";
+      scope = fastBullet;
+    }
+    {
+      name = "init: Fast escalates on a HIGH path";
+      needle = "touches a HIGH path";
+      scope = fastBullet;
+    }
+    {
+      name = "init: Fast escalates on a red gate";
+      needle = "or the gate is red";
+      scope = fastBullet;
+    }
+    {
+      name = "init: Fast is never chosen for Diagnosis";
+      needle = "never for Diagnosis";
+      scope = fastBullet;
+    }
+    {
+      name = "init: Fast is ineligible under -t, -x or -e";
+      needle = "ineligible when -t, -x or -e is active";
+      scope = fastBullet;
+    }
+    {
+      # Without the definition, "touches a HIGH path" is a trigger nobody can
+      # evaluate before the implementer has written the diff.
+      name = "init: HIGH path is defined for Fast";
+      needle = "HIGH path =";
+      scope = fastBullet;
+    }
+    {
+      name = "init: HIGH and Diagnosis take precedence over Fast";
+      needle = "Precedence: HIGH > Diagnosis > Fast";
+      scope = fastBullet;
+    }
+    {
+      # The separate implementer IS what keeps Fast from being the removed
+      # inline tier; "never grades its own work" alone survives its deletion.
+      name = "init: Fast spawns a separate implementer";
+      needle = "spawns ONE implementer subagent";
+      scope = fastBullet;
+    }
+    {
+      name = "orchestration: there is no inline mode";
+      needle = "There is no inline mode";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Without it the Fast escalation is written but never reached: step-04
+      # hands straight to the terminal router, which knows nothing of Fast.
+      name = "validate: Fast measures and escalates before the terminal router";
+      needle = "apply the 04-validate Fast row of the linear spine FIRST";
+      scope = skills.apexStep04Validate;
+    }
+    {
+      # The risk-signal hook is what tells the coordinator Fast is off the
+      # table; step-00 alone relies on the coordinator noticing the signal.
+      name = "hook: a HIGH signal disqualifies Fast";
+      needle = "Fast mode is NOT eligible";
+      scope = hooks.hookApexFlags;
+    }
   ];
 
   # Non-vacuity, asserted at the DEFINITION and not at the use site. `hasInfix
@@ -500,6 +616,10 @@ let
   reminder = hooks.hookApexReminder;
 
   modeMap = [
+    {
+      en = "Fast";
+      fr = "fast";
+    }
     {
       en = "Diagnosis";
       fr = "diagnosis";
@@ -579,7 +699,17 @@ let
     !(rowHasE "High-stakes")
     || rowHasE "Diagnosis"
     || rowHasE "Standard / complex"
+    || rowHasE "Fast"
     || !(pkgs.lib.hasInfix ''"-pr", "-e"]'' hooks.hookApexFlags);
+
+  # Fast is ineligible under -t, -x or -e, and a graph read buys nothing on a
+  # typo: none of the four may ride in its default set. Token match, as above.
+  fastDrift = builtins.any (f: builtins.elem f (pkgs.lib.splitString " " (rowFlags "Fast"))) [
+    "-t"
+    "-x"
+    "-e"
+    "-o"
+  ];
   staleOptions = builtins.filter (f: pkgs.lib.hasInfix f reminder) [
     "-o vault"
     "-n note"
@@ -721,6 +851,8 @@ pkgs.runCommand "apex-consistency-check" { } (
     )
   else if externalDefaultDrift then
     fail "-e (external verify) drifted: it must be in the High-stakes Mode Gate row, absent from Diagnosis and Standard, and in the hook's HIGH target (`\"-pr\", \"-e\"]` in hookApexFlags)."
+  else if fastDrift then
+    fail "the Fast Mode Gate row carries -t, -x, -e or -o. Fast is ineligible when -t, -x or -e is active, and drops -o; a default that enables one makes Fast unreachable or a graph read on a typo."
   else if staleOptions != [ ] then
     fail (
       "the reminder still lists as opt-in: "

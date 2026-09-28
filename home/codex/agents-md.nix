@@ -70,9 +70,13 @@ let
       '';
     }
     {
-      name = "Confidence Gate (nix)";
+      name = "Docs Gate (nix)";
       body = ''
-        - Rate confidence before writing nix. Below 80%, stop and check the docs.
+        - Before writing nix that sets an option, calls a `lib`/`builtins`
+          function or bumps a flake input, check it: `man 5 configuration.nix`,
+          the input's source at its flake.lock rev, then
+          `nix eval .#darwinConfigurations.alex-mbp.options.<opt>.description`.
+          Nothing found → write it down as an assumption, flagged.
       '';
     }
   ];

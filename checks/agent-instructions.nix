@@ -143,14 +143,20 @@ let
   namedInTrunk = builtins.filter (n: lib.hasInfix n shared.trunk) absentMechanisms;
 
   # --------------------------------------------------------------------- G5
-  confidenceNeedle = "Rate confidence before writing nix";
-  confidenceInline = lib.hasInfix confidenceNeedle codexOut;
-  confidenceInRules = lib.hasInfix confidenceNeedle rules.ruleNix;
+  docsGateNeedle = "Before writing nix that sets an option";
+  docsGateInline = lib.hasInfix docsGateNeedle codexOut;
+  docsGateInRules = lib.hasInfix docsGateNeedle rules.ruleNix;
   # Le corps reste interdit dans Claude, mais ne suffit pas : une copie peut
   # garder le titre et paraphraser la règle. Le préfixe attrape donc aussi
-  # `Confidence Gate (nix)` et toute variante suffixée.
-  confidenceInClaude = lib.hasInfix confidenceNeedle claudeOut;
-  confidenceHeadingInClaude = builtins.any (lib.hasPrefix "Confidence Gate") (headingsOf claudeOut);
+  # `Docs Gate (nix)` et toute variante suffixée, et l'ancien titre
+  # `Confidence Gate` au cas où il reviendrait.
+  docsGateInClaude = lib.hasInfix docsGateNeedle claudeOut;
+  docsGateHeadingInClaude = builtins.any (
+    h: lib.hasPrefix "Docs Gate" h || lib.hasPrefix "Confidence Gate" h
+  ) (headingsOf claudeOut);
+  # Le déclencheur est catégoriel ; un seuil auto-évalué qui revient chez
+  # Codex est la forme qui échoue en silence.
+  confidenceScoreInCodex = lib.hasInfix "80%" codexOut;
 
   # --------------------------------------------------------------------- G6
   lineBudget = 100;
@@ -247,17 +253,24 @@ let
         + " — une instruction qui nomme un mécanisme absent n'est pas neutre : le modèle la lit, cherche l'outil, et dépense le tour à échouer. Mesuré sur cet hôte, un AGENTS.md truffé d'outils Claude produisait exactement ça. Le tronc est vérifié à part pour qu'il ne puisse jamais servir de canal de contrebande";
     }
     {
-      name = "G5 divergence: the nix Confidence Gate stays Codex-inline only";
-      ok = confidenceInline && confidenceInRules && !confidenceInClaude && !confidenceHeadingInClaude;
+      name = "G5 divergence: the nix Docs Gate stays Codex-inline only";
+      ok =
+        docsGateInline
+        && docsGateInRules
+        && !docsGateInClaude
+        && !docsGateHeadingInClaude
+        && !confidenceScoreInCodex;
       msg =
         "inline dans agentsMd: "
-        + (if confidenceInline then "oui" else "NON")
+        + (if docsGateInline then "oui" else "NON")
         + " | dans rules.nix ruleNix: "
-        + (if confidenceInRules then "oui" else "NON")
+        + (if docsGateInRules then "oui" else "NON")
         + " | corps recopié dans claudeMdGlobal: "
-        + (if confidenceInClaude then "PRÉSENTE" else "absente")
-        + " | titre Confidence Gate dans claudeMdGlobal: "
-        + (if confidenceHeadingInClaude then "PRÉSENT" else "absent")
+        + (if docsGateInClaude then "PRÉSENTE" else "absente")
+        + " | titre Docs Gate / Confidence Gate dans claudeMdGlobal: "
+        + (if docsGateHeadingInClaude then "PRÉSENT" else "absent")
+        + " | seuil « 80% » dans agentsMd: "
+        + (if confidenceScoreInCodex then "PRÉSENT" else "absent")
         + " — cette asymétrie est DÉLIBÉRÉE et c'est la seule du lot : Claude charge la règle depuis `~/.claude/rules/` à l'ouverture d'un `.nix`, Codex n'a pas de `rules/` et doit la porter en permanence. Une passe d'« harmonisation » qui la supprime d'un côté ou la duplique de l'autre doit rougir ici, sinon elle coûte la règle à Codex ou du contexte permanent à Claude";
     }
     {

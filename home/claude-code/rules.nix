@@ -15,9 +15,14 @@
     ## Verify
     - `nix-instantiate --parse file.nix && sudo darwin-rebuild switch --flake .#alex-mbp`
 
-    ## Confidence Gate
-    - Rate confidence before writing nix. < 80% → STOP, load nix-darwin skill,
-      check docs first. 80-95% → state assumptions inline, proceed with caution.
+    ## Docs Gate
+    - Before writing nix that sets an option, calls a `lib`/`builtins`
+      function or bumps a flake input: source it first, per the Docs line in APEX step-02-plan.md
+      (`~/.claude/skills/apex/steps/`). Load the nix-darwin skill.
+    - Nix per rung: no libdocs pin; official = `man 5 configuration.nix`,
+      home-manager options page, nixpkgs manual; pinned
+      source = the input's `/nix/store` tree at its flake.lock rev.
+      Proof beats prose: `nix eval .#darwinConfigurations.alex-mbp.options.<opt>.description`.
   '';
 
   ruleTypescript = ''
@@ -34,8 +39,9 @@
     - Package manager: pnpm (never npm or yarn). WCAG AA accessibility minimum.
 
     ## Docs before writing
-    - Confidence < 80% on a library API → `libdocs <name> "<question>"` BEFORE
-      writing. `libdocs --list` shows the pinned names.
+    - Any library API call, option, signature or version detail → source it
+      BEFORE writing, per the Docs line in APEX step-02-plan.md: lockfile version
+      first, then `libdocs <name> "<question>"`. `libdocs --list` shows the pinned names.
     - Ids are pinned per MAJOR version because doc search ranks the OLD major
       higher: Tailwind v3 outweighs v4, Zod v3 outweighs v4 by 4.5x. Never
       resolve a library by raw search when a pin exists.
@@ -58,9 +64,9 @@
 
     # React 19 + React Router 7
 
-    ## Confidence Gate — before writing, not after
-    - Rate confidence on any API, signature or version detail BEFORE writing.
-      < 80% → STOP, run `libdocs`, then write. Never guess a signature.
+    ## Docs Gate — before writing, not after
+    - Any React/RR API, signature or version detail → source it BEFORE
+      writing, per the Docs line in APEX step-02-plan.md. Never guess a signature.
       `libdocs react "<question>"` · `libdocs rr "<question>"` · `libdocs --list`
     - Version trap: ranking doc hits by score or corpus size puts React Router
       v5 ABOVE v7. Use the pinned names (`react`, `rr`), never a raw search hit.

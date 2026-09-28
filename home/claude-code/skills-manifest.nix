@@ -2,18 +2,16 @@
 # file. Everything that installs skills reads it; nothing hand-copies it.
 #
 # THE ONE THIS FILE EXISTS FOR: the same 33 paths were typed out by hand in
-# `home/claude-code.nix`, and a second copy of the tree under `~/.agents/skills/`
+# `home/claude-code.nix`, and a second copy of the tree (for Codex, since retired)
 # was kept by hand next to it. The two drifted for four months without a single
 # error: a hand-maintained list cannot fail loudly, it can only be incomplete,
-# and an absent skill file is a skill that silently never loads. A third
-# consumer (Codex) is being added, which is exactly the moment a second
-# hand-written list becomes a third.
+# and an absent skill file is a skill that silently never loads.
 #
-# AGENT-AGNOSTIC, DESPITE THE DIRECTORY. This file lives under `claude-code/`
-# and describes NOTHING Claude-specific. `path` is RELATIVE to the skill's own
-# directory; each consumer prefixes it itself (`.claude/skills/<name>/<path>`,
-# `.agents/skills/<name>/<path>`, …). It sits here rather than in a new
-# top-level directory for two mechanical reasons, not for a conceptual one:
+# `path` is RELATIVE to the skill's own directory; the consumer prefixes it
+# itself (`.claude/skills/<name>/<path>`). Skills are Claude-only: Codex is a
+# reviewer, not an APEX runner, and no longer receives a translated copy. It
+# sits here rather than in a new top-level directory for two mechanical
+# reasons:
 #   - `flake.nix` runs nixfmt over `home/claude-code/*.nix` and over no
 #     directory that does not exist yet, so a new home would be unformatted
 #     and unchecked;
@@ -31,9 +29,9 @@
 # and never stores it, because a stored flag is one more hand-kept list.
 #
 # ORDER IS PART OF THE CONTRACT. `manifest` is a LIST and must never become an
-# attribute set: nix sorts attribute names alphabetically, and the Codex module
-# writes its output in the order it is given. A set would reorder the tree
-# behind your back on the next read.
+# attribute set: nix sorts attribute names alphabetically, and consumers see
+# entries in the order they are given. A set would reorder the tree behind
+# your back on the next read.
 #
 # No argument on purpose: `checks/apex-consistency.nix` imports `skills.nix`
 # bare, and any check must be able to import this the same way.

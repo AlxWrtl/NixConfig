@@ -1202,8 +1202,8 @@
   # is what eventually retired economy mode entirely on 2026-08-17.
   #
   # Rule: a typed flag is a FLOOR, never a ceiling. A risk signal can only
-  # raise the tier. `-e` (external verify) is passed through untouched: never
-  # stripped, and never added by a risk signal — see the comment below.
+  # raise the tier. `-e` (external verify) is never stripped when typed, and is
+  # added only on a HIGH signal, as part of the High-stakes set — see below.
   # Uppercase disables the user typed on purpose are preserved.
   #
   # False positives are the intended failure direction: a task that merely
@@ -1242,16 +1242,17 @@
 
         // -e now means external verify: one cross-vendor read-only pass over
         // the same diff. The hook must never STRIP it — deleting a typed flag
-        // makes the feature inert with no error anywhere. And, the operative
-        // half, the hook must never ADD it either: a risk signal may raise the
-        // depth of a run, but it may not spend another vendor's allowance
-        // without the user typing the letter.
+        // makes the feature inert with no error anywhere. It is ADDED only on a
+        // HIGH signal, mirroring the High-stakes default set of the Mode Gate;
+        // a typed -E still wins (the uppercase-OFF loop below). STANDARD never
+        // adds it: another vendor's round-trip is spent only where a miss is
+        // expensive.
         const kept = typed.slice();
 
         // Branch and save left the flag surface: both are mode invariants now,
         // so the tiers only carry what is still a real flag.
         const isHigh = HIGH.test(args);
-        if (isHigh) target = ["-t", "-x", "-pr"];
+        if (isHigh) target = ["-t", "-x", "-pr", "-e"];
         else if (STANDARD.test(args)) target = ["-t", "-pr"];
         else process.exit(0);
 
@@ -1274,7 +1275,9 @@
             + "credential). The Fable read-only pass is MANDATORY for this run: once the "
             + "machine gate is green, spawn a subagent with an explicit model: fable over "
             + "the REAL diff plus the ACs, then apply its bounded fix-list. Fable is "
-            + "read-only — it returns PASS or a fix-list and never edits."
+            + "read-only — it returns PASS or a fix-list and never edits. Unless -E was "
+            + "typed, the external cross-vendor pass (-e) also runs, IN ADDITION TO the "
+            + "Fable pass, never instead of it; a BLOCKED external verdict is an unrun check."
           : null;
 
         // Emit even when the flags are already right: without this the context
@@ -1944,7 +1947,7 @@
   # table over there, grep for this line.
   hookApexReminder = ''
     #!/usr/bin/env bash
-    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -pr -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -e vérif externe. Majuscule désactive. Question sans modification → réponse directe."
+    echo "Routage: fichier modifié → /apex. Modes: diagnosis=-x -pr -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n -e (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -e vérif externe (défaut haut-enjeu). Majuscule désactive. Question sans modification → réponse directe."
     exit 0
   '';
 

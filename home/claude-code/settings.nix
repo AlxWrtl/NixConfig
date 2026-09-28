@@ -550,8 +550,9 @@ in
         }
         {
           # Rewrites APEX flags from risk signals before the skill starts.
-          # A typed flag is a floor, never a ceiling: -e is stripped when the
-          # task text carries a risk signal, missing depth flags are added.
+          # A typed flag is a floor, never a ceiling: nothing typed is stripped;
+          # on a HIGH risk signal the missing depth flags and -e are added
+          # (-E cancels -e).
           matcher = "Skill";
           hooks = [
             {

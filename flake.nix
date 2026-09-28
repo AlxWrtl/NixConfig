@@ -63,7 +63,6 @@
         apex-plan-provenance = import ./checks/apex-plan-provenance.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
         codex-config = import ./checks/codex-config.nix { inherit pkgs; };
-        codex-skills = import ./checks/codex-skills.nix { inherit pkgs; };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };
       };

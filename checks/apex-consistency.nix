@@ -532,7 +532,13 @@ let
       let
         expected = "${m.fr}=${rowFlags m.en}";
       in
-      if pkgs.lib.hasInfix expected reminder then null else expected
+      # Bidirectional: the flag string must END where the table row ends. A
+      # bare hasInfix let the reminder carry an EXTRA flag the table dropped —
+      # "haut-enjeu=-t -x -pr -o -n" is a prefix of "... -n -e".
+      if pkgs.lib.hasInfix "${expected} |" reminder || pkgs.lib.hasInfix "${expected} (" reminder then
+        null
+      else
+        expected
     ) modeMap
   );
 
@@ -540,8 +546,9 @@ let
   # not the file — hooks.nix mentions "trivial" in legitimate comments.
   trivialAdvertised = pkgs.lib.hasInfix "trivial" reminder;
 
-  # Opt-in flags must be listed as options; -o/-n must NOT be, they are defaults.
-  neverAuto = [
+  # Typeable flags must be listed as options; -o/-n must NOT be, they are
+  # defaults. -e is a High-stakes default but opt-in elsewhere, so it stays.
+  optionFlags = [
     "-q"
     "-f"
     "-2"
@@ -550,7 +557,29 @@ let
     "-v"
     "-e"
   ];
-  missingOptions = builtins.filter (f: !(pkgs.lib.hasInfix "${f} " reminder)) neverAuto;
+  # Scoped to the text AFTER "Options:". The whole line would let a flag that
+  # appears in a mode set (-e in haut-enjeu=) stand in for its Options entry.
+  optionsPart =
+    let
+      parts = pkgs.lib.splitString "Options:" reminder;
+    in
+    if builtins.length parts != 2 then
+      throw "apex-consistency: 'Options:' occurs ${
+        toString (builtins.length parts - 1)
+      } time(s) in hookApexReminder, expected exactly 1."
+    else
+      builtins.elemAt parts 1;
+  missingOptions = builtins.filter (f: !(pkgs.lib.hasInfix "${f} " optionsPart)) optionFlags;
+
+  # -e is a default of the High-stakes row ONLY, and the risk-signal hook adds
+  # it on a HIGH signal ONLY. Token match, not hasInfix: a future "-ex" would
+  # otherwise count as "-e".
+  rowHasE = label: builtins.elem "-e" (pkgs.lib.splitString " " (rowFlags label));
+  externalDefaultDrift =
+    !(rowHasE "High-stakes")
+    || rowHasE "Diagnosis"
+    || rowHasE "Standard / complex"
+    || !(pkgs.lib.hasInfix ''"-pr", "-e"]'' hooks.hookApexFlags);
   staleOptions = builtins.filter (f: pkgs.lib.hasInfix f reminder) [
     "-o vault"
     "-n note"
@@ -686,10 +715,12 @@ pkgs.runCommand "apex-consistency-check" { } (
     fail "the UserPromptSubmit reminder still advertises a 'trivial' mode. That tier was removed on 2026-08-17; remove it from the hook line in hooks.nix."
   else if missingOptions != [ ] then
     fail (
-      "opt-in flag(s) absent from the reminder's Options list: "
+      "typeable flag(s) absent from the reminder's Options list: "
       + builtins.concatStringsSep ", " missingOptions
-      + ". These are never auto-enabled, so the model has to be told they exist."
+      + ". Outside their mode defaults these must be typed, so the model has to be told they exist."
     )
+  else if externalDefaultDrift then
+    fail "-e (external verify) drifted: it must be in the High-stakes Mode Gate row, absent from Diagnosis and Standard, and in the hook's HIGH target (`\"-pr\", \"-e\"]` in hookApexFlags)."
   else if staleOptions != [ ] then
     fail (
       "the reminder still lists as opt-in: "

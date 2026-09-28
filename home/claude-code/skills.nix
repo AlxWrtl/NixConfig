@@ -86,7 +86,7 @@ in
     | -f | -F | Test-first — a SEPARATE agent writes failing tests from the ACs before execute; read-only for the implementer |
     | -2 | | Divergence — second independent implementation of the core logic, behavioral diff; high-stakes logic only |
     | -p | -P | Premises — force/forbid the Fable premises pass |
-    | -e | -E | External verify — one cross-vendor read-only pass (Codex/GPT) over the same diff; opt-in, never auto-enabled |
+    | -e | -E | External verify — one cross-vendor read-only pass (Codex/GPT) over the same diff; default in high-stakes, opt-in elsewhere |
     | -pr | -PR | PR — commit + PR |
     | -k | -K | Tasks — dependency breakdown |
     | -v | -V | Verify — research the plan online; must trace at least one query or state why none |
@@ -197,11 +197,13 @@ in
     2. Mode default set.
     3. OFF.
 
-    Never auto-enabled — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`,
-    `-e`. Each is expensive in its own way (a second implementation, a
-    separate test-author agent, an independent Fable read spent where a miss
-    is expensive, a web search, a question put to the user, and for `-e`
-    a round-trip to another vendor's model) — none belongs on a typo fix.
+    Never auto-enabled — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`.
+    Each is expensive in its own way (a second implementation, a separate
+    test-author agent, an independent Fable read spent where a miss is
+    expensive, a web search, a question put to the user) — none belongs on a
+    typo fix. `-e` costs a round-trip to another vendor's model, so it is
+    auto-enabled ONLY as part of the High-stakes default set; in Diagnosis and
+    Standard it must be typed.
 
     ## Session model guard (run FIRST)
 
@@ -225,7 +227,7 @@ in
     |------|---------------|
     | Diagnosis | `-x -pr -o -n` |
     | Standard / complex | `-t -pr -o -n` |
-    | High-stakes | `-t -x -pr -o -n` |
+    | High-stakes | `-t -x -pr -o -n -e` |
     | Pure research | none |
 
     `-o` and `-n` are defaults, not conveniences: they are the two ends of one
@@ -236,6 +238,11 @@ in
     the graph goes stale in silence, which is the failure you never notice.
     Pure research keeps neither: it changes no file, so it has nothing to log.
     Both stay cancellable per run with `-O` / `-N` (uppercase precedence above).
+
+    `-e` rides on High-stakes only: where a miss is expensive, a reader from
+    another vendor's family is worth its round-trip. `-E` cancels it for the
+    run. A BLOCKED external verdict is an unrun check, not a pass and not a
+    reason to stop.
 
     Branch-first and the on-disk summary chain are NOT in these sets because
     they are not flags: they are behaviours of the modes themselves, described
@@ -449,8 +456,8 @@ in
 
     `matched: 0` with `total: 0` is a broken instrument, not a finding. The walk
     read nothing, so the predicate never ran; the zero describes the harness.
-    The repo already states the rule, in `checks/codex-skills-probe.sh`:
-    a predicate that cannot tell "nothing to find" from "nothing read" is not a predicate
+    The rule: a predicate that cannot tell "nothing to find" from "nothing
+    read" is not a predicate.
 
     Before reporting ANY zero: re-run the SAME probe against a case that MUST
     match — a line you already have in front of you — and show it returning
@@ -1945,7 +1952,7 @@ in
     | Run tests | test-runner | sonnet |
     | Self-verify (every task) | COORDINATOR inline (Opus 5.5) | none — fresh-context adversarial pass |
     | High-stakes verify | fable verifier subagent | `fable` — READ-ONLY, bounded verdict |
-    | External verify (`-e`, opt-in) | codex CLI subprocess, not an Agent spawn | `gpt-6-astra` → `gpt-5.6-terra` — READ-ONLY, bounded verdict |
+    | External verify (`-e`, default high-stakes) | codex CLI subprocess, not an Agent spawn | `gpt-6-astra` → `gpt-5.6-terra` — READ-ONLY, bounded verdict |
 
     Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
     models — a model switch pays the ~15× subagent/context tax. Switch model only
@@ -2029,10 +2036,9 @@ in
 
     ## External verify (`-e`) — one cross-vendor read-only pass
 
-    `-e` is opt-in. No mode default set carries it, and the risk-signal hook
-    never adds it: a risk signal may raise the DEPTH of a run, but it may not
-    spend another vendor's allowance without the user typing the letter. When
-    the user does type it, the pass runs
+    `-e` is a default of the High-stakes set only; the risk-signal hook adds it
+    only on a HIGH signal, `-E` cancels it, and in Diagnosis or Standard it
+    runs only when typed. Wherever it is on, the pass runs
     IN ADDITION TO the Fable diff pass, never instead of it.
     Read that as a rule about substitution, not about triggering: `-e` never
     stands in for a Fable pass that was due, and it never summons one that was

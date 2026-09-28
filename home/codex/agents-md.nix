@@ -29,7 +29,7 @@
 # n'a JAMAIS existé : une carte manuelle ne peut qu'être fausse en silence.
 # G7 interdit son retour dans l'une ou l'autre sortie.
 #
-# LA DIVERGENCE DU CONFIDENCE GATE EST DÉLIBÉRÉE, pas un oubli. Claude reçoit
+# LA DIVERGENCE DU DOCS GATE EST DÉLIBÉRÉE, pas un oubli. Claude reçoit
 # la règle depuis `~/.claude/rules/` à l'ouverture d'un `.nix` ; Codex n'a pas
 # de `rules/` et doit donc la porter EN PERMANENCE, inline. G5 l'épingle des
 # deux côtés : une passe d'« harmonisation » qui la remonte au tronc ou la

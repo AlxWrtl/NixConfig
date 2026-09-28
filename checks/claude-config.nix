@@ -146,9 +146,8 @@ let
     }) (builtins.filter (f: f.path == "SKILL.md") s.files)
   ) (import ../home/claude-code/skills-manifest.nix).manifest;
 
-  # Même prédicat que checks/codex-skills.nix:273, mot pour mot : un frontmatter
-  # doit ouvrir sur `---` en colonne 0. Une seconde orthographe de la même idée
-  # (regex, helper lib, paire leading/stripLead) divergerait du côté Codex.
+  # Un frontmatter doit ouvrir sur `---` en colonne 0 : sinon le scanner liste
+  # le skill avec une description absurde ou l'ignore, sans rien dire.
   skillsBadFrontmatter = builtins.filter (f: builtins.substring 0 4 f.text != "---\n") skillMds;
 
   # --- A11: le pied de contrat --------------------------------------------
@@ -166,8 +165,7 @@ let
   # dont tout le contrat tient déjà dans la `description` : ce qu'elles font,
   # quand se déclencher, quand s'arrêter, ce pour quoi elles ne sont PAS. Un
   # bloc de contrat y serait du cérémonial. Liste tenue à la main, donc gardée
-  # dans les deux sens (cf. C10 / indentedFrontmatter dans codex-skills.nix) :
-  # une exemption ne peut pas échouer toute seule, elle ne peut que devenir
+  # dans les deux sens : une exemption ne peut pas échouer toute seule, elle ne peut que devenir
   # fausse en silence, et celle que personne ne relit devient un trou.
   footerExempt = [
     "caveman"
@@ -502,7 +500,7 @@ let
         + builtins.concatStringsSep ", " (map (f: f.name) skillsMissingFooter)
         + " | listed in footerExempt but now carrying a footer, or gone from the manifest: "
         + builtins.concatStringsSep ", " deadFooterExempt
-        + " — a skill that ships without its footer ships without a contract: the model gets no statement of what the skill expects and produces, no boundary saying when NOT to use it, and no routing to the skill that should take over, so it improvises all three. The mechanism is nix again: a `''` block closed too early ends the attribute mid-document and the trailing sections land inside the NEXT attribute — it parses, A10 still sees a frontmatter at column 0, C1 still maps every attribute to a manifest entry, the 500-line ceiling is still met, and the text is simply deployed to the wrong file. That is how scrapling lost its guardrails and its contract with an all-green build. A DEAD exemption is the same failure one level up: a hand-maintained list cannot fail loudly, only be silently wrong";
+        + " — a skill that ships without its footer ships without a contract: the model gets no statement of what the skill expects and produces, no boundary saying when NOT to use it, and no routing to the skill that should take over, so it improvises all three. The mechanism is nix again: a `''` block closed too early ends the attribute mid-document and the trailing sections land inside the NEXT attribute — it parses, A10 still sees a frontmatter at column 0, the 500-line ceiling is still met, and the text is simply deployed to the wrong file. That is how scrapling lost its guardrails and its contract with an all-green build. A DEAD exemption is the same failure one level up: a hand-maintained list cannot fail loudly, only be silently wrong";
     }
     {
       name = "A12 agents: no agent runs on haiku";
@@ -510,7 +508,7 @@ let
       msg =
         "agent(s) with `model: haiku`: "
         + builtins.concatStringsSep ", " agentsOnHaiku
-        + " — the mechanical tier moved to sonnet; a haiku agent reintroduces the tier the routing table (ORCHESTRATION) and the Codex translation (no more haiku→gpt-5.6-luna rule) no longer know, so the two sides disagree on what that agent costs and can do";
+        + " — the mechanical tier moved to sonnet; a haiku agent reintroduces a tier the routing table (ORCHESTRATION) no longer knows, so the table and the agent disagree on what that agent costs and can do";
     }
     {
       name = "A13 settings: WebFetch is allowed on every domain";

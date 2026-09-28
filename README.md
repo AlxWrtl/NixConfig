@@ -106,10 +106,9 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── vscode.nix               # VS Code settings, keybindings, extensions
 │   ├── claude-code.nix          # Claude Code entrypoint — imports claude-code/
 │   ├── claude-code/             # settings, hooks, agents, skills, commands, rules…
-│   │                            #   incl. skills-manifest.nix, read by BOTH agents
+│   │                            #   incl. skills-manifest.nix (Claude skills)
 │   ├── codex.nix                # Codex CLI entrypoint — imports codex/
-│   └── codex/                   # hooks.json generator, activation, hook & merge scripts,
-│                                #   skills translation + generator for ~/.agents/skills
+│   └── codex/                   # hooks.json generator, activation, hook & merge scripts
 ├── checks/                      # Flake checks (see Quality Gates)
 │   ├── agent-instructions.nix
 │   ├── apex-consistency.nix
@@ -117,7 +116,6 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
 │   ├── claude-config.nix
 │   ├── codex-config.nix
-│   ├── codex-skills.nix
 │   ├── hook-wiring.nix
 │   └── readme-consistency.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
@@ -182,7 +180,6 @@ system.
 | `apex-plan-provenance` | Every premise in an APEX plan carries `[M]` or `[I]` as its first token: the clause still stands in step-02-plan, and the line detector is run against two inline fixtures — one correctly tagged, one identical but for a stripped tag — so a detector that stopped detecting fails instead of passing. Presence is not truth: it proves the tag is THERE, never that it is earned; falsifying a tag is the examine reviewer's job and the Fable premises pass |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
 | `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |
-| `codex-skills` | The Codex skills come from the same manifest as Claude's and say nothing about a mechanism Codex lacks: manifest ↔ skill sources is a bijection, every translation anchor still matches its passage exactly once, no Claude model or tool name survives, every frontmatter parses, descriptions stay inside the 8000-character budget |
 | `hook-wiring` | Claude Code hook wiring, from the evaluated module rather than from text: every hook file `home/claude-code.nix` installs is named by a `command` in `home/claude-code/settings.nix` and every such command names a file that exists, both senses reported apart; `additionalContext` emitted only inside `hookSpecificOutput`, the one shape the reference documents; the `hookEventName` a hook writes equal to the event registering it. Each direction is guarded by a corpus-non-empty assertion first, because an extractor that stops matching would otherwise be green forever |
 | `readme-consistency` | This file against the repo: the APEX flag table vs the skill, `/apex` examples typing only live flags, every `.nix` in `modules/` `home/` `checks/` `hosts/` present in the Structure tree, every check listed above, no dangling path, no alias documented that no attrset declares, no hard count |
 
@@ -297,7 +294,7 @@ flag set, applied to every flag you did not type.
 |------|---------------|-------|
 | Diagnosis | `-x -pr -o -n` | bug/crash — reproduce first, debugger agent implements, ships as a PR |
 | Standard | `-t -pr -o -n` | full orchestration |
-| High-stakes | `-t -x -pr -o -n` | irreversible / security / architecture / prod — adds the adversarial pass and an independent read-only verify on the real diff |
+| High-stakes | `-t -x -pr -o -n -e` | irreversible / security / architecture / prod — adds the adversarial pass, an independent read-only verify on the real diff, and the external cross-vendor pass |
 | Pure research | none | analyze only, no branch |
 
 ### Flags
@@ -313,15 +310,16 @@ Lowercase forces ON, **uppercase forces OFF** (`-PR` cancels an automatic
 | `-f` | `-F` | Test-first — a separate agent writes failing tests from the ACs; read-only for the implementer |
 | `-2` | | Divergence — second independent implementation of the core logic, behavioural diff |
 | `-p` | `-P` | Premises — force/forbid the independent premises pass |
-| `-e` | `-E` | External verify — one cross-vendor read-only pass (Codex/GPT) over the same diff |
+| `-e` | `-E` | External verify — one cross-vendor read-only pass (Codex/GPT) over the same diff; default in high-stakes |
 | `-pr` | `-PR` | Pull request — commit + PR |
 | `-k` | `-K` | Tasks — dependency breakdown into parallel waves |
 | `-v` | `-V` | Verify — research the plan online; must trace a query or say why none |
 | `-o` | `-O` | Obsidian — load vault context before planning |
 | `-n` | `-N` | Note — session note at the end, then reindex the knowledge graph |
 
-`-q`, `-f`, `-2`, `-p`, `-k`, `-v` and `-e` are never auto-enabled — each is
-expensive, and none belongs on a typo fix.
+`-q`, `-f`, `-2`, `-p`, `-k` and `-v` are never auto-enabled — each is
+expensive, and none belongs on a typo fix. `-e` is auto-enabled only in
+High-stakes (`-E` cancels it); elsewhere it must be typed.
 
 ### Invariants
 

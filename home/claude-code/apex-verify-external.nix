@@ -5,7 +5,8 @@
 # It adds to that pass, never replaces it.
 #
 # A CLI rather than an MCP server, for the same reason as libdocs: a subprocess
-# invoked only when `-e` is typed costs nothing the rest of the time, and the
+# invoked only when `-e` is on (typed, or the High-stakes default) costs nothing
+# the rest of the time, and the
 # allowlist can grant `Bash(apex-verify-external *)` instead of a broader rule.
 #
 # writeShellApplication prepends `set -euo pipefail` and runs shellcheck at

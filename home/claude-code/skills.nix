@@ -42,7 +42,7 @@ in
   skillApex = ''
     ---
     name: apex
-    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts the depth (diagnosis, standard, high-stakes) but every task runs the full analyze → plan → execute → validate chain. Opus 5.5 plans, executes and self-verifies; Fable read-only verifies the high-stakes diff by default, plus the plan's premises when the target itself is the risk. Not for pure questions or research with zero file modification."
+    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts the depth (fast, diagnosis, standard, high-stakes) but every task runs the full analyze → plan → execute → validate chain (Fast: mini-plan → execute → validate). Opus 5.5 plans, executes and self-verifies; Fable read-only verifies the high-stakes diff by default, plus the plan's premises when the target itself is the risk. Not for pure questions or research with zero file modification."
     ---
 
     # APEX: Systematic Implementation Workflow
@@ -117,11 +117,11 @@ in
 
     ${contract {
       expects = "task description with optional flags. Example: /apex -q -t implement user auth";
-      produces = "complete implementation through progressive steps: init → analyze → plan → execute → validate (+ optional: tests, examine, resolve, finish).";
+      produces = "complete implementation through progressive steps: init → analyze → plan → execute → validate (Fast: mini-plan → execute → validate) (+ optional: tests, examine, resolve, finish).";
       sideEffects = "modifies source files, optionally creates tests, commits, creates PRs.";
     }}
     ${scope {
-      useWhen = "EVERY task that modifies files, in any project, any size — the mode gate adapts the depth (debugger-as-implementer for bugs, adversarial pass on high-stakes) but always orchestrates.";
+      useWhen = "EVERY task that modifies files, in any project, any size — the mode gate adapts the depth (fast single implementer for 1-2 file short changes, debugger-as-implementer for bugs, adversarial pass on high-stakes) but always orchestrates.";
       notFor = "Pure questions or research with zero file modification → answer directly, no workflow.";
     }}
 
@@ -225,6 +225,7 @@ in
 
     | Mode | Default flags |
     |------|---------------|
+    | Fast | `-pr -n` |
     | Diagnosis | `-x -pr -o -n` |
     | Standard / complex | `-t -pr -o -n` |
     | High-stakes | `-t -x -pr -o -n -e` |
@@ -237,6 +238,8 @@ in
     NEXT session. Drop `-n` and the loop stays open — no note, no reindex, and
     the graph goes stale in silence, which is the failure you never notice.
     Pure research keeps neither: it changes no file, so it has nothing to log.
+    Fast keeps -n (the note and reindex close the loop) and drops -o (a graph
+    read buys nothing on a typo).
     Both stay cancellable per run with `-O` / `-N` (uppercase precedence above).
 
     `-e` rides on High-stakes only: where a miss is expensive, a reader from
@@ -248,17 +251,42 @@ in
     they are not flags: they are behaviours of the modes themselves, described
     under "Invariants of every mode" below.
 
-    - There is NO trivial tier. It was removed on 2026-08-17: it was the only
-      mode that ran inline, and an inline run is one where the coordinator
-      grades its own work. A small diff is not a safe diff — the two smallest
-      changes measured (a 45-rule rewrite and a blocking hook) were also the
-      two that most needed the chain. Size picks the DEPTH, never whether to
-      orchestrate.
+    - There is NO inline tier. The trivial tier (removed 2026-08-17) ran
+      inline, and an inline run is one where the coordinator grades its own
+      work. Fast is not that tier: the coordinator never grades its own work —
+      a separate implementer subagent writes the diff. A small diff is not a
+      safe diff — the two smallest changes measured (a 45-rule rewrite and a
+      blocking hook) were also the two that most needed the chain. Size picks
+      the DEPTH, never whether to orchestrate.
+    - **Fast** — 1-2 files, short change (text/doc/comment, a config value, a
+      package added). Fast is never chosen on a HIGH risk signal,
+      never for Diagnosis.
+      Precedence: HIGH > Diagnosis > Fast — a bug/crash brief is Diagnosis
+      even at 1 file.
+      Fast is ineligible when -t, -x or -e is active, typed or hook-added.
+      Run: the coordinator writes a 3-5 line mini-plan in `02-plan.md` plus
+      `02-acs.md`. The mini-plan MUST carry `Files:` (max 2 paths), passed
+      verbatim to the implementer as its write boundary. The coordinator then
+      spawns ONE implementer subagent (`model: sonnet`, or `opus` effort low),
+      reads the real diff and runs the machine gate itself; branch + PR +
+      merge as step-09.
+      Fast escalates to Standard when, at 04-validate, the real diff
+      (`git add -N . && git diff --numstat {trunk} -- . ':!.claude/output'`,
+      tracked + untracked, APEX's own artifacts excluded)
+      exceeds 2 files or 20 changed lines, touches a HIGH path,
+      or the gate is red.
+      HIGH path = any diff path in the hook's HIGH class or CLAUDE.md's
+      secrets rule — hooks.nix, settings.nix, sandbox/permission config,
+      `.env*`, secrets/, `*token*`/`*key*`/`*cert*` — checked on the
+      mini-plan's `Files:` BEFORE the implementer is spawned, and again on
+      the real diff.
+      The escalation keeps the branch and the diff, re-enters 01-analyze with
+      the Standard flags, and records the cause in 00-context.md.
     - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
       the error first; execute phase spawns the debugger agent (`model: opus`)
       as implementer. Stays inside APEX. Ships like the other modes: `-pr` is a
-      default, so the fix ends as a PR on its branch — never merged without the
-      user.
+      default, so the fix ends as a PR on its branch, merged automatically
+      once the gate is green (as step-09).
     - **Standard / complex**: full orchestration per ORCHESTRATION.md.
     - **High-stakes** — irreversible / security / architecture / prod: adds the
       adversarial pass, plus the Fable read-only verify on the real diff.
@@ -339,7 +367,12 @@ in
 
     ## Next Step
 
-    Read [step-01-analyze.md](step-01-analyze.md) and execute it.
+    Consult ROUTING.md.
+    If Fast:
+      Write `02-plan.md` (3-5 lines, `Files:` list) and `02-acs.md`, then read
+      [step-03-execute.md](step-03-execute.md) and execute it.
+    Else:
+      Read [step-01-analyze.md](step-01-analyze.md) and execute it.
   '';
 
   # --- Step 00b: Branch ---
@@ -388,6 +421,8 @@ in
     | 03-execute | pending | |
     | 04-validate | pending | |
     ```
+
+    Fast: mark 01-analyze `skipped (Fast)` and 02-plan `coordinator mini-plan`.
 
     After each step completes, update this progress table.
 
@@ -1052,7 +1087,8 @@ in
     Do NOT deviate from the plan. Do NOT add features that weren't planned.
 
     Per ORCHESTRATION.md: your input is the plan phase summary + the persisted
-    plan path. Return the execute phase summary schema.
+    plan path. Return the execute phase summary schema. (Fast: no step-01
+    exists; the mini-plan is the whole input.)
 
     Before the first edit, re-check the "Conflicts & Constraints" from step-01:
     if implementation reveals a conflict that was missed, STOP and revise the
@@ -1179,6 +1215,8 @@ in
 
     ## Next Step
 
+    Fast: apply the 04-validate Fast row of the linear spine FIRST (measure
+    the diff, escalate if it trips), then the terminal router.
     Apply the shared terminal router in [ROUTING.md](ROUTING.md) (this is
     04-validate → rule 1 `-t` is in play).
   '';
@@ -1775,7 +1813,7 @@ in
           "name": "minimal-task-still-orchestrated",
           "category": "minimal",
           "prompt": "apex add a missing semicolon in index.ts",
-          "expected_behavior": "APEX runs the full chain: no trivial tier exists and nothing is redirected out of APEX.",
+          "expected_behavior": "APEX runs; Fast still spawns an implementer; nothing runs inline.",
           "assertions": [
             {"type": "pattern", "value": "step-00|[Ii]nitializ", "description": "Must initialize rather than shortcut"},
             {"type": "pattern", "value": "ORCHESTRATION|subagent|spawn|phase", "description": "Must actually orchestrate, not merely announce initialization"},
@@ -1882,12 +1920,13 @@ in
 
     | From | Next (unconditional) |
     |------|----------------------|
-    | 00-init | 01-analyze |
+    | 00-init | 03-execute IF Fast (coordinator writes the 02-plan.md mini-plan and 02-acs.md), else 01-analyze |
     | 01-analyze | 01b-obsidian IF `-o`, else 02-plan |
     | 01b-obsidian | 02-plan |
     | 02-plan | 02c-verify IF `-v`, else 03-execute |
     | 02c-verify | 03-execute |
     | 03-execute | 04-validate |
+    | 04-validate (Fast only, before the terminal router below) | 01-analyze with Standard flags IF diff > 2 files / > 20 lines, HIGH path touched, or gate red; record cause in 00-context.md |
 
     ## Post-validate / post-tests / post-resolve — shared terminal router
 
@@ -1949,6 +1988,8 @@ in
     | Plan | plan phase agent | `opus` (effort high/max) |
     | Execute (parallel waves under `-k`, coordinator's call) | implementer agents | `opus` (low effort mechanical) |
     | Bulk / large-context execute | implementer agents | `sonnet` |
+    | Fast plan | coordinator inline | none |
+    | Fast implementer | implementer agent | `sonnet` (or `opus` effort low) |
     | Run tests | test-runner | sonnet |
     | Self-verify (every task) | COORDINATOR inline (Opus 5.5) | none — fresh-context adversarial pass |
     | High-stakes verify | fable verifier subagent | `fable` — READ-ONLY, bounded verdict |
@@ -2162,9 +2203,11 @@ in
 
     ## When this applies
 
-    - Always active. There is no inline mode to opt out into — the trivial tier
-      was removed on 2026-08-17 precisely because it let the coordinator grade
-      its own work.
+    - Always active. There is no inline mode: even Fast spawns a separate
+      implementer, so the coordinator never grades its own work.
+    - Fast is the ONE carve-out: no analyze phase, the coordinator writes the
+      3-5 line mini-plan itself (a plan is not graded code); execute is still a
+      separate implementer spawn and validate runs as step-04.
     - Forces `-s` (save) ON: the chain of summaries is also persisted to disk so
       it survives compaction and enables manual resume from disk. Fresh context + external
       memory are two halves of the same mechanism; do not enable one without the other.

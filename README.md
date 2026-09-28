@@ -292,6 +292,7 @@ flag set, applied to every flag you did not type.
 
 | Mode | Default flags | Notes |
 |------|---------------|-------|
+| Fast | `-pr -n` | 1-2 files, short change — separate implementer, auto-escalates to Standard |
 | Diagnosis | `-x -pr -o -n` | bug/crash — reproduce first, debugger agent implements, ships as a PR |
 | Standard | `-t -pr -o -n` | full orchestration |
 | High-stakes | `-t -x -pr -o -n -e` | irreversible / security / architecture / prod — adds the adversarial pass, an independent read-only verify on the real diff, and the external cross-vendor pass |

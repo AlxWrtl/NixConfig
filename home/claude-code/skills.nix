@@ -266,7 +266,12 @@ in
       Fast is ineligible when -t, -x or -e is active, typed or hook-added.
       Run: the coordinator writes a 3-5 line mini-plan in `02-plan.md` plus
       `02-acs.md`. The mini-plan MUST carry `Files:` (max 2 paths), passed
-      verbatim to the implementer as its write boundary. The coordinator then
+      verbatim to the implementer as its write boundary. It also
+      carries a `Style:` line and a `Docs:` line, passed verbatim too:
+      `Style:` names the step-01-analyze.md style sources that exist, read
+      by path, or `none`; `Docs:` follows the Docs line section of step-02-plan.md.
+      `02-acs.md` carries the `Docs:` line as `AC-docs:`.
+      The coordinator then
       spawns ONE implementer subagent (`model: sonnet`, or `opus` effort low),
       reads the real diff and runs the machine gate itself; branch + PR +
       merge as step-09.
@@ -369,7 +374,8 @@ in
 
     Consult ROUTING.md.
     If Fast:
-      Write `02-plan.md` (3-5 lines, `Files:` list) and `02-acs.md`, then read
+      Write `02-plan.md` (3-5 lines: `Files:`, `Style:`, `Docs:`) and `02-acs.md`
+      (ACs + `AC-docs:`), then read
       [step-03-execute.md](step-03-execute.md) and execute it.
     Else:
       Read [step-01-analyze.md](step-01-analyze.md) and execute it.
@@ -472,7 +478,13 @@ in
     Document your findings:
     - **Requirements**: what exactly needs to be built
     - **Affected files**: list of files to create/modify
-    - **Conventions**: patterns to follow (naming, structure, imports)
+    - **Style sources**: each of CLAUDE.md, AGENTS.md, `.claude/rules/`,
+      CONTRIBUTING*, .editorconfig, lint/format configs, docs/*style* that
+      exists, cited by path as read — or `none`. A fixed list, not a sample.
+    - **Conventions**: patterns to follow (naming, structure, imports), each
+      traced to a style source or a `file:line` example
+    - **Versions**: installed version of each library or flake input the task
+      touches, read from its lockfile, never from memory (feeds the plan's `Docs:` line)
     - **Dependencies**: libraries, utilities, types to use
     - **Risks**: potential issues or unknowns
 
@@ -867,6 +879,29 @@ in
 
     5. **Risks & Mitigations**
 
+    ## Docs line — categorical, not a confidence score
+
+    A plan with any task that writes or changes a library API call, a config
+    option, a function signature or a dependency version carries a `Docs:` line
+    per language or library.
+    Nothing of that kind (prose, comments, a typo) → `Docs: n/a (text)`.
+    The trigger is the category of the change, never how sure you feel.
+    Format: `Docs: {lib}@{installed version} — {source} (rung N)`.
+
+    Installed version first: read from the lockfile BEFORE any search —
+    package.json + pnpm-lock.yaml, flake.lock, pyproject.toml / uv.lock, Cargo.lock.
+    Then the ladder; stop at the first rung that answers:
+    1. Pinned `libdocs <name> "<question>"` (`libdocs --list`).
+    2. `libdocs --search <lib>`, keeping only an id filtered to the installed major.
+    3. Official site: WebFetch the doc page, or WebSearch restricted to the official domain.
+    4. Source at the pinned version: `node_modules/{pkg}`, the `/nix/store` tree of the flake.lock rev, the GitHub tag.
+    5. Nothing found: run the mechanical probe NOW, at plan time (`nix eval`, a
+       typecheck stub), and cite its output in the `Docs:` line as `[M]`; no
+       probe possible → it is an open question, never a task.
+    Mechanical proof beats a doc page when one exists (`nix eval`, typecheck): name it in the `Docs:` line.
+
+    A plan whose tasks touch one of these categories and carries no `Docs:` line is REJECTED at approval and re-briefed, never executed.
+
     ## Create TodoWrite Checklist
 
     Convert tasks into a TodoWrite checklist. Only ONE todo can be in_progress at a time.
@@ -876,6 +911,8 @@ in
     Besides the plan, write the Acceptance Criteria — and nothing else, no
     premises, no rationale, no task list — to
     `.claude/output/apex/{task-id}/02-acs.md`.
+    Copy every `Docs:` line into it as one criterion, `AC-docs:` — a condition
+    on the diff, not rationale — so validate, Fable and `-e` check it without the plan.
     A verifier is handed 02-acs.md and never the plan. That file is the ONLY thing a
     verifier is ever handed as the spec. The plan is not a substitute: it
     carries the reasoning, and a reviewer told why the code is right stops
@@ -946,13 +983,17 @@ in
 
     YOU ARE A RESEARCHER, not an implementer. Do NOT write any code yet.
     Your job is to verify that the plan from step-02 is based on correct, up-to-date information.
+    The plan's `Docs:` lines (step-02-plan.md) already source each API and option
+    at its installed version. Do not redo the plan's `Docs:` lines: `-v` is the extra
+    online pass — deprecations, better alternatives, CVEs, recency — and it
+    re-researches online every `Docs:` entry that fell to rung 5.
 
     ## Process
 
     For each major technical decision in the plan, verify it against current reality:
 
-    1. **APIs & Libraries**: WebSearch for the latest docs of any library/framework used.
-       - Is the API still current? Has it been deprecated?
+    1. **APIs & Libraries**: WebSearch only for what the `Docs:` line does not settle:
+       - Has the API been deprecated?
        - Are there newer/better alternatives?
        - Check version compatibility.
 
@@ -963,8 +1004,9 @@ in
 
     3. **Configuration & Syntax**: If touching config files (nix, tsconfig, eslint, etc.):
        - WebFetch the official documentation page
-       - Verify option names, types, and default values
-       - Check if options have been renamed, removed, or deprecated
+       - Verify rung-5 entries, and options renamed/removed/deprecated since the
+         installed version; names/types already sourced in the `Docs:` line are
+         not re-verified
 
     4. **Security**: If the plan involves auth, crypto, or sensitive data:
        - Verify the recommended approach hasn't changed
@@ -1108,7 +1150,11 @@ in
     ## Rules
 
     - ONE todo in_progress at a time
-    - Follow the conventions identified in Step 01
+    - Follow the plan's style: step-01's Style sources and Conventions, or in
+      Fast the mini-plan's `Style:` line — never conventions from memory
+    - Write no library API call, config option or signature the plan's `Docs:`
+      line does not cover: STOP and return `UNSOURCED_API: {symbol} — {file}`;
+      the coordinator re-plans
     - Reuse existing utilities and patterns — don't reinvent
     - If you encounter something unexpected, note it but stay on plan
     - If a task is blocked, skip it and note the blocker
@@ -1196,6 +1242,11 @@ in
        report `pre-existing (baseline red at init)`. Green at init and red now
        → finding. Baseline recorded as skipped → no red may be dismissed at
        all; say so explicitly rather than guessing which side it came from.
+    7. **Docs coverage**: every library API call, config option, signature or
+       version pin the real diff adds must have its source in `AC-docs:` (02-acs.md).
+       One without is a finding, sent back to plan, never waived; `Docs: n/a (text)`
+       over a diff that adds one is a finding too. AC-docs is an AC, so the Fable
+       and `-e` passes check it with no extra brief.
 
     ## Divergence check (`-2`)
 
@@ -2000,7 +2051,8 @@ in
     when the tier gap is real (sonnet for mechanical and bulk work).
 
     Plan approval: the coordinator reads the returned plan, checks it against the
-    task + analyze summary, then approves it or re-briefs the planner. Execute
+    task + analyze summary, then approves it or re-briefs the planner — and
+    re-briefs any plan missing its `Docs:` line (step-02-plan.md). Execute
     never starts on an unapproved plan. The planner drafts the premises but never
     talks to the user — it has no user channel. So it is the COORDINATOR that
     presents the plan's Premises to the user at approval time.

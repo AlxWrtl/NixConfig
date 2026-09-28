@@ -867,7 +867,7 @@
     });
   '';
 
-  # Turns the React Confidence Gate from advice into a delivered reminder.
+  # Turns the React Docs Gate from advice into a delivered reminder.
   #
   # rules/react.md carries the same content, but a path-scoped rule loads only
   # when a matching file is READ — an edit written from memory, with no prior
@@ -902,7 +902,7 @@
 
         const ctx = [
           "Stack: React 19 + React Router 7 + TypeScript.",
-          "Before writing an API you are not certain of, look it up:",
+          "Before writing any React or React Router API, signature or version detail, look it up:",
           "`libdocs react \"<question>\"` or `libdocs rr \"<question>\"`.",
           "The ids are pinned because a raw doc search ranks React Router v5 above v7.",
           "Do not write `useFormState` (v18 name) and do not import from",

@@ -32,7 +32,7 @@
 #
 # CE QUI N'ENTRE PAS ICI : tout ce qui nomme un mécanisme qu'un des deux
 # agents n'a pas. Model Allocation, Tool Selection, Vault Retrieval,
-# Delegation sont des mécanismes Claude ; le Confidence Gate inline est un
+# Delegation sont des mécanismes Claude ; le Docs Gate inline est un
 # delta Codex, parce que Codex n'a pas de `rules/` chargé à l'ouverture d'un
 # fichier. Une instruction qui nomme un outil absent n'est pas neutre : le
 # modèle la lit et cherche l'outil.

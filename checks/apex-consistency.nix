@@ -12,6 +12,7 @@
 
 let
   skills = import ../home/claude-code/skills.nix;
+  rules = import ../home/claude-code/rules.nix;
   # Stub, not a default argument in hooks.nix: this check only ever reads hook
   # TEXT, so any store path does. Making the argument optional over there would
   # let a missing wiring in claude-code.nix pass in silence and ship a hook whose
@@ -574,7 +575,190 @@ let
       needle = "Fast mode is NOT eligible";
       scope = hooks.hookApexFlags;
     }
+    # Docs grounding. One source per concern: the style list lives in step-01,
+    # the Docs line + lockfile-first + ladder in step-02, the nix specifics in
+    # ruleNix; every other site points to them. A needle per site, because a
+    # pointer that loses its target reads as a rule and enforces nothing.
+    {
+      # Fast skips step-01, so the mini-plan is the only carrier of the style
+      # sources and the Docs line the implementer receives.
+      name = "init: the Fast mini-plan carries a Style and a Docs line";
+      needle = "carries a `Style:` line and a `Docs:` line";
+      scope = fastBullet;
+    }
+    {
+      name = "init: the Fast Style line names step-01's style sources";
+      needle = "`Style:` names the step-01-analyze.md style sources";
+      scope = fastBullet;
+    }
+    {
+      # Fast never reads step-02, so without this AC-docs never reaches the
+      # 02-acs.md that step-04's Docs coverage item checks against.
+      name = "init: the Fast 02-acs.md carries AC-docs";
+      needle = "`02-acs.md` carries the `Docs:` line as `AC-docs:`";
+      scope = fastBullet;
+    }
+    {
+      name = "init: the Fast Next Step writes Files, Style and Docs";
+      needle = "(3-5 lines: `Files:`, `Style:`, `Docs:`)";
+      scope = skills.apexStep00Init;
+    }
+    {
+      # A fixed list, not a sample: "conventions" found by browsing are the
+      # ones the model already expected.
+      name = "analyze: style sources are a fixed list, read by path";
+      needle = "**Style sources**: each of CLAUDE.md, AGENTS.md";
+      scope = skills.apexStep01Analyze;
+    }
+    {
+      name = "analyze: an absent style source is cited as none";
+      needle = "exists, cited by path as read — or `none`.";
+      scope = skills.apexStep01Analyze;
+    }
+    {
+      name = "analyze: versions come from the lockfile";
+      needle = "read from its lockfile, never from memory";
+      scope = skills.apexStep01Analyze;
+    }
+    {
+      # The trigger is the category of the change. A self-rated confidence is
+      # what the old gate used, and a confident model never trips it.
+      name = "plan: the Docs line trigger is categorical";
+      needle = "function signature or a dependency version carries a";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "plan: a text-only change says Docs n/a";
+      needle = "→ `Docs: n/a (text)`.";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "plan: the installed version is read before any search";
+      needle = "read from the lockfile BEFORE any search";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "plan: ladder rung 1 is the pinned libdocs id";
+      needle = "1. Pinned `libdocs <name>";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # A raw doc search ranks the OLD major higher (React Router v5 over v7).
+      name = "plan: ladder rung 2 filters to the installed major";
+      needle = "filtered to the installed major";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "plan: ladder rung 3 stays on the official domain";
+      needle = "WebSearch restricted to the official domain";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "plan: ladder rung 4 reads source at the pinned version";
+      needle = "Source at the pinned version";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # Rung 5 is a probe run at plan time, not a guess deferred to validate:
+      # an [I] premise is measured before it is used, or it is a question.
+      name = "plan: an unsourced API is probed at plan time";
+      needle = "run the mechanical probe NOW, at plan time";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "plan: mechanical proof beats a doc page";
+      needle = "Mechanical proof beats a doc page";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "plan: a plan missing its Docs line is rejected at approval";
+      needle = "carries no `Docs:` line is REJECTED at approval";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # Validate, Fable and -e read 02-acs.md, never the plan: a Docs line that
+      # stays in the plan is invisible to every reviewer.
+      name = "plan: Docs lines are copied into 02-acs.md as AC-docs";
+      needle = "Copy every `Docs:` line into it as one criterion, `AC-docs:`";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "verify: -v does not redo the plan's Docs lines";
+      needle = "Do not redo the plan's `Docs:` lines";
+      scope = skills.apexStep02cVerify;
+    }
+    {
+      name = "verify: -v re-researches every rung-5 Docs entry";
+      needle = "every `Docs:` entry that fell to rung 5";
+      scope = skills.apexStep02cVerify;
+    }
+    {
+      # Fast skips step-01: without this the implementer follows conventions
+      # from a step that never ran.
+      name = "execute: Fast takes its style from the mini-plan";
+      needle = "Fast the mini-plan's `Style:` line";
+      scope = skills.apexStep03Execute;
+    }
+    {
+      name = "execute: an API outside the Docs line stops the implementer";
+      needle = "`UNSOURCED_API: {symbol}";
+      scope = skills.apexStep03Execute;
+    }
+    {
+      name = "validate: the real diff is checked against AC-docs";
+      needle = "version pin the real diff adds must have its source in `AC-docs:`";
+      scope = skills.apexStep04Validate;
+    }
+    {
+      name = "orchestration: approval re-briefs a plan missing its Docs line";
+      needle = "re-briefs any plan missing its `Docs:` line";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # The path-scoped rules are read on opening a file, outside any APEX run:
+      # each must point at the single source, not restate a gate of its own.
+      name = "rules: ruleNix points to the step-02 Docs line";
+      needle = "the Docs line in APEX step-02-plan.md";
+      scope = rules.ruleNix;
+    }
+    {
+      name = "rules: ruleTypescript points to the step-02 Docs line";
+      needle = "the Docs line in APEX step-02-plan.md";
+      scope = rules.ruleTypescript;
+    }
+    {
+      name = "rules: ruleReact points to the step-02 Docs line";
+      needle = "the Docs line in APEX step-02-plan.md";
+      scope = rules.ruleReact;
+    }
+    {
+      name = "rules: ruleNix names a mechanical nix eval proof";
+      needle = "Proof beats prose: `nix eval";
+      scope = rules.ruleNix;
+    }
   ];
+
+  # The removed trigger, guarded by absence. The invariants above prove the
+  # categorical wording is present; they cannot see a self-rated threshold
+  # re-added next to it, which is what a confident model never trips.
+  confidenceSites = {
+    inherit (rules) ruleNix ruleTypescript ruleReact;
+    inherit (hooks) hookReactDocsGate;
+    inherit (skills)
+      apexStep00Init
+      apexStep02Plan
+      apexStep03Execute
+      apexStep04Validate
+      ;
+  };
+  staleConfidence = builtins.filter (
+    n:
+    builtins.any (s: pkgs.lib.hasInfix s confidenceSites.${n}) [
+      "< 80%"
+      "Rate confidence"
+      "not certain of"
+    ]
+  ) (builtins.attrNames confidenceSites);
 
   # Non-vacuity, asserted at the DEFINITION and not at the use site. `hasInfix
   # ""` is true against every string, so a needle emptied by a bad edit turns
@@ -821,6 +1005,12 @@ pkgs.runCommand "apex-consistency-check" { } (
     )
   else if missingInvariants != [ ] then
     fail ("lost invariant(s): " + builtins.concatStringsSep "; " (map (i: i.name) missingInvariants))
+  else if staleConfidence != [ ] then
+    fail (
+      "confidence-score docs trigger is back in: "
+      + builtins.concatStringsSep ", " staleConfidence
+      + ". The trigger is categorical (API call / option / signature / version); a self-rated confidence is what fails silently."
+    )
   else if unknownSuiteFlags != [ ] then
     fail (
       "the eval-suite types flag(s) the skill no longer declares: "

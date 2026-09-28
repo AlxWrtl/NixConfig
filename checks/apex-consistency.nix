@@ -545,6 +545,11 @@ let
       scope = fastBullet;
     }
     {
+      name = "init: Fast measurement excludes APEX's own artifacts";
+      needle = "':!.claude/output'";
+      scope = fastBullet;
+    }
+    {
       name = "init: HIGH and Diagnosis take precedence over Fast";
       needle = "Precedence: HIGH > Diagnosis > Fast";
       scope = fastBullet;

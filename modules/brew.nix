@@ -52,7 +52,6 @@
       "raycast"
       "readdle-spark"
       "visual-studio-code"
-      "vivaldi"
       "microsoft-teams"
       "whatsapp"
       "jellyfin"
@@ -64,10 +63,6 @@
       }
       {
         name = "appcleaner";
-        greedy = true;
-      }
-      {
-        name = "balenaetcher";
         greedy = true;
       }
       {
@@ -84,14 +79,6 @@
       }
       {
         name = "ghostty";
-        greedy = true;
-      }
-      {
-        name = "hp-easy-admin";
-        greedy = true;
-      }
-      {
-        name = "hp-easy-start";
         greedy = true;
       }
       {

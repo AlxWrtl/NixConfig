@@ -18,6 +18,12 @@
       url = "https://flakehub.com/f/DeterminateSystems/determinate/3";
       inputs.nixpkgs.follows = "nixpkgs";
     };
+
+    # DESIGN.md library (brand design systems) read by the `design-md` skill
+    awesome-design-md = {
+      url = "github:VoltAgent/awesome-design-md";
+      flake = false;
+    };
   };
 
   outputs =

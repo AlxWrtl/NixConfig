@@ -3186,6 +3186,56 @@ in
   '';
 
   # =========================================================================
+  # design-md — brand design systems from VoltAgent/awesome-design-md.
+  # The library/ directory is the flake input (pinned in flake.lock), linked
+  # next to this SKILL.md by home/claude-code.nix.
+  # =========================================================================
+  skillDesignMd = ''
+    ---
+    name: design-md
+    description: "Brand design-system library: one DESIGN.md per brand (palette, typography, spacing, radii, elevation, components, do's and don'ts) for ~70 products such as Stripe, Linear, Vercel, Apple, Notion, Claude, Figma, Supabase, Spotify. Use when creating or restyling any UI, web page, landing page, dashboard, artifact, mockup, component styling, theme or design system, or when the user asks for a look like Stripe, Linear, Vercel or another named brand, or for a tone (minimal, editorial, dark dev-tool, fintech, playful). Not for backend code, and not for cloning a real brand on a page meant to be published."
+    ---
+
+    # design-md — Brand Design Systems
+
+    `~/.claude/skills/design-md/library/<brand>/DESIGN.md` is the source of
+    truth for that brand's look. Its YAML frontmatter holds the tokens
+    (`colors`, `typography`, spacing, radii); the body explains Colors,
+    Typography, Layout, Elevation, Shapes, Components, Do's and Don'ts,
+    Responsive Behavior. `README.md` next to it is only a link — skip it.
+
+    ## Steps
+
+    1. List brands: `ls ~/.claude/skills/design-md/library/`
+       (directory names are the ids: `stripe`, `linear.app`, `vercel`, `claude`…).
+    2. Pick the brand the user named. No brand named → pick the one whose
+       tone is closest to the request and say which one you chose.
+    3. Read ONLY the one or two DESIGN.md you need, never the whole library.
+    4. Apply its tokens and rules to the code you write (CSS variables,
+       Tailwind theme, component styles); keep its Do's and Don'ts.
+
+    ## Guardrails
+
+    - Inspiration, not impersonation: for anything publishable, do not copy
+      a real brand's logo, name, proprietary fonts or exact identity — swap
+      in the project's own name and an open font of similar feel.
+    - The project's existing design system wins over the library when both exist.
+    ${contract {
+      expects = "a UI/design request, optionally a brand name or a tone.";
+      produces = "UI code or a design spec styled from the chosen DESIGN.md tokens.";
+      sideEffects = "none (read-only library).";
+    }}
+    ${scope {
+      useWhen = "Creating or restyling a UI, page, artifact, mockup or design system, or matching a named brand's look.";
+      notFor = "Backend or non-visual code, or pixel-cloning a real brand for a public page.";
+    }}
+    ${handoffs [
+      "Design lives in Figma → use the Figma MCP tools with the chosen DESIGN.md as token source."
+      "Requested brand absent from library/ → say so and pick the closest tone instead."
+    ]}
+  '';
+
+  # =========================================================================
   # Trello — CLI via REST API v1 (curl). Replaces the removed MCP server.
   # Declarative, zero npx daemon. Secrets read at runtime from ~/.config/secrets.
   # =========================================================================

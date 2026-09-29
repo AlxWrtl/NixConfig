@@ -2,6 +2,7 @@
   config,
   pkgs,
   lib,
+  inputs,
   ...
 }:
 
@@ -95,7 +96,7 @@ let
   # Every skill file, derived from the manifest rather than typed out.
   #
   # `force` is COMPUTED, not stored: see the header of skills-manifest.nix.
-  # It must stay true for exactly the 14 SKILL.md plus apex/eval-suite.json,
+  # It must stay true for every SKILL.md plus apex/eval-suite.json,
   # because claudeCodeDesymlinkSkills replaces those with real copies and
   # home-manager has to be allowed to clobber them. A file under steps/ never
   # carries it.
@@ -146,6 +147,12 @@ in
     "${claudeDir}/CLAUDE.md" = {
       text = claudeMdGlobal;
     };
+
+    # design-md skill library: one directory link to the pinned flake input
+    # (~70 brands × DESIGN.md). Not in the manifest: it is data, not skill
+    # text, and a single link keeps the desymlink loop (`*/SKILL.md`) and the
+    # `*.backup` purge (find does not follow links) off it.
+    "${claudeDir}/skills/design-md/library".source = "${inputs.awesome-design-md}/design-md";
 
     # Rules (path-scoped, loaded on demand when a matching file is read)
     "${claudeDir}/rules/nix.md".text = ruleNix;

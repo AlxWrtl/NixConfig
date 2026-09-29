@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "awesome-design-md": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1789979017,
+        "narHash": "sha256-7oSgK1lTLJzhNyZHQHBErsVGHteMM2XaU2o70h9BeXw=",
+        "owner": "VoltAgent",
+        "repo": "awesome-design-md",
+        "rev": "f6961238d5cddcf8042a74a70fc400ec67181abb",
+        "type": "github"
+      },
+      "original": {
+        "owner": "VoltAgent",
+        "repo": "awesome-design-md",
+        "type": "github"
+      }
+    },
     "determinate": {
       "inputs": {
         "determinate-nixd-aarch64-darwin": "determinate-nixd-aarch64-darwin",
@@ -244,6 +260,7 @@
     },
     "root": {
       "inputs": {
+        "awesome-design-md": "awesome-design-md",
         "determinate": "determinate",
         "home-manager": "home-manager",
         "nix-darwin": "nix-darwin",

@@ -45,6 +45,9 @@ let
         inherit homeDirectory;
       };
     };
+    # Flake inputs feed only non-hook `.source` links (design-md library);
+    # this check reads `/hooks/` entries only, so the value is never forced.
+    inputs = { };
   };
 
   # Matched on "/hooks/" rather than on the module's own `claudeDir` constant:

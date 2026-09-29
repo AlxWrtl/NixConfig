@@ -250,5 +250,16 @@ in
         }
       ];
     }
+    {
+      # library/ (the awesome-design-md flake input) is a directory link,
+      # declared in home/claude-code.nix: it is not skill text.
+      name = "design-md";
+      files = [
+        {
+          path = "SKILL.md";
+          text = skills.skillDesignMd;
+        }
+      ];
+    }
   ];
 }

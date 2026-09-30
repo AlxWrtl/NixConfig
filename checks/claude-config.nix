@@ -383,6 +383,18 @@ let
   # Each entry fails on its own, with what broke and why it matters.
   assertions = [
     {
+      # Every per-item assertion below filters a corpus; an empty corpus makes
+      # each of them `[ ] == [ ]` — green over nothing. Pin the corpora first.
+      name = "A0 corpora: agents, rules and SKILL.md are parsed and none is dropped by textAttrs";
+      ok =
+        agentNames != [ ]
+        && ruleNames != [ ]
+        && skillMds != [ ]
+        && builtins.length agentNames == builtins.length (builtins.attrNames agents)
+        && builtins.length ruleNames == builtins.length (builtins.attrNames rules);
+      msg = "agents ${toString (builtins.length agentNames)}/${toString (builtins.length (builtins.attrNames agents))}, rules ${toString (builtins.length ruleNames)}/${toString (builtins.length (builtins.attrNames rules))} (string attrs/all attrs), SKILL.md ${toString (builtins.length skillMds)} — an empty corpus turns every filter below into `[ ] == [ ]`, green over nothing, and a non-string attr is skipped by textAttrs without a word";
+    }
+    {
       name = "A1 settings: JSON parses";
       ok = parsed.success && builtins.isAttrs parsed.value;
       msg = "settings.nix settingsJson is not parseable JSON — the whole ~/.claude/settings.json merge is garbage, every permission and sandbox rule below is unenforced";

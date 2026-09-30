@@ -140,7 +140,9 @@ let
   invocationFlags = lib.unique (
     map (m: "-" + builtins.head m) (
       builtins.filter builtins.isList (
-        builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" (builtins.concatStringsSep "\n" apexInvocations)
+        builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" (
+          "\n" + builtins.concatStringsSep "\n" apexInvocations
+        )
       )
     )
   );

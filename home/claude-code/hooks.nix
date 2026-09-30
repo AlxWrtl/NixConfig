@@ -1941,11 +1941,12 @@
   # that actually hurts (the rule silently not firing).
   # DUPLICATION: the mode table below is a hand-maintained COPY of the Mode
   # Gate table in skills.nix (apexStep00Init -> step-00-init.md), not derived
-  # from it. Any change to that table MUST be mirrored here by hand. It has
-  # already drifted twice: (1) the trivial tier was removed on 2026-08-17 but
-  # this line kept advertising it for months; (2) -o/-n became mode defaults
-  # while this line still listed them as opt-in options. When editing the
-  # table over there, grep for this line.
+  # from it — still edited by hand. It drifted twice ((1) the trivial tier,
+  # removed 2026-08-17, stayed advertised for months; (2) -o/-n became mode
+  # defaults while still listed as opt-in), so drift is now guarded:
+  # `modeDrift`, with `trivialAdvertised`, `missingOptions` and `staleOptions`,
+  # in checks/apex-consistency.nix fails `nix flake check` when this line and
+  # the table disagree.
   hookApexReminder = ''
     #!/usr/bin/env bash
     echo "Routage: fichier modifié → /apex. Modes: fast=-pr -n | diagnosis=-x -pr -o -n | standard=-t -pr -o -n | haut-enjeu=-t -x -pr -o -n -e (branch+save = invariants). Options: -q clarif | -f tests-first | -2 divergence | -p prémisses | -k découpage | -v recherche | -e vérif externe (défaut haut-enjeu). Majuscule désactive. Question sans modification → réponse directe."

@@ -38,9 +38,10 @@
 # refusing to run at all if a real `codex` is reachable from the PATH the cases
 # run under. A test that can accidentally bill the user is not a test.
 #
-# Standalone, like checks/scrapling-shim-fuzz.sh and
-# checks/apex-verify-external-probe.sh: NOT wired into `nix flake check`,
-# because it drives scripts that nix installs elsewhere.
+# Its malformed-stdin subset is wired into checks/codex-config.nix (run by
+# `nix flake check` against the installed scripts, git on PATH, repo on main);
+# the rest stays standalone, like checks/scrapling-shim-fuzz.sh and
+# checks/apex-verify-external-probe.sh.
 #
 # usage: codex-hooks-probe.sh [protect-main.js] [quality-gate.js] [block-main-shell.js]
 #        All three default to the repo copies, and positions 1 and 2 keep the

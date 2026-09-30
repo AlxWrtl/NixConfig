@@ -58,7 +58,19 @@ let
     builtins.attrNames claudeModule.home.file
   );
   installed = map baseNameOf installedPaths;
-  bodyOf = n: claudeModule.home.file.${n}.text or "";
+  # `text` first, then a `source` read from disk: a hook moved to `source =`
+  # must not scan as an empty body. Neither: a loud failure, never a silent "".
+  bodyOf =
+    n:
+    let
+      f = claudeModule.home.file.${n};
+    in
+    if f ? text then
+      f.text
+    else if f ? source then
+      builtins.readFile f.source
+    else
+      fail "hook ${n} has neither text nor source — its body cannot be scanned";
   bodies = builtins.listToAttrs (
     map (p: {
       name = baseNameOf p;
@@ -93,7 +105,18 @@ let
     builtins.head (
       splitString " " (builtins.head (splitString "\"" (builtins.head (splitString ";" s))))
     );
-  hookRefsIn = cmd: map firstToken (builtins.tail (splitString marker cmd));
+  # The same directory spelled through the shell or as an absolute path is
+  # folded onto the marker first; otherwise `bash $HOME/.claude/hooks/x.sh`
+  # names nothing and a dangling registration passes A2 unseen.
+  normalize =
+    builtins.replaceStrings
+      [
+        "$HOME/.claude/hooks/"
+        "\${HOME}/.claude/hooks/"
+        "${homeDirectory}/.claude/hooks/"
+      ]
+      [ marker marker marker ];
+  hookRefsIn = cmd: map firstToken (builtins.tail (splitString marker (normalize cmd)));
 
   wired = builtins.concatMap (
     r:
@@ -137,7 +160,11 @@ let
   #     a variable) is invisible, as is anything a hook prints from a file it
   #     reads. Textual matching cannot follow either;
   #   - C compares against the events under which the hook is REGISTERED, so a
-  #     hook in knownUnwired has no event to compare to and is skipped.
+  #     hook in knownUnwired has no event to compare to and is skipped;
+  #   - A resolves a registered path in four spellings only: `~/`, `$HOME/`,
+  #     `${HOME}/` and the literal home directory, each followed by
+  #     `.claude/hooks/`. A path built from any other variable, a relative
+  #     path or a symlink elsewhere names no hook — neither wired nor dangling.
   #
   # Only comment-only lines are dropped: a `//` mid-line is a URL as often as a
   # comment, and `#` is a shebang on the first line of every script here.

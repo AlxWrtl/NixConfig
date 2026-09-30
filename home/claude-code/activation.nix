@@ -51,15 +51,20 @@
     # Sous-shell + `|| true` : home-manager concatène toutes les entrées dans UN
     # shell `set -eu`, donc un find non nul (répertoire absent au tout premier
     # rebuild) tuerait tout le reste du DAG d'activation.
-    (
-      [ -d "$HOME/.claude/skills" ] \
-        && find "$HOME/.claude/skills" \( -type f -o -type l \) -name '*.backup' -delete
-    ) || true
-    # keybindings.json est passé sous nix : la version manuelle pré-existante est
-    # déplacée en .backup par home-manager (backupFileExtension = "backup") au
-    # premier rebuild. On la purge ici pour ne pas accumuler, et pour éviter le
-    # "Existing file ... would be clobbered by backing up" si elle reste.
-    rm -f "$HOME/.claude/keybindings.json.backup"
+    # Dry-run (HM sets DRY_RUN, tested for set-ness): skip, delete nothing.
+    if [[ -v DRY_RUN ]]; then
+      echo "dry-run: skip claudeCodePreLink"
+    else
+      (
+        [ -d "$HOME/.claude/skills" ] \
+          && find "$HOME/.claude/skills" \( -type f -o -type l \) -name '*.backup' -delete
+      ) || true
+      # keybindings.json est passé sous nix : la version manuelle pré-existante est
+      # déplacée en .backup par home-manager (backupFileExtension = "backup") au
+      # premier rebuild. On la purge ici pour ne pas accumuler, et pour éviter le
+      # "Existing file ... would be clobbered by backing up" si elle reste.
+      rm -f "$HOME/.claude/keybindings.json.backup"
+    fi
   '';
 
   # Fix HM GC root when nix-store --add-root fails under sudo
@@ -260,53 +265,56 @@
   # Generate config-snapshot.json dynamically from installed files
   # -------------------------
   claudeCodeConfigSnapshot = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
-    set -euo pipefail
-    SNAPSHOT="$HOME/.claude/config-snapshot.json"
-    GEN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeConfigSnapshot"; exit 0; fi
+      set -euo pipefail
+      SNAPSHOT="$HOME/.claude/config-snapshot.json"
+      GEN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Discover installed components from actual files. nullglob arrays, not
-    # `ls glob | … | jq -s`: on an empty dir that pipeline exits non-zero under
-    # pipefail and, this entry being NOT subshell-wrapped, kills the whole
-    # activation. nullglob is switched back off before the entry ends so it
-    # cannot leak into later DAG entries (same shell).
-    shopt -s nullglob
-    snapAgents=("$HOME/.claude/agents/"*.md)
-    snapSkills=("$HOME/.claude/skills/"*/SKILL.md)
-    snapCommands=("$HOME/.claude/commands/"*.md)
-    # One glob, then filter: `*.{js,sh}` would list every .js before every
-    # .sh, where `ls` sorted them together.
-    snapHooks=()
-    for snapHook in "$HOME/.claude/hooks/"*; do
-      case "$snapHook" in
-        *.js | *.sh) snapHooks+=("$snapHook") ;;
-      esac
-    done
-    shopt -u nullglob
-    snapAgents=("''${snapAgents[@]##*/}")
-    snapSkills=("''${snapSkills[@]%/SKILL.md}")
-    snapSkills=("''${snapSkills[@]##*/}")
-    snapCommands=("''${snapCommands[@]##*/}")
-    # `--args --`: without the `--`, a file named `-h.md` is read as a jq
-    # option (aborts the activation) and `-e.md` is silently dropped.
-    AGENTS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapAgents[@]%.md}")
-    SKILLS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapSkills[@]}")
-    COMMANDS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapCommands[@]%.md}")
-    HOOKS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapHooks[@]##*/}")
+      # Discover installed components from actual files. nullglob arrays, not
+      # `ls glob | … | jq -s`: on an empty dir that pipeline exits non-zero under
+      # pipefail and fails the entry; the subshell (deliberately without
+      # `|| true`) still aborts the whole activation on a real failure, and
+      # scopes `exit 0`/nullglob to this entry.
+      shopt -s nullglob
+      snapAgents=("$HOME/.claude/agents/"*.md)
+      snapSkills=("$HOME/.claude/skills/"*/SKILL.md)
+      snapCommands=("$HOME/.claude/commands/"*.md)
+      # One glob, then filter: `*.{js,sh}` would list every .js before every
+      # .sh, where `ls` sorted them together.
+      snapHooks=()
+      for snapHook in "$HOME/.claude/hooks/"*; do
+        case "$snapHook" in
+          *.js | *.sh) snapHooks+=("$snapHook") ;;
+        esac
+      done
+      shopt -u nullglob
+      snapAgents=("''${snapAgents[@]##*/}")
+      snapSkills=("''${snapSkills[@]%/SKILL.md}")
+      snapSkills=("''${snapSkills[@]##*/}")
+      snapCommands=("''${snapCommands[@]##*/}")
+      # `--args --`: without the `--`, a file named `-h.md` is read as a jq
+      # option (aborts the activation) and `-e.md` is silently dropped.
+      AGENTS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapAgents[@]%.md}")
+      SKILLS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapSkills[@]}")
+      COMMANDS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapCommands[@]%.md}")
+      HOOKS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapHooks[@]##*/}")
 
-    ${pkgs.jq}/bin/jq -n \
-      --arg date "$GEN_DATE" \
-      --argjson agents "$AGENTS" \
-      --argjson skills "$SKILLS" \
-      --argjson commands "$COMMANDS" \
-      --argjson hooks "$HOOKS" \
-      '{
-        generatedAt: $date,
-        agents: $agents,
-        skills: $skills,
-        commands: $commands,
-        hooks: $hooks
-      }' > "$SNAPSHOT"
-    chmod 600 "$SNAPSHOT"
+      ${pkgs.jq}/bin/jq -n \
+        --arg date "$GEN_DATE" \
+        --argjson agents "$AGENTS" \
+        --argjson skills "$SKILLS" \
+        --argjson commands "$COMMANDS" \
+        --argjson hooks "$HOOKS" \
+        '{
+          generatedAt: $date,
+          agents: $agents,
+          skills: $skills,
+          commands: $commands,
+          hooks: $hooks
+        }' > "$SNAPSHOT"
+      chmod 600 "$SNAPSHOT"
+    )
   '';
 
   # -------------------------

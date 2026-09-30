@@ -49,6 +49,7 @@ in
   # writes its own .backup and restores it if validation fails.
   codexConfigMerge = lib.hm.dag.entryAfter [ "codexDirs" ] ''
     (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip codexConfigMerge"; exit 0; fi
       ${configMergePkg}/bin/codex-config-merge \
         --permissions-profile "${permissionsProfile}" \
         --permissions-block ${lib.escapeShellArg permissionsBlock} \

@@ -1005,60 +1005,56 @@ let
 
   fail = msg: throw "apex-consistency: ${msg}";
 
-in
-pkgs.runCommand "apex-consistency-check" { } (
-  if vacuousInvariants != [ ] then
-    fail (
+  # `++` forces every condition, so all failures surface in one error.
+  # Branch 2 stays gated: missingInvariants reads `i.needle`, absent on a vacuous invariant.
+  problems =
+    pkgs.lib.optional (vacuousInvariants != [ ]) (
       "invariant(s) with an empty or missing needle: "
       + builtins.concatStringsSep "; " (map (i: i.name) vacuousInvariants)
       + ". An empty needle matches every string, so the invariant would report itself present forever."
     )
-  else if missingInvariants != [ ] then
-    fail ("lost invariant(s): " + builtins.concatStringsSep "; " (map (i: i.name) missingInvariants))
-  else if staleConfidence != [ ] then
-    fail (
+    ++ pkgs.lib.optional (vacuousInvariants == [ ] && missingInvariants != [ ]) (
+      "lost invariant(s): " + builtins.concatStringsSep "; " (map (i: i.name) missingInvariants)
+    )
+    ++ pkgs.lib.optional (staleConfidence != [ ]) (
       "confidence-score docs trigger is back in: "
       + builtins.concatStringsSep ", " staleConfidence
       + ". The trigger is categorical (API call / option / signature / version); a self-rated confidence is what fails silently."
     )
-  else if unknownSuiteFlags != [ ] then
-    fail (
+    ++ pkgs.lib.optional (unknownSuiteFlags != [ ]) (
       "the eval-suite types flag(s) the skill no longer declares: "
       + builtins.concatStringsSep ", " unknownSuiteFlags
       + ". schliff scores the suite's shape and cannot see this — a trigger prompt for a removed flag grades as well as a correct one."
     )
-  else if suiteContradictsRouting then
-    fail "the eval-suite still routes diagnosis to /debug while the skill says diagnosis stays INSIDE apex. It graded 91/100 in that state for months, because schliff counts cases and cannot read them against the skill."
-  else if suiteTooThin then
-    fail "the eval-suite lost a section: schliff scores triggers, test_cases (3+) and edge_cases (5+), so gutting one costs skill score silently. It fails here instead."
-  else if premisesMisplaced then
-    fail "Premises no longer precede Tasks in step-02-plan. Premises written after the task list are premises reverse-engineered to fit it."
-  else if danglingSteps != [ ] then
-    fail ("reference(s) to non-existent step file(s): " + builtins.concatStringsSep ", " danglingSteps)
-  else if modeDrift != [ ] then
-    fail (
+    ++ pkgs.lib.optional suiteContradictsRouting "the eval-suite still routes diagnosis to /debug while the skill says diagnosis stays INSIDE apex. It graded 91/100 in that state for months, because schliff counts cases and cannot read them against the skill."
+    ++ pkgs.lib.optional suiteTooThin "the eval-suite lost a section: schliff scores triggers, test_cases (3+) and edge_cases (5+), so gutting one costs skill score silently. It fails here instead."
+    ++ pkgs.lib.optional premisesMisplaced "Premises no longer precede Tasks in step-02-plan. Premises written after the task list are premises reverse-engineered to fit it."
+    ++ pkgs.lib.optional (danglingSteps != [ ]) (
+      "reference(s) to non-existent step file(s): " + builtins.concatStringsSep ", " danglingSteps
+    )
+    ++ pkgs.lib.optional (modeDrift != [ ]) (
       "the UserPromptSubmit reminder no longer matches the Mode Gate table. Missing from hookApexReminder: "
       + builtins.concatStringsSep "; " (map (d: "'${d}'") modeDrift)
       + ". The table in apexStep00Init is the source of truth — update the hook line in hooks.nix to match it."
     )
-  else if trivialAdvertised then
-    fail "the UserPromptSubmit reminder still advertises a 'trivial' mode. That tier was removed on 2026-08-17; remove it from the hook line in hooks.nix."
-  else if missingOptions != [ ] then
-    fail (
+    ++ pkgs.lib.optional trivialAdvertised "the UserPromptSubmit reminder still advertises a 'trivial' mode. That tier was removed on 2026-08-17; remove it from the hook line in hooks.nix."
+    ++ pkgs.lib.optional (missingOptions != [ ]) (
       "typeable flag(s) absent from the reminder's Options list: "
       + builtins.concatStringsSep ", " missingOptions
       + ". Outside their mode defaults these must be typed, so the model has to be told they exist."
     )
-  else if externalDefaultDrift then
-    fail "-e (external verify) drifted: it must be in the High-stakes Mode Gate row, absent from Diagnosis and Standard, and in the hook's HIGH target (`\"-pr\", \"-e\"]` in hookApexFlags)."
-  else if fastDrift then
-    fail "the Fast Mode Gate row carries -t, -x, -e or -o. Fast is ineligible when -t, -x or -e is active, and drops -o; a default that enables one makes Fast unreachable or a graph read on a typo."
-  else if staleOptions != [ ] then
-    fail (
+    ++ pkgs.lib.optional externalDefaultDrift "-e (external verify) drifted: it must be in the High-stakes Mode Gate row, absent from Diagnosis and Standard, and in the hook's HIGH target (`\"-pr\", \"-e\"]` in hookApexFlags)."
+    ++ pkgs.lib.optional fastDrift "the Fast Mode Gate row carries -t, -x, -e or -o. Fast is ineligible when -t, -x or -e is active, and drops -o; a default that enables one makes Fast unreachable or a graph read on a typo."
+    ++ pkgs.lib.optional (staleOptions != [ ]) (
       "the reminder still lists as opt-in: "
       + builtins.concatStringsSep ", " staleOptions
       + ". -o and -n are mode DEFAULTS now — listing them as options tells the model to type what it already gets."
-    )
+    );
+
+in
+pkgs.runCommand "apex-consistency-check" { } (
+  if problems != [ ] then
+    fail ("\n  - " + builtins.concatStringsSep "\n  - " problems)
   else
     ''
       echo "apex-consistency: ${toString (builtins.length existing)} step files, ${toString (builtins.length invariants)} invariants, ${toString (builtins.length modeMap)} mode rows vs reminder — OK"

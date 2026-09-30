@@ -95,9 +95,8 @@ let
       };
     }) hooks.scriptFiles
   );
-in
-{
-  home.file = hookScriptFiles // {
+
+  codexHomeFiles = hookScriptFiles // {
     "${codexDir}/hooks.json".text = hooks.hooksJson + "\n";
 
     # force: this file already exists as a real, hand-edited file. Without it
@@ -109,14 +108,7 @@ in
     };
   };
 
-  # On PATH so the human can record the reviewed baseline by hand after
-  # trusting the hooks in a Codex session: `codex-verify-hook-trust -a`.
-  home.packages = [
-    configMergePkg
-    verifyTrustPkg
-  ];
-
-  home.activation = activationScripts // {
+  codexActivation = activationScripts // {
     # The commands in hooks.json hard-code the absolute system node. If node
     # ever leaves the system profile, every Codex turn prints `hook exited
     # with code 127` and branch protection is OFF while still looking
@@ -132,5 +124,19 @@ in
         fi
       ) || true
     '';
+  };
+in
+{
+  home = {
+    file = codexHomeFiles;
+
+    # On PATH so the human can record the reviewed baseline by hand after
+    # trusting the hooks in a Codex session: `codex-verify-hook-trust -a`.
+    packages = [
+      configMergePkg
+      verifyTrustPkg
+    ];
+
+    activation = codexActivation;
   };
 }

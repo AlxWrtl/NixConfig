@@ -6,7 +6,7 @@ let
 
   # Obsidian vault — shared constant, reusable by other modules.
   # Real on-disk location (NOT the iCloud~md~obsidian mirror path).
-  alxVaultPath = "/Users/alx/Vaults/AlxVault";
+  alxVaultPath = "${homeDirectory}/Vaults/AlxVault";
 in
 {
   settingsJson = builtins.toJSON {
@@ -274,14 +274,14 @@ in
     # QUATRE valeurs, pas deux : `on` (nom + description, défaut quand la clé
     # est absente), `name-only` (nom seul), `user-invocable-only` (retiré du
     # listing, toujours tapable), `off` (désactivé).
-    # Les 10 entrées ci-dessous sont mesurées : JAMAIS invoquées sur 214
+    # Les 8 entrées ci-dessous sont mesurées : JAMAIS invoquées sur 214
     # démarrages, tout en occupant le listing à chaque tour.
     # `user-invocable-only` est délibéré : il sort l'entrée du listing que le
     # modèle voit, mais `/caveman`, `/tdd` et les autres restent tapables.
     # `off` a été écarté : il retire AUSSI l'entrée du menu slash, de Remote
     # Control et des listes de commandes de l'Agent SDK — la taper renvoie
     # alors une erreur.
-    # ATTENTION : sept des dix sont des fichiers COMMANDE sous
+    # ATTENTION : cinq des huit sont des fichiers COMMANDE sous
     # ~/.claude/commands/, pas des skills. Qu'ils soient couverts est un
     # comportement MESURÉ, pas un contrat documenté : la doc ne décrit la clé
     # que comme prenant des noms de skills, et la page « commands merged into
@@ -293,12 +293,10 @@ in
     # l'attrape. C'est la raison d'être de ce commentaire.
     skillOverrides = {
       auto = "user-invocable-only";
-      "cancel-ralph" = "user-invocable-only";
       caveman = "user-invocable-only";
       cavemem = "user-invocable-only";
       "context-prime" = "user-invocable-only";
       optimize = "user-invocable-only";
-      "ralph-loop" = "user-invocable-only";
       schliff = "user-invocable-only";
       tdd = "user-invocable-only";
       "verify-feature" = "user-invocable-only";
@@ -852,8 +850,8 @@ in
     }
   '';
 
-  # MCP servers merged into ~/.claude/.claude.json by activation script
-  # Secrets (API keys) are injected at runtime by claudeCodeMcpMerge, not here
+  # MCP servers merged into ~/.claude.json (HOME root) by claudeCodeMcpMerge;
+  # no runtime secret injection since `magic` left (2026-08-16)
   #
   # `magic` (@21st-dev/magic) removed 2026-08-16: React UI component generation
   # that went unused, and it was the only server needing an API key. The key

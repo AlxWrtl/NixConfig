@@ -173,7 +173,7 @@ system.
 
 | Check | What it enforces |
 |-------|------------------|
-| `format-check` | `nixfmt --check` over `flake.nix`, `modules/`, `home/`, `home/claude-code/`, `home/codex/`, `hosts/`, `checks/` |
+| `format-check` | `nixfmt --check` over every tracked `*.nix` (find walk, no per-directory list) |
 | `system-config` | The whole `alex-mbp` darwin configuration actually builds |
 | `agent-instructions` | The shared instruction trunk actually reaches both rendered outputs: every shared section body present in `CLAUDE.md` and `AGENTS.md`, each heading exactly once, headings equal the declared trunk-plus-delta list in order, no mechanism Codex lacks named to Codex or smuggled through the trunk, the nix Docs Gate divergence pinned as Codex-inline only, each output under 100 lines, `Project Map` gone from both |
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
@@ -564,8 +564,6 @@ as it stood before these rules goes red on it.
 | `/tdd <feature>` | TDD loop: red → green → refactor |
 | `/optimize` | Profile first, then targeted performance fixes |
 | `/verify-feature` | 6-layer quality verification on the current branch |
-| `/ralph-loop` | Start a Ralph Wiggum loop in the current session |
-| `/cancel-ralph` | Cancel the active Ralph loop |
 
 ## Shell Aliases
 
@@ -575,21 +573,18 @@ user ones are `programs.zsh.shellAliases`.
 ```bash
 # modules/packages.nix
 rebuild          # sudo darwin-rebuild switch --flake .#alex-mbp
-serve / py / ipy # python3 -m http.server / python3 / ipython
+serve / py       # python3 -m http.server / python3
 dc / dcu / dcd   # docker-compose (+ up / down)
 
 # modules/system.nix
 vulnscan-json    # vulnix scan to /tmp/vulnix-output.json
-security-logs    # tail -f /var/log/security/*.log
 check-perms      # inspect /nix/store permissions
-check-security   # tail the vulnix scan log
 
 # home/zsh.nix
 ls la ll lla lld # eza variants
 tree / treeall   # eza --tree (treeall includes dotfiles)
 g gs ga gc gp    # git / status / add / commit / push
 gl gd gco gb     # git pull / diff / checkout / branch
-hm hms hmb       # home-manager / switch / build
 vulnscan         # vulnix --system /var/run/current-system
 secrets encrypt  # sops / age
 clr vim top      # clear / nvim / htop

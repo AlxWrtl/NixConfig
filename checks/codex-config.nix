@@ -68,8 +68,6 @@ let
   matcherAt = e: i: if groupAt e i == null then null else (groupAt e i).matcher or null;
   showCommandAt = e: i: if commandAt e i == null then "<absent>" else commandAt e i;
   showMatcherAt = e: i: if matcherAt e i == null then "<absent>" else matcherAt e i;
-  firstCommandOf = e: commandAt e 0;
-  firstMatcherOf = e: matcherAt e 0;
 
   # --- what the module actually installs -----------------------------------
   installed = map (f: toString f.source) hooks.scriptFiles;
@@ -113,11 +111,13 @@ let
   hooksSrc = builtins.readFile ../home/codex/hooks.nix;
 
   # --- the permissions profile (C10) ---------------------------------------
-  # Read as SOURCE because `permissionsBlock` lives in a `let` inside a
-  # home-manager module and is not reachable from here as a value. So the
-  # assertion is textual, and it is written against the three spellings that
-  # actually decide behaviour, never against prose around them.
+  # The block is a VALUE of home/codex/permissions.nix, a plain function of the
+  # vault path. home/codex.nix is still read as SOURCE, for two spellings only:
+  # the vault literal it passes in, and the import text that wires this value
+  # in (C10 asserts that text and the rendered value, not the module's actual
+  # use of it). The literal below is the same one C10 pins.
   codexSrc = builtins.readFile ../home/codex.nix;
+  perms = import ../home/codex/permissions.nix { alxVaultPath = "/Users/alx/Vaults/AlxVault"; };
 
   # --- the two copies of the block (C11) -----------------------------------
   # `config-merge.sh` keeps its own hard-coded CANONICAL and refuses anything
@@ -126,6 +126,20 @@ let
   # second copy of the same string, and that copy FAILS OPEN — a mismatch warns
   # and `exit 0`, so the activation reports nothing worth noticing.
   mergeSrc = builtins.readFile ../home/codex/scripts/config-merge.sh;
+
+  # --- the two copies compared as VALUES (C12) -----------------------------
+  # C11 only proves each copy CONTAINS the two load-bearing spellings; any
+  # other difference (a key added on one side, `.git` = read vs write) still
+  # passed while config-merge.sh refused the block and exited 0. The single
+  # `CANONICAL=$'…'` line is lifted out and its `\n` escapes decoded, so the
+  # comparison is the whole string. No match → C12 fails, never passes empty.
+  canonicalMatch = builtins.match ".*\nCANONICAL=\\$'([^']*)'\n.*" mergeSrc;
+  canonical =
+    if canonicalMatch == null then
+      null
+    else
+      builtins.replaceStrings [ "\\n" ] [ "\n" ] (builtins.head canonicalMatch);
+  profileGate = "[ \"$PROFILE\" != \"${perms.permissionsProfile}\" ]";
 
   assertions = [
     {
@@ -231,16 +245,17 @@ let
       ok =
         builtins.isList hooks.hookList
         && hasInfix "APPEND ONLY" hooksSrc
-        && hasInfix "attribute set" hooksSrc;
+        && hasInfix "an attribute set: nix sorts attribute names alphabetically" hooksSrc;
       msg = "home/codex/hooks.nix no longer builds its hooks from an explicit ordered list, or its header lost the append-only rule — an attribute set would be sorted alphabetically by nix and reorder the file, and a mid-list insertion un-trusts every hook after it with no error anywhere";
     }
     {
       name = "C10 permissions profile: the vault is a workspace ROOT and .git/hooks stays read";
       ok =
         hasInfix "alxVaultPath = \"/Users/alx/Vaults/AlxVault\";" codexSrc
-        && hasInfix "workspace_roots = { \"\${alxVaultPath}\" = true }" codexSrc
-        && hasInfix "\".git/hooks\" = \"read\"" codexSrc;
-      msg = "home/codex.nix no longer grants the vault as a workspace root, or lost the `.git/hooks` = read rule. Both halves are load-bearing and neither fails loudly on its own: without the root, Codex silently cannot write its session note and hands it back to a human — the asymmetry that left 8f5e724, 0d70c93 and fe9b527 with no note at all. Without the rule, the grant reaches the vault's OWN `.git/hooks`, and the vault is auto-committed by vault-snapshot, so a hook planted there executes outside this sandbox. The rule is written once for every root, which is why dropping it costs two repositories and not one";
+        && hasInfix "import ./codex/permissions.nix { inherit alxVaultPath; }" codexSrc
+        && hasInfix "workspace_roots = { \"/Users/alx/Vaults/AlxVault\" = true }" perms.permissionsBlock
+        && hasInfix "\".git/hooks\" = \"read\"" perms.permissionsBlock;
+      msg = "home/codex.nix no longer passes the vault literal to home/codex/permissions.nix, or the block that file renders no longer grants the vault as a workspace root, or lost the `.git/hooks` = read rule. Both halves are load-bearing and neither fails loudly on its own: without the root, Codex silently cannot write its session note and hands it back to a human — the asymmetry that left 8f5e724, 0d70c93 and fe9b527 with no note at all. Without the rule, the grant reaches the vault's OWN `.git/hooks`, and the vault is auto-committed by vault-snapshot, so a hook planted there executes outside this sandbox. The rule is written once for every root, which is why dropping it costs two repositories and not one";
     }
     {
       name = "C11 permissions profile: config-merge.sh's CANONICAL carries the same grant";
@@ -248,6 +263,23 @@ let
         hasInfix "workspace_roots = { \"/Users/alx/Vaults/AlxVault\" = true }" mergeSrc
         && hasInfix "\".git/hooks\" = \"read\"" mergeSrc;
       msg = "home/codex/scripts/config-merge.sh keeps its own hard-coded CANONICAL block and REFUSES any other, and the refusal is a warn plus `exit 0` — so the two copies drifting does not fail, it silently does nothing. Measured 2026-09-14: `workspace_roots` was added to home/codex.nix, `nix flake check` was green with 8 checks, `darwin-rebuild switch` succeeded, and the live ~/.codex/config.toml came out byte-identical to the one from before, the only trace being one warn line in forty lines of activation output. Edit either copy and you must edit both";
+    }
+    {
+      name = "C12 permissions profile: home/codex/permissions.nix renders exactly config-merge.sh's CANONICAL, under the profile name it gates on";
+      ok =
+        canonicalMatch != null
+        && perms.permissionsBlock == canonical + "\n"
+        && hasInfix profileGate mergeSrc;
+      msg =
+        (
+          if canonicalMatch == null then
+            "CANONICAL not found: no single-line `CANONICAL=$'…'` in home/codex/scripts/config-merge.sh, so the comparison could not even start. "
+          else if perms.permissionsBlock != canonical + "\n" then
+            "home/codex/permissions.nix renders a block that differs from config-merge.sh's CANONICAL (compared as whole strings, trailing newline included). "
+          else
+            "config-merge.sh no longer gates on `${profileGate}`, the profile name home/codex/permissions.nix declares. "
+        )
+        + "config-merge.sh REFUSES anything but its CANONICAL with a warn and `exit 0`, so a drift between home/codex/permissions.nix and home/codex/scripts/config-merge.sh fails OPEN: measured 2026-09-14, a green build and a successful switch left the live ~/.codex/config.toml byte-identical. Edit both copies together";
     }
   ];
 
@@ -269,6 +301,68 @@ let
       ${pkgs.nodejs_22}/bin/node --check ${p}
     '') installed
   );
+
+  # --- malformed stdin against the installed hooks --------------------------
+  # The malformed-stdin subset of checks/codex-hooks-probe.sh, wired here so a
+  # guard that stops refusing unparseable input turns the build red. The two
+  # PreToolUse guards ask git for the branch BEFORE parsing and deny (exit 2 +
+  # a deny JSON) only on a protected branch; quality-gate exits 0 in silence.
+  # Hence a fixture repo on `main` and git on the probe PATH. The exit code
+  # alone would be vacuous: with no git the SAME exit 2 comes back, for "git
+  # is not on PATH" — so the stderr reason `not valid JSON` is asserted too.
+  # GIT_CONFIG_NOSYSTEM=1: a system gitconfig must not steer the branch read.
+  hookMalformedProbes = ''
+    mrepo="$TMPDIR/codex-malformed-stdin"
+    rm -rf "$mrepo" "$mrepo.d"
+    mkdir -p "$mrepo" "$mrepo.d"
+    (cd "$mrepo" && GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" ${pkgs.git}/bin/git init -q -b main)
+    malformed='{"hook_event_name":"PreToolUse","tool_input":{'
+
+    mfail() {
+      echo "" >&2
+      echo "codex-config: MALFORMED-STDIN PROBE FAILED — $1" >&2
+      for f in "$mrepo.d/$2.out" "$mrepo.d/$2.err"; do
+        echo "--- $f ---" >&2
+        cat "$f" >&2 || true
+        echo "" >&2
+      done
+      exit 1
+    }
+
+    # $1 = label, $2 = installed script. Leaves the exit status in $st.
+    run_malformed() {
+      set +e
+      printf '%s' "$malformed" \
+        | (cd "$mrepo" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH=${pkgs.git}/bin ${pkgs.nodejs_22}/bin/node "$2") \
+        > "$mrepo.d/$1.out" 2> "$mrepo.d/$1.err"
+      st=$?
+      set -e
+    }
+
+    mcases=0
+    for pair in "protect-main:${pathOfBasename "protect-main.js"}" "block-main-shell:${pathOfBasename "block-main-shell.js"}"; do
+      label="''${pair%%:*}"
+      script="''${pair#*:}"
+      run_malformed "$label" "$script"
+      [ "$st" -eq 2 ] || mfail "$label exited $st on malformed stdin in a repo on main, expected 2 (deny)" "$label"
+      ${pkgs.jq}/bin/jq -e '.hookSpecificOutput.permissionDecision == "deny"' "$mrepo.d/$label.out" > /dev/null \
+        || mfail "$label stdout is not a deny decision on malformed stdin — Codex reads stdout, and exit 2 without the JSON is not the contract" "$label"
+      grep -Fq 'not valid JSON' "$mrepo.d/$label.err" \
+        || mfail "$label denied, but not because the input was malformed — without this assertion a missing git gives the same exit 2 and the probe passes vacuously" "$label"
+      mcases=$((mcases + 1))
+    done
+
+    run_malformed quality-gate ${pathOfBasename "quality-gate.js"}
+    [ "$st" -eq 0 ] || mfail "quality-gate exited $st on malformed stdin, expected 0 — a Stop hook that blocks on garbage input wedges every turn" quality-gate
+    [ ! -s "$mrepo.d/quality-gate.out" ] || mfail "quality-gate wrote to stdout on malformed stdin — Codex parses any non-empty stdout as JSON" quality-gate
+    mcases=$((mcases + 1))
+
+    # Mirror: the same bytes are a refusal for the guard and a no-op for the
+    # gate. Both halves at once, so neither side can drift into the other.
+    # A cross-check of the cases above, not a case: not counted in mcases.
+    [ -s "$mrepo.d/protect-main.out" ] && [ ! -s "$mrepo.d/quality-gate.out" ] \
+      || mfail "mirror broken: protect-main must answer malformed stdin on stdout and quality-gate must stay silent" protect-main
+  '';
 
   # --- C10: each wrapper must work with NO ambient PATH ---------------------
   # THE ONE THIS BLOCK EXISTS FOR, measured 2026-09-10 on the first real
@@ -613,8 +707,9 @@ pkgs.runCommand "codex-config-check" { } (
   else
     ''
       ${scriptProbes}
+      ${hookMalformedProbes}
       ${wrapperProbes}
-      echo "codex-config: ${toString (builtins.length assertions)} invariants, ${toString (builtins.length allEntries)} hooks, ${toString (builtins.length commandPaths)} scripts syntax-checked, 2 wrappers run with an empty PATH — OK"
+      echo "codex-config: ${toString (builtins.length assertions)} invariants, ${toString (builtins.length allEntries)} hooks, ${toString (builtins.length commandPaths)} scripts syntax-checked, $mcases malformed-stdin hook cases + 1 cross-check, 2 wrappers run with an empty PATH — OK"
       touch $out
     ''
 )

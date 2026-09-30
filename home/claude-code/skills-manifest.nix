@@ -10,21 +10,19 @@
 # `path` is RELATIVE to the skill's own directory; the consumer prefixes it
 # itself (`.claude/skills/<name>/<path>`). Skills are Claude-only: Codex is a
 # reviewer, not an APEX runner, and no longer receives a translated copy. It
-# sits here rather than in a new top-level directory for two mechanical
-# reasons:
-#   - `flake.nix` runs nixfmt over `home/claude-code/*.nix` and over no
-#     directory that does not exist yet, so a new home would be unformatted
-#     and unchecked;
-#   - `checks/readme-consistency.nix` does not walk the tree recursively, so a
-#     file in a new directory would be invisible to the inventory it enforces.
-# Move it only together with both of those.
+# sits here rather than in a new top-level directory for one mechanical
+# reason: `checks/readme-consistency.nix` does not walk the tree recursively,
+# so a file in a new directory would be invisible to the inventory it enforces.
+# Move it only together with the readme-consistency inventory.
 #
 # `force` IS NOT DATA HERE — IT IS A RULE, DERIVED FROM THE FILE NAME.
 # Measured on the state this manifest replaces: 15 of the 33 entries carried
 # `force = true`, and they are exactly the 14 `SKILL.md` plus
 # `apex/eval-suite.json`; no file under `steps/` carried it. The flag exists
-# because the desymlink activation script replaces those files with real
-# copies, so home-manager must be allowed to clobber them. A consumer computes
+# because the desymlink activation script replaces every `*/SKILL.md` with a
+# real copy, so home-manager must be allowed to clobber them. It does NOT
+# touch apex/eval-suite.json: that `force` is not required by desymlink, kept
+# as-is, harmless. A consumer computes
 # it — `force = baseNameOf path == "SKILL.md" || path == "eval-suite.json"` —
 # and never stores it, because a stored flag is one more hand-kept list.
 #

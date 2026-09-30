@@ -29,7 +29,7 @@
 { pkgs }:
 
 let
-  lib = pkgs.lib;
+  inherit (pkgs) lib;
   skills = import ../home/claude-code/skills.nix;
 
   splitLines = lib.splitString "\n";

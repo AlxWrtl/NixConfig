@@ -102,7 +102,8 @@ let
     }
     {
       name = "orchestration: Fable stays read-only";
-      needle = "READ-ONLY";
+      needle = "`fable` — READ-ONLY";
+      scope = skills.apexOrchestration;
     }
     {
       name = "flags: uppercase disables an auto-enabled flag";
@@ -114,11 +115,13 @@ let
     }
     {
       name = "gate: pure research skips execute/validate";
-      needle = "Pure research";
+      needle = "Pure research / no file change";
+      scope = skills.apexStep00Init;
     }
     {
       name = "summary: the phase schema is fixed";
-      needle = "OBJECTIVE_MET";
+      needle = "OBJECTIVE_MET: yes | partial | no";
+      scope = skills.apexOrchestration;
     }
     {
       name = "plan: premises are stated before the task list";
@@ -780,7 +783,7 @@ let
   # clause from apexStep00Init into apexStep04Validate left the derivation
   # byte-identical, while the invariant guarding it is named "before the first
   # edit, not after".
-  invariantScope = i: if i ? scope then i.scope else corpus;
+  invariantScope = i: i.scope or corpus;
 
   missingInvariants = builtins.filter (
     i: !(pkgs.lib.hasInfix i.needle (invariantScope i))
@@ -963,7 +966,9 @@ let
   # skill's own table are the source; nothing is restated here.
   suiteFlags = pkgs.lib.unique (
     map (m: "-" + builtins.head m) (
-      builtins.filter builtins.isList (builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" suitePrompts)
+      builtins.filter builtins.isList (
+        builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" ("\n" + suitePrompts)
+      )
     )
   );
   unknownSuiteFlags = builtins.filter (

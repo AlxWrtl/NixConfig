@@ -1,9 +1,4 @@
-{
-  config,
-  pkgs,
-  lib,
-  ...
-}:
+_:
 
 let
   secrets = import ../secrets.nix;
@@ -17,10 +12,6 @@ in
   programs.ssh = {
     enable = true;
     enableDefaultConfig = false;
-
-    includes = [
-      "${config.home.homeDirectory}/.colima/ssh_config"
-    ];
 
     settings = {
       "*" = {

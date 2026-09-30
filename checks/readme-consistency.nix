@@ -25,7 +25,7 @@
 { pkgs }:
 
 let
-  lib = pkgs.lib;
+  inherit (pkgs) lib;
 
   readme = builtins.readFile ../README.md;
   skills = import ../home/claude-code/skills.nix;
@@ -140,7 +140,9 @@ let
   invocationFlags = lib.unique (
     map (m: "-" + builtins.head m) (
       builtins.filter builtins.isList (
-        builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" (builtins.concatStringsSep "\n" apexInvocations)
+        builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" (
+          "\n" + builtins.concatStringsSep "\n" apexInvocations
+        )
       )
     )
   );
@@ -205,7 +207,7 @@ let
   # pass as a declared alias.
   aliasBlockOf =
     text:
-    builtins.concatStringsSep "\n" (
+    builtins.concatStringsSep "\n"
       (builtins.foldl'
         (
           acc: l:
@@ -224,8 +226,7 @@ let
           out = [ ];
         }
         (splitLines text)
-      ).out
-    );
+      ).out;
   aliasSources =
     "\n"
     + builtins.concatStringsSep "\n" (

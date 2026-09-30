@@ -13,6 +13,7 @@
     pkgs.fd
     pkgs.ripgrep
     pkgs.tree
+    pkgs.neovim
     pkgs.zoxide
     pkgs.fzf
 
@@ -74,7 +75,6 @@
     # Python
     serve = "python3 -m http.server";
     py = "python3";
-    ipy = "ipython";
 
     # Nix
     nix-shell = "nix-shell --run zsh";

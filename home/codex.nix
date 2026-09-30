@@ -43,17 +43,12 @@ let
   # half that EXECUTES — stays out of reach, which is the half that matters.
   alxVaultPath = "/Users/alx/Vaults/AlxVault";
 
-  permissionsProfile = "git-workspace";
-  # One TOML section, inline tables only. A `[permissions.git-workspace.*]`
-  # sub-table would be a SECOND section header, and codex-config-merge replaces
-  # exactly one section by name — the sub-table would survive the strip and
-  # accumulate. Keeping it inline keeps the managed block singular.
-  permissionsBlock = ''
-    [permissions.git-workspace]
-    extends = ":workspace"
-    workspace_roots = { "${alxVaultPath}" = true }
-    filesystem = { ":workspace_roots" = { ".git" = "write", ".git/hooks" = "read" } }
-  '';
+  # A plain function file so checks/codex-config.nix compares the VALUE with
+  # config-merge.sh's CANONICAL copy (C12), not this module's source text.
+  inherit (import ./codex/permissions.nix { inherit alxVaultPath; })
+    permissionsProfile
+    permissionsBlock
+    ;
 
   # No human confirmation before an action. What is left between the model and
   # the filesystem is the permissions profile above and two branch hooks —

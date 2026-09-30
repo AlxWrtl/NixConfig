@@ -74,10 +74,6 @@
     - Note: the debug skill is user-invocable only (disable-model-invocation) —
       never route to `/debug` from here, use the debugger agent.
 
-    **RALPH** (refactor all|update every|migrate|batch|standardize):
-    - Route: `/ralph-loop "$ARGUMENTS" --max-iterations 20 --completion-promise "DONE"`
-    - Reason: "Detected batch operation"
-
     **AGENT** (where|how does|explain|quick|review):
     - Route: `Task(subagent_type=codebase-navigator)` or specialized agent
     - Reason: "Detected exploration/navigation task"
@@ -85,7 +81,7 @@
     ## Steps
 
     1) Parse $ARGUMENTS for keywords
-    2) Match decision matrix (priority: RALPH > DEBUG > APEX > AGENT)
+    2) Match decision matrix (priority: DEBUG > APEX > AGENT)
     3) Output: "Routed to [workflow] because [reason]"
     4) Execute with optimal flags
 
@@ -99,51 +95,9 @@
     → Routed to debugger agent because detected "fix" keyword
     → Execute: Task(subagent_type=debugger, prompt="fix database timeout")
 
-    Input: "refactor all imports"
-    → Routed to /ralph-loop because detected "refactor all" pattern
-    → Execute: /ralph-loop "refactor all imports" --max-iterations 20
-
     Input: "where is auth logic"
     → Routed to codebase-navigator because detected "where" keyword
     → Execute: Task with codebase-navigator agent
-  '';
-
-  # -------------------------
-  # Ralph Wiggum Commands (Modified for direct paths)
-  # -------------------------
-  cmdRalphLoop = ''
-    ---
-    description: "Start Ralph Wiggum loop in current session"
-    argument-hint: "PROMPT [--max-iterations N] [--completion-promise TEXT]"
-    allowed-tools: ["Bash(~/.claude/scripts/setup-ralph-loop.sh:*)"]
-    hide-from-slash-command-tool: "true"
-    ---
-
-    # Ralph Loop Command
-
-    Execute the setup script to initialize the Ralph loop:
-
-    ```!
-    ~/.claude/scripts/setup-ralph-loop.sh $ARGUMENTS
-    ```
-
-    Please work on the task. When you try to exit, the Ralph loop will feed the SAME PROMPT back to you for the next iteration. You'll see your previous work in files and git history, allowing you to iterate and improve.
-
-    CRITICAL RULE: If a completion promise is set, you may ONLY output it when the statement is completely and unequivocally TRUE. Do not output false promises to escape the loop, even if you think you're stuck or should exit for other reasons. The loop is designed to continue until genuine completion.
-  '';
-
-  cmdCancelRalph = ''
-    ---
-    description: "Cancel active Ralph loop"
-    ---
-
-    # Cancel Ralph Loop
-
-    Removes the Ralph loop state file:
-
-    ```!
-    rm -f .claude/ralph-loop.local.md && echo "✓ Ralph loop cancelled"
-    ```
   '';
 
   # -------------------------

@@ -83,9 +83,11 @@
 #   bash checks/null-result-gate-probe.sh --mutants     # all of them, graded
 #   bash checks/null-result-gate-probe.sh --mutant m2   # one, raw red output
 #
-# Standalone, like checks/codex-hooks-probe.sh and checks/scrapling-shim-fuzz.sh:
-# NOT wired into `nix flake check`, because it shells out to `nix eval` to lift
-# the hook body out of hooks.nix.
+# Standalone, like checks/scrapling-shim-fuzz.sh: NOT wired into
+# `nix flake check`, because it shells out to `nix eval` to lift the hook body
+# out of hooks.nix. (checks/codex-hooks-probe.sh is only partly standalone now:
+# its malformed-stdin subset is wired into checks/codex-config.nix; the rest
+# stays standalone.)
 #
 # usage: null-result-gate-probe.sh [hook.js]
 #        null-result-gate-probe.sh --mutants

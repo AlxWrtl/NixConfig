@@ -21,7 +21,7 @@
 { pkgs }:
 
 let
-  lib = pkgs.lib;
+  inherit (pkgs) lib;
 
   shared = import ../home/claude-code/agent-instructions.nix;
   claudeMd = import ../home/claude-code/claude-md.nix;
@@ -134,7 +134,6 @@ let
   absentMechanisms = [
     "mcp__enquire"
     "mcp__graphify"
-    "ralph-loop"
     "code-review"
     "WebFetch"
     "WebSearch"

@@ -75,8 +75,7 @@ let
     {
       name = "Delegation";
       body = ''
-        - Pattern répété N>=4 séquentiel mêmes fichiers → ralph-loop. Sous-tâches
-          indépendantes fichiers disjoints → /fork background. Combinables.
+        - Sous-tâches indépendantes fichiers disjoints → /fork background.
         - Review routine qualité → /code-review natif (subagent background, hors
           contexte). Agent code-reviewer = spec compliance + sécu pre-merge.
       '';

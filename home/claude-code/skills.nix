@@ -28,7 +28,7 @@ let
 
       ## Handoffs
     ''
-    + builtins.concatStringsSep "\n" (map (i: "    - ${i}") items)
+    + builtins.concatStringsSep "\n" (map (i: "- ${i}") items)
     + "\n";
 in
 {

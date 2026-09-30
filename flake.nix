@@ -45,23 +45,14 @@
       # Automated checks
       checks.${system} = {
         format-check = pkgs.runCommand "check-nix-format" { } ''
+          # The flake source holds tracked files only, so this walks every
+          # tracked *.nix; a new directory is covered without a new line here.
           cd ${./.}
-          ${pkgs.nixfmt}/bin/nixfmt --check flake.nix
-          ${pkgs.nixfmt}/bin/nixfmt --check modules/*.nix
-          ${pkgs.nixfmt}/bin/nixfmt --check home/*.nix
-          # The glob above does not descend, so the largest files in the repo
-          # sat unchecked. Reformatting them is safe: every one of the 35
-          # attributes skills.nix exports evaluates byte-identical before and
-          # after, verified — nixfmt does not shift the indentation that nix
-          # strips from multiline strings.
-          ${pkgs.nixfmt}/bin/nixfmt --check home/claude-code/*.nix
-          # Explicit per directory, and that is the trap: a NEW module
-          # directory is neither formatted nor checked until its own line
-          # exists here, and the failure mode is silence.
-          ${pkgs.nixfmt}/bin/nixfmt --check home/codex/*.nix
-          ${pkgs.nixfmt}/bin/nixfmt --check hosts/alex-mbp/*.nix
-          ${pkgs.nixfmt}/bin/nixfmt --check checks/*.nix
-          touch $out
+          find . -type f -name '*.nix' -print0 | sort -z > "$TMPDIR/nixfiles"
+          n=$(tr -cd '\0' < "$TMPDIR/nixfiles" | wc -c)
+          [ "$n" -gt 0 ] || { echo "format-check: found no .nix file — the walk itself is broken"; exit 1; }
+          xargs -0 ${pkgs.nixfmt}/bin/nixfmt --check < "$TMPDIR/nixfiles"
+          echo "format-check: $n files"; touch $out
         '';
         system-config = self.darwinConfigurations."alex-mbp".system;
         agent-instructions = import ./checks/agent-instructions.nix { inherit pkgs; };
@@ -97,12 +88,14 @@
           # Home Manager
           home-manager.darwinModules.home-manager
           {
-            home-manager.useGlobalPkgs = true;
-            home-manager.useUserPackages = true;
-            home-manager.backupFileExtension = "backup";
-            home-manager.users.alx = import ./home;
-            home-manager.extraSpecialArgs = {
-              inherit inputs;
+            home-manager = {
+              useGlobalPkgs = true;
+              useUserPackages = true;
+              backupFileExtension = "backup";
+              users.alx = import ./home;
+              extraSpecialArgs = {
+                inherit inputs;
+              };
             };
           }
         ];

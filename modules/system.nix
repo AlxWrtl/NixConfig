@@ -1,7 +1,5 @@
 {
-  config,
   pkgs,
-  lib,
   ...
 }:
 
@@ -67,8 +65,7 @@
     XDG_DATA_HOME = "$HOME/.local/share";
 
     # Security tools
-    SOPS_AGE_KEY_FILE = "/Users/alx/.config/age/keys.txt";
-    SECURITY_LOG_DIR = "/var/log/security";
+    SOPS_AGE_KEY_FILE = "$HOME/.config/age/keys.txt";
     GNUPGHOME = "$HOME/.config/gnupg";
     AGE_DIR = "$HOME/.config/age";
 
@@ -107,9 +104,7 @@
 
   environment.shellAliases = {
     vulnscan-json = "vulnix --system /var/run/current-system --json /tmp/vulnix-output.json";
-    security-logs = "tail -f /var/log/security/*.log";
     check-perms = "ls -la /nix/store | head -20";
-    check-security = "cat /var/log/security/vulnix-scan.log | tail -10";
   };
 
   # Shell configuration

@@ -86,18 +86,26 @@ let
     # hook, no protection. This is the shell half of the same guard, ported
     # from home/claude-code/hooks.nix:hookBlockMainBash.
     #
-    # THE MATCHER NAMES THREE TOOLS BECAUSE THE TOOL NAME IS NOT ESTABLISHED.
-    # The Codex binary carries the strings `shell`, `local_shell` and `bash`
-    # and nothing says which one a PreToolUse payload actually carries. A
-    # matcher that guesses wrong produces a hook that never fires — the exact
-    # failure being repaired — so all three are named. Same alternation syntax
-    # as the `Edit|Write` entry above. The script defends the same way one
-    # layer down: it reads the command from every plausible field and accepts
-    # a string or an argv array.
+    # THE MATCHER NAMES `Bash` BECAUSE THE DOCS SAY SO. Codex hooks docs
+    # (codex-cli 0.159.2, learn.chatgpt.com/docs/hooks): shell and unified
+    # exec (`exec_command`) report `tool_name: "Bash"`, and "When a model uses
+    # code mode to call a tool from JavaScript, hook decisions apply to that
+    # nested call." Matchers are case-sensitive regexes, so the former
+    # `shell|local_shell|bash` never matched `Bash`: BEFORE probe 2026-09-30 on
+    # a throwaway master repo, `git commit --allow-empty` went through, only
+    # Stop fired, 0 shell denials in real rollouts against 6 protect-main.
+    # `shell`, `local_shell` and `exec_command` stay named as belt and braces;
+    # lowercase `bash` is dropped. Same alternation syntax as `Edit|Write`.
+    #
+    # Code-mode `exec` itself is deliberately NOT matched: its input is JS,
+    # which the shell parser would false-deny wholesale, and the docs route
+    # its nested tool calls through PreToolUse. Residual until the AFTER
+    # probe proves that nested call is refused. The script still reads the
+    # command from every plausible field, string or argv array.
     {
       event = "PreToolUse";
       stateEvent = "pre_tool_use";
-      matcher = "shell|local_shell|bash";
+      matcher = "Bash|shell|local_shell|exec_command";
       basename = "block-main-shell.js";
       script = blockMainShellScript;
       timeout = 5;

@@ -303,7 +303,12 @@ const GIT_RULES = [
   {
     id: "git-write-verb",
     why: "authors a commit, publishes, or moves a ref outright",
-    pat: seq(oneOf(/add|commit|push|fetch|pull|merge|rebase|reset|update-ref|tag|notes|replace|gc|prune/), EOW),
+    pat: seq(
+      oneOf(
+        /add|commit|push|fetch|pull|merge|rebase|reset|update-ref|tag|notes|replace|gc|prune/,
+      ),
+      EOW,
+    ),
   },
 
   // cherry-pick, revert and am REPLAY work onto HEAD, so on master they land
@@ -415,10 +420,41 @@ const REDIRECT =
 
 // An interpreter editing a file IN PLACE — the shape that defeated the edit-
 // tool guard: `perl -0pi -e 's/1/2/g' note.txt`. Matched as "the command word,
-// then an option token whose short cluster ENDS on `i`", so `-0pi`, `-pi`,
-// `-i` and `-i.bak` all hit while `perl -Ilib -e ...` (a read) does not.
-const INPLACE =
-  /(?:^|[\s;&|(])(?:perl|ruby|sed|gsed|gawk|awk|ex)(?:\s+-[A-Za-z0-9][^\s]*)*\s+-[A-Za-z0-9]*i(?:\.[A-Za-z0-9]*)?(?=[\s;&|)]|$)/;
+// then, ANYWHERE later in the same segment, an option token whose short
+// cluster ENDS on `i`", so `-0pi`, `-pi`, `-i`, `-i.bak` and the GNU order
+// `sed -e 's/1/2/' -i.bak f` all hit while `perl -Ilib -e ...` (a read) does
+// not. The segment gap is bounded, so a 128 KB input cannot backtrack for long.
+const SEG = String.raw`[^;&|\n]{0,4096}?`;
+const OPT_END = String.raw`(?=[\s;&|)]|$)`;
+const INPLACE = new RegExp(
+  String.raw`(?:^|[\s;&|(])(?:perl|ruby|sed|gsed|gawk|awk|ex)(?![\w-])` +
+    SEG +
+    String.raw`\s(?:-[A-Za-z0-9]*i(?:\.[A-Za-z0-9]*)?|--in-place(?:=[^\s;&|)]*)?)` +
+    OPT_END,
+);
+
+// Tools that write files as a SIDE EFFECT of fetching, unpacking, syncing or
+// scripting an editor. Each shape keeps a read partner usable on the branch:
+// `curl -s url` (stdout) and `curl -so /dev/null`, `wget -qO- url`, `tar tf`,
+// `unzip -l|-t|-p|-v|-Z`, `vim --version`. `ed` and `ex` read their commands
+// from stdin, so any use is a potential write. Same prefix class as WRITER.
+const FETCH = new RegExp(
+  String.raw`(?:^|[\s;&|(<>/])(?:` +
+    // curl: a short cluster carrying o/O, --output, --remote-name[-all].
+    String.raw`curl(?![\w-])${SEG}\s(?:-[A-Za-z0-9]*O|-[A-Za-z0-9]*o(?!\s*/dev/null${OPT_END})|--output(?:=|\s+)(?!/dev/null${OPT_END})|--remote-name(?:-all)?${OPT_END})` +
+    // wget: writes by default, unless it streams to stdout or only spiders;
+    // an explicit -O <file> writes even next to a stdout form.
+    String.raw`|wget(?![\w-])(?!${SEG}\s(?:-[A-Za-z0-9]*O\s*-|--output-document(?:=|\s+)-|--spider)${OPT_END})` +
+    String.raw`|wget(?![\w-])${SEG}\s(?:-[A-Za-z0-9]*O(?!\s*-${OPT_END})|--output-document(?:=|\s+)(?!-${OPT_END}))` +
+    // tar: old-style first cluster, or a dashed cluster, with x/c/r/u.
+    String.raw`|tar(?![\w-])(?:\s+[A-Za-z]*[xcru][A-Za-z]*${OPT_END}|${SEG}\s(?:-[A-Za-z]*[xcru][A-Za-z]*${OPT_END}|--(?:extract|get|create|append|update|catenate|concatenate|delete)(?![\w-])))` +
+    // unzip: extracts unless its first option lists, tests, pipes or shows.
+    String.raw`|unzip(?![\w-])(?!\s+-[ltpvZ][A-Za-z0-9]*${OPT_END})` +
+    String.raw`|(?:rsync|sponge|scp|ed|ex)(?![\w-])` +
+    // vim family: only when handed commands to run.
+    String.raw`|(?:vim|vi|nvim|view|vimdiff)(?![\w-])${SEG}\s(?:-(?:c|s|e|es|E|Es|S)${OPT_END}|--cmd(?![\w-])|\+)` +
+    String.raw`)`,
+);
 
 // A program handed to an interpreter ON THE COMMAND LINE is opaque to textual
 // inspection: `python3 -c "open('f','w').write(x)"` writes a file and looks
@@ -454,6 +490,11 @@ const FS_RULES = [
     id: "fs-writer-command",
     why: "runs a command whose purpose is to write, move or delete files",
     pat: WRITER,
+  },
+  {
+    id: "fs-fetch-or-unpack",
+    why: "downloads, unpacks, syncs or scripts an editor into files",
+    pat: FETCH,
   },
 ];
 
@@ -622,7 +663,10 @@ const PROTECTED_DST =
 // Linear: one greedy run per push segment, then one test inside it. The old
 // lazy `[^;&|\n()]*?\s` retried from every offset and went quadratic on a
 // long run of `git push git push ...` with no separator.
-const PUSH_SEG = new RegExp(src(GIT) + "push" + src(EOW) + "([^;&|\\n()]*)", "g");
+const PUSH_SEG = new RegExp(
+  src(GIT) + "push" + src(EOW) + "([^;&|\\n()]*)",
+  "g",
+);
 const DST_WORD = new RegExp("\\s" + src(PROTECTED_DST));
 const scan = (v) => [...v.matchAll(PUSH_SEG)].some((m) => DST_WORD.test(m[1]));
 const pushTargetsProtectedRef = (c) => {
@@ -697,8 +741,7 @@ function provenReadOnlyGitCommand(cmd) {
   while (words[i] === "--no-pager" || words[i] === "--literal-pathspecs") i++;
   if (words[i] === "-C") i += 2;
   if (i >= words.length) return true;
-  if (words[i] === "--version")
-    return i === words.length - 1;
+  if (words[i] === "--version") return i === words.length - 1;
   const verb = words[i++];
   const rest = words.slice(i);
   const dangerous = rest.some(
@@ -715,16 +758,31 @@ function provenReadOnlyGitCommand(cmd) {
       x === "--show-signature",
   );
   if (dangerous) return false;
-  if (/^(?:status|log|show|rev-parse|ls-files|ls-tree|grep|cat-file|merge-base|name-rev|describe|version)$/.test(verb))
+  if (
+    /^(?:status|log|show|rev-parse|ls-files|ls-tree|grep|cat-file|merge-base|name-rev|describe|version)$/.test(
+      verb,
+    )
+  )
     return true;
   if (verb === "diff") return true;
   if (verb === "branch") return readOnlyBranchCommand(cmd);
   if (verb === "remote")
-    return rest.length === 0 || (rest.length === 1 && rest[0] === "-v") || rest[0] === "show" || rest[0] === "get-url";
+    return (
+      rest.length === 0 ||
+      (rest.length === 1 && rest[0] === "-v") ||
+      rest[0] === "show" ||
+      rest[0] === "get-url"
+    );
   if (verb === "config")
     return (
-      !rest.some((x) => /^(?:--add|--replace-all|--unset|--unset-all|--rename-section|--remove-section|--edit|-e)$/.test(x)) &&
-      rest.some((x) => /^(?:--get|--get-all|--get-regexp|--get-urlmatch|--list|-l)$/.test(x))
+      !rest.some((x) =>
+        /^(?:--add|--replace-all|--unset|--unset-all|--rename-section|--remove-section|--edit|-e)$/.test(
+          x,
+        ),
+      ) &&
+      rest.some((x) =>
+        /^(?:--get|--get-all|--get-regexp|--get-urlmatch|--list|-l)$/.test(x),
+      )
     );
   if (verb === "worktree") return rest[0] === "list";
   if (verb === "stash") return rest[0] === "list" || rest[0] === "show";
@@ -762,13 +820,35 @@ const CMD_KEYS = [
   "args",
 ];
 
+// The argv elements behind the command, when it came as an array. The joined
+// line alone hides structure: in `["bash","-lc","cd M && git commit"]` the
+// payload's leading `cd` sits mid-line once joined.
+let argvParts = null;
+
 function commandIn(obj) {
   if (!obj || typeof obj !== "object") return null;
   for (const k of CMD_KEYS) {
     const c = asCommand(obj[k]);
-    if (c !== null) return c;
+    if (c !== null) {
+      argvParts = Array.isArray(obj[k]) ? obj[k].slice() : null;
+      return c;
+    }
   }
   return null;
+}
+
+// What the shell actually runs: the `-c`/`-lc` payload of a `sh -c <payload>`
+// argv, else the command line itself.
+function effectiveCommand(cmd) {
+  const p = argvParts;
+  if (
+    p &&
+    p.length === 3 &&
+    /^(?:sh|bash|zsh|dash|ksh)$/.test(path.basename(p[0])) &&
+    /^-[a-z]*c$/.test(p[1])
+  )
+    return p[2];
+  return cmd;
 }
 
 // The field name is the vendor's, not ours, and so is the nesting: read the
@@ -806,22 +886,25 @@ function expandHome(p) {
   return p;
 }
 
-function pushDir(list, p) {
+function pushDir(list, p, cap = MAX_DIRS, base) {
   if (typeof p !== "string" || p.trim() === "") return;
   let abs;
   try {
-    abs = path.resolve(expandHome(p));
+    abs = base
+      ? path.resolve(base, expandHome(p))
+      : path.resolve(expandHome(p));
   } catch {
     return;
   }
   // A directory that does not exist cannot be a worktree, and a nonexistent
   // cwd handed to spawnSync is indistinguishable from a missing git binary.
   if (!isDir(abs)) return;
-  if (list.indexOf(abs) === -1 && list.length < MAX_DIRS) list.push(abs);
+  if (list.indexOf(abs) === -1 && list.length < cap) list.push(abs);
 }
 
-// The session cwd, plus whatever the payload claims it is. Both, not one:
-// adding a directory can only add refusals.
+// The session cwd, whatever the payload claims it is, and the tool's own
+// `workdir` (where Codex actually runs the command), resolved against both.
+// All of them, not one: adding a directory can only add refusals.
 function sessionDirs(data) {
   const dirs = [];
   let cwd = null;
@@ -831,25 +914,194 @@ function sessionDirs(data) {
     denyUnverifiable("the hook has no working directory");
   }
   pushDir(dirs, cwd);
-  if (data && typeof data === "object") pushDir(dirs, data.cwd);
+  if (data && typeof data === "object") {
+    pushDir(dirs, data.cwd);
+    const ti = data.tool_input;
+    const wds = [
+      ti && typeof ti === "object" ? ti.workdir : null,
+      data.workdir,
+    ];
+    for (const wd of wds) {
+      if (typeof wd !== "string" || wd.trim() === "") continue;
+      pushDir(dirs, wd, MAX_DIRS);
+      if (typeof data.cwd === "string" && data.cwd.trim() !== "")
+        pushDir(dirs, wd, MAX_DIRS, expandHome(data.cwd));
+    }
+  }
   if (dirs.length === 0)
     denyUnverifiable("no candidate working directory exists");
   return dirs;
 }
 
-// `git -C <dir>` and a leading `cd <dir> &&` retarget the command at another
-// repository. Ported from the Claude side, but as an ADDITION: there, the
-// retarget REPLACES the cwd; here every candidate is checked, because dropping
-// the session cwd would be an allow granted on a guess.
-function retargetDirs(cmd) {
-  const out = [];
-  const viaC = cmd.match(/git\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
-  const viaCd = cmd.match(/(?:^|&&|;|\|\|)\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
-  for (const m of [viaC, viaCd]) {
-    if (!m || !m[1]) continue;
-    pushDir(out, m[1].replace(/^["']/, "").replace(/["']$/, ""));
+// One shell word from index i: quotes removed, backslashes honoured. `bad`
+// flags what the shell would compute at run time — a substitution, a glob, a
+// `~user`, `cd -` — which no text inspection can resolve.
+function readWord(t, i) {
+  let v = "";
+  let bad = false;
+  const start = i;
+  const n = t.length;
+  while (i < n) {
+    const c = t[i];
+    if (/[\s;&|()<>]/.test(c)) break;
+    if (c === "'") {
+      const j = t.indexOf("'", i + 1);
+      if (j === -1) break;
+      v += t.slice(i + 1, j);
+      i = j + 1;
+      continue;
+    }
+    if (c === '"') {
+      let j = i + 1;
+      let inner = "";
+      while (j < n && t[j] !== '"') {
+        if (t[j] === "\\" && j + 1 < n && /[$`"\\\n]/.test(t[j + 1])) {
+          inner += t[j + 1];
+          j += 2;
+          continue;
+        }
+        if (t[j] === "$" || t[j] === "`") bad = true;
+        inner += t[j++];
+      }
+      if (j >= n) break;
+      v += inner;
+      i = j + 1;
+      continue;
+    }
+    if (c === "\\") {
+      if (i + 1 < n && t[i + 1] !== "\n") v += t[i + 1];
+      i += 2;
+      continue;
+    }
+    if (
+      c === "$" ||
+      c === "`" ||
+      c === "*" ||
+      c === "?" ||
+      c === "[" ||
+      c === "{"
+    )
+      bad = true;
+    if (c === "~" && i === start) {
+      const next = t[i + 1];
+      if (next === undefined || next === "/" || /[\s;&|()<>]/.test(next)) {
+        v += os.homedir();
+        i++;
+        continue;
+      }
+      bad = true;
+    }
+    v += c;
+    i++;
   }
-  return out;
+  if (v === "-") bad = true;
+  return { v, bad, end: i };
+}
+
+const MAX_TARGETS = 64;
+const T_LEAD = String.raw`(?:^|[\n;&|({"'\x60])\s*(?:(?:then|do|else|!|exec|builtin|command)\s+)?`;
+const T_CD = new RegExp(
+  T_LEAD +
+    String.raw`(cd|pushd|popd)(?![\w-])((?:[ \t]+(?:-[LPe@]+|--)(?=\s))*)`,
+  "g",
+);
+// `-C <dir>` of git — and of make, tar, env: they retarget too.
+const T_DASH_C = /(?:^|[\s"'])-C[ \t]+/g;
+const T_GITOPT = /(?:^|[\s"'])--(git-dir|work-tree)(?:=|[ \t]+)/g;
+const T_ENV = /(?:^|[\s;&|({"'\x60])(?:export[ \t]+)?GIT_(DIR|WORK_TREE)=/g;
+
+// Every place the command points the shell or git at another directory:
+// every `cd`/`pushd` (a subshell `(cd` included), every `-C`, every
+// `--git-dir`/`--work-tree`, every `GIT_DIR=`/`GIT_WORK_TREE=`, in every text
+// (the joined line and each argv element). Relative targets resolve against
+// the session dirs AND every target found before them. Returns the existing
+// worktree dirs, the existing git dirs, the first unresolvable token, and
+// whether the command's first act is `cd <existing dir> &&` (see main).
+function retargetDirs(texts, bases, lead) {
+  const found = [];
+  let bad = null;
+  for (const t of texts) {
+    const hits = [];
+    for (const [re, kind] of [
+      [T_CD, "cd"],
+      [T_DASH_C, "dir"],
+      [T_GITOPT, "opt"],
+      [T_ENV, "env"],
+    ]) {
+      re.lastIndex = 0;
+      let m;
+      while ((m = re.exec(t)) !== null) {
+        if (hits.length >= MAX_TARGETS) {
+          bad = bad || "more than " + MAX_TARGETS + " directory changes";
+          break;
+        }
+        let k = kind;
+        if (kind === "opt") k = m[1] === "git-dir" ? "gitdir" : "dir";
+        if (kind === "env") k = m[1] === "DIR" ? "gitdir" : "dir";
+        if (kind === "cd" && m[1] === "popd") {
+          bad = bad || "popd";
+          continue;
+        }
+        hits.push({ at: re.lastIndex, k });
+        if (re.lastIndex === m.index) re.lastIndex++;
+      }
+    }
+    hits.sort((a, b) => a.at - b.at);
+    for (const h of hits) {
+      let i = h.at;
+      while (i < t.length && (t[i] === " " || t[i] === "\t")) i++;
+      const w = readWord(t, i);
+      if (w.bad) {
+        bad = bad || t.slice(i, w.end) || "?";
+        continue;
+      }
+      // `cd` alone goes home; an empty assignment or -C names nothing.
+      const v = w.v === "" ? (h.k === "cd" ? os.homedir() : null) : w.v;
+      if (v === null) continue;
+      found.push({ v, k: h.k === "cd" ? "dir" : h.k });
+    }
+  }
+
+  const dirs = [];
+  const gitDirs = [];
+  for (const f of found) {
+    const roots = path.isAbsolute(f.v) ? [null] : bases.concat(dirs);
+    for (const r of roots) {
+      if (f.k === "gitdir") {
+        let abs;
+        try {
+          abs = r ? path.resolve(r, f.v) : path.resolve(f.v);
+        } catch {
+          continue;
+        }
+        if (
+          fs.existsSync(abs) &&
+          gitDirs.indexOf(abs) === -1 &&
+          gitDirs.length < MAX_TARGETS
+        )
+          gitDirs.push(abs);
+      } else {
+        pushDir(dirs, f.v, MAX_TARGETS, r || undefined);
+      }
+    }
+  }
+
+  // The drop case: the command STARTS with `cd <dir> &&`, so nothing it runs
+  // can execute in the session dirs unless a later target says so — and every
+  // later target is in `dirs` already.
+  let leadDirs = [];
+  const lm = /^\s*cd[ \t]+/.exec(lead);
+  if (lm && !bad) {
+    const w = readWord(lead, lm[0].length);
+    if (!w.bad && w.v !== "" && /^[ \t]*&&/.test(lead.slice(w.end))) {
+      const roots = path.isAbsolute(w.v) ? [null] : bases;
+      for (const r of roots)
+        pushDir(leadDirs, w.v, MAX_TARGETS, r || undefined);
+    }
+  }
+  // Belt and braces: whatever replaces the session dirs is itself checked.
+  for (const d of leadDirs) if (dirs.indexOf(d) === -1) dirs.push(d);
+  return { dirs, gitDirs, bad, dropSession: leadDirs.length > 0 };
 }
 
 // --- decisions --------------------------------------------------------------
@@ -868,10 +1120,33 @@ function decideBlind(dirs, why) {
   allow();
 }
 
-function decide(dirs, hitList) {
+// A git dir named by --git-dir / GIT_DIR: `rev-parse --is-inside-work-tree`
+// answers false there, so ask for the branch through the git dir itself.
+function branchOfGitDir(p) {
+  const br = git(
+    ["--git-dir=" + p, "branch", "--show-current"],
+    isDir(p) ? p : path.dirname(p),
+  );
+  const brBroken = gitBroken(br);
+  if (brBroken) return { kind: "broken", why: brBroken };
+  if (br.status !== 0) {
+    if (/not a git repository/i.test(String(br.stderr || "")))
+      return { kind: "norepo" };
+    return {
+      kind: "broken",
+      why: "git --git-dir branch --show-current failed",
+    };
+  }
+  return { kind: "branch", branch: String(br.stdout || "").trim() };
+}
+
+function decide(dirs, hitList, gitDirs = []) {
   const lead = hitList[0];
-  for (const d of dirs) {
-    const st = branchOf(d);
+  const probes = dirs
+    .map((d) => () => branchOf(d))
+    .concat(gitDirs.map((g) => () => branchOfGitDir(g)));
+  for (const probe of probes) {
+    const st = probe();
     if (st.kind === "broken") {
       deny(
         "BLOCKED: this shell command " +
@@ -904,9 +1179,10 @@ function decide(dirs, hitList) {
 // Sole protected-branch mutation: one plain creation command, one new valid
 // branch name, no start point, chaining, redirection, or force spelling.
 function tryBranchEscape(dirs, cmd) {
-  const m = /^\s*git\s+(?:checkout\s+-b|switch\s+(?:-c|--create))\s+([A-Za-z0-9._/-]+)\s*$/.exec(
-    cmd,
-  );
+  const m =
+    /^\s*git\s+(?:checkout\s+-b|switch\s+(?:-c|--create))\s+([A-Za-z0-9._/-]+)\s*$/.exec(
+      cmd,
+    );
   if (!m) return false;
   const name = m[1];
   if (PROTECTED.indexOf(name) !== -1) return false;
@@ -918,11 +1194,16 @@ function tryBranchEscape(dirs, cmd) {
     const valid = git(["check-ref-format", "--branch", name], d);
     if (gitBroken(valid) || valid.status !== 0)
       denyOnBranch("the requested new branch name is invalid");
-    const exists = git(["show-ref", "--verify", "--quiet", "refs/heads/" + name], d);
+    const exists = git(
+      ["show-ref", "--verify", "--quiet", "refs/heads/" + name],
+      d,
+    );
     if (gitBroken(exists) || (exists.status !== 0 && exists.status !== 1))
       denyOnBranch("the requested branch could not be checked for existence");
     if (exists.status === 0)
-      denyOnBranch("the requested branch already exists, so creation is not new");
+      denyOnBranch(
+        "the requested branch already exists, so creation is not new",
+      );
   }
   allow();
   return true;
@@ -963,7 +1244,15 @@ function main() {
     return;
   }
 
-  if (tryBranchEscape(dirs, cmd)) return;
+  // The rules read the joined line (a `-lc` payload is a substring of it);
+  // the argv elements feed the retarget scan, where joining loses the `^`
+  // anchor of a payload's leading `cd`. `run` is what the shell executes.
+  const run = effectiveCommand(cmd);
+  const texts = [cmd].concat(
+    (argvParts || []).filter((x) => x !== cmd && x.trim() !== ""),
+  );
+
+  if (tryBranchEscape(dirs, run)) return;
 
   // Unconditional: no repo, remote or branch lookup decides this one.
   if (pushTargetsProtectedRef(cmd))
@@ -975,7 +1264,7 @@ function main() {
   // The read-only fast path: no write-shaped rule fires, so there is nothing
   // to refuse and not one git call is spent on it.
   const hitList = matchRules(cmd);
-  if (containsGitCommand(cmd) && !provenReadOnlyGitCommand(dequoteTight(cmd)))
+  if (containsGitCommand(cmd) && !provenReadOnlyGitCommand(dequoteTight(run)))
     hitList.unshift({
       id: "git-not-proven-readonly",
       family: "git",
@@ -983,8 +1272,21 @@ function main() {
     });
   if (hitList.length === 0) allow();
 
-  for (const d of retargetDirs(cmd)) pushDir(dirs, d);
-  decide(dirs, hitList);
+  // Every directory the command can land in is checked. The session dirs stay
+  // in the set unless the command's first act is `cd <existing dir> &&`:
+  // then nothing runs in them, and `cd feat && git commit` works from master.
+  const rt = retargetDirs(texts, dirs, run);
+  if (rt.bad !== null)
+    denyUnverifiable(
+      "the command targets a directory that cannot be resolved (" +
+        safe(rt.bad.slice(0, 80)) +
+        ")",
+    );
+  const all = rt.dropSession ? [] : dirs.slice();
+  for (const d of rt.dirs) if (all.indexOf(d) === -1) all.push(d);
+  if (all.length === 0 && rt.gitDirs.length === 0)
+    denyUnverifiable("no candidate working directory exists");
+  decide(all, hitList, rt.gitDirs);
 }
 
 function start() {

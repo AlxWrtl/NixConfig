@@ -202,14 +202,16 @@ function realpathish(p) {
   return abs;
 }
 
-function firstPath(obj) {
-  if (!obj || typeof obj !== "object") return null;
-  const keys = ["file_path", "path", "filePath", "notebook_path"];
-  for (const k of keys) {
+// Every path field, not the first: a payload carrying two fields must not let
+// an outside one vouch for an inside one (B6).
+function allPaths(obj) {
+  const out = [];
+  if (!obj || typeof obj !== "object") return out;
+  for (const k of ["file_path", "path", "filePath", "notebook_path"]) {
     const v = obj[k];
-    if (typeof v === "string" && v.trim() !== "") return v;
+    if (typeof v === "string" && v.trim() !== "") out.push(v);
   }
-  return null;
+  return out;
 }
 
 // Codex edits through PATCHES, not through a path field: `apply_patch` occurs
@@ -220,33 +222,43 @@ function firstPath(obj) {
 // never apply. So read the patch body too.
 //
 // The envelope's own format is the source: `*** Add File: <p>`,
-// `*** Update File: <p>`, `*** Delete File: <p>`, plus the unified-diff form
-// a patch may carry. Any ONE target inside the worktree is enough to refuse,
-// so the first match decides and the rest need not be parsed.
-function firstPatchPath(obj) {
-  if (!obj || typeof obj !== "object") return null;
+// `*** Update File: <p>`, `*** Delete File: <p>`, `*** Move to: <p>` (the
+// rename destination of an Update), plus the unified-diff form a patch may
+// carry. EVERY target is collected (B6): taking only the first let a patch
+// open with an outside Add and then Update or Move into the worktree. One
+// target inside the worktree is enough to refuse.
+function allPatchPaths(obj) {
+  const out = [];
+  if (!obj || typeof obj !== "object") return out;
   const bodies = [];
-  for (const k of ["patch", "input", "diff", "content", "changes"]) {
+  for (const k of ["patch", "input", "diff", "content", "command", "changes"]) {
     const v = obj[k];
     if (typeof v === "string" && v.trim() !== "") bodies.push(v);
-    // `changes` may be an object keyed by path — the keys are the targets.
-    else if (v && typeof v === "object" && !Array.isArray(v)) {
+    // `command` may be an argv array (["apply_patch", "<body>"]); an array of
+    // change objects gives up its path fields instead.
+    else if (Array.isArray(v)) {
+      const joined = v.filter((x) => typeof x === "string").join("\n");
+      if (joined.trim() !== "") bodies.push(joined);
+      for (const x of v) out.push(...allPaths(x));
+    }
+    // `changes` may be an object keyed by path — every key is a target.
+    else if (v && typeof v === "object") {
       for (const key of Object.keys(v)) {
-        if (typeof key === "string" && key.includes("/")) return key;
+        if (key.trim() !== "") out.push(key);
       }
     }
   }
   const re =
-    /^\*\*\*\s+(?:Add|Update|Delete)\s+File:\s*(.+?)\s*$|^(?:\+\+\+|---)\s+(?:[ab]\/)?(.+?)\s*$/;
+    /^\*\*\*\s+(?:(?:Add|Update|Delete)\s+File|Move\s+to):\s*(.+?)\s*$|^(?:\+\+\+|---)\s+(?:[ab]\/)?(.+?)\s*$/;
   for (const body of bodies) {
-    for (const line of body.split("\n")) {
+    for (const line of body.split(/\r?\n/)) {
       const m = re.exec(line);
       if (!m) continue;
       const p = (m[1] || m[2] || "").trim();
-      if (p && p !== "/dev/null") return p;
+      if (p && p !== "/dev/null") out.push(p);
     }
   }
-  return null;
+  return out;
 }
 
 // --- main -------------------------------------------------------------------
@@ -293,13 +305,15 @@ function main() {
   }
 
   // The exact field name is the vendor's, not ours: read the plausible
-  // aliases rather than betting on one (plan R4).
-  const raw =
-    firstPath(data.tool_input) ||
-    firstPath(data) ||
-    firstPatchPath(data.tool_input) ||
-    firstPatchPath(data);
-  if (!raw) {
+  // aliases rather than betting on one (plan R4). The UNION of every source
+  // is checked; any one target inside the worktree refuses.
+  const raws = [
+    ...allPaths(data.tool_input),
+    ...allPaths(data),
+    ...allPatchPaths(data.tool_input),
+    ...allPatchPaths(data),
+  ];
+  if (raws.length === 0) {
     denyOnBranch(
       "the hook input carries neither a file path nor a readable patch",
     );
@@ -317,14 +331,28 @@ function main() {
     return;
   }
   const realTop = realpathish(String(top.stdout || "").trim());
-  const realTarget = realpathish(raw);
 
-  // The only allow left: the target is PROVABLY somewhere else.
-  if (realTarget !== realTop && !realTarget.startsWith(realTop + path.sep)) {
-    allow();
+  // A relative target is resolved against BOTH the hook's cwd and the
+  // session cwd the payload reports, when it reports one: whichever the host
+  // meant, neither may land inside.
+  const bases = [process.cwd()];
+  if (typeof data.cwd === "string" && data.cwd.trim() !== "") {
+    bases.push(data.cwd);
+  }
+  for (const raw of raws) {
+    const cands = path.isAbsolute(raw)
+      ? [raw]
+      : bases.map((b) => path.resolve(b, raw));
+    for (const c of cands) {
+      const real = realpathish(c);
+      if (real === realTop || real.startsWith(realTop + path.sep)) {
+        deny("BLOCKED: on " + safe(branch) + ". " + CUT);
+      }
+    }
   }
 
-  deny("BLOCKED: on " + safe(branch) + ". " + CUT);
+  // The only allow left: every target is PROVABLY somewhere else.
+  allow();
 }
 
 function start() {

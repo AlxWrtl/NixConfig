@@ -279,6 +279,13 @@ P_INSIDE=$(pay inside "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write
 # This payload proves the patch body is read: the deny must name the branch,
 # not the missing field.
 P_PATCH=$(pay patch "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"patch\":\"*** Begin Patch\\n*** Update File: $FIX_MAIN/src/app.ts\\n@@\\n-a\\n+b\\n*** End Patch\"}}")
+# The DOCUMENTED apply_patch shape carries the envelope in `tool_input.command`,
+# not `patch` (B6). Every path in the envelope counts: an Add outside must not
+# launder an Update inside, and a `Move to` into the tree is a write into it.
+P_PATCH_CMD=$(pay patch-cmd "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"command\":\"*** Begin Patch\\n*** Update File: $FIX_MAIN/src/app.ts\\n@@\\n-a\\n+b\\n*** End Patch\"}}")
+P_PATCH_ADD_TMP=$(pay patch-add-tmp "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"command\":\"*** Begin Patch\\n*** Add File: $OUTSIDE/x.txt\\n+x\\n*** Update File: $FIX_MAIN/src/app.ts\\n@@\\n-a\\n+b\\n*** End Patch\"}}")
+P_PATCH_MOVE=$(pay patch-move "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"command\":\"*** Begin Patch\\n*** Update File: $OUTSIDE/plain.txt\\n*** Move to: $FIX_MAIN/src/moved.ts\\n@@\\n-plain\\n+moved\\n*** End Patch\"}}")
+P_PATCH_OUT=$(pay patch-out "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"apply_patch\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"command\":\"*** Begin Patch\\n*** Add File: $OUTSIDE/new.txt\\n+x\\n*** Update File: $OUTSIDE/plain.txt\\n@@\\n-plain\\n+b\\n*** End Patch\"}}")
 P_FEAT=$(pay feat "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"cwd\":\"$FIX_FEAT\",\"tool_input\":{\"file_path\":\"$FIX_FEAT/src/app.ts\"}}")
 P_MASTER=$(pay master "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"cwd\":\"$FIX_MASTER\",\"tool_input\":{\"file_path\":\"$FIX_MASTER/src/app.ts\"}}")
 P_OUTSIDE=$(pay outside "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Write\",\"cwd\":\"$FIX_MAIN\",\"tool_input\":{\"file_path\":\"$OUTSIDE/plain.txt\"}}")
@@ -289,13 +296,16 @@ P_BROKEN=$(pay broken '{"hook_event_name":"PreToolUse","tool_input":{')
 
 # --- shell payloads -----------------------------------------------------------
 #
-# `tool_name` is written as "shell" here, but NOTHING in this file depends on
-# it: the real name is not established (the binary carries `shell`,
-# `local_shell` and `bash`), the matcher in hooks.nix names all three, and the
-# hook itself keys on the command field, never on the tool name. A probe that
-# asserted a tool name would be asserting a guess.
+# `tool_name` is "Bash": the Codex hooks docs name it for shell and
+# exec_command calls, and hooks.nix matches it. The hook itself still keys on
+# the command field, never on the tool name, so no verdict here depends on it.
 sh_payload() { # sh_payload <name> <cwd> <json-command-value>
-  pay "$1" "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"shell\",\"cwd\":\"$2\",\"tool_input\":{\"command\":$3}}"
+  pay "$1" "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"cwd\":\"$2\",\"tool_input\":{\"command\":$3}}"
+}
+# Same, plus `tool_input.workdir`: the directory Codex actually runs the
+# command in, which may differ from the session cwd (B7).
+shw_payload() { # shw_payload <name> <cwd> <json-command-value> <workdir>
+  pay "$1" "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"Bash\",\"cwd\":\"$2\",\"tool_input\":{\"command\":$3,\"workdir\":\"$4\"}}"
 }
 
 # THE CASE THIS HOOK EXISTS FOR: the exact command that changed a file on
@@ -395,6 +405,65 @@ S_PUSH_P8=$(sh_payload sh-push-p8 "$FIX_FEAT" "\"git push origin HEAD:heads/main
 # one must pass it (feature branch, no protected destination) inside 1 s.
 FAST_CMD=$(printf 'git push %.0s' $(seq 14563))
 S_PUSH_FAST=$(sh_payload sh-push-fast "$FIX_FEAT" "\"$FAST_CMD\"")
+# --- B7: the command retargets another repository -----------------------------
+# Launched from the FEATURE fixture, each of these writes to MASTER. A hook that
+# reads only the session cwd sees a feature branch and waves them through.
+S_WD_MASTER=$(shw_payload sh-wd-master "$FIX_FEAT" "\"git commit -am x\"" "$FIX_MASTER")
+S_WD_FEAT=$(shw_payload sh-wd-feat "$FIX_FEAT" "\"git commit -am x\"" "$FIX_FEAT")
+S_SUB_CD=$(sh_payload sh-sub-cd "$FIX_FEAT" "\"(cd $FIX_MASTER && git commit -am x)\"")
+S_SUB_RM=$(sh_payload sh-sub-rm "$FIX_FEAT" "\"(cd $FIX_MASTER && rm f)\"")
+S_SUB_FEAT=$(sh_payload sh-sub-feat "$FIX_FEAT" "\"(cd $FIX_FEAT && git commit -am x)\"")
+S_PUSHD=$(sh_payload sh-pushd "$FIX_FEAT" "\"pushd $FIX_MASTER && git commit -am x\"")
+S_GITDIR_ENV=$(sh_payload sh-gitdir-env "$FIX_FEAT" "\"GIT_DIR=$FIX_MASTER/.git git commit -am x\"")
+S_GITDIR_FLAG=$(sh_payload sh-gitdir-flag "$FIX_FEAT" "\"git --git-dir=$FIX_MASTER/.git commit -am x\"")
+S_WORKTREE_FLAG=$(sh_payload sh-worktree-flag "$FIX_FEAT" "\"git --work-tree=$FIX_MASTER add .\"")
+# The `-lc` payload of an argv command is read anchored, like a string command.
+S_ARGV_LC_CD=$(sh_payload sh-argv-lc-cd "$FIX_FEAT" "[\"bash\",\"-lc\",\"cd $FIX_MASTER && git commit -am x\"]")
+# A variable target cannot be resolved statically: fail closed.
+S_VAR_CD=$(sh_payload sh-var-cd "$FIX_FEAT" "\"R=$FIX_MASTER; cd \\\"\$R\\\" && rm f\"")
+# Reverse direction: leaving master for the feature repo is allowed.
+S_CD_FEAT_FROM_MASTER=$(sh_payload sh-cd-feat-from-master "$FIX_MASTER" "\"cd $FIX_FEAT && git commit -am x\"")
+
+# --- B8: writers the fs rules did not know ------------------------------------
+# Each deny command is graded twice: refused on MASTER, allowed on FEATURE (the
+# rule must key on the branch, not on the word). Pass partners share the tool
+# word with a read-only spelling and must stay allowed on MASTER.
+B8_ROWS=""
+b8_row() { # b8_row <id> <cwd> <want> <command> — command holds no `"` or `\`
+  local p
+  p=$(sh_payload "sh-$1" "$2" "\"$4\"")
+  if [ "$3" = 2 ]; then
+    B8_ROWS+="$1|bs|$2|base|$p|2|.hookSpecificOutput.permissionDecision == \"deny\"|BLOCKED: on master: .*\(rule fs-|"$'\n'
+  else
+    B8_ROWS+="$1|bs|$2|base|$p|0|-|-|"$'\n'
+  fi
+}
+b8_pair() { # b8_pair <id> <command>
+  b8_row "bs-b8-$1-master-deny" "$FIX_MASTER" 2 "$2"
+  b8_row "bs-b8-$1-feat-pass" "$FIX_FEAT" 0 "$2"
+}
+b8_pair sed-e-inplace-bak "sed -e 's/1/2/' -i.bak f"
+b8_pair curl-so "curl -so f https://example.invalid"
+b8_pair wget-O "wget -O f https://example.invalid"
+b8_pair tar-xf "tar xf a.tar"
+b8_pair tar-czf "tar czf o.tgz d"
+b8_pair unzip-o "unzip -o a.zip"
+b8_pair rsync "rsync a b"
+b8_pair sponge "echo x | sponge f"
+b8_pair vim-c "vim -c ':wq' f"
+b8_row bs-b8-curl-s-pass "$FIX_MASTER" 0 "curl -s https://example.invalid"
+b8_row bs-b8-curl-devnull-pass "$FIX_MASTER" 0 "curl -so /dev/null -w '%{http_code}' https://example.invalid"
+b8_row bs-b8-wget-stdout-pass "$FIX_MASTER" 0 "wget -qO- https://example.invalid"
+b8_row bs-b8-tar-tf-pass "$FIX_MASTER" 0 "tar tf a.tar"
+b8_row bs-b8-unzip-l-pass "$FIX_MASTER" 0 "unzip -l a.zip"
+b8_row bs-b8-sed-n-pass "$FIX_MASTER" 0 "sed -n 's/-i/x/p' f"
+b8_row bs-b8-vim-version-pass "$FIX_MASTER" 0 "vim --version"
+# ~128 KiB mixing every new rule's tool words and cd/option fragments, just
+# under MAX_CMD, on FEATURE: must be inspected and allowed inside 1 s.
+FS_FAST_CMD=$(printf 'sed curl tar vim wget -x (cd %.0s' $(seq 4366))
+S_FS_FAST=$(sh_payload sh-fs-fast "$FIX_FEAT" "\"$FS_FAST_CMD\"")
+FS_FAST_NOCD_CMD=$(printf 'sed curl tar vim wget -x %.0s' $(seq 4366))
+S_FS_FAST_NOCD=$(sh_payload sh-fs-fast-nocd "$FIX_FEAT" "\"$FS_FAST_NOCD_CMD\"")
 S_NOCMD=$(pay sh-nocmd "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"shell\",\"cwd\":\"$FIX_MASTER\",\"tool_input\":{\"description\":\"list files\"}}")
 
 qg_payload() { # qg_payload <name> <cwd> <stop_hook_active>
@@ -544,6 +613,10 @@ done << TABLE
 # --- protect-main.js: SECURITY, fails CLOSED ---------------------------------
 pm-main-inside|pm|$FIX_MAIN|base|$P_INSIDE|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main|
 pm-patch-inside|pm|$FIX_MAIN|base|$P_PATCH|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main\. Create|
+pm-patch-command-inside|pm|$FIX_MAIN|base|$P_PATCH_CMD|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main|
+pm-patch-add-tmp-then-repo|pm|$FIX_MAIN|base|$P_PATCH_ADD_TMP|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main|
+pm-patch-move-into|pm|$FIX_MAIN|base|$P_PATCH_MOVE|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on main|
+pm-patch-command-outside|pm|$FIX_MAIN|base|$P_PATCH_OUT|0|-|-|
 pm-master-inside|pm|$FIX_MASTER|base|$P_MASTER|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
 pm-feature-branch|pm|$FIX_FEAT|base|$P_FEAT|0|-|-|
 pm-outside-worktree|pm|$FIX_MAIN|base|$P_OUTSIDE|0|-|-|
@@ -632,6 +705,24 @@ bs-push-n4-pass|bs|$FIX_FEAT|base|$S_PUSH_N4|0|-|-|
 bs-push-n7-pass|bs|$FIX_FEAT|base|$S_PUSH_N7|0|-|-|
 bs-push-n9-pass|bs|$FIX_FEAT|base|$S_PUSH_N9|0|-|-|
 bs-push-fast|bs|$FIX_FEAT|base|$S_PUSH_FAST|0|-|-|1
+# B7: retargeted from the feature repo into master — deny; partners pass.
+bs-workdir-master|bs|$FIX_FEAT|base|$S_WD_MASTER|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
+bs-subshell-cd|bs|$FIX_FEAT|base|$S_SUB_CD|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
+bs-subshell-rm|bs|$FIX_FEAT|base|$S_SUB_RM|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
+bs-pushd|bs|$FIX_FEAT|base|$S_PUSHD|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
+bs-gitdir-env|bs|$FIX_FEAT|base|$S_GITDIR_ENV|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
+bs-gitdir-flag|bs|$FIX_FEAT|base|$S_GITDIR_FLAG|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
+bs-worktree-flag|bs|$FIX_FEAT|base|$S_WORKTREE_FLAG|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
+bs-argv-lc-cd|bs|$FIX_FEAT|base|$S_ARGV_LC_CD|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED: on master|
+bs-var-cd|bs|$FIX_FEAT|base|$S_VAR_CD|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED|
+bs-workdir-feat|bs|$FIX_FEAT|base|$S_WD_FEAT|0|-|-|
+bs-subshell-feat|bs|$FIX_FEAT|base|$S_SUB_FEAT|0|-|-|
+bs-cd-feat-from-master|bs|$FIX_MASTER|base|$S_CD_FEAT_FROM_MASTER|0|-|-|
+# B8: new fs writers on master — deny; same command on feature and read-only partners pass.
+$B8_ROWS
+# Deny is intended: >64 cd targets -> unresolvable -> fail-closed; still must be fast.
+bs-fs-regex-128k|bs|$FIX_FEAT|base|$S_FS_FAST|2|-|more than 64 directory changes|1
+bs-fs-regex-128k-nocd|bs|$FIX_FEAT|base|$S_FS_FAST_NOCD|0|-|-|1
 bs-malformed-stdin|bs|$FIX_MASTER|base|$P_BROKEN|2|.hookSpecificOutput.permissionDecision == "deny"|-|
 bs-missing-command|bs|$FIX_MASTER|base|$S_NOCMD|2|.hookSpecificOutput.permissionDecision == "deny"|-|
 bs-no-git-on-path|bs|$FIX_MASTER|nogit|$S_PERL|2|.hookSpecificOutput.permissionDecision == "deny"|-|

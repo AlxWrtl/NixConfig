@@ -193,18 +193,18 @@ let
         + " — trust is recorded by position, so swapping them, or inserting anything AHEAD of protect-main, invalidates an approval already given and Codex then SKIPS that hook without a word. The shell guard is appended at index 1 for exactly that reason";
     }
     {
-      name = "C5 matcher: PreToolUse[0] matches Edit|Write, PreToolUse[1] covers the three shell tool names, Stop[0] carries none";
+      name = "C5 matcher: PreToolUse[0] matches Edit|Write, PreToolUse[1] matches Bash|shell|local_shell|exec_command, Stop[0] carries none";
       ok =
         jsonOk
         && matcherAt "PreToolUse" 0 == "Edit|Write"
-        && matcherAt "PreToolUse" 1 == "shell|local_shell|bash"
+        && matcherAt "PreToolUse" 1 == "Bash|shell|local_shell|exec_command"
         && matcherAt "Stop" 0 == null;
       msg =
         "PreToolUse[0] matcher is "
         + showMatcherAt "PreToolUse" 0
         + " and PreToolUse[1] matcher is "
         + showMatcherAt "PreToolUse" 1
-        + " — a matcher that does not name the tool means the guard never fires on the very calls it exists to refuse, which is how `perl -0pi -e 's/1/2/g' note.txt` edited a file on master while protect-main watched Edit|Write. The shell tool's real name is NOT established (the binary carries `shell`, `local_shell` and `bash`), so all three are named rather than guessed at; Stop takes no matcher";
+        + " — a matcher that does not name the tool means the guard never fires on the very calls it exists to refuse, which is how `perl -0pi -e 's/1/2/g' note.txt` edited a file on master while protect-main watched Edit|Write. The Codex hooks docs (codex-cli 0.159.2, learn.chatgpt.com/docs/hooks) report shell and unified exec (`exec_command`) as `tool_name: \"Bash\"` and matchers are case-sensitive regexes, so the old `shell|local_shell|bash` never fired: the BEFORE probe of 2026-09-30 committed on master with only Stop firing. Code-mode `exec` stays out on purpose (JS input; its nested calls are hooked per the docs); Stop takes no matcher";
     }
     {
       name = "C6 timeouts: every hook is registered with at least 4 seconds";

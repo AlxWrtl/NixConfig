@@ -383,8 +383,10 @@ in
         # Knowledge-graph refresh wrapper (no args; writes only to ~/GraphVault
         # — see sandbox allowWrite). Fired in background by APEX steps 01b/09b.
         "Bash(graphify-reindex)"
-        # vault-snapshot writes only to ~/GraphVault/vault-snapshot.log and to
-        # the AlxWrtl/attic release assets; it never touches the vault itself.
+        # vault-snapshot auto-commits dirty notes onto `vault/<stamp>` in the
+        # vault, then uploads the encrypted bundle to AlxWrtl/attic. Run as
+        # sandboxed Bash it cannot write the vault .git: logs skip=sandboxed,
+        # exits 0.
         "Bash(vault-snapshot)"
         # Git — safe operations (granular, not blanket)
         "Bash(git status *)"

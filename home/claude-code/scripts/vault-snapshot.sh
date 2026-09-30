@@ -79,6 +79,16 @@ esac
 [ -d "$VAULT/.git" ] || { log "FATAL not a git repo: $VAULT"; exit 1; }
 command -v gh >/dev/null 2>&1 || { log "FATAL gh not on PATH"; exit 1; }
 
+# A sandboxed caller (Seatbelt) cannot write the vault .git, so every git op
+# below would fail. Test the real capability rather than SANDBOX_RUNTIME: it
+# also covers nested sessions that inherit the sandbox without the variable.
+PROBE="$VAULT/.git/.snap-probe.$$"
+if ! mkdir "$PROBE" 2>/dev/null; then
+  log "INFO skip=sandboxed (vault .git not writable)"
+  exit 0
+fi
+rmdir "$PROBE" 2>/dev/null || true
+
 # A dirty tree used to be REPORTED and nothing more, on the reasoning that a
 # bundle carries committed history only and refusing would mean no backup at
 # all. That reasoning was sound but incomplete: reporting the omission does not

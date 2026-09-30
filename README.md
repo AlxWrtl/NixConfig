@@ -123,7 +123,6 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 ├── secrets.nix                  # 🔒 Encrypted (git-crypt) — emails, IPs, usernames
 ├── bootstrap.sh                 # Fresh-machine install
 ├── backup-apps.sh               # Export app configs into backups/
-├── Nix-Darwin-Doc.md            # Generated nix-darwin option reference
 └── .gitattributes               # git-crypt filter rules
 ```
 
@@ -163,6 +162,17 @@ nix flake update                 # Update inputs
 nix develop                      # Dev shell: vulnix, nix-tree, nixfmt, nil
 darwin-rebuild rollback          # Rollback to previous generation
 darwin-rebuild switch --flake .#alex-mbp --show-trace -v  # Debug
+```
+
+## Option Docs
+
+`nix-options` (`home/claude-code/scripts/nix-options.sh`, packaged by `home/claude-code/nix-options.nix`) evaluates the options of the flake.lock-pinned nix-darwin, home-manager and determinate modules. "Declared in" maps to GitHub at the lock rev. Inside the Claude sandbox it falls back to a read-only store. Override with `NIX_OPTIONS_FLAKE`, `--flake` or `--host`.
+
+```bash
+nix-options show system.defaults.dock.autohide
+nix-options show programs.git.settings
+nix-options search dock
+nix-options --json show system.defaults.dock.autohide
 ```
 
 ## Quality Gates

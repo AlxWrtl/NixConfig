@@ -274,7 +274,7 @@ extract_hook() { # extract_hook <destination>
     exit 2
   }
   "$nix" eval --raw --impure --expr \
-    "(import \"$HOOKS_NIX\" { graphifyReindexPkg = \"/nix/store/x\"; vaultSnapshotPkg = \"/nix/store/y\"; }).hookRequireApex" \
+    "(import \"$HOOKS_NIX\" { graphifyReindexPkg = \"/nix/store/x\"; vaultSnapshotPkg = \"/nix/store/y\"; alxVaultPath = \"/nonexistent/vault-stub\"; }).hookRequireApex" \
     > "$dest" 2> "$WORK/extract.err" || {
     echo "probe: extracting hookRequireApex from hooks.nix failed" >&2
     head -c 800 "$WORK/extract.err" >&2

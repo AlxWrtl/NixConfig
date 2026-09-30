@@ -1,7 +1,8 @@
 # Home Manager activation scripts for ~/.codex
 #
 # Every body below runs inside a ( … ) || true subshell, for the reason
-# documented at home/claude-code/activation.nix:256-260: home-manager
+# documented in the claudeCodeDevBrowser NOTE of
+# home/claude-code/activation.nix: home-manager
 # concatenates ALL activation entries into ONE `set -eu` shell, so a bare
 # `exit` — or any non-zero command — terminates the entire activation and
 # silently skips every later DAG entry. Both scripts called here already exit

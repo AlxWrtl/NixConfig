@@ -108,9 +108,18 @@
   # Merge settings.json (intelligent merge)
   # -------------------------
   # Subshell-wrapped: see claudeCodeDevBrowser note — a bare `exit 0` would
-  # abort the whole activation chain.
+  # abort the whole activation chain; the subshell still scopes it.
+  # rc-capture (`set +e` … `rc=$?` … `set -e`) instead of `( … ) || true`:
+  # errexit is INERT for every command of a subshell that sits left of `||`,
+  # so the inner `set -e` never fired and a failed jq went unnoticed. With
+  # the rc captured, a failure aborts the subshell and is reported, while the
+  # rest of the activation still runs. The `> "$TMP"` and `mv` are separate
+  # statements for the same reason: a pipeline left of `&&` is exempt too.
+  # Dry-run (HM sets DRY_RUN, tested for set-ness): skip, write nothing.
   claudeCodeSettingsMerge = lib.hm.dag.entryAfter [ "claudeCodePerms" ] ''
+    set +e
     (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeSettingsMerge"; exit 0; fi
       set -euo pipefail
       BASE="$HOME/.claude/settings-base.json"
       TARGET="$HOME/.claude/settings.json"
@@ -152,6 +161,7 @@
       # laissé intact plutôt que d'y écrire `null`.
       if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
         TMP=$(mktemp)
+        trap 'rm -f "$TMP"' EXIT
         BASE_SL=$(jq -c '.statusLine' "$BASE")
         BASE_PERMS=$(jq -c '.permissions' "$BASE")
         BASE_HOOKS=$(jq -c '.hooks' "$BASE")
@@ -169,7 +179,8 @@
              # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas
              # garder deux sources de vérité qui peuvent diverger.
              | del(.voiceEnabled)' \
-          > "$TMP" && mv "$TMP" "$TARGET"
+          > "$TMP"
+        mv "$TMP" "$TARGET"
         chmod 600 "$TARGET"
       else
         # First install: copy base
@@ -177,7 +188,12 @@
         cp "$BASE" "$TARGET"
         chmod 600 "$TARGET"
       fi
-    ) || true
+    )
+    settingsMergeRc=$?
+    set -e
+    if [ "$settingsMergeRc" -ne 0 ]; then
+      echo "⚠ claudeCodeSettingsMerge failed (rc=$settingsMergeRc) — settings.json left unchanged, see error above" >&2
+    fi
   '';
 
   # -------------------------
@@ -192,9 +208,13 @@
   # Subshell-wrapped: see claudeCodeDevBrowser note — a bare `exit 0` would
   # abort the whole activation chain. (This entry sits LAST in DAG order, so
   # it was the silent victim: claudeCodeDevBrowser's `exit 0` killed the run
-  # before this ever executed.)
+  # before this ever executed.) rc-capture instead of `|| true`, and jq/mv as
+  # two statements: same reason as claudeCodeSettingsMerge (errexit is inert
+  # under `||` and left of `&&`).
   claudeCodeMcpMerge = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
+    set +e
     (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeMcpMerge"; exit 0; fi
       set -euo pipefail
       MCP_BASE="$HOME/.claude/mcp-servers-base.json"
       TARGET="$HOME/.claude.json"
@@ -214,11 +234,16 @@
       # MCP server carries a `__SECRET_*__` placeholder. Restore the jq `walk`
       # step here if one ever does again.
 
-      jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP" \
-        && mv "$TMP" "$TARGET"
+      jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP"
+      mv "$TMP" "$TARGET"
       chmod 600 "$TARGET"
       echo "✓ MCP merge → $TARGET ($(jq -c '.mcpServers | keys' "$TARGET"))"
-    ) || true
+    )
+    mcpMergeRc=$?
+    set -e
+    if [ "$mcpMergeRc" -ne 0 ]; then
+      echo "⚠ claudeCodeMcpMerge failed (rc=$mcpMergeRc) — ~/.claude.json left unchanged, see error above" >&2
+    fi
   '';
 
   # -------------------------
@@ -229,11 +254,32 @@
     SNAPSHOT="$HOME/.claude/config-snapshot.json"
     GEN_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 
-    # Discover installed components from actual files
-    AGENTS=$(ls "$HOME/.claude/agents/"*.md 2>/dev/null | xargs -I{} basename {} .md | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
-    SKILLS=$(ls -d "$HOME/.claude/skills/"*/SKILL.md 2>/dev/null | xargs -I{} dirname {} | xargs -I{} basename {} | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
-    COMMANDS=$(ls "$HOME/.claude/commands/"*.md 2>/dev/null | xargs -I{} basename {} .md | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
-    HOOKS=$(ls "$HOME/.claude/hooks/"*.{js,sh} 2>/dev/null | xargs -I{} basename {} | ${pkgs.jq}/bin/jq -R . | ${pkgs.jq}/bin/jq -s .)
+    # Discover installed components from actual files. nullglob arrays, not
+    # `ls glob | … | jq -s`: on an empty dir that pipeline exits non-zero under
+    # pipefail and, this entry being NOT subshell-wrapped, kills the whole
+    # activation. nullglob is switched back off before the entry ends so it
+    # cannot leak into later DAG entries (same shell).
+    shopt -s nullglob
+    snapAgents=("$HOME/.claude/agents/"*.md)
+    snapSkills=("$HOME/.claude/skills/"*/SKILL.md)
+    snapCommands=("$HOME/.claude/commands/"*.md)
+    # One glob, then filter: `*.{js,sh}` would list every .js before every
+    # .sh, where `ls` sorted them together.
+    snapHooks=()
+    for snapHook in "$HOME/.claude/hooks/"*; do
+      case "$snapHook" in
+        *.js | *.sh) snapHooks+=("$snapHook") ;;
+      esac
+    done
+    shopt -u nullglob
+    snapAgents=("''${snapAgents[@]##*/}")
+    snapSkills=("''${snapSkills[@]%/SKILL.md}")
+    snapSkills=("''${snapSkills[@]##*/}")
+    snapCommands=("''${snapCommands[@]##*/}")
+    AGENTS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args "''${snapAgents[@]%.md}")
+    SKILLS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args "''${snapSkills[@]}")
+    COMMANDS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args "''${snapCommands[@]%.md}")
+    HOOKS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args "''${snapHooks[@]##*/}")
 
     ${pkgs.jq}/bin/jq -n \
       --arg date "$GEN_DATE" \
@@ -255,9 +301,13 @@
   # Install Ralph Wiggum scripts
   # -------------------------
   # Subshell-wrapped: see claudeCodeDevBrowser note — a bare `exit 0` would
-  # abort the whole activation chain.
+  # abort the whole activation chain. No `set -e` here, so every fallible step
+  # is guarded explicitly, and the marker is stamped only once the payload is
+  # on disk (Enquire/Graphify pattern): a failed download retries next rebuild
+  # instead of being recorded as installed.
   claudeCodeRalphWiggum = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeRalphWiggum"; exit 0; fi
       RALPH_DIR="$HOME/.claude/plugins/ralph-wiggum"
       INSTALL_MARKER="$RALPH_DIR/.installed"
 
@@ -279,15 +329,23 @@
       mkdir -p "$RALPH_DIR"
       TMP_DIR=$(mktemp -d)
 
-      cd "$TMP_DIR"
-      curl -sL https://github.com/anthropics/claude-code/archive/refs/heads/main.zip -o repo.zip
-      unzip -q repo.zip
+      cd "$TMP_DIR" || exit 0
+      curl -fsSL https://github.com/anthropics/claude-code/archive/refs/heads/main.zip -o repo.zip \
+        || { echo "⚠ Ralph Wiggum download failed — will retry next rebuild"; rm -rf "$TMP_DIR"; exit 0; }
+      unzip -q repo.zip \
+        || { echo "⚠ Ralph Wiggum unzip failed — will retry next rebuild"; rm -rf "$TMP_DIR"; exit 0; }
 
       # Copy ALL files including hidden ones
       shopt -s dotglob
-      cp -R claude-code-main/plugins/ralph-wiggum/* "$RALPH_DIR/"
+      cp -R claude-code-main/plugins/ralph-wiggum/* "$RALPH_DIR/" \
+        || { echo "⚠ Ralph Wiggum copy failed — will retry next rebuild"; rm -rf "$TMP_DIR"; exit 0; }
 
-      # Create install marker
+      # Create install marker — only once the payload actually landed
+      if [ ! -f "$RALPH_DIR/scripts/setup-ralph-loop.sh" ]; then
+        echo "⚠ Ralph Wiggum payload incomplete (no scripts/setup-ralph-loop.sh) — will retry next rebuild"
+        rm -rf "$TMP_DIR"
+        exit 0
+      fi
       touch "$INSTALL_MARKER"
 
       # Symlink scripts only (commands managed by nix)
@@ -313,6 +371,7 @@
   # subshell scopes `exit` so only this block returns, not the whole run.
   claudeCodeDevBrowser = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeDevBrowser"; exit 0; fi
       MARKER="$HOME/.claude/.dev-browser-installed"
 
       # Skip if already installed
@@ -358,6 +417,7 @@
   # Subshell-wrapped: a bare `exit 0` would abort the whole activation chain.
   claudeCodeEnquire = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeEnquire"; exit 0; fi
       ENQUIRE_VERSION="3.9.1"
       MARKER="$HOME/.claude/.enquire-installed-$ENQUIRE_VERSION-hnsw"
 
@@ -440,6 +500,7 @@
   # Subshell-wrapped: a bare `exit 0` would abort the whole activation chain.
   claudeCodeGraphify = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeGraphify"; exit 0; fi
       GRAPHIFY_VERSION="0.9.48"
       GRAPHIFY_EXTRAS="mcp,ollama,leiden"
       MARKER="$HOME/.claude/.graphify-installed-$GRAPHIFY_VERSION-mcp"
@@ -514,6 +575,8 @@
   # output) and IPython.
   claudeCodeScrapling = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
     (
+      # Dry-run guard BEFORE the pre-guard rm/ln below: they mutate ~/.local/bin.
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeScrapling"; exit 0; fi
       SCRAPLING_VERSION="0.4.15"
       SCRAPLING_EXTRAS="shell"
       # Marker carries the extras AND the browser step, not just the version:

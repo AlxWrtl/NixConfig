@@ -275,9 +275,9 @@
 
     Best practices, module structure, patterns, and verification are in the nix-darwin skill (auto-loaded).
 
-    ## Docs (consult via WebFetch when unsure)
-    - nix-darwin options: https://nix-darwin.github.io/nix-darwin/manual/
-    - home-manager options: https://nix-community.github.io/home-manager/options.html
+    ## Docs
+    - Options (nix-darwin + home-manager, at the flake.lock rev): `nix-options show <opt>`,
+      `nix-options search <regex>` — before any web page.
     - Nix reference: https://nix.dev/manual/nix/latest/
 
     ## Target system

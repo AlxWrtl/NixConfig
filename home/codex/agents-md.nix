@@ -73,7 +73,8 @@ let
       name = "Docs Gate (nix)";
       body = ''
         - Before writing nix that sets an option, calls a `lib`/`builtins`
-          function or bumps a flake input, check it: `man 5 configuration.nix`,
+          function or bumps a flake input, check it: `nix-options show <opt>`
+          (`nix-options search <regex>` for the name), `man 5 configuration.nix`,
           the input's source at its flake.lock rev, then
           `nix eval .#darwinConfigurations.alex-mbp.options.<opt>.description`.
           Nothing found → write it down as an assumption, flagged.

@@ -375,6 +375,8 @@ in
         # Library docs via the Context7 REST API. A narrow grant on purpose:
         # the wrapper exists so this rule is not `Bash(curl *)`.
         "Bash(libdocs *)"
+        # Nix option docs at the flake.lock rev: read-only eval, sandboxed, own read-only-store fallback. Never in excludedCommands.
+        "Bash(nix-options *)"
         # External cross-vendor verifier (APEX `-e`). Wrapper around a
         # read-only `codex exec` subprocess: it reviews, it never edits.
         "Bash(apex-verify-external *)"

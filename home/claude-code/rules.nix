@@ -19,7 +19,10 @@
     - Before writing nix that sets an option, calls a `lib`/`builtins`
       function or bumps a flake input: source it first, per the Docs line in APEX step-02-plan.md
       (`~/.claude/skills/apex/steps/`). Load the nix-darwin skill.
-    - Nix per rung: no libdocs pin; official = `man 5 configuration.nix`,
+    - Nix options, first rung: `nix-options show <opt>` (nix-darwin +
+      home-manager at their flake.lock rev; `nix-options search <regex>`
+      when the name is uncertain).
+    - Nix otherwise: no libdocs pin; official = `man 5 configuration.nix`,
       home-manager options page, nixpkgs manual; pinned
       source = the input's `/nix/store` tree at its flake.lock rev.
       Proof beats prose: `nix eval .#darwinConfigurations.alex-mbp.options.<opt>.description`.

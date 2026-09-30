@@ -24,6 +24,7 @@ let
   claudeMd = import ./claude-code/claude-md.nix;
   rules = import ./claude-code/rules.nix;
   libdocs = import ./claude-code/libdocs.nix { inherit pkgs; };
+  nixOptions = import ./claude-code/nix-options.nix { inherit pkgs; };
   scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
   apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
@@ -34,6 +35,7 @@ let
   inherit (claudeMd) claudeMdGlobal;
   inherit (rules) ruleNix ruleTypescript ruleReact;
   inherit (libdocs) libdocsPkg;
+  inherit (nixOptions) nixOptionsPkg;
   inherit (apexVerifyExternal) apexVerifyExternalPkg;
   inherit (graphifyReindex) graphifyReindexPkg;
   inherit (vaultSnapshot) vaultSnapshotPkg;
@@ -292,11 +294,12 @@ in
 
     file = claudeHomeFiles;
 
-    # `libdocs` + `graphify-reindex` on PATH — usable by Claude, by APEX and its
-    # subagents, and by the user in a plain terminal. home.packages is a list:
-    # this merges with the definitions in the other home modules.
+    # `libdocs` + `nix-options` + `graphify-reindex` on PATH — usable by Claude,
+    # by APEX and its subagents, and by the user in a plain terminal.
+    # home.packages is a list: this merges with the other home modules.
     packages = [
       libdocsPkg
+      nixOptionsPkg
       apexVerifyExternalPkg
       graphifyReindexPkg
       vaultSnapshotPkg

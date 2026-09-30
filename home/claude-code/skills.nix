@@ -2531,7 +2531,7 @@ in
     ### macOS defaults
     - Built-in: `system.defaults.dock.*`, `system.defaults.finder.*`
     - App-specific: `system.defaults.CustomUserPreferences`
-    - Reference: https://nix-darwin.github.io/nix-darwin/manual/
+    - Reference: `nix-options search '^system\.defaults\.'` then `nix-options show <opt>` (pinned rev)
 
     ### Verification
     ```bash

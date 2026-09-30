@@ -24,7 +24,8 @@ cd ~/.config/nix-darwin
 ```
 
 `bootstrap.sh` runs twelve checkpointed steps and skips whatever is already
-done, so it is safe to re-run after an interruption:
+done, so it is safe to re-run after an interruption. Once a run completes,
+later runs skip the app configs restore unless you pass `./bootstrap.sh --restore`:
 
 | # | Step | Notes |
 |---|------|-------|
@@ -134,7 +135,7 @@ and `determinate` for the Nix daemon.
 Sensitive values live in `secrets.nix`, encrypted by
 [git-crypt](https://github.com/AGWA/git-crypt). The `backups/` tree is
 encrypted by the same filter — app exports contain Wi-Fi networks and
-Bluetooth pairings.
+the Bluetooth device list.
 
 - **Locally**: readable, transparent workflow
 - **On GitHub**: encrypted binary

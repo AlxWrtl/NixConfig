@@ -2346,12 +2346,12 @@
 
   hookTaskCompleted = ''
     #!/usr/bin/env bash
-    osascript -e '''display notification "Task completed" with title "Claude Code"''' 2>/dev/null || true
+    osascript -e 'display notification "Task completed" with title "Claude Code"' 2>/dev/null || true
   '';
 
   hookNotification = ''
     #!/usr/bin/env bash
-    osascript -e '''display notification "Attention requise" with title "Claude Code" sound name "Tink"''' 2>/dev/null || true
+    osascript -e 'display notification "Attention requise" with title "Claude Code" sound name "Tink"' 2>/dev/null || true
   '';
 
   hookCompactContext = ''
@@ -2364,13 +2364,25 @@
     #!/usr/bin/env node
     const { execSync } = require("child_process");
     const fs = require("fs");
+    const path = require("path");
     let input = "";
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
       try {
+        const data = JSON.parse(input); // malformed -> throw -> exit 0
+        if (!data || typeof data !== "object") { process.exit(0); return; }
+        // Loop guard: a Stop already blocked once re-runs with stop_hook_active;
+        // blocking again would spin the session.
+        if (data.stop_hook_active) { process.exit(0); return; }
+        // The repository is the one the session says it is in, not whatever
+        // directory the host launched the hook from.
+        if (typeof data.cwd === "string" && data.cwd !== "") process.chdir(data.cwd);
         // Only check if we are in a git repo with changes
-        const diff = execSync("git diff --name-only HEAD 2>/dev/null || true", { encoding: "utf8" }).trim();
+        const diff = execSync("git diff --name-only HEAD 2>/dev/null || true", { encoding: "utf8", timeout: 3000 }).trim();
         if (!diff) { process.exit(0); return; }
+        // git prints names relative to the worktree root, not to cwd.
+        const root = execSync("git rev-parse --show-toplevel 2>/dev/null || true", { encoding: "utf8", timeout: 3000 }).trim();
+        if (!root) { process.exit(0); return; }
         const files = diff.split("\n")
           .filter(f => /\.(ts|tsx|js|jsx)$/.test(f))
           // CLI scripts legitimately use console.log (progress output and
@@ -2392,7 +2404,7 @@
         const issues = [];
         for (const file of files) {
           try {
-            const content = fs.readFileSync(file, "utf8");
+            const content = fs.readFileSync(path.join(root, file), "utf8");
             const lines = content.split("\n");
             for (const p of patterns) {
               for (let i = 0; i < lines.length; i++) {
@@ -2506,7 +2518,7 @@
     # Alert on rate limits or API failures
     INPUT=$(cat)
     if echo "$INPUT" | grep -qi "rate.limit\|429\|overloaded"; then
-      osascript -e '''display notification "Rate limit hit — pause recommended" with title "Claude Code" sound name "Basso"''' 2>/dev/null || true
+      osascript -e 'display notification "Rate limit hit — pause recommended" with title "Claude Code" sound name "Basso"' 2>/dev/null || true
     fi
   '';
 

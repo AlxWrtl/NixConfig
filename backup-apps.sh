@@ -64,8 +64,7 @@ echo -e "${GREEN}✓${NC} $(wc -l < "$BACKUP_DIR/wifi-bluetooth/wifi-networks.tx
 
 echo -ne "${YELLOW}[Bluetooth]${NC} "
 system_profiler SPBluetoothDataType > "$BACKUP_DIR/wifi-bluetooth/bluetooth-devices.txt" 2>/dev/null
-sudo cp /Library/Preferences/com.apple.Bluetooth.plist "$BACKUP_DIR/wifi-bluetooth/" 2>/dev/null
-echo -e "${GREEN}✓${NC} Devices + pairing plist saved"
+echo -e "${GREEN}✓${NC} Devices list saved"
 
 # --- Finder sidebar ---
 echo -ne "${YELLOW}[Finder sidebar]${NC} "

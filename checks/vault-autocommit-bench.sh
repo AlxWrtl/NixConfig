@@ -30,6 +30,7 @@ grep -q 'checkout -q -b' "$BLOCK" || { echo "bench: extraction failed — block 
 run_block() { # run_block <vault> ; prints the log
   local v="$1"
   cat > "$WORK/driver.sh" <<DRV
+set -euo pipefail
 VAULT="$v"
 LOG="$v/../run.log"
 log() { printf '%s\n' "\$*" >>"\$LOG"; }

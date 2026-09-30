@@ -118,7 +118,11 @@ before_mtime="$(stat -c %Y "$GRAPH" 2>/dev/null || echo 0)"
 {
   echo "=== graphify-reindex $(date '+%Y-%m-%dT%H:%M:%S') ==="
   # Incremental semantic extraction of new/changed notes only.
-  "$GRAPHIFY" extract "$VAULT" --backend claude-cli --out "$OUT" || true
+  # 55m cap per call: 2 x (55m + 60s kill grace) stays under the lock's
+  # `-mmin +120` reclaim window, so a hung run is never reclaimed while alive.
+  rc=0
+  timeout -k 60 55m "$GRAPHIFY" extract "$VAULT" --backend claude-cli --out "$OUT" || rc=$?
+  if [ "$rc" -eq 124 ]; then echo "graphify-reindex: extract timed out (55m)"; fi
   # A FULL `label` — not `cluster-only`, and no longer `--missing-only`. Two
   # decisions are stacked in that one line and both were measured.
   #
@@ -169,7 +173,9 @@ before_mtime="$(stat -c %Y "$GRAPH" 2>/dev/null || echo 0)"
     cp "$LABELS" "$LABELS_BAK" || true
   fi
 
-  "$GRAPHIFY" label "$OUT" --backend claude-cli || true
+  rc=0
+  timeout -k 60 55m "$GRAPHIFY" label "$OUT" --backend claude-cli || rc=$?
+  if [ "$rc" -eq 124 ]; then echo "graphify-reindex: label timed out (55m)"; fi
 
   if [ -f "$LABELS_BAK" ]; then
     marker_pct="$(jq -r '

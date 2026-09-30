@@ -134,7 +134,6 @@ let
   absentMechanisms = [
     "mcp__enquire"
     "mcp__graphify"
-    "ralph-loop"
     "code-review"
     "WebFetch"
     "WebSearch"

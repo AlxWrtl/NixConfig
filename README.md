@@ -564,8 +564,6 @@ as it stood before these rules goes red on it.
 | `/tdd <feature>` | TDD loop: red → green → refactor |
 | `/optimize` | Profile first, then targeted performance fixes |
 | `/verify-feature` | 6-layer quality verification on the current branch |
-| `/ralph-loop` | Start a Ralph Wiggum loop in the current session |
-| `/cancel-ralph` | Cancel the active Ralph loop |
 
 ## Shell Aliases
 

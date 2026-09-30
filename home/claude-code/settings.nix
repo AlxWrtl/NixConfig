@@ -293,12 +293,10 @@ in
     # l'attrape. C'est la raison d'être de ce commentaire.
     skillOverrides = {
       auto = "user-invocable-only";
-      "cancel-ralph" = "user-invocable-only";
       caveman = "user-invocable-only";
       cavemem = "user-invocable-only";
       "context-prime" = "user-invocable-only";
       optimize = "user-invocable-only";
-      "ralph-loop" = "user-invocable-only";
       schliff = "user-invocable-only";
       tdd = "user-invocable-only";
       "verify-feature" = "user-invocable-only";

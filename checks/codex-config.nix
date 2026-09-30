@@ -113,8 +113,9 @@ let
   # --- the permissions profile (C10) ---------------------------------------
   # The block is a VALUE of home/codex/permissions.nix, a plain function of the
   # vault path. home/codex.nix is still read as SOURCE, for two spellings only:
-  # the vault literal it passes in, and the import that makes this value the
-  # one the module actually uses. The literal below is the same one C10 pins.
+  # the vault literal it passes in, and the import text that wires this value
+  # in (C10 asserts that text and the rendered value, not the module's actual
+  # use of it). The literal below is the same one C10 pins.
   codexSrc = builtins.readFile ../home/codex.nix;
   perms = import ../home/codex/permissions.nix { alxVaultPath = "/Users/alx/Vaults/AlxVault"; };
 
@@ -309,11 +310,12 @@ let
   # Hence a fixture repo on `main` and git on the probe PATH. The exit code
   # alone would be vacuous: with no git the SAME exit 2 comes back, for "git
   # is not on PATH" — so the stderr reason `not valid JSON` is asserted too.
+  # GIT_CONFIG_NOSYSTEM=1: a system gitconfig must not steer the branch read.
   hookMalformedProbes = ''
     mrepo="$TMPDIR/codex-malformed-stdin"
     rm -rf "$mrepo" "$mrepo.d"
     mkdir -p "$mrepo" "$mrepo.d"
-    (cd "$mrepo" && HOME="$TMPDIR" ${pkgs.git}/bin/git init -q -b main)
+    (cd "$mrepo" && GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" ${pkgs.git}/bin/git init -q -b main)
     malformed='{"hook_event_name":"PreToolUse","tool_input":{'
 
     mfail() {
@@ -331,7 +333,7 @@ let
     run_malformed() {
       set +e
       printf '%s' "$malformed" \
-        | (cd "$mrepo" && env -i HOME="$TMPDIR" PATH=${pkgs.git}/bin ${pkgs.nodejs_22}/bin/node "$2") \
+        | (cd "$mrepo" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH=${pkgs.git}/bin ${pkgs.nodejs_22}/bin/node "$2") \
         > "$mrepo.d/$1.out" 2> "$mrepo.d/$1.err"
       st=$?
       set -e
@@ -357,9 +359,9 @@ let
 
     # Mirror: the same bytes are a refusal for the guard and a no-op for the
     # gate. Both halves at once, so neither side can drift into the other.
+    # A cross-check of the cases above, not a case: not counted in mcases.
     [ -s "$mrepo.d/protect-main.out" ] && [ ! -s "$mrepo.d/quality-gate.out" ] \
       || mfail "mirror broken: protect-main must answer malformed stdin on stdout and quality-gate must stay silent" protect-main
-    mcases=$((mcases + 1))
   '';
 
   # --- C10: each wrapper must work with NO ambient PATH ---------------------
@@ -707,7 +709,7 @@ pkgs.runCommand "codex-config-check" { } (
       ${scriptProbes}
       ${hookMalformedProbes}
       ${wrapperProbes}
-      echo "codex-config: ${toString (builtins.length assertions)} invariants, ${toString (builtins.length allEntries)} hooks, ${toString (builtins.length commandPaths)} scripts syntax-checked, $mcases malformed-stdin hook cases, 2 wrappers run with an empty PATH — OK"
+      echo "codex-config: ${toString (builtins.length assertions)} invariants, ${toString (builtins.length allEntries)} hooks, ${toString (builtins.length commandPaths)} scripts syntax-checked, $mcases malformed-stdin hook cases + 1 cross-check, 2 wrappers run with an empty PATH — OK"
       touch $out
     ''
 )

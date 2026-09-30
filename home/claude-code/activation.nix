@@ -115,12 +115,16 @@
   # the rc captured, a failure aborts the subshell and is reported, while the
   # rest of the activation still runs. The `> "$TMP"` and `mv` are separate
   # statements for the same reason: a pipeline left of `&&` is exempt too.
+  # `> "$TMP" || exit 1` stays explicit so the mv never runs on a failed jq,
+  # even if the entry is ever re-wrapped in `( … ) || true` (errexit inert).
   # Dry-run (HM sets DRY_RUN, tested for set-ness): skip, write nothing.
   claudeCodeSettingsMerge = lib.hm.dag.entryAfter [ "claudeCodePerms" ] ''
     set +e
     (
       if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeSettingsMerge"; exit 0; fi
       set -euo pipefail
+      # 077: TMP holds the full settings before the final chmod 600.
+      umask 077
       BASE="$HOME/.claude/settings-base.json"
       TARGET="$HOME/.claude/settings.json"
 
@@ -179,20 +183,24 @@
              # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas
              # garder deux sources de vérité qui peuvent diverger.
              | del(.voiceEnabled)' \
-          > "$TMP"
+          > "$TMP" || exit 1
         mv "$TMP" "$TARGET"
         chmod 600 "$TARGET"
       else
-        # First install: copy base
-        rm -f "$TARGET"
-        cp "$BASE" "$TARGET"
+        # First install: copy base. BASE is checked and staged in TMP BEFORE
+        # TARGET is touched: `rm -f` then a failing `cp` deleted settings.json.
+        [ -f "$BASE" ] || { echo "claudeCodeSettingsMerge: $BASE missing" >&2; exit 1; }
+        TMP=$(mktemp)
+        trap 'rm -f "$TMP"' EXIT
+        cp "$BASE" "$TMP" || exit 1
+        mv -f "$TMP" "$TARGET"
         chmod 600 "$TARGET"
       fi
     )
     settingsMergeRc=$?
     set -e
     if [ "$settingsMergeRc" -ne 0 ]; then
-      echo "⚠ claudeCodeSettingsMerge failed (rc=$settingsMergeRc) — settings.json left unchanged, see error above" >&2
+      echo "⚠ claudeCodeSettingsMerge failed (rc=$settingsMergeRc) — settings.json not merged, see error above" >&2
     fi
   '';
 
@@ -216,6 +224,8 @@
     (
       if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeMcpMerge"; exit 0; fi
       set -euo pipefail
+      # 077: TMP (a copy of ~/.claude.json) was 0644 until the final chmod.
+      umask 077
       MCP_BASE="$HOME/.claude/mcp-servers-base.json"
       TARGET="$HOME/.claude.json"
 
@@ -234,7 +244,7 @@
       # MCP server carries a `__SECRET_*__` placeholder. Restore the jq `walk`
       # step here if one ever does again.
 
-      jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP"
+      jq --argjson mcp "$MCP_DATA" '.mcpServers = $mcp' "$TARGET" > "$TMP" || exit 1
       mv "$TMP" "$TARGET"
       chmod 600 "$TARGET"
       echo "✓ MCP merge → $TARGET ($(jq -c '.mcpServers | keys' "$TARGET"))"
@@ -242,7 +252,7 @@
     mcpMergeRc=$?
     set -e
     if [ "$mcpMergeRc" -ne 0 ]; then
-      echo "⚠ claudeCodeMcpMerge failed (rc=$mcpMergeRc) — ~/.claude.json left unchanged, see error above" >&2
+      echo "⚠ claudeCodeMcpMerge failed (rc=$mcpMergeRc) — ~/.claude.json not merged, see error above" >&2
     fi
   '';
 
@@ -276,10 +286,12 @@
     snapSkills=("''${snapSkills[@]%/SKILL.md}")
     snapSkills=("''${snapSkills[@]##*/}")
     snapCommands=("''${snapCommands[@]##*/}")
-    AGENTS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args "''${snapAgents[@]%.md}")
-    SKILLS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args "''${snapSkills[@]}")
-    COMMANDS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args "''${snapCommands[@]%.md}")
-    HOOKS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args "''${snapHooks[@]##*/}")
+    # `--args --`: without the `--`, a file named `-h.md` is read as a jq
+    # option (aborts the activation) and `-e.md` is silently dropped.
+    AGENTS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapAgents[@]%.md}")
+    SKILLS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapSkills[@]}")
+    COMMANDS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapCommands[@]%.md}")
+    HOOKS=$(${pkgs.jq}/bin/jq -cn '$ARGS.positional' --args -- "''${snapHooks[@]##*/}")
 
     ${pkgs.jq}/bin/jq -n \
       --arg date "$GEN_DATE" \
@@ -295,70 +307,6 @@
         hooks: $hooks
       }' > "$SNAPSHOT"
     chmod 600 "$SNAPSHOT"
-  '';
-
-  # -------------------------
-  # Install Ralph Wiggum scripts
-  # -------------------------
-  # Subshell-wrapped: see claudeCodeDevBrowser note — a bare `exit 0` would
-  # abort the whole activation chain. No `set -e` here, so every fallible step
-  # is guarded explicitly, and the marker is stamped only once the payload is
-  # on disk (Enquire/Graphify pattern): a failed download retries next rebuild
-  # instead of being recorded as installed.
-  claudeCodeRalphWiggum = lib.hm.dag.entryAfter [ "claudeCodeSettingsMerge" ] ''
-    (
-      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeRalphWiggum"; exit 0; fi
-      RALPH_DIR="$HOME/.claude/plugins/ralph-wiggum"
-      INSTALL_MARKER="$RALPH_DIR/.installed"
-
-      # Skip if already installed (marker exists)
-      if [ -f "$INSTALL_MARKER" ]; then
-        # Update symlinks for scripts only
-        if [ -d "$RALPH_DIR" ]; then
-          mkdir -p "$HOME/.claude/scripts"
-          ln -sf "$RALPH_DIR/scripts/setup-ralph-loop.sh" "$HOME/.claude/scripts/setup-ralph-loop.sh"
-          chmod +x "$HOME/.claude/scripts/setup-ralph-loop.sh"
-        fi
-        exit 0
-      fi
-
-      echo "Installing Ralph Wiggum scripts..."
-      export PATH="${pkgs.curl}/bin:${pkgs.unzip}/bin:$PATH"
-
-      # Download plugin from GitHub
-      mkdir -p "$RALPH_DIR"
-      TMP_DIR=$(mktemp -d)
-
-      cd "$TMP_DIR" || exit 0
-      curl -fsSL https://github.com/anthropics/claude-code/archive/refs/heads/main.zip -o repo.zip \
-        || { echo "⚠ Ralph Wiggum download failed — will retry next rebuild"; rm -rf "$TMP_DIR"; exit 0; }
-      unzip -q repo.zip \
-        || { echo "⚠ Ralph Wiggum unzip failed — will retry next rebuild"; rm -rf "$TMP_DIR"; exit 0; }
-
-      # Copy ALL files including hidden ones
-      shopt -s dotglob
-      cp -R claude-code-main/plugins/ralph-wiggum/* "$RALPH_DIR/" \
-        || { echo "⚠ Ralph Wiggum copy failed — will retry next rebuild"; rm -rf "$TMP_DIR"; exit 0; }
-
-      # Create install marker — only once the payload actually landed
-      if [ ! -f "$RALPH_DIR/scripts/setup-ralph-loop.sh" ]; then
-        echo "⚠ Ralph Wiggum payload incomplete (no scripts/setup-ralph-loop.sh) — will retry next rebuild"
-        rm -rf "$TMP_DIR"
-        exit 0
-      fi
-      touch "$INSTALL_MARKER"
-
-      # Symlink scripts only (commands managed by nix)
-      mkdir -p "$HOME/.claude/scripts"
-      ln -sf "$RALPH_DIR/scripts/setup-ralph-loop.sh" "$HOME/.claude/scripts/setup-ralph-loop.sh"
-      chmod +x "$HOME/.claude/scripts/setup-ralph-loop.sh"
-
-      # Cleanup
-      cd - > /dev/null
-      rm -rf "$TMP_DIR"
-
-      echo "✓ Ralph Wiggum scripts installed"
-    ) || true
   '';
 
   # -------------------------

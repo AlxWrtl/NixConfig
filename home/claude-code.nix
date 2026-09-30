@@ -48,8 +48,6 @@ let
     cmdOptimize
     cmdContextPrime
     cmdAuto
-    cmdRalphLoop
-    cmdCancelRalph
     cmdCard
     commandDiscuss
     commandVerifyFeature
@@ -164,8 +162,6 @@ in
     "${claudeDir}/commands/optimize.md".text = cmdOptimize;
     "${claudeDir}/commands/context-prime.md".text = cmdContextPrime;
     "${claudeDir}/commands/auto.md".text = cmdAuto;
-    "${claudeDir}/commands/ralph-loop.md".text = cmdRalphLoop;
-    "${claudeDir}/commands/cancel-ralph.md".text = cmdCancelRalph;
     "${claudeDir}/commands/card.md".text = cmdCard;
 
     # Feature methodology commands

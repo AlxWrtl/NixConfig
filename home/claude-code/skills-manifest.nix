@@ -10,12 +10,9 @@
 # `path` is RELATIVE to the skill's own directory; the consumer prefixes it
 # itself (`.claude/skills/<name>/<path>`). Skills are Claude-only: Codex is a
 # reviewer, not an APEX runner, and no longer receives a translated copy. It
-# sits here rather than in a new top-level directory for two mechanical
-# reasons:
-#   - (historical) `flake.nix` once ran nixfmt per directory; it now walks
-#     every tracked `*.nix`, so this reason no longer binds;
-#   - `checks/readme-consistency.nix` does not walk the tree recursively, so a
-#     file in a new directory would be invisible to the inventory it enforces.
+# sits here rather than in a new top-level directory for one mechanical
+# reason: `checks/readme-consistency.nix` does not walk the tree recursively,
+# so a file in a new directory would be invisible to the inventory it enforces.
 # Move it only together with the readme-consistency inventory.
 #
 # `force` IS NOT DATA HERE — IT IS A RULE, DERIVED FROM THE FILE NAME.

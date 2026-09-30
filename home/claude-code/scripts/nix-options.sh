@@ -15,6 +15,7 @@
 #   - Plain eval first. Inside the Claude sandbox the daemon socket is denied:
 #     only on that class of error, retry against a read-only local store with a
 #     private XDG_CACHE_HOME. Any other failure is printed as-is.
+#   - Never writes the flake's lock file (nix eval --no-write-lock-file).
 #   - Exit codes: 0 found, 1 no match, 2 usage, 3 nix/eval/environment.
 
 HOST_DEFAULT="alex-mbp"
@@ -145,13 +146,13 @@ installable="$flake#darwinConfigurations.$host"
 raw="$work/eval.json"
 err="$work/eval.err"
 
-if ! nix eval --json "$installable" --apply "$expr" >"$raw" 2>"$err"; then
+if ! nix eval --json --no-write-lock-file "$installable" --apply "$expr" >"$raw" 2>"$err"; then
   if grep -Eq 'daemon-socket|Operation not permitted|readonly database|read-only file system' "$err"; then
     cache="$(mktemp -d "$work/xdg-cache.XXXXXX")"
-    if ! XDG_CACHE_HOME="$cache" nix eval --json \
+    if ! XDG_CACHE_HOME="$cache" nix eval --json --no-write-lock-file \
       --store 'local?read-only=true' --extra-experimental-features read-only-local-store \
       "$installable" --apply "$expr" >"$raw" 2>"$err"; then
-      echo "nix-options: eval failed (daemon unreachable, read-only store retry failed too):" >&2
+      echo "nix-options: nix eval failed (plain and read-only-store attempts):" >&2
       cat "$err" >&2
       exit 3
     fi

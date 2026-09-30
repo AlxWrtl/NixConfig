@@ -274,14 +274,14 @@ in
     # QUATRE valeurs, pas deux : `on` (nom + description, défaut quand la clé
     # est absente), `name-only` (nom seul), `user-invocable-only` (retiré du
     # listing, toujours tapable), `off` (désactivé).
-    # Les 10 entrées ci-dessous sont mesurées : JAMAIS invoquées sur 214
+    # Les 8 entrées ci-dessous sont mesurées : JAMAIS invoquées sur 214
     # démarrages, tout en occupant le listing à chaque tour.
     # `user-invocable-only` est délibéré : il sort l'entrée du listing que le
     # modèle voit, mais `/caveman`, `/tdd` et les autres restent tapables.
     # `off` a été écarté : il retire AUSSI l'entrée du menu slash, de Remote
     # Control et des listes de commandes de l'Agent SDK — la taper renvoie
     # alors une erreur.
-    # ATTENTION : sept des dix sont des fichiers COMMANDE sous
+    # ATTENTION : cinq des huit sont des fichiers COMMANDE sous
     # ~/.claude/commands/, pas des skills. Qu'ils soient couverts est un
     # comportement MESURÉ, pas un contrat documenté : la doc ne décrit la clé
     # que comme prenant des noms de skills, et la page « commands merged into

@@ -154,7 +154,6 @@ in
       /usr/sbin/sysctl -w net.inet.tcp.delayed_ack=2
       /usr/sbin/sysctl -w net.inet.tcp.sendspace=131072
       /usr/sbin/sysctl -w net.inet.tcp.recvspace=131072
-      /usr/sbin/sysctl -w net.inet.tcp.slowstart_flightsize=${toString tcpSlowStartFlightSize}
       /usr/sbin/sysctl -w net.inet.tcp.local_slowstart_flightsize=${toString tcpSlowStartFlightSize}
 
       # Sockets & filesystem

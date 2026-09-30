@@ -25,7 +25,7 @@
 { pkgs }:
 
 let
-  lib = pkgs.lib;
+  inherit (pkgs) lib;
 
   readme = builtins.readFile ../README.md;
   skills = import ../home/claude-code/skills.nix;
@@ -207,7 +207,7 @@ let
   # pass as a declared alias.
   aliasBlockOf =
     text:
-    builtins.concatStringsSep "\n" (
+    builtins.concatStringsSep "\n"
       (builtins.foldl'
         (
           acc: l:
@@ -226,8 +226,7 @@ let
           out = [ ];
         }
         (splitLines text)
-      ).out
-    );
+      ).out;
   aliasSources =
     "\n"
     + builtins.concatStringsSep "\n" (

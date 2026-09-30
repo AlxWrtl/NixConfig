@@ -1,6 +1,4 @@
 {
-  config,
-  pkgs,
   lib,
   ...
 }:
@@ -276,18 +274,20 @@ in
 
 {
   # VS Code settings (app installed via brew, config managed here)
-  home.file."${settingsPath}/settings.json".text = builtins.toJSON settings;
-  home.file."${settingsPath}/keybindings.json".text = builtins.toJSON keybindings;
+  home.file = {
+    "${settingsPath}/settings.json".text = builtins.toJSON settings;
+    "${settingsPath}/keybindings.json".text = builtins.toJSON keybindings;
 
-  # Extension install script (run after clean install: vscode-install-extensions)
-  home.file.".local/bin/vscode-install-extensions" = {
-    text = ''
-      #!/bin/sh
-      # VS Code extensions managed by nix-darwin
-      # Run this script after a clean install to restore extensions
-      ${extensionInstallScript}
-      echo "Done: ${toString (builtins.length extensions)} extensions installed"
-    '';
-    executable = true;
+    # Extension install script (run after clean install: vscode-install-extensions)
+    ".local/bin/vscode-install-extensions" = {
+      text = ''
+        #!/bin/sh
+        # VS Code extensions managed by nix-darwin
+        # Run this script after a clean install to restore extensions
+        ${extensionInstallScript}
+        echo "Done: ${toString (builtins.length extensions)} extensions installed"
+      '';
+      executable = true;
+    };
   };
 }

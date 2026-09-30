@@ -27,7 +27,7 @@
 { pkgs }:
 
 let
-  lib = pkgs.lib;
+  inherit (pkgs) lib;
   inherit (lib) hasInfix splitString;
 
   fail = msg: throw "hook-wiring: ${msg}";
@@ -65,12 +65,12 @@ let
     let
       f = claudeModule.home.file.${n};
     in
-    if f ? text then
-      f.text
-    else if f ? source then
-      builtins.readFile f.source
-    else
-      fail "hook ${n} has neither text nor source — its body cannot be scanned";
+    f.text or (
+      if f ? source then
+        builtins.readFile f.source
+      else
+        fail "hook ${n} has neither text nor source — its body cannot be scanned"
+    );
   bodies = builtins.listToAttrs (
     map (p: {
       name = baseNameOf p;

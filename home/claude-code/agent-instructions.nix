@@ -12,17 +12,13 @@
 #
 # AGENT-AGNOSTIQUE, MALGRÉ LE RÉPERTOIRE. Rien ici n'est spécifique à Claude :
 # chaque consommateur préfixe, ordonne et complète avec son propre delta. Le
-# fichier est rangé sous `claude-code/` pour deux raisons MÉCANIQUES, pas
-# conceptuelles :
-#   - `flake.nix` passe nixfmt sur `home/claude-code/*.nix` et sur aucun
-#     répertoire qui n'existe pas encore, donc un nouveau foyer serait ni
-#     formaté ni vérifié ;
-#   - `checks/readme-consistency.nix` inventorie les `.nix` posés DIRECTEMENT
-#     dans `home/`, sans récursion : un fichier ici n'exige aucune entrée dans
-#     l'arbre Structure, alors que `home/agent-instructions.nix` en exigerait
-#     une. Le précédent est `skills-manifest.nix`, rangé là pour exactement
-#     ces deux raisons.
-# Ne le déplacer qu'avec les deux à la fois.
+# fichier est rangé sous `claude-code/` pour une raison MÉCANIQUE, pas
+# conceptuelle : `checks/readme-consistency.nix` inventorie les `.nix` posés
+# DIRECTEMENT dans `home/`, sans récursion. Un fichier ici n'exige aucune
+# entrée dans l'arbre Structure, alors que `home/agent-instructions.nix` en
+# exigerait une. Le précédent est `skills-manifest.nix`, rangé là pour la
+# même raison.
+# Ne le déplacer qu'avec l'inventaire de readme-consistency.
 #
 # L'ORDRE FAIT PARTIE DU CONTRAT. `trunkSections` est une LISTE et ne doit
 # JAMAIS devenir un attrset : nix trie les noms d'attributs alphabétiquement,

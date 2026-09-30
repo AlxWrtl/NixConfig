@@ -68,8 +68,6 @@ let
   matcherAt = e: i: if groupAt e i == null then null else (groupAt e i).matcher or null;
   showCommandAt = e: i: if commandAt e i == null then "<absent>" else commandAt e i;
   showMatcherAt = e: i: if matcherAt e i == null then "<absent>" else matcherAt e i;
-  firstCommandOf = e: commandAt e 0;
-  firstMatcherOf = e: matcherAt e 0;
 
   # --- what the module actually installs -----------------------------------
   installed = map (f: toString f.source) hooks.scriptFiles;

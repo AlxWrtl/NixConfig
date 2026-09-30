@@ -2162,25 +2162,6 @@
     exit 0
   '';
 
-  # SECURITY hook (prompt-injection), therefore FAIL-CLOSED: it DENIES, it never
-  # rewrites. The deny payload shape is the one proven in production here
-  # (hookBlockMainBash); a bare `updatedInput` without permissionDecision has no
-  # observable effect on Bash, and adding permissionDecision:"allow" would
-  # auto-approve every scrapling call — wrong for a security hook.
-  #
-  # Detection is deliberately NOT anchored at ^: `hookRtkNixRewrite` above uses
-  # `^(nix-instantiate|nixfmt) ` and that shape was MEASURED to be bypassed by
-  # compound lines (`cd /tmp && …`, `FOO=1 …`, `…; …`). Harmless for a workflow
-  # hook, disqualifying for this one. We match `scrapling extract <subcommand>`
-  # anywhere in the line instead, so prefixes, pipes, subshells and absolute
-  # paths are all caught.
-  # The subcommand list is what keeps it from over-matching: prose mentioning
-  # the two words (`grep -r "scrapling extract" home/`) passes, and
-  # `scrapling install|shell|mcp|--version` pass untouched — none of them is
-  # followed by get/post/put/delete/fetch/stealthy-fetch.
-  # Regex is a flat alternation of literals: linear, no nested quantifier, no
-  # backtracking (a PreToolUse hook that blows up blocks every Bash call).
-
   # Encrypted off-machine snapshot at session end. Detached with nohup for the
   # same reason as the reindex: the work must outlive Claude Code's exit, and
   # `timeout` here only bounds the stdin read. Never blocks the session — a

@@ -783,7 +783,7 @@ let
   # clause from apexStep00Init into apexStep04Validate left the derivation
   # byte-identical, while the invariant guarding it is named "before the first
   # edit, not after".
-  invariantScope = i: if i ? scope then i.scope else corpus;
+  invariantScope = i: i.scope or corpus;
 
   missingInvariants = builtins.filter (
     i: !(pkgs.lib.hasInfix i.needle (invariantScope i))

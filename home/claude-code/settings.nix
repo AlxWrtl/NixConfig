@@ -6,7 +6,7 @@ let
 
   # Obsidian vault — shared constant, reusable by other modules.
   # Real on-disk location (NOT the iCloud~md~obsidian mirror path).
-  alxVaultPath = "/Users/alx/Vaults/AlxVault";
+  alxVaultPath = "${homeDirectory}/Vaults/AlxVault";
 in
 {
   settingsJson = builtins.toJSON {
@@ -852,8 +852,8 @@ in
     }
   '';
 
-  # MCP servers merged into ~/.claude/.claude.json by activation script
-  # Secrets (API keys) are injected at runtime by claudeCodeMcpMerge, not here
+  # MCP servers merged into ~/.claude.json (HOME root) by claudeCodeMcpMerge;
+  # no runtime secret injection since `magic` left (2026-08-16)
   #
   # `magic` (@21st-dev/magic) removed 2026-08-16: React UI component generation
   # that went unused, and it was the only server needing an API key. The key

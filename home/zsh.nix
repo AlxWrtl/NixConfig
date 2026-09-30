@@ -1,6 +1,5 @@
 {
   config,
-  pkgs,
   ...
 }:
 
@@ -129,11 +128,6 @@
       vulnscan = "vulnix --system /var/run/current-system";
       secrets = "sops";
       encrypt = "age";
-
-      # Home Manager
-      hm = "home-manager";
-      hms = "home-manager switch";
-      hmb = "home-manager build";
 
       # ---- Modern File Listing (eza-based) ----
       ls = "eza --group-directories-first --color=always --long --git --icons=always --grid --no-filesize --no-user --no-time --no-permissions";

@@ -1,7 +1,5 @@
 {
-  config,
   pkgs,
-  lib,
   ...
 }:
 
@@ -18,22 +16,23 @@
     ./codex.nix
   ];
 
-  home.username = "alx";
-  home.homeDirectory = "/Users/alx";
-  home.stateVersion = "24.11";
+  home = {
+    username = "alx";
+    homeDirectory = "/Users/alx";
+    stateVersion = "24.11";
 
-  home.packages = [
-    pkgs.gh-dash
-    pkgs.gitleaks
-    pkgs.pre-commit
-    pkgs.tree
-    pkgs.watch
-    pkgs.tldr
-  ];
+    packages = [
+      pkgs.gh-dash
+      pkgs.gitleaks
+      pkgs.pre-commit
+      pkgs.watch
+      pkgs.tldr
+    ];
 
-  home.sessionPath = [
-    "$HOME/.npm-global/bin"
-  ];
+    sessionPath = [
+      "$HOME/.npm-global/bin"
+    ];
+  };
 
   programs.home-manager.enable = true;
 

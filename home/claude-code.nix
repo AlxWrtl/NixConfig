@@ -96,10 +96,10 @@ let
   # Every skill file, derived from the manifest rather than typed out.
   #
   # `force` is COMPUTED, not stored: see the header of skills-manifest.nix.
-  # It must stay true for every SKILL.md plus apex/eval-suite.json,
-  # because claudeCodeDesymlinkSkills replaces those with real copies and
-  # home-manager has to be allowed to clobber them. A file under steps/ never
-  # carries it.
+  # It must stay true for every SKILL.md: claudeCodeDesymlinkSkills replaces
+  # only `*/SKILL.md` with real copies, so home-manager has to be allowed to
+  # clobber them. apex/eval-suite.json is NOT desymlinked; its `force` is not
+  # required, kept as-is and harmless. A file under steps/ never carries it.
   skillFiles = builtins.listToAttrs (
     builtins.concatMap (
       skill:
@@ -180,7 +180,7 @@ in
       executable = true;
     };
 
-    # Agents (13)
+    # Agents (10)
     "${claudeDir}/agents/frontend-expert.md".text = agentFrontend;
     "${claudeDir}/agents/backend-expert.md".text = agentBackend;
     "${claudeDir}/agents/codebase-navigator.md".text = agentNavigator;

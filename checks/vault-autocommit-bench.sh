@@ -29,6 +29,8 @@ WORK="$WORK_P"
 # out of it (git ignores a ceiling equal to the cwd itself, hence the parent).
 cd "$WORK" || exit 2
 export GIT_CEILING_DIRECTORIES="$WORK:${WORK%/*}"
+# Inherited GIT_DIR would bypass the ceiling and the fixture checks.
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
 
 refuse() { # refuse <what> — one message, exit 2, no FAIL lines
   echo "bench: REFUSED — $1 is not a usable git repo under $WORK." >&2

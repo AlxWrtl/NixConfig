@@ -1,10 +1,11 @@
 #!/bin/bash
-set -e
+set -eo pipefail
 
 # ============================================================================
 # nix-darwin bootstrap — from fresh macOS to full system
 # Usage: git clone https://github.com/AlxWrtl/NixConfig.git ~/.config/nix-darwin
-#        cd ~/.config/nix-darwin && ./bootstrap.sh
+#        cd ~/.config/nix-darwin && ./bootstrap.sh [--restore]
+#   --restore  re-apply app configs (step 12) on an already bootstrapped machine
 # ============================================================================
 
 RED='\033[0;31m'
@@ -20,8 +21,34 @@ skip() { echo -e "  ${YELLOW}→${NC} $1 (already done)"; }
 wait_for_user() { echo -e "  ${YELLOW}⏸${NC} $1"; read -p "  Press Enter when done..."; }
 fail() { echo -e "  ${RED}✗${NC} $1"; exit 1; }
 
+# Absolute, computed once: the relative $0 is meaningless after the cd below
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cd "$SCRIPT_DIR"
+
+RESTORE=0
+for arg in "$@"; do
+  case "$arg" in
+    --restore) RESTORE=1 ;;
+    *) fail "usage: ./bootstrap.sh [--restore]" ;;
+  esac
+done
+
 # --- Checkpoint system ---
 PROGRESS_FILE="$HOME/.bootstrap-progress"
+DONE_MARKER="$HOME/.bootstrap-done"
+
+# Already bootstrapped: marker written by a completed run, or a legacy machine
+# bootstrapped before the marker existed (no progress file, system active).
+# On a fresh machine the progress file exists by the time /run/current-system does.
+INSTALLED=0
+if [ -f "$DONE_MARKER" ]; then
+  INSTALLED=1
+fi
+if [ ! -f "$PROGRESS_FILE" ] && [ -e /run/current-system ]; then
+  INSTALLED=1
+  # Persist now: the post-rebuild re-exec starts with a progress file present
+  touch "$DONE_MARKER"
+fi
 
 checkpoint() {
   echo "$1" >> "$PROGRESS_FILE"
@@ -208,16 +235,16 @@ if past_checkpoint "darwin_rebuild"; then
   skip "darwin-rebuild (checkpointed)"
 else
   echo "  Building system configuration..."
-  # Always use nix run — darwin-rebuild doesn't exist on first run
-  sudo nix run nix-darwin/master -- switch --flake .#alex-mbp
+  # Always use nix run — darwin-rebuild doesn't exist on first run; --inputs-from .
+  # pins nix-darwin to flake.lock instead of whatever master is today
+  sudo nix run --inputs-from . nix-darwin#darwin-rebuild -- switch --flake .#alex-mbp
   ok "System built and activated"
   checkpoint "darwin_rebuild"
   # Re-exec in a clean login shell so post-rebuild steps get the new zsh env
   echo -e "  ${YELLOW}→${NC} Re-launching in a clean shell to pick up nix-darwin changes..."
-  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
   exec env -i HOME="$HOME" USER="$USER" TERM="$TERM" \
     PATH="/usr/bin:/bin:/usr/sbin:/sbin:/nix/var/nix/profiles/default/bin:/opt/homebrew/bin:/run/current-system/sw/bin" \
-    bash "$SCRIPT_DIR/$(basename "$0")"
+    bash "$SCRIPT_DIR/$(basename "$0")" "$@"
 fi
 
 # --- Switch remote to SSH ---
@@ -227,7 +254,8 @@ if past_checkpoint "git_remote_ssh"; then
 else
   current_remote=$(git remote get-url origin 2>/dev/null || echo "")
   if [[ "$current_remote" == *"https://"* ]] && [ -f ~/.ssh/id_ed25519 ]; then
-    if ssh -T git@github.com 2>&1 | grep -q "successfully authenticated"; then
+    # ssh -T github always exits 1 (no shell); pipefail would make this always false
+    if { ssh -T git@github.com 2>&1 || true; } | grep -q "successfully authenticated"; then
       git remote set-url origin git@github.com:AlxWrtl/NixConfig.git
       ok "Remote switched to SSH"
     else
@@ -260,8 +288,10 @@ fi
 step "Restore app configs (Plex, Logitech, Raycast)"
 if past_checkpoint "restore_configs"; then
   skip "App configs (checkpointed)"
+elif [ "$INSTALLED" = 1 ] && [ "$RESTORE" != 1 ]; then
+  skip "App configs (machine already bootstrapped — re-run with --restore to re-apply)"
 else
-  BACKUP_DIR="$(cd "$(dirname "$0")" && pwd)/backups"
+  BACKUP_DIR="$SCRIPT_DIR/backups"
 
   # WiFi & Bluetooth (reference)
   if [ -f "$BACKUP_DIR/wifi-bluetooth/wifi-networks.txt" ]; then
@@ -272,7 +302,7 @@ else
   fi
   if [ -f "$BACKUP_DIR/wifi-bluetooth/bluetooth-devices.txt" ]; then
     echo -e "  ${YELLOW}Bluetooth${NC}: devices need manual re-pairing:"
-    grep "Name:" "$BACKUP_DIR/wifi-bluetooth/bluetooth-devices.txt" | grep -v "Controller" | sed 's/.*Name: /    /' | head -10
+    grep "Name:" "$BACKUP_DIR/wifi-bluetooth/bluetooth-devices.txt" | grep -v "Controller" | sed 's/.*Name: /    /' | head -10 || true
     ok "Bluetooth: re-pair devices listed above"
   else
     skip "No Bluetooth backup found"
@@ -282,9 +312,9 @@ else
   sidebar_dest="$HOME/Library/Application Support/com.apple.sharedfilelist"
   sidebar_restored=0
   for f in FavoriteItems.sfl4 FavoriteVolumes.sfl4 iCloudItems.sfl4; do
-    if [ -f "$BACKUP_DIR/finder-sidebar/$f" ]; then
+    if [ -f "$BACKUP_DIR/finder-sidebar/com.apple.LSSharedFileList.$f" ]; then
       mkdir -p "$sidebar_dest"
-      cp "$BACKUP_DIR/finder-sidebar/$f" "$sidebar_dest/com.apple.LSSharedFileList.$f"
+      cp "$BACKUP_DIR/finder-sidebar/com.apple.LSSharedFileList.$f" "$sidebar_dest/com.apple.LSSharedFileList.$f"
       sidebar_restored=$((sidebar_restored + 1))
     fi
   done
@@ -324,8 +354,8 @@ else
     skip "No Logitech backup found"
   fi
 
-  # Raycast (needs manual import via UI)
-  rayconfig=$(ls "$BACKUP_DIR/raycast/"*.rayconfig 2>/dev/null | head -1)
+  # Raycast (needs manual import via UI) — newest export: names sort by date
+  rayconfig=$(ls "$BACKUP_DIR/raycast/"*.rayconfig 2>/dev/null | tail -1 || true)
   if [ -n "$rayconfig" ]; then
     echo -e "  ${YELLOW}Raycast${NC}: Open Raycast → Settings → Advanced → Import"
     echo -e "  File: ${BLUE}$rayconfig${NC}"
@@ -338,6 +368,7 @@ else
 fi
 
 # --- Done ---
+touch "$DONE_MARKER"
 rm -f "$PROGRESS_FILE"
 
 echo ""

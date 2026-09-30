@@ -26,6 +26,50 @@ LOG="$HOME/GraphVault/vault-snapshot.log"
 mkdir -p "$(dirname "$LOG")" 2>/dev/null || true
 log() { printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$LOG"; }
 
+# Single-instance lock (atomic mkdir, same pattern as graphify-reindex), taken
+# before any git op. Two SessionEnd runs close together would otherwise race on
+# the vault's index (checkout -b / add / commit) and on the carrier's release
+# list. A lock older than 60 min is a crashed run and gets reclaimed; each gh
+# call below is bounded by timeout(1) so a live run does not get near that.
+LOCK="$HOME/GraphVault/.vault-snapshot.lock"
+if ! mkdir "$LOCK" 2>/dev/null; then
+  if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+    # Claim by atomic rename, not rmdir: of two runs that both saw the lock
+    # stale, only one rename succeeds. With rmdir, the loser could remove the
+    # winner's fresh lock and both would proceed.
+    mv "$LOCK" "$LOCK.stale.$$" 2>/dev/null || {
+      log "skip=busy-lock (lost the race after reclaiming a stale lock)"; exit 0; }
+    # The rename alone still loses to a run that saw the lock stale, stalled,
+    # then renamed the winner's FRESH lock. Re-check what was claimed: not
+    # stale means a live lock was taken, so hand it back (GNU mv -T -n: never
+    # into, never over, a lock taken meanwhile) and skip.
+    if [ -z "$(find "$LOCK.stale.$$" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+      mv -T -n "$LOCK.stale.$$" "$LOCK" 2>/dev/null || true
+      log "skip=busy-lock (lost the race after reclaiming a stale lock)"
+      exit 0
+    fi
+    rm -rf "$LOCK.stale.$$"
+    if ! mkdir "$LOCK" 2>/dev/null; then
+      log "skip=busy-lock (lost the race after reclaiming a stale lock)"
+      exit 0
+    fi
+    log "reclaimed stale lock $LOCK"
+  else
+    log "skip=busy-lock"
+    exit 0
+  fi
+fi
+trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
+
+# timeout(1) exits 124 when it had to stop the command, 137 when the command
+# ignored TERM and was KILLed after the -k grace: name both in the log.
+rc_why() {
+  case "$1" in
+    124|137) printf 'rc=%s, timed out after 300s' "$1" ;;
+    *) printf 'rc=%s' "$1" ;;
+  esac
+}
+
 # The key must never live inside the vault: it would sit inside the very thing
 # it protects, and inside the git repo that gets bundled.
 case "$KEY_PUB" in
@@ -196,7 +240,7 @@ GRP
 fi
 
 W=$(mktemp -d)
-trap 'rm -rf "$W"' EXIT
+trap 'rm -rf "$W"; rmdir "$LOCK" 2>/dev/null || true' EXIT
 
 git -C "$VAULT" bundle create "$W/snapshot.bundle" --all >/dev/null 2>&1 || {
   log "FATAL bundle create failed"; exit 1; }
@@ -211,15 +255,15 @@ LOCAL_SHA=$(sha256sum "$W/snapshot.age" | cut -d' ' -f1)
 [ -n "$LOCAL_SHA" ] || { log "FATAL empty local checksum"; exit 1; }
 
 TAG="snapshot-$(date -u +%Y%m%dT%H%M%SZ)"
-gh release create "$TAG" --repo "$REPO" --target "$TARGET" \
+timeout -k 30 300 gh release create "$TAG" --repo "$REPO" --target "$TARGET" \
    --title "$TAG" --notes "" "$W/snapshot.age#snapshot.age" >>"$LOG" 2>&1 || {
-  log "FATAL gh release create failed for $TAG"; exit 1; }
+  rc=$?; log "FATAL gh release create failed for $TAG ($(rc_why "$rc"))"; exit 1; }
 
 # Proof, not exit 0. Download it back and compare. This project's notes carry
 # three separate entries saying parse OK / build OK / exit 0 proved nothing.
 mkdir -p "$W/back"
-gh release download "$TAG" --repo "$REPO" --pattern snapshot.age --dir "$W/back" >>"$LOG" 2>&1 || {
-  log "FATAL could not download back $TAG — snapshot unverified, no rotation"; exit 1; }
+timeout -k 30 300 gh release download "$TAG" --repo "$REPO" --pattern snapshot.age --dir "$W/back" >>"$LOG" 2>&1 || {
+  rc=$?; log "FATAL could not download back $TAG ($(rc_why "$rc")) — snapshot unverified, no rotation"; exit 1; }
 REMOTE_SHA=$(sha256sum "$W/back/snapshot.age" | cut -d' ' -f1)
 
 # BOTH must be non-empty. Comparing two empty strings succeeds, and that exact
@@ -244,7 +288,10 @@ fi
 # on its first three generations for ever, without ever raising an error.
 # tagName is an ISO-8601 UTC stamp by construction, so lexicographic order is
 # chronological order and depends on nothing GitHub decides.
-gh release list --repo "$REPO" --limit 100 --json tagName \
+#
+# The pipeline is guarded: under pipefail a failed or timed-out listing used to
+# abort the script before the OK line, although the snapshot was already proven.
+timeout -k 30 300 gh release list --repo "$REPO" --limit 100 --json tagName \
    --jq "sort_by(.tagName) | reverse | .[${KEEP}:] | .[].tagName" 2>/dev/null \
 | while read -r old; do
     [ -n "$old" ] || continue
@@ -254,8 +301,8 @@ gh release list --repo "$REPO" --limit 100 --json tagName \
       log "REFUSED to rotate out the tag just created: $TAG"
       continue
     fi
-    gh release delete "$old" --repo "$REPO" --cleanup-tag --yes >>"$LOG" 2>&1 || true
+    timeout -k 30 300 gh release delete "$old" --repo "$REPO" --cleanup-tag --yes >>"$LOG" 2>&1 || true
     log "rotated out $old"
-  done
+  done || { rc=$?; log "WARN rotation listing failed or timed out ($(rc_why "$rc")) — no rotation this run"; }
 
 log "OK $TAG sha=$LOCAL_SHA"

@@ -25,6 +25,9 @@
       # GNU coreutils pinned on PATH: the script uses sha256sum and
       # `date -u`, and BSD coreutils differ on both.
       pkgs.coreutils
+      # GNU find pinned too: the stale-lock check uses `find -mmin`, which
+      # must not fall back to BSD find (parity with graphify-reindex).
+      pkgs.findutils
     ];
     text = builtins.readFile ./scripts/vault-snapshot.sh;
   };

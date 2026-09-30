@@ -12,14 +12,14 @@
 // Every failure — unreadable stdin, no repo, no diff, an unreadable file, a
 // broken git — exits 0 with empty stdout.
 //
-// TWO CHANGES FROM THE CLAUDE VERSION
+// SHARED WITH THE CLAUDE VERSION
 //
-//   1. It chdir's to the `cwd` field on stdin before calling git. The Claude
-//      version trusts the process working directory, which is whatever the
-//      host happened to launch the hook in.
-//   2. It honours `stop_hook_active`. Blocking a Stop restarts the model; if
-//      the model stops again with the violations still present, blocking a
-//      second time is a loop, so the second pass steps aside.
+//   Both chdir to the `cwd` field on stdin before calling git, resolve changed
+//   files against `git rev-parse --show-toplevel`, and honour
+//   `stop_hook_active` (a second block on the same Stop would loop).
+//   Remaining differences here: spawnSync without a shell, non-global
+//   patterns, a 4 s watchdog, and the stdout hygiene below — Codex parses
+//   stdout, Claude Code's Stop hook only reads exit 2 + stderr.
 //
 // STDOUT HYGIENE. Codex parses any non-empty stdout as JSON, and an ANSI
 // escape written by another hook is the live bug this module exists to fix.

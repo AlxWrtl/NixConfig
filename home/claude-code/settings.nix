@@ -966,12 +966,16 @@ in
 
     if command -v jq >/dev/null 2>&1; then
       MODEL=$(echo "$INPUT" | jq -r '.model.display_name // "opus"' | sed -E 's/ *\(.*\)//')
-      CWD=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."' | xargs basename)
       TOKENS_IN=$(echo "$INPUT" | jq -r '.context_window.total_input_tokens // 0')
       TOKENS_OUT=$(echo "$INPUT" | jq -r '.context_window.total_output_tokens // 0')
       CONTEXT_PCT=$(echo "$INPUT" | jq -r '(.context_window.used_percentage // 0) | round')
 
       WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."')
+      # Strip trailing slashes before taking the basename, else "/" and "/a/b/"
+      # both yield "". Nothing left (the root itself) falls back to "/".
+      CWD=''${WORKSPACE_DIR%"''${WORKSPACE_DIR##*[!/]}"}
+      CWD=''${CWD##*/}
+      CWD=''${CWD:-/}
       GIT_BRANCH=$(git -C "$WORKSPACE_DIR" branch --show-current 2>/dev/null || echo "")
 
       # Rate limits straight from Claude Code JSON (Pro/Max only; absent before the

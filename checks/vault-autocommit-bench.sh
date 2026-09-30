@@ -10,12 +10,49 @@
 # turn "one uncommitted note" into "no backup at all".
 
 set -uo pipefail
-SRC="$(dirname "${BASH_SOURCE[0]}")/../home/claude-code/scripts/vault-snapshot.sh"
+# Absolute, resolved BEFORE the `cd "$WORK"` below changes what a relative
+# path means.
+HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || { echo "bench: cannot resolve bench dir" >&2; exit 2; }
+SRC="$HERE/../home/claude-code/scripts/vault-snapshot.sh"
 [ -f "$SRC" ] || { echo "bench: cannot find $SRC" >&2; exit 2; }
 
 WORK=$(mktemp -d "${TMPDIR:-/tmp}/vaultac.XXXXXX") || exit 2
 [ -n "$WORK" ] && [ -d "$WORK" ] || { echo "bench: no work dir" >&2; exit 2; }
 trap 'rm -rf "$WORK"' EXIT
+# Physical path, so `rev-parse --show-toplevel` can be compared to it verbatim.
+WORK_P=$(cd "$WORK" && pwd -P) || exit 2
+[ -n "$WORK_P" ] && [ -d "$WORK_P" ] || { echo "bench: cannot resolve work dir" >&2; exit 2; }
+WORK="$WORK_P"
+# Isolation from the CALLING repo. A fixture that failed to init used to come
+# back as "", and `git -C ""` means "the caller's cwd": run from this repo, the
+# bench detached its HEAD. From here on the cwd is WORK and git may not walk up
+# out of it (git ignores a ceiling equal to the cwd itself, hence the parent).
+cd "$WORK" || exit 2
+export GIT_CEILING_DIRECTORIES="$WORK:${WORK%/*}"
+# Inherited GIT_DIR would bypass the ceiling and the fixture checks.
+unset GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE
+
+refuse() { # refuse <what> — one message, exit 2, no FAIL lines
+  echo "bench: REFUSED — $1 is not a usable git repo under $WORK." >&2
+  echo "bench: likely cause: the sandbox denies writes to .git (run the bench unsandboxed)." >&2
+  exit 2
+}
+
+# Preflight: if git cannot init a repo here, no fixture can exist; stop before
+# any case runs.
+PROBE="$WORK/probe"
+mkdir -p "$PROBE" || refuse "preflight probe dir"
+git -C "$PROBE" init -q >/dev/null 2>&1 \
+  && [ "$(git -C "$PROBE" rev-parse --show-toplevel 2>/dev/null)" = "$PROBE" ] \
+  || refuse "preflight probe ($PROBE)"
+
+# need_vault <path> — called at TOP LEVEL after each mkvault: an exit inside
+# `V=$(mkvault …)` only leaves the subshell, so the check must live out here.
+need_vault() {
+  [ -n "${1:-}" ] && [ -d "$1" ] \
+    && [ "$(git -C "$1" rev-parse --show-toplevel 2>/dev/null)" = "$1" ] \
+    || refuse "fixture '${1:-<empty>}'"
+}
 
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf 'ok    %-44s %s\n' "$1" "${2:-}"; }
@@ -43,7 +80,7 @@ DRV
 
 mkvault() { # mkvault <name> -> path, one commit on `main`
   local d="$WORK/$1/v"; mkdir -p "$d"
-  git -C "$d" init -q -b main
+  git -C "$d" init -q -b main || exit 2
   git -C "$d" config user.email b@e; git -C "$d" config user.name B
   # The real config signs commits with an SSH key the sandbox cannot read, so
   # every fixture commit failed with "No private key found" and the bench
@@ -58,7 +95,7 @@ mkvault() { # mkvault <name> -> path, one commit on `main`
 }
 
 echo "=== 1. arbre sale : commit, marqueur, base avancée ==="
-V=$(mkvault t1); echo nouvelle > "$V/note.md"
+V=$(mkvault t1); need_vault "$V"; echo nouvelle > "$V/note.md"
 BEFORE=$(git -C "$V" rev-parse HEAD)
 OUT=$(run_block "$V")
 [ -z "$(git -C "$V" status --porcelain)" ] && ok "arbre propre après" || bad "arbre encore sale"
@@ -80,14 +117,14 @@ echo "=== 2. l'état d'AVANT reste atteignable (le filet demandé) ==="
 
 echo
 echo "=== 3. arbre propre : aucun bruit ==="
-V2=$(mkvault t2)
+V2=$(mkvault t2); need_vault "$V2"
 OUT=$(run_block "$V2")
 [ -z "$(git -C "$V2" branch --list 'vault/*')" ] && ok "aucune branche créée" || bad "branche créée à tort"
 [ "$(git -C "$V2" rev-list --count HEAD)" = "1" ] && ok "aucun commit vide" || bad "commit inutile"
 
 echo
 echo "=== 4. HEAD détaché : ne commite pas, ne casse pas ==="
-V3=$(mkvault t3); echo x > "$V3/n.md"
+V3=$(mkvault t3); need_vault "$V3"; echo x > "$V3/n.md"
 git -C "$V3" checkout -q --detach HEAD
 OUT=$(run_block "$V3")
 echo "$OUT" | grep -q "detached HEAD" && ok "détecté et journalisé" || bad "détaché non détecté" "$OUT"
@@ -96,7 +133,7 @@ echo "$OUT" | grep -q "detached HEAD" && ok "détecté et journalisé" || bad "d
 
 echo
 echo "=== 5. gitignore respecté ==="
-V4=$(mkvault t4); printf 'ignored.md\n' > "$V4/.gitignore"
+V4=$(mkvault t4); need_vault "$V4"; printf 'ignored.md\n' > "$V4/.gitignore"
 git -C "$V4" add .gitignore; git -C "$V4" commit -q -m gi
 echo secret > "$V4/ignored.md"; echo reel > "$V4/reel.md"
 run_block "$V4" >/dev/null
@@ -107,7 +144,7 @@ echo
 echo "=== 6. commit impossible : ni bloqué, ni laissé sur la branche ==="
 # A failing pre-commit hook is the deterministic way to make `git commit`
 # return non-zero. Unsetting user.email is not: git finds an identity elsewhere.
-V5=$(mkvault t5); echo x > "$V5/n.md"
+V5=$(mkvault t5); need_vault "$V5"; echo x > "$V5/n.md"
 mkdir -p "$WORK/t5/hooks"
 printf '#!/bin/sh\nexit 1\n' > "$WORK/t5/hooks/pre-commit"
 chmod +x "$WORK/t5/hooks/pre-commit"
@@ -125,7 +162,7 @@ echo
 echo "=== 7. isolation : un commit par projet, jamais un fourre-tout ==="
 # Le defaut que ce groupement corrige : 6 commits de l'historique reel du vault
 # touchent plusieurs projets, un d'eux trois. Un `add -A` en aurait fait la regle.
-V6=$(mkvault t6)
+V6=$(mkvault t6); need_vault "$V6"
 mkdir -p "$V6/02-Projets/Alpha" "$V6/02-Projets/Beta" "$V6/04-Resources"
 echo a > "$V6/02-Projets/Alpha/note.md"
 echo b > "$V6/02-Projets/Beta/note.md"
@@ -153,7 +190,7 @@ done
 
 echo
 echo "=== 8. noms de fichiers reels : espaces, accents, apostrophe ==="
-V7=$(mkvault t7)
+V7=$(mkvault t7); need_vault "$V7"
 mkdir -p "$V7/02-Projets/Gamma/sessions"
 printf 'x\n' > "$V7/02-Projets/Gamma/sessions/2026-09-09 - récupération d'un état.md"
 run_block "$V7" >/dev/null

@@ -20,10 +20,16 @@
 #   D. the branch guards fail CLOSED — protect-main and block-main-bash used to
 #      `exit 0` on bad JSON, on a missing or hung git, on any throw: every
 #      doubt became an allow, and nothing but a run shows it. So the installed
-#      bodies are RUN against fixture repos, and format-typescript is fed a
-#      file path carrying `$(…)` to prove the path never reaches a shell.
-#      Each fail-closed branch has a canary: the same body with that branch
-#      put back to `exit 0` must turn its case red, or the case tests nothing.
+#      bodies are RUN against fixture repos, each under the timeout its
+#      registration gives the host, and format-typescript is fed a file path
+#      carrying `$(…)` to prove the path never reaches a shell. A canary (the
+#      body with one branch put back the way it was) must turn its case red
+#      for the right reason, and exists for these branches only: malformed
+#      JSON and a missing git in protect-main; its time budget under the host
+#      timeout; malformed JSON, a broken git in the cwd and a broken git in a
+#      `cd` target in block-main-bash; its linear executor scan on a newline
+#      flood; the argv call in format-typescript. Every other case is run and
+#      graded, with no mutant to show it bites.
 #
 # The corpus is EVALUATED, not read as text: home/claude-code.nix is imported
 # as a module and its `home.file` is the same attrset home-manager installs.
@@ -100,6 +106,7 @@ let
       map (h: {
         event = e;
         command = h.command or "";
+        timeout = h.timeout or null;
       }) (entriesOf g)
     ) (groupsOf e);
   registrations = builtins.concatMap commandsOf eventNames;
@@ -275,6 +282,18 @@ let
       hook = "block-main-bash.js";
       text = "if (c.kind === \"broken\") denyUnverifiable(c.why + \" in the directory the command targets\");";
     };
+    A7-budget = {
+      hook = "protect-main.js";
+      text = "const BUDGET_MS = 3000;";
+    };
+    A7-git = {
+      hook = "protect-main.js";
+      text = "const GIT_MS = 1500;";
+    };
+    A8 = {
+      hook = "block-main-bash.js";
+      text = "/(?:^|[\\n;|&(])[ \\t]*(?:sh|";
+    };
     A5-require = {
       hook = "format-typescript.js";
       text = "const { spawnSync } = require(\"child_process\");";
@@ -360,6 +379,37 @@ let
         }
       ];
     }
+    # A budget past the host's timeout: the hung git is still being waited on
+    # when the host gives up, and the host then proceeds. Killed only because
+    # `run` grants each body its registered timeout and no more.
+    {
+      id = "M7";
+      hook = "protect-main.js";
+      kills = "pm-master-hung";
+      swaps = [
+        {
+          anchor = "A7-budget";
+          to = "const BUDGET_MS = 9000;";
+        }
+        {
+          anchor = "A7-git";
+          to = "const GIT_MS = 9000;";
+        }
+      ];
+    }
+    # The quadratic executor scan: `\s*` after a separator rescans a newline
+    # run from each of its newlines, so the flood outlives the host timeout.
+    {
+      id = "M8";
+      hook = "block-main-bash.js";
+      kills = "bb-master-nl-flood";
+      swaps = [
+        {
+          anchor = "A8";
+          to = "/(?:^|[\\n;|&(])\\s*(?:sh|";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -371,6 +421,8 @@ let
     "pm-norepo-nogit"
     "pm-master-hung"
     "pm-master-symlink-newfile"
+    "pm-master-case"
+    "pm-master-dangling-link"
     "pm-master-outside"
     "pm-feat"
     "pm-norepo"
@@ -378,6 +430,8 @@ let
     "bb-master-commit"
     "bb-master-malformed"
     "bb-master-nogit"
+    "bb-master-hung"
+    "bb-master-nl-flood"
     "bb-master-status"
     "bb-local-commit"
     "bb-feat-commit"
@@ -404,6 +458,28 @@ let
   strandedCanaries = map (m: "${m.id} -> ${m.kills}") (
     builtins.filter (m: !(builtins.elem m.kills caseNames)) mutants
   );
+
+  # Each body runs under the timeout its registration gives the host, read
+  # from settings: an expired hook is no decision and the host proceeds, so a
+  # body granted more time than that passes a case the host would lose.
+  runHooks = [
+    "protect-main.js"
+    "block-main-bash.js"
+    "format-typescript.js"
+  ];
+  timeoutsOf =
+    n:
+    lib.unique (
+      map (r: r.timeout) (builtins.filter (r: builtins.elem n (hookRefsIn r.command)) registrations)
+    );
+  badTimeouts = builtins.filter (
+    n:
+    let
+      ts = timeoutsOf n;
+    in
+    !(builtins.length ts == 1 && builtins.isInt (builtins.head ts) && builtins.head ts > 0)
+  ) runHooks;
+  hostTimeout = n: toString (builtins.head (timeoutsOf n));
 
   hookFile = n: pkgs.writeText n (bodyText n);
   mutantFile = m: pkgs.writeText "${m.id}-${m.hook}" (mutantBody m);
@@ -438,6 +514,8 @@ let
     g -C "$DETACHED" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q --allow-empty -m probe
     g -C "$DETACHED" checkout -q --detach
     ln -s "$MASTER" "$LINK"
+    # Dangling, outside the repo, aimed INTO it: a Write there lands in MASTER.
+    ln -s "$MASTER/dangling-target.ts" "$NOREPO/dangling"
     # `exec`: SIGKILL on timeout must reach the sleeper, not orphan it on the pipe.
     printf '%s\n' '#!${pkgs.bash}/bin/bash' 'exec ${pkgs.coreutils}/bin/sleep 30' > "$root/hangbin/git"
     printf '%s\n' '#!${pkgs.bash}/bin/bash' 'printf "%s\n" "$2" >> "''${0%/*}/prettier.log"' > "$root/fakebin/prettier"
@@ -455,21 +533,37 @@ let
     pm_in() { ${jq} -cn --arg f "$1" '{hook_event_name:"PreToolUse",tool_name:"Write",tool_input:{file_path:$f,content:"x"}}'; }
     bb_in() { ${jq} -cn --arg c "$1" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'; }
     fmt_in() { ${jq} -cn --arg f "$1" '{hook_event_name:"PostToolUse",tool_name:"Write",tool_input:{file_path:$f}}'; }
+    # A commit followed by 64 KB of newlines, built by jq: a shell `$(…)`
+    # would strip the very newlines the case is about.
+    bb_flood() { ${jq} -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:("git commit -m x" + ("\n" * 65536))}}'; }
 
     # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
+    # $tmo is the host's timeout for the hook under test (probe_case sets it);
+    # 124 is `timeout` killing it, which the host reads as no decision.
     # No set +e/-e toggling: this runs both inside and outside `if`.
     run() {
       printf '%s' "$5" > "$d/$1.in"
       rc=0
-      (cd "$3" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH="$4" ${pkgs.coreutils}/bin/timeout 10 ${pkgs.nodejs_22}/bin/node "$2") \
+      (cd "$3" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH="$4" ${pkgs.coreutils}/bin/timeout "$tmo" ${pkgs.nodejs_22}/bin/node "$2") \
         < "$d/$1.in" > "$d/$1.out" 2> "$d/$1.err" || rc=$?
     }
 
+    # A failure sets $kind only when it is the one a canary exists to cause:
+    # "mismatch" (no deny where one was due: no output, decision none or
+    # allow, or killed at the host timeout) or "pwned". A crash, a non-zero
+    # exit, stray stderr or a wrong reason leave it empty: a mutant that
+    # breaks the hook some other way has not shown that the branch bites.
     is_deny() {
+      [ "$rc" -ne 124 ] || { why="killed at the host's $tmo s timeout: decision 'none', expected deny"; kind=mismatch; return 1; }
       [ "$rc" -eq 0 ] || { why="exit $rc, expected 0 — Claude honours the deny JSON on exit 0"; return 1; }
       [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: decision 'none', expected deny"; kind=mismatch; return 1; }
       verdict=$(${jq} -r '.hookSpecificOutput.permissionDecision // "none"' "$d/$lbl.out" 2> /dev/null) || verdict="unparseable"
-      [ "$verdict" = deny ] || { why="decision '$verdict', expected deny"; return 1; }
+      case "$verdict" in
+        deny) ;;
+        none | allow) why="decision '$verdict', expected deny"; kind=mismatch; return 1 ;;
+        *) why="decision '$verdict', expected deny"; return 1 ;;
+      esac
       reason=$(${jq} -r '.hookSpecificOutput.permissionDecisionReason // ""' "$d/$lbl.out")
       case "$reason" in
         *"$1"*) ;;
@@ -487,6 +581,12 @@ let
     probe_case() {
       lbl="$3.$1"
       why=""
+      kind=""
+      case "$1" in
+        pm-*) tmo=${hostTimeout "protect-main.js"} ;;
+        bb-*) tmo=${hostTimeout "block-main-bash.js"} ;;
+        *) tmo=${hostTimeout "format-typescript.js"} ;;
+      esac
       case "$1" in
         pm-master-inrepo)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(pm_in "$MASTER/a.ts")"; is_deny "BLOCKED: on master." ;;
@@ -500,6 +600,16 @@ let
           run "$lbl" "$2" "$MASTER" "$root/hangbin" "$(pm_in "$MASTER/a.ts")"; is_deny "did not answer in time" ;;
         pm-master-symlink-newfile)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(pm_in "$LINK/new.ts")"; is_deny "BLOCKED: on master." ;;
+        pm-master-case)
+          # The same directory in other case, which only a case-insensitive
+          # filesystem resolves. Skipped, and said, where it does not exist.
+          if [ ! -e "$root/MASTER" ]; then
+            echo "hook-wiring: $1 skipped — $root/MASTER does not exist, this filesystem is case-sensitive"
+            return 0
+          fi
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(pm_in "$root/MASTER/a.ts")"; is_deny "BLOCKED: on master." ;;
+        pm-master-dangling-link)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(pm_in "$NOREPO/dangling")"; is_deny "could not be resolved" ;;
         pm-master-outside)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(pm_in "$NOREPO/a.ts")"; is_allow ;;
         pm-feat)
@@ -514,6 +624,10 @@ let
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$malformed"; is_deny "not valid JSON" ;;
         bb-master-nogit)
           run "$lbl" "$2" "$MASTER" "$root/emptybin" "$(bb_in "git commit -m x")"; is_deny "git is not on PATH" ;;
+        bb-master-hung)
+          run "$lbl" "$2" "$MASTER" "$root/hangbin" "$(bb_in "git commit -m x")"; is_deny "did not answer in time" ;;
+        bb-master-nl-flood)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_flood)"; is_deny "BLOCKED: on master." ;;
         bb-master-status)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "git status")"; is_allow ;;
         bb-local-commit)
@@ -531,9 +645,13 @@ let
         fmt-inject)
           rm -f "$TMPDIR/PWNED" "$root/fakebin/prettier.log"
           f="$root/fmt/\$(touch $TMPDIR/PWNED).ts"
+          # The file must exist: the hook skips anything but a regular file.
+          # Its name holds slashes, so its parents are directories.
+          mkdir -p "$(dirname "$f")"
+          : > "$f"
           run "$lbl" "$2" "$root" "$root/fakebin:${pkgs.coreutils}/bin" "$(fmt_in "$f")"
           [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
-          [ ! -e "$TMPDIR/PWNED" ] || { why="the file path ran as shell: its \$(touch …) created PWNED"; return 1; }
+          [ ! -e "$TMPDIR/PWNED" ] || { why="the file path ran as shell: its \$(touch …) created PWNED"; kind=pwned; return 1; }
           grep -Fxq -- "$f" "$root/fakebin/prettier.log" 2> /dev/null \
             || { why="prettier never received the path verbatim — a probe that never reaches prettier cannot see an injection"; return 1; }
           ;;
@@ -570,8 +688,9 @@ let
     done
     [ "$nfailed" -eq 0 ] || { echo "hook-wiring: $nfailed of $ncases runtime case(s) failed against the INSTALLED hooks" >&2; exit 1; }
 
-    # Every case above is green, so a canary that turns its case red was
-    # killed by the one branch it removed.
+    # Every case above is green, so a canary that turns its case red, in the
+    # way its branch is there to prevent, was killed by the branch it removed.
+    # Red for any other reason is a broken mutant or harness, and fails.
     killed=0
     for spec in ${canarySpecs}; do
       id="''${spec%%:*}"
@@ -579,11 +698,15 @@ let
       c="''${rest%%:*}"
       body="''${rest#*:}"
       if probe_case "$c" "$body" "$id"; then st=0; else st=$?; fi
-      case "$st" in
-        1)
+      case "$st:$kind" in
+        1:mismatch | 1:pwned)
           killed=$((killed + 1))
           echo "hook-wiring: canary $id killed by $c ($why)" ;;
-        0)
+        1:*)
+          echo "hook-wiring: canary $id turned $c red for the wrong reason ($why): only a missed deny or a PWNED file counts as a kill" >&2
+          dump "$lbl"
+          exit 1 ;;
+        0:*)
           echo "hook-wiring: canary $id survived — $c still passes with its fail-closed branch put back to exit 0, so the case no longer tests what it names" >&2
           dump "$lbl"
           exit 1 ;;
@@ -663,6 +786,11 @@ let
       name = "D2 canaries: every mutant targets a declared case";
       ok = strandedCanaries == [ ];
       msg = "mutant(s) aimed at no case in caseNames: ${show strandedCanaries}";
+    }
+    {
+      name = "D3 runtime: every run hook is registered with one positive integer timeout";
+      ok = badTimeouts == [ ];
+      msg = "hook(s) run by D whose registrations give no single positive integer `timeout`: ${show badTimeouts}. D grants each body the host's timeout and no more; without one there is nothing to grant";
     }
   ];
 

@@ -121,17 +121,26 @@
     // resolve the deepest existing ancestor, re-attach the rest. A plain
     // realpathSync throws on a new file, and the old fallback compared an
     // unresolved symlinked path with a resolved toplevel -> allowed.
+    // `.native` is realpath(3), which returns the on-disk case: the JS
+    // realpathSync keeps the case it was given, and APFS is case-insensitive,
+    // so `MASTER/a.ts` read as outside `master` and was allowed.
     function realpathish(p) {
       const abs = path.resolve(p);
       let cur = abs;
       const tail = [];
       for (let i = 0; i < 64; i++) {
         try {
-          const real = fs.realpathSync(cur);
+          const real = fs.realpathSync.native(cur);
           if (tail.length === 0) return real;
           return path.join(real, tail.reverse().join(path.sep));
-        } catch {
-          // not there yet: keep walking up
+        } catch (e) {
+          // Walk up ONLY past an entry that is not there. One that exists but
+          // does not resolve (a dangling symlink: realpath says ENOENT, lstat
+          // finds the link) cannot be placed, and neither can any other error.
+          if (!e || e.code !== "ENOENT") return null;
+          let entry = null;
+          try { entry = fs.lstatSync(cur); } catch (le) { if (!le || le.code !== "ENOENT") return null; }
+          if (entry) return null;
         }
         const parent = path.dirname(cur);
         // The root is its own realpath: re-attach the tail to it.
@@ -167,16 +176,22 @@
 
       let data;
       try { data = JSON.parse(input); } catch { denyOnBranch("the hook input was not valid JSON"); return; }
-      if (!data || typeof data !== "object") { denyOnBranch("the hook input was not an object"); return; }
+      if (!data || typeof data !== "object" || Array.isArray(data)) { denyOnBranch("the hook input was not an object"); return; }
       const ti = data.tool_input;
       const raw = ti && typeof ti === "object" && typeof ti.file_path === "string" && ti.file_path.trim() !== "" ? ti.file_path : null;
       if (!raw) { denyOnBranch("the hook input carries no tool_input.file_path"); return; }
+      // A `..` walks through whatever the segment before it names, which may
+      // be a symlink the resolution below never sees the same way the tool
+      // does: on a protected branch it is refused rather than reasoned about.
+      if (raw.split("/").indexOf("..") !== -1) { denyOnBranch("the target path has a \"..\" segment"); return; }
 
       const top = git(["rev-parse", "--show-toplevel"]);
       const topBroken = gitBroken(top);
       if (topBroken) { denyOnBranch(topBroken); return; }
       if (top.status !== 0) { denyOnBranch("the worktree root could not be located"); return; }
-      const realTop = realpathish(String(top.stdout || "").trim());
+      // Only git's own trailing newline is cut: `.trim()` also ate spaces a
+      // directory name may legitimately end with.
+      const realTop = realpathish(String(top.stdout || "").replace(/\n$/, ""));
       const realTarget = realpathish(raw);
       if (realTop === null || realTarget === null) { denyOnBranch("the target path could not be resolved"); return; }
       if (realTarget !== realTop && !realTarget.startsWith(realTop + path.sep)) allow();
@@ -1488,18 +1503,20 @@
     // prettier runs as an argv array through spawnSync: no shell, so a
     // file_path holding $(...) or backticks stays a file name (run 57: the
     // old shell-string call ran a $(touch X) path from a Write). A leading dash
-    // is skipped so a path cannot be read as a prettier option. ENOENT, the
-    // timeout or a non-zero exit are ignored: this hook formats, it gates
-    // nothing.
+    // is skipped so a path cannot be read as a prettier option, and so is
+    // anything but a regular file: prettier reads a missing path as a GLOB
+    // and formats whatever it matches. ENOENT, the timeout or a non-zero exit
+    // are ignored: this hook formats, it gates nothing.
     let input = "";
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
+      const fs = require("fs");
       const { spawnSync } = require("child_process");
       const exts = [".ts", ".tsx", ".js", ".jsx", ".css", ".json"];
       try {
         const data = JSON.parse(input);
         const file = (data.tool_input && data.tool_input.file_path) || "";
-        if (typeof file === "string" && file && file[0] !== "-" && exts.some(ext => file.endsWith(ext))) {
+        if (typeof file === "string" && file && file[0] !== "-" && exts.some(ext => file.endsWith(ext)) && fs.lstatSync(file).isFile()) {
           spawnSync("prettier", ["--write", file], { stdio: "ignore", timeout: 8000, killSignal: "SIGKILL" });
         }
       } catch (e) { process.exit(0); }
@@ -1514,6 +1531,36 @@
     // push that branch — never master/main. commit/push/merge/rebase while on
     // master/main are all hard-denied. Bringing code to master = a manual PR
     // step by the user on GitHub, never a Claude action.
+
+    // Crash handler and watchdog FIRST, before the rule table below builds
+    // its RegExps: a throw there used to reach no handler (exit 1, no JSON,
+    // i.e. an allow), and the clock started only after it. What the handler
+    // touches is declared here too, out of the temporal dead zone; the
+    // functions it calls are hoisted.
+    const fs = require("fs");
+    const path = require("path");
+    const os = require("os");
+    const { spawnSync } = require("child_process");
+
+    const PROTECTED = ["main", "master"];
+    const BUDGET_MS = 3000;
+    const GIT_MS = 1500;
+    const DEADLINE = Date.now() + BUDGET_MS;
+    const CUT = "Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
+
+    let settled = false;
+    let branchSeen = null;
+
+    process.on("uncaughtException", (e) => {
+      if (settled) return;
+      deny("BLOCKED: the branch-protection hook crashed (" + safe(e && e.message) + "), so the branch could not be checked. " + CUT);
+    });
+
+    const watchdog = setTimeout(() => {
+      deny("BLOCKED: the branch-protection hook hit its own " + BUDGET_MS + " ms deadline before it could read its input. " + CUT);
+    }, BUDGET_MS);
+    if (typeof watchdog.unref === "function") watchdog.unref();
+
     //
     // The guard is a TABLE: one rule per family of commands, each rule readable
     // on its own line, each carrying the WHY that put it there. A command is
@@ -1701,8 +1748,14 @@
     const mask = (s) => s.replace(/\S+/g, "_");
     // Only COMMAND position counts -- start of line, or right after ; | & or (
     // -- so the word `find` inside a PR body disarms nothing.
+    // Blanks after the separator are `[ \t]*`, never `\s*`: `\s` also eats
+    // newlines, which are separators themselves, so a run of newlines was
+    // rescanned from every one of them -- 32 KB of them took 5.2 s, past the
+    // host's 5 s timeout, i.e. an allow. A newline inside the run is still a
+    // separator on its own; what no longer matches is a \r, \v, \f or Unicode
+    // space before the word, and the shell does not split words on those.
     const EXECUTOR =
-      /(?:^|[\n;|&(])\s*(?:sh|bash|zsh|dash|ksh|fish|eval|exec|source|\.|sudo|doas|su|env|nohup|timeout|watch|nice|stdbuf|script|xargs|find|parallel|ssh|nix-shell|node|deno|bun|python3?|perl|ruby|awk)(?![\w-])/;
+      /(?:^|[\n;|&(])[ \t]*(?:sh|bash|zsh|dash|ksh|fish|eval|exec|source|\.|sudo|doas|su|env|nohup|timeout|watch|nice|stdbuf|script|xargs|find|parallel|ssh|nix-shell|node|deno|bun|python3?|perl|ruby|awk)(?![\w-])/;
     const QUOTED_VERB = new RegExp(src(GIT) + src(/["']/));
     // The same doubt one slot earlier: a quote INSIDE a `-c` / `-C` value.
     // Masking there is what hid `git -c user.name='x y' commit` even after the
@@ -1818,7 +1871,11 @@
     const dequoteTight = (s) =>
       s.replace(/(<<-?[ \t]*|\\)?(?:'([^'\s\\]*)'|"([^"\s\\]*)")/g,
                 (m, keep, a, b) => (keep ? m : a === undefined ? b : a));
-    const hits = (c) => GUARD.some((re) => re.test(stripInertText(c)));
+    // One strip per view, not one per rule: it is the costly pass.
+    const hits = (c) => {
+      const v = stripInertText(c);
+      return GUARD.some((re) => re.test(v));
+    };
     const movesRefOnCurrentBranch = (c) => hits(c) || hits(dequoteTight(c));
 
     // A push whose DESTINATION names master/main is refused from ANY branch,
@@ -1861,20 +1918,8 @@
     // stderr; allow = exit 0, no output. Every git call is spawnSync (no
     // shell) under LC_ALL=C with a timeout drawn from one DEADLINE, so a hung
     // git is killed before the host's 5 s hook timeout, whose expiry would
-    // NOT block the command.
-    const fs = require("fs");
-    const path = require("path");
-    const os = require("os");
-    const { spawnSync } = require("child_process");
-
-    const PROTECTED = ["main", "master"];
-    const BUDGET_MS = 3000;
-    const GIT_MS = 1500;
-    const DEADLINE = Date.now() + BUDGET_MS;
-    const CUT = "Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
-
-    let settled = false;
-    let branchSeen = null;
+    // NOT block the command. Its requires, constants, crash handler and
+    // watchdog sit at the top of the file.
 
     // process.exit() truncates a pending async pipe write, which would drop
     // the deny payload itself: write synchronously, retry, never throw.
@@ -2067,16 +2112,6 @@
       }
       denyOnBranch("the hook reached no decision");
     }
-
-    process.on("uncaughtException", (e) => {
-      if (settled) return;
-      deny("BLOCKED: the branch-protection hook crashed (" + safe(e && e.message) + "), so the branch could not be checked. " + CUT);
-    });
-
-    const watchdog = setTimeout(() => {
-      deny("BLOCKED: the branch-protection hook hit its own " + BUDGET_MS + " ms deadline before it could read its input. " + CUT);
-    }, BUDGET_MS);
-    if (typeof watchdog.unref === "function") watchdog.unref();
 
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (c) => { if (input.length < 4 * 1024 * 1024) input += c; });

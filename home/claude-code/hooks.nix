@@ -89,9 +89,12 @@
     // that the one benign failure is recognised by.
     function git(args, cwd) {
       const left = DEADLINE - Date.now();
+      // Budget spent: no spawn, a timeout. A 200 ms floor used to run git past
+      // DEADLINE, and a sync spawn keeps the watchdog from firing meanwhile.
+      if (left <= 0) return { error: { code: "ETIMEDOUT" }, status: null, signal: null, stdout: "", stderr: "" };
       const opts = {
         encoding: "utf8",
-        timeout: Math.max(200, Math.min(GIT_MS, left)),
+        timeout: Math.min(GIT_MS, left),
         killSignal: "SIGKILL",
         stdio: ["ignore", "pipe", "pipe"],
         maxBuffer: 1024 * 1024,
@@ -131,11 +134,14 @@
           // not there yet: keep walking up
         }
         const parent = path.dirname(cur);
-        if (parent === cur) return abs;
+        // The root is its own realpath: re-attach the tail to it.
+        if (parent === cur) return path.join(cur, tail.reverse().join(path.sep));
         tail.push(path.basename(cur));
         cur = parent;
       }
-      return abs;
+      // 64 levels still unresolved: the location cannot be proven. The raw
+      // path could read as outside the worktree and allow; null denies.
+      return null;
     }
 
     let input = "";
@@ -172,6 +178,7 @@
       if (top.status !== 0) { denyOnBranch("the worktree root could not be located"); return; }
       const realTop = realpathish(String(top.stdout || "").trim());
       const realTarget = realpathish(raw);
+      if (realTop === null || realTarget === null) { denyOnBranch("the target path could not be resolved"); return; }
       if (realTarget !== realTop && !realTarget.startsWith(realTop + path.sep)) allow();
 
       deny("BLOCKED: on " + safe(branch) + ". " + CUT);
@@ -1921,9 +1928,12 @@
 
     function git(args, cwd) {
       const left = DEADLINE - Date.now();
+      // Budget spent: no spawn, a timeout. A 200 ms floor used to run git past
+      // DEADLINE, and a sync spawn keeps the watchdog from firing meanwhile.
+      if (left <= 0) return { error: { code: "ETIMEDOUT" }, status: null, signal: null, stdout: "", stderr: "" };
       const opts = {
         encoding: "utf8",
-        timeout: Math.max(200, Math.min(GIT_MS, left)),
+        timeout: Math.min(GIT_MS, left),
         killSignal: "SIGKILL",
         stdio: ["ignore", "pipe", "pipe"],
         maxBuffer: 1024 * 1024,
@@ -1986,8 +1996,11 @@
     function main() {
       let data;
       try { data = JSON.parse(input); } catch { decideBlind([process.cwd()], "the hook input was not valid JSON"); return; }
-      if (!data || typeof data !== "object") { decideBlind([process.cwd()], "the hook input was not an object"); return; }
-      const cmd = (data.tool_input && data.tool_input.command) || "";
+      if (!data || typeof data !== "object" || Array.isArray(data)) { decideBlind([process.cwd()], "the hook input was not an object"); return; }
+      // A missing tool_input or command is NOT an empty command: `|| ""` used
+      // to turn `{}` into "" and allow it on master.
+      const ti = data.tool_input;
+      const cmd = ti && typeof ti === "object" && !Array.isArray(ti) ? ti.command : undefined;
       if (typeof cmd !== "string") { decideBlind([process.cwd()], "the command field was not a string"); return; }
       if (pushTargetsProtectedRef(cmd)) {
         deny("BLOCKED: this push targets main/master. Push your own branch by name (git push -u origin <your-branch>) and merge via a PR on GitHub.");
@@ -1998,9 +2011,12 @@
       // the session cwd blocked legitimate commits in another repo, and let
       // `cd /elsewhere && git commit` through when the cwd was not a repo.
       // The target is taken only when it is an existing directory that git
-      // reads as a work tree on a branch; anything else falls back to cwd, so
-      // ambiguity fails closed. The directory test comes first: git spawned
-      // in a missing cwd fails with ENOENT, which would read as "git absent".
+      // reads as a work tree on a branch. An existing directory git cannot
+      // read (hung, corrupt) DENIES: cwd would judge another repo than the one
+      // the command writes to, so a feature cwd would pass a master commit. A
+      // missing directory or a non-repo falls back to cwd. The directory test
+      // comes first: git spawned in a missing cwd fails with ENOENT, which
+      // would read as "git absent".
       let dir = process.cwd();
       let known = null;
       const viaC = cmd.match(/git\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
@@ -2018,6 +2034,7 @@
         }
         if (isDir) {
           const c = branchOf(candidate);
+          if (c.kind === "broken") denyUnverifiable(c.why + " in the directory the command targets");
           if (c.kind === "branch") { dir = candidate; known = c; }
         }
       }

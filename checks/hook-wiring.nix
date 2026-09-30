@@ -271,6 +271,10 @@ let
       hook = "block-main-bash.js";
       text = "if (st.kind === \"broken\") denyUnverifiable(st.why);";
     };
+    A6 = {
+      hook = "block-main-bash.js";
+      text = "if (c.kind === \"broken\") denyUnverifiable(c.why + \" in the directory the command targets\");";
+    };
     A5-require = {
       hook = "format-typescript.js";
       text = "const { spawnSync } = require(\"child_process\");";
@@ -345,6 +349,17 @@ let
         }
       ];
     }
+    {
+      id = "M6";
+      hook = "block-main-bash.js";
+      kills = "bb-cd-broken";
+      swaps = [
+        {
+          anchor = "A6";
+          to = "if (c.kind === \"broken\") {}";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -369,6 +384,7 @@ let
     "bb-norepo-commit"
     "bb-detached-commit"
     "bb-cd-nonexistent"
+    "bb-cd-broken"
     "fmt-inject"
   ];
 
@@ -405,7 +421,7 @@ let
     root="$TMPDIR/hook-probe"
     d="$root/out"
     rm -rf "$root"
-    mkdir -p "$d" "$root/norepo" "$root/emptybin" "$root/hangbin" "$root/fakebin" "$root/fmt"
+    mkdir -p "$d" "$root/norepo" "$root/emptybin" "$root/hangbin" "$root/fakebin" "$root/fmt" "$root/badbin"
     g() { GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" ${pkgs.git}/bin/git "$@"; }
     MASTER="$root/master"
     LOCAL="$root/local"
@@ -425,7 +441,15 @@ let
     # `exec`: SIGKILL on timeout must reach the sleeper, not orphan it on the pipe.
     printf '%s\n' '#!${pkgs.bash}/bin/bash' 'exec ${pkgs.coreutils}/bin/sleep 30' > "$root/hangbin/git"
     printf '%s\n' '#!${pkgs.bash}/bin/bash' 'printf "%s\n" "$2" >> "''${0%/*}/prettier.log"' > "$root/fakebin/prettier"
-    chmod +x "$root/hangbin/git" "$root/fakebin/prettier"
+    # A git that fails on MASTER alone ("bad object HEAD", not "not a git
+    # repository") and is real git elsewhere: `cd $MASTER && git commit` from
+    # FEAT must deny, not fall back to FEAT's branch. Matched on the physical
+    # path, which is what getcwd gives the wrapper.
+    MASTER_REAL=$(cd "$MASTER" && pwd -P)
+    printf '%s\n' '#!${pkgs.bash}/bin/bash' \
+      "if [ \"\$(pwd -P)\" = \"$MASTER_REAL\" ]; then echo 'fatal: bad object HEAD' >&2; exit 128; fi" \
+      "exec $GITBIN/git \"\$@\"" > "$root/badbin/git"
+    chmod +x "$root/hangbin/git" "$root/fakebin/prettier" "$root/badbin/git"
     malformed='{"hook_event_name":"PreToolUse","tool_input":{'
 
     pm_in() { ${jq} -cn --arg f "$1" '{hook_event_name:"PreToolUse",tool_name:"Write",tool_input:{file_path:$f,content:"x"}}'; }
@@ -502,6 +526,8 @@ let
           run "$lbl" "$2" "$DETACHED" "$GITBIN" "$(bb_in "git commit -m x")"; is_allow ;;
         bb-cd-nonexistent)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "cd /nonexistent57 && git commit -m x")"; is_deny "BLOCKED: on master." ;;
+        bb-cd-broken)
+          run "$lbl" "$2" "$FEAT" "$root/badbin" "$(bb_in "cd $MASTER && git commit -m x")"; is_deny "in the directory the command targets" ;;
         fmt-inject)
           rm -f "$TMPDIR/PWNED" "$root/fakebin/prettier.log"
           f="$root/fmt/\$(touch $TMPDIR/PWNED).ts"

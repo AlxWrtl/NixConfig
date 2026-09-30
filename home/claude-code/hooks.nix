@@ -6,41 +6,202 @@
 {
   hookProtectMain = ''
     #!/usr/bin/env node
-    let input = "";
-    process.stdin.on("data", c => input += c);
-    process.stdin.on("end", () => {
-      const { execSync } = require("child_process");
-      const path = require("path");
-      const fs = require("fs");
-      try { execSync("git rev-parse --is-inside-work-tree", { stdio: "pipe" }); } catch { process.exit(0); }
-      try {
-        const branch = execSync("git branch --show-current", { encoding: "utf8" }).trim();
-        if (branch !== "main" && branch !== "master") process.exit(0);
-        let filePath;
+    "use strict";
+    // Edit|Write guard for main/master. It FAILS CLOSED (run 57): the old
+    // version exited 0 on every degraded path (unreadable stdin, no file_path,
+    // git absent, broken or hung), and exit 0 with no JSON lets the edit
+    // through. Skeleton ported from home/codex/scripts/protect-main.js; the
+    // output keeps the Claude form: deny = ONE JSON object written
+    // synchronously to fd 1, exit 0, nothing on stderr; allow = exit 0, no
+    // output. Allowing needs positive knowledge: git says "not a git
+    // repository", the branch is not protected (detached counts as not), or
+    // the resolved target is provably outside the resolved worktree.
+    //
+    // Two time bounds, because a JS timer cannot fire while spawnSync blocks:
+    // an unref'd watchdog for a stdin that never closes, and a wall-clock
+    // DEADLINE shared by every git call. Both sit under the host's 5 s hook
+    // timeout, whose expiry would NOT block the tool.
+    const fs = require("fs");
+    const path = require("path");
+    const { spawnSync } = require("child_process");
+
+    const PROTECTED = ["main", "master"];
+    const BUDGET_MS = 3000;
+    const GIT_MS = 1500;
+    const DEADLINE = Date.now() + BUDGET_MS;
+    const CUT = "Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
+
+    let settled = false;
+    let branchSeen = null;
+
+    // process.exit() truncates a pending async pipe write, which would drop
+    // the deny payload itself: write synchronously, retry, never throw.
+    function writeAll(fd, text) {
+      let buf;
+      try { buf = Buffer.from(String(text), "utf8"); } catch { return; }
+      let off = 0;
+      let spins = 0;
+      while (off < buf.length && spins < 100000) {
+        spins++;
         try {
-          const data = JSON.parse(input);
-          filePath = data && data.tool_input && data.tool_input.file_path;
-        } catch { process.exit(0); }
-        if (!filePath) process.exit(0);
-        let toplevel;
-        try { toplevel = execSync("git rev-parse --show-toplevel", { encoding: "utf8" }).trim(); } catch { process.exit(0); }
-        let realTop = toplevel;
-        try { realTop = fs.realpathSync(toplevel); } catch {}
-        const resolved = path.resolve(filePath);
-        let realResolved = resolved;
-        try { realResolved = fs.realpathSync(resolved); } catch {}
-        if (!realResolved.startsWith(realTop + path.sep)) process.exit(0);
-        const reason = "BLOCKED: on " + branch + ". Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
-        process.stdout.write(JSON.stringify({
-          hookSpecificOutput: {
-            hookEventName: "PreToolUse",
-            permissionDecision: "deny",
-            permissionDecisionReason: reason
-          }
-        }));
-      } catch (e) {}
+          off += fs.writeSync(fd, buf, off, buf.length - off);
+        } catch (e) {
+          if (e && (e.code === "EAGAIN" || e.code === "EINTR")) continue;
+          return;
+        }
+      }
+    }
+
+    function safe(s) {
+      return String(s === undefined || s === null ? "" : s).replace(/[^\x20-\x7e]/g, "?");
+    }
+
+    function deny(reason) {
+      if (settled) return;
+      settled = true;
+      writeAll(1, JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: reason
+        }
+      }));
       process.exit(0);
+    }
+
+    function allow() {
+      if (settled) return;
+      settled = true;
+      process.exit(0);
+    }
+
+    function denyUnverifiable(why) {
+      deny("BLOCKED: cannot verify the current branch (" + why + "), so main/master cannot be ruled out. " + CUT);
+    }
+
+    function denyOnBranch(why) {
+      if (branchSeen === null) { denyUnverifiable(why); return; }
+      deny("BLOCKED: on " + safe(branchSeen) + " and " + why + ", so this edit cannot be shown to be safe. " + CUT);
+    }
+
+    // spawnSync, no shell: a path can never be read as shell syntax, and a
+    // missing binary is ENOENT. LC_ALL=C pins the "not a git repository" text
+    // that the one benign failure is recognised by.
+    function git(args, cwd) {
+      const left = DEADLINE - Date.now();
+      const opts = {
+        encoding: "utf8",
+        timeout: Math.max(200, Math.min(GIT_MS, left)),
+        killSignal: "SIGKILL",
+        stdio: ["ignore", "pipe", "pipe"],
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+        env: Object.assign({}, process.env, { LC_ALL: "C" })
+      };
+      if (cwd) opts.cwd = cwd;
+      return spawnSync("git", args, opts);
+    }
+
+    // null when git ran and answered; a short phrase when it did not.
+    function gitBroken(r) {
+      if (!r) return "git did not run";
+      if (r.error) {
+        if (r.error.code === "ENOENT") return "git is not on PATH";
+        if (r.error.code === "ETIMEDOUT") return "git did not answer in time";
+        return "git could not be executed";
+      }
+      if (r.signal) return "git was killed";
+      return null;
+    }
+
+    // realpath of a target that may not exist yet (Write creates files):
+    // resolve the deepest existing ancestor, re-attach the rest. A plain
+    // realpathSync throws on a new file, and the old fallback compared an
+    // unresolved symlinked path with a resolved toplevel -> allowed.
+    function realpathish(p) {
+      const abs = path.resolve(p);
+      let cur = abs;
+      const tail = [];
+      for (let i = 0; i < 64; i++) {
+        try {
+          const real = fs.realpathSync(cur);
+          if (tail.length === 0) return real;
+          return path.join(real, tail.reverse().join(path.sep));
+        } catch {
+          // not there yet: keep walking up
+        }
+        const parent = path.dirname(cur);
+        if (parent === cur) return abs;
+        tail.push(path.basename(cur));
+        cur = parent;
+      }
+      return abs;
+    }
+
+    let input = "";
+    let ran = false;
+
+    function main() {
+      const probe = git(["rev-parse", "--is-inside-work-tree"]);
+      const probeBroken = gitBroken(probe);
+      if (probeBroken) denyUnverifiable(probeBroken);
+      if (probe.status !== 0) {
+        if (/not a git repository/i.test(String(probe.stderr || ""))) allow();
+        denyUnverifiable("git rev-parse failed");
+      }
+      if (String(probe.stdout || "").trim() !== "true") allow();
+
+      const br = git(["branch", "--show-current"]);
+      const brBroken = gitBroken(br);
+      if (brBroken) denyUnverifiable(brBroken);
+      if (br.status !== 0) denyUnverifiable("git branch --show-current failed");
+      const branch = String(br.stdout || "").trim();
+      branchSeen = branch;
+      if (PROTECTED.indexOf(branch) === -1) allow();
+
+      let data;
+      try { data = JSON.parse(input); } catch { denyOnBranch("the hook input was not valid JSON"); return; }
+      if (!data || typeof data !== "object") { denyOnBranch("the hook input was not an object"); return; }
+      const ti = data.tool_input;
+      const raw = ti && typeof ti === "object" && typeof ti.file_path === "string" && ti.file_path.trim() !== "" ? ti.file_path : null;
+      if (!raw) { denyOnBranch("the hook input carries no tool_input.file_path"); return; }
+
+      const top = git(["rev-parse", "--show-toplevel"]);
+      const topBroken = gitBroken(top);
+      if (topBroken) { denyOnBranch(topBroken); return; }
+      if (top.status !== 0) { denyOnBranch("the worktree root could not be located"); return; }
+      const realTop = realpathish(String(top.stdout || "").trim());
+      const realTarget = realpathish(raw);
+      if (realTarget !== realTop && !realTarget.startsWith(realTop + path.sep)) allow();
+
+      deny("BLOCKED: on " + safe(branch) + ". " + CUT);
+    }
+
+    function start() {
+      if (ran) return;
+      ran = true;
+      try {
+        main();
+      } catch (e) {
+        denyOnBranch("the hook itself failed (" + safe(e && e.message) + ")");
+      }
+      denyOnBranch("the hook reached no decision");
+    }
+
+    process.on("uncaughtException", (e) => {
+      if (settled) return;
+      deny("BLOCKED: the branch-protection hook crashed (" + safe(e && e.message) + "), so the branch could not be checked. " + CUT);
     });
+
+    const watchdog = setTimeout(() => {
+      deny("BLOCKED: the branch-protection hook hit its own " + BUDGET_MS + " ms deadline before it could read its input. " + CUT);
+    }, BUDGET_MS);
+    if (typeof watchdog.unref === "function") watchdog.unref();
+
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (c) => { if (input.length < 4 * 1024 * 1024) input += c; });
+    process.stdin.on("end", start);
+    process.stdin.on("error", start);
   '';
 
   # Turns the APEX routing rule from advice into enforcement. The
@@ -1317,17 +1478,22 @@
 
   hookFormatTypescript = ''
     #!/usr/bin/env node
+    // prettier runs as an argv array through spawnSync: no shell, so a
+    // file_path holding $(...) or backticks stays a file name (run 57: the
+    // old shell-string call ran a $(touch X) path from a Write). A leading dash
+    // is skipped so a path cannot be read as a prettier option. ENOENT, the
+    // timeout or a non-zero exit are ignored: this hook formats, it gates
+    // nothing.
     let input = "";
     process.stdin.on("data", c => input += c);
     process.stdin.on("end", () => {
-      const { execSync } = require("child_process");
+      const { spawnSync } = require("child_process");
       const exts = [".ts", ".tsx", ".js", ".jsx", ".css", ".json"];
       try {
         const data = JSON.parse(input);
         const file = (data.tool_input && data.tool_input.file_path) || "";
-        if (file && exts.some(ext => file.endsWith(ext))) {
-          execSync("which prettier", { stdio: "pipe" });
-          execSync("prettier --write " + JSON.stringify(file), { stdio: "pipe" });
+        if (typeof file === "string" && file && file[0] !== "-" && exts.some(ext => file.endsWith(ext))) {
+          spawnSync("prettier", ["--write", file], { stdio: "ignore", timeout: 8000, killSignal: "SIGKILL" });
         }
       } catch (e) { process.exit(0); }
       process.exit(0);
@@ -1679,76 +1845,226 @@
       return scan(stripInertText(v)) || scan(stripInertText(dequoteTight(v)));
     };
 
-    let input = "";
-    process.stdin.on("data", c => input += c);
-    process.stdin.on("end", () => {
-      const { execSync } = require("child_process");
-      const path = require("path");
-      const os = require("os");
-      try {
-        const data = JSON.parse(input);
-        const cmd = (data.tool_input && data.tool_input.command) || "";
-        if (pushTargetsProtectedRef(cmd)) {
-          process.stdout.write(JSON.stringify({
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: "BLOCKED: this push targets main/master. Push your own branch by name (git push -u origin <your-branch>) and merge via a PR on GitHub."
-            }
-          }));
-          process.exit(0);
-        }
-        if (!movesRefOnCurrentBranch(cmd)) process.exit(0);
-        // Check the branch of the repo the COMMAND targets, not the session cwd.
-        // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading
-        // the session cwd blocked legitimate commits in another repo, and let
-        // `cd /elsewhere && git commit` through when the cwd was not a repo.
-        // Unresolvable target falls back to cwd, so ambiguity fails closed.
-        let dir = process.cwd();
-        const viaC = cmd.match(/git\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
-        const viaCd = cmd.match(/(?:^|&&|;|\|\|)\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
-        const raw = (viaC && viaC[1]) || (viaCd && viaCd[1]);
-        if (raw) {
-          let p = raw.replace(/^["']/, "").replace(/["']$/, "");
-          if (p === "~" || p.startsWith("~/")) p = path.join(os.homedir(), p.slice(1));
-          const candidate = path.resolve(process.cwd(), p);
-          try {
-            execSync("git rev-parse --is-inside-work-tree",
-              { cwd: candidate, stdio: "pipe" });
-            dir = candidate;
-          } catch {}
-        }
+    // ---- decision: FAILS CLOSED (run 57) --------------------------------
+    // The old stdin block exited 0 on a bad JSON input, a missing, broken or
+    // hung git, and any throw, and exit 0 with no JSON lets the command
+    // through. Ported from home/codex/scripts/block-main-shell.js (git(),
+    // branchOf, decideBlind, watchdog), output kept in the Claude form: deny =
+    // ONE JSON object written synchronously to fd 1, exit 0, nothing on
+    // stderr; allow = exit 0, no output. Every git call is spawnSync (no
+    // shell) under LC_ALL=C with a timeout drawn from one DEADLINE, so a hung
+    // git is killed before the host's 5 s hook timeout, whose expiry would
+    // NOT block the command.
+    const fs = require("fs");
+    const path = require("path");
+    const os = require("os");
+    const { spawnSync } = require("child_process");
+
+    const PROTECTED = ["main", "master"];
+    const BUDGET_MS = 3000;
+    const GIT_MS = 1500;
+    const DEADLINE = Date.now() + BUDGET_MS;
+    const CUT = "Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
+
+    let settled = false;
+    let branchSeen = null;
+
+    // process.exit() truncates a pending async pipe write, which would drop
+    // the deny payload itself: write synchronously, retry, never throw.
+    function writeAll(fd, text) {
+      let buf;
+      try { buf = Buffer.from(String(text), "utf8"); } catch { return; }
+      let off = 0;
+      let spins = 0;
+      while (off < buf.length && spins < 100000) {
+        spins++;
         try {
-          execSync("git rev-parse --is-inside-work-tree", { cwd: dir, stdio: "pipe" });
-        } catch { process.exit(0); }
-        const branch = execSync("git branch --show-current",
-          { cwd: dir, encoding: "utf8" }).trim();
-        // A repo with NO remote cannot receive a PR, so "merge via PR" has no
-        // meaning there and this rule would forbid committing at all. Concrete
-        // case: ~/Vaults/AlxVault, the local-only git safety net for the
-        // Obsidian vault — this hook blocked three legitimate commits to it.
-        // Narrowed, not weakened: repos WITH a remote are still protected
-        // exactly as before. Fail-closed on doubt — if `git remote` errors we
-        // keep blocking, because a protection that guesses wrong must guess in
-        // the safe direction.
-        let hasRemote = true;
-        try {
-          hasRemote = execSync("git remote", { cwd: dir, encoding: "utf8" }).trim().length > 0;
-        } catch { hasRemote = true; }
-        if (!hasRemote) process.exit(0);
-        if (branch === "main" || branch === "master") {
-          const reason = "BLOCKED: on " + branch + ". Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
-          process.stdout.write(JSON.stringify({
-            hookSpecificOutput: {
-              hookEventName: "PreToolUse",
-              permissionDecision: "deny",
-              permissionDecisionReason: reason
-            }
-          }));
+          off += fs.writeSync(fd, buf, off, buf.length - off);
+        } catch (e) {
+          if (e && (e.code === "EAGAIN" || e.code === "EINTR")) continue;
+          return;
         }
-      } catch (e) {}
+      }
+    }
+
+    function safe(s) {
+      return String(s === undefined || s === null ? "" : s).replace(/[^\x20-\x7e]/g, "?");
+    }
+
+    function deny(reason) {
+      if (settled) return;
+      settled = true;
+      writeAll(1, JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: "PreToolUse",
+          permissionDecision: "deny",
+          permissionDecisionReason: reason
+        }
+      }));
       process.exit(0);
+    }
+
+    function allow() {
+      if (settled) return;
+      settled = true;
+      process.exit(0);
+    }
+
+    function denyUnverifiable(why) {
+      deny("BLOCKED: cannot verify the current branch (" + why + "), so main/master cannot be ruled out. " + CUT);
+    }
+
+    function denyOnBranch(why) {
+      if (branchSeen === null) { denyUnverifiable(why); return; }
+      deny("BLOCKED: on " + safe(branchSeen) + " and " + why + ", so this command cannot be shown to be safe. " + CUT);
+    }
+
+    function git(args, cwd) {
+      const left = DEADLINE - Date.now();
+      const opts = {
+        encoding: "utf8",
+        timeout: Math.max(200, Math.min(GIT_MS, left)),
+        killSignal: "SIGKILL",
+        stdio: ["ignore", "pipe", "pipe"],
+        maxBuffer: 1024 * 1024,
+        windowsHide: true,
+        env: Object.assign({}, process.env, { LC_ALL: "C" })
+      };
+      if (cwd) opts.cwd = cwd;
+      return spawnSync("git", args, opts);
+    }
+
+    // null when git ran and answered; a short phrase when it did not.
+    function gitBroken(r) {
+      if (!r) return "git did not run";
+      if (r.error) {
+        if (r.error.code === "ENOENT") return "git is not on PATH";
+        if (r.error.code === "ETIMEDOUT") return "git did not answer in time";
+        return "git could not be executed";
+      }
+      if (r.signal) return "git was killed";
+      return null;
+    }
+
+    // { kind: "norepo" } | { kind: "branch", branch } | { kind: "broken", why }
+    // A nonexistent cwd ALSO fails with ENOENT, i.e. it reads as "git is not on
+    // PATH": callers only pass a directory known to exist.
+    function branchOf(dir) {
+      const probe = git(["rev-parse", "--is-inside-work-tree"], dir);
+      const probeBroken = gitBroken(probe);
+      if (probeBroken) return { kind: "broken", why: probeBroken };
+      if (probe.status !== 0) {
+        if (/not a git repository/i.test(String(probe.stderr || ""))) return { kind: "norepo" };
+        return { kind: "broken", why: "git rev-parse failed" };
+      }
+      if (String(probe.stdout || "").trim() !== "true") return { kind: "norepo" };
+      const br = git(["branch", "--show-current"], dir);
+      const brBroken = gitBroken(br);
+      if (brBroken) return { kind: "broken", why: brBroken };
+      if (br.status !== 0) return { kind: "broken", why: "git branch --show-current failed" };
+      // Detached HEAD prints nothing, and is not a protected branch.
+      return { kind: "branch", branch: String(br.stdout || "").trim() };
+    }
+
+    // The command could not be read at all: nothing can be shown to be safe,
+    // so the only question left is whether a protected branch is in play.
+    function decideBlind(dirs, why) {
+      for (const d of dirs) {
+        const b = branchOf(d);
+        if (b.kind === "broken") denyUnverifiable(b.why);
+        if (b.kind === "norepo") continue;
+        if (PROTECTED.indexOf(b.branch) === -1) continue;
+        branchSeen = b.branch;
+        denyOnBranch(why);
+      }
+      allow();
+    }
+
+    let input = "";
+    let ran = false;
+
+    function main() {
+      let data;
+      try { data = JSON.parse(input); } catch { decideBlind([process.cwd()], "the hook input was not valid JSON"); return; }
+      if (!data || typeof data !== "object") { decideBlind([process.cwd()], "the hook input was not an object"); return; }
+      const cmd = (data.tool_input && data.tool_input.command) || "";
+      if (typeof cmd !== "string") { decideBlind([process.cwd()], "the command field was not a string"); return; }
+      if (pushTargetsProtectedRef(cmd)) {
+        deny("BLOCKED: this push targets main/master. Push your own branch by name (git push -u origin <your-branch>) and merge via a PR on GitHub.");
+      }
+      if (!movesRefOnCurrentBranch(cmd)) allow();
+      // Check the branch of the repo the COMMAND targets, not the session cwd.
+      // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading
+      // the session cwd blocked legitimate commits in another repo, and let
+      // `cd /elsewhere && git commit` through when the cwd was not a repo.
+      // The target is taken only when it is an existing directory that git
+      // reads as a work tree on a branch; anything else falls back to cwd, so
+      // ambiguity fails closed. The directory test comes first: git spawned
+      // in a missing cwd fails with ENOENT, which would read as "git absent".
+      let dir = process.cwd();
+      let known = null;
+      const viaC = cmd.match(/git\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
+      const viaCd = cmd.match(/(?:^|&&|;|\|\|)\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
+      const raw = (viaC && viaC[1]) || (viaCd && viaCd[1]);
+      if (raw) {
+        let p = raw.replace(/^["']/, "").replace(/["']$/, "");
+        if (p === "~" || p.startsWith("~/")) p = path.join(os.homedir(), p.slice(1));
+        const candidate = path.resolve(process.cwd(), p);
+        let isDir = false;
+        try {
+          isDir = fs.statSync(candidate).isDirectory();
+        } catch {
+          // missing or unreadable: not a usable target, cwd stays
+        }
+        if (isDir) {
+          const c = branchOf(candidate);
+          if (c.kind === "branch") { dir = candidate; known = c; }
+        }
+      }
+      const st = known || branchOf(dir);
+      if (st.kind === "broken") denyUnverifiable(st.why);
+      if (st.kind === "norepo") allow();
+      branchSeen = st.branch;
+      if (PROTECTED.indexOf(st.branch) === -1) allow();
+      // A repo with NO remote cannot receive a PR, so "merge via PR" has no
+      // meaning there and this rule would forbid committing at all. Concrete
+      // case: ~/Vaults/AlxVault, the local-only git safety net for the
+      // Obsidian vault — this hook blocked three legitimate commits to it.
+      // Narrowed, not weakened: repos WITH a remote are still protected
+      // exactly as before. Fail-closed on doubt — if `git remote` fails,
+      // hangs or is absent we keep blocking, because a protection that
+      // guesses wrong must guess in the safe direction.
+      const rm = git(["remote"], dir);
+      const hasRemote = gitBroken(rm) !== null || rm.status !== 0 || String(rm.stdout || "").trim().length > 0;
+      if (!hasRemote) allow();
+      deny("BLOCKED: on " + safe(st.branch) + ". " + CUT);
+    }
+
+    function start() {
+      if (ran) return;
+      ran = true;
+      try {
+        main();
+      } catch (e) {
+        denyOnBranch("the hook itself failed (" + safe(e && e.message) + ")");
+      }
+      denyOnBranch("the hook reached no decision");
+    }
+
+    process.on("uncaughtException", (e) => {
+      if (settled) return;
+      deny("BLOCKED: the branch-protection hook crashed (" + safe(e && e.message) + "), so the branch could not be checked. " + CUT);
     });
+
+    const watchdog = setTimeout(() => {
+      deny("BLOCKED: the branch-protection hook hit its own " + BUDGET_MS + " ms deadline before it could read its input. " + CUT);
+    }, BUDGET_MS);
+    if (typeof watchdog.unref === "function") watchdog.unref();
+
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (c) => { if (input.length < 4 * 1024 * 1024) input += c; });
+    process.stdin.on("end", start);
+    process.stdin.on("error", start);
   '';
 
   # Save working state before compaction so it can be restored

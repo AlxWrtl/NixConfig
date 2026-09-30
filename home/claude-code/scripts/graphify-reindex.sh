@@ -95,7 +95,21 @@ fi
 # Single-instance lock (atomic mkdir).
 if ! mkdir "$LOCK" 2>/dev/null; then
   if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +120 2>/dev/null)" ]; then
-    rmdir "$LOCK" 2>/dev/null || true
+    # Claim by atomic rename, not rmdir: of two runs that both saw the lock
+    # stale, only one rename succeeds. With rmdir, the loser could remove the
+    # winner's fresh lock and both would proceed.
+    mv "$LOCK" "$LOCK.stale.$$" 2>/dev/null || {
+      echo "graphify-reindex: lock contention — skip"; exit 0; }
+    # The rename alone still loses to a run that saw the lock stale, stalled,
+    # then renamed the winner's FRESH lock. Re-check what was claimed: not
+    # stale means a live lock was taken, so hand it back (GNU mv -T -n: never
+    # into, never over, a lock taken meanwhile) and skip.
+    if [ -z "$(find "$LOCK.stale.$$" -maxdepth 0 -mmin +120 2>/dev/null)" ]; then
+      mv -T -n "$LOCK.stale.$$" "$LOCK" 2>/dev/null || true
+      echo "graphify-reindex: lock contention — skip"
+      exit 0
+    fi
+    rm -rf "$LOCK.stale.$$"
     if ! mkdir "$LOCK" 2>/dev/null; then
       echo "graphify-reindex: lock contention — skip"
       exit 0
@@ -122,7 +136,7 @@ before_mtime="$(stat -c %Y "$GRAPH" 2>/dev/null || echo 0)"
   # `-mmin +120` reclaim window, so a hung run is never reclaimed while alive.
   rc=0
   timeout -k 60 55m "$GRAPHIFY" extract "$VAULT" --backend claude-cli --out "$OUT" || rc=$?
-  if [ "$rc" -eq 124 ]; then echo "graphify-reindex: extract timed out (55m)"; fi
+  case "$rc" in 124|137) echo "graphify-reindex: extract timed out (55m)" ;; esac
   # A FULL `label` — not `cluster-only`, and no longer `--missing-only`. Two
   # decisions are stacked in that one line and both were measured.
   #
@@ -175,7 +189,7 @@ before_mtime="$(stat -c %Y "$GRAPH" 2>/dev/null || echo 0)"
 
   rc=0
   timeout -k 60 55m "$GRAPHIFY" label "$OUT" --backend claude-cli || rc=$?
-  if [ "$rc" -eq 124 ]; then echo "graphify-reindex: label timed out (55m)"; fi
+  case "$rc" in 124|137) echo "graphify-reindex: label timed out (55m)" ;; esac
 
   if [ -f "$LABELS_BAK" ]; then
     marker_pct="$(jq -r '

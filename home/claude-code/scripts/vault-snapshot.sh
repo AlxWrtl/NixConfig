@@ -34,7 +34,21 @@ log() { printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S')" "$*" >>"$LOG"; }
 LOCK="$HOME/GraphVault/.vault-snapshot.lock"
 if ! mkdir "$LOCK" 2>/dev/null; then
   if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
-    rmdir "$LOCK" 2>/dev/null || true
+    # Claim by atomic rename, not rmdir: of two runs that both saw the lock
+    # stale, only one rename succeeds. With rmdir, the loser could remove the
+    # winner's fresh lock and both would proceed.
+    mv "$LOCK" "$LOCK.stale.$$" 2>/dev/null || {
+      log "skip=busy-lock (lost the race after reclaiming a stale lock)"; exit 0; }
+    # The rename alone still loses to a run that saw the lock stale, stalled,
+    # then renamed the winner's FRESH lock. Re-check what was claimed: not
+    # stale means a live lock was taken, so hand it back (GNU mv -T -n: never
+    # into, never over, a lock taken meanwhile) and skip.
+    if [ -z "$(find "$LOCK.stale.$$" -maxdepth 0 -mmin +60 2>/dev/null)" ]; then
+      mv -T -n "$LOCK.stale.$$" "$LOCK" 2>/dev/null || true
+      log "skip=busy-lock (lost the race after reclaiming a stale lock)"
+      exit 0
+    fi
+    rm -rf "$LOCK.stale.$$"
     if ! mkdir "$LOCK" 2>/dev/null; then
       log "skip=busy-lock (lost the race after reclaiming a stale lock)"
       exit 0
@@ -47,9 +61,13 @@ if ! mkdir "$LOCK" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCK" 2>/dev/null || true' EXIT
 
-# timeout(1) exits 124 when it had to stop the command: name it in the log.
+# timeout(1) exits 124 when it had to stop the command, 137 when the command
+# ignored TERM and was KILLed after the -k grace: name both in the log.
 rc_why() {
-  if [ "$1" -eq 124 ]; then printf 'rc=124, timed out after 300s'; else printf 'rc=%s' "$1"; fi
+  case "$1" in
+    124|137) printf 'rc=%s, timed out after 300s' "$1" ;;
+    *) printf 'rc=%s' "$1" ;;
+  esac
 }
 
 # The key must never live inside the vault: it would sit inside the very thing

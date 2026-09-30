@@ -971,7 +971,11 @@ in
       CONTEXT_PCT=$(echo "$INPUT" | jq -r '(.context_window.used_percentage // 0) | round')
 
       WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."')
-      CWD=''${WORKSPACE_DIR##*/}
+      # Strip trailing slashes before taking the basename, else "/" and "/a/b/"
+      # both yield "". Nothing left (the root itself) falls back to "/".
+      CWD=''${WORKSPACE_DIR%"''${WORKSPACE_DIR##*[!/]}"}
+      CWD=''${CWD##*/}
+      CWD=''${CWD:-/}
       GIT_BRANCH=$(git -C "$WORKSPACE_DIR" branch --show-current 2>/dev/null || echo "")
 
       # Rate limits straight from Claude Code JSON (Pro/Max only; absent before the

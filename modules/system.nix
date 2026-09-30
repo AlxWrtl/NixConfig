@@ -53,26 +53,40 @@
     };
   };
 
-  environment.variables = {
-    # Editors
-    EDITOR = "nvim";
-    VISUAL = "nvim";
-    PAGER = "less";
+  environment = {
+    variables = {
+      # Editors
+      EDITOR = "nvim";
+      VISUAL = "nvim";
+      PAGER = "less";
 
-    # XDG Base Directory
-    XDG_CONFIG_HOME = "$HOME/.config";
-    XDG_CACHE_HOME = "$HOME/.cache";
-    XDG_DATA_HOME = "$HOME/.local/share";
+      # XDG Base Directory
+      XDG_CONFIG_HOME = "$HOME/.config";
+      XDG_CACHE_HOME = "$HOME/.cache";
+      XDG_DATA_HOME = "$HOME/.local/share";
 
-    # Security tools
-    SOPS_AGE_KEY_FILE = "$HOME/.config/age/keys.txt";
-    GNUPGHOME = "$HOME/.config/gnupg";
-    AGE_DIR = "$HOME/.config/age";
+      # Security tools
+      SOPS_AGE_KEY_FILE = "$HOME/.config/age/keys.txt";
+      GNUPGHOME = "$HOME/.config/gnupg";
+      AGE_DIR = "$HOME/.config/age";
 
-    # Homebrew
-    HOMEBREW_NO_ANALYTICS = "1";
-    HOMEBREW_NO_INSECURE_REDIRECT = "1";
-    HOMEBREW_PREFIX = "/opt/homebrew";
+      # Homebrew
+      HOMEBREW_NO_ANALYTICS = "1";
+      HOMEBREW_NO_INSECURE_REDIRECT = "1";
+      HOMEBREW_PREFIX = "/opt/homebrew";
+    };
+
+    systemPackages = [
+      pkgs.nmap
+      pkgs.htop
+    ];
+
+    shellAliases = {
+      vulnscan-json = "vulnix --system /var/run/current-system --json /tmp/vulnix-output.json";
+      check-perms = "ls -la /nix/store | head -20";
+    };
+
+    shells = [ pkgs.zsh ];
   };
 
   system.primaryUser = "alx";
@@ -97,19 +111,8 @@
     enableStealthMode = false;
   };
 
-  environment.systemPackages = [
-    pkgs.nmap
-    pkgs.htop
-  ];
-
-  environment.shellAliases = {
-    vulnscan-json = "vulnix --system /var/run/current-system --json /tmp/vulnix-output.json";
-    check-perms = "ls -la /nix/store | head -20";
-  };
-
   # Shell configuration
   programs.zsh.enable = true;
-  environment.shells = [ pkgs.zsh ];
 
   system.activationScripts.postActivation.text = ''
     mkdir -p /usr/local/bin

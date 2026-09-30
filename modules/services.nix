@@ -31,11 +31,7 @@ let
         UserName = "root";
       };
     };
-in
-
-{
-
-  launchd.user.agents.nix-flake-update = {
+  nixFlakeUpdateAgent = {
     serviceConfig = {
       ProgramArguments = [
         "/bin/sh"
@@ -68,8 +64,7 @@ in
       RunAtLoad = false;
     };
   };
-
-  launchd.user.agents.homebrew-update = lib.mkIf config.homebrew.enable {
+  homebrewUpdateAgent = lib.mkIf config.homebrew.enable {
     serviceConfig = {
       ProgramArguments = [
         "/bin/sh"
@@ -119,8 +114,7 @@ in
       RunAtLoad = true;
     };
   };
-
-  launchd.daemons.power-optimization = mkMaintenanceDaemon {
+  powerOptimizationDaemon = mkMaintenanceDaemon {
     name = "power-optimization";
     runAtLoad = true;
     script = ''
@@ -145,8 +139,7 @@ in
       echo "Power optimization applied: $(date)" >> /var/log/power-optimization.log
     '';
   };
-
-  launchd.daemons.network-optimization = mkMaintenanceDaemon {
+  networkOptimizationDaemon = mkMaintenanceDaemon {
     name = "network-optimization";
     runAtLoad = true;
     script = ''
@@ -163,5 +156,19 @@ in
 
       echo "Network optimization applied: $(date)" >> /var/log/network-optimization.log
     '';
+  };
+in
+
+{
+
+  launchd = {
+    user.agents = {
+      nix-flake-update = nixFlakeUpdateAgent;
+      homebrew-update = homebrewUpdateAgent;
+    };
+    daemons = {
+      power-optimization = powerOptimizationDaemon;
+      network-optimization = networkOptimizationDaemon;
+    };
   };
 }

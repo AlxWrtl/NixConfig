@@ -110,21 +110,9 @@ let
       }) skill.files
     ) skillsManifest.manifest
   );
-in
-{
-  # Shell integration
-  programs.zsh.shellAliases = aliases;
-  programs.zsh.sessionVariables = sessionVars;
-
-  # npm global prefix (nix store is immutable, npm install -g needs a writable prefix)
-  # ~/.local/bin = uv tool bin dir (`uv tool install` drops graphify/graphify-mcp there)
-  home.sessionPath = [
-    "$HOME/.npm-global/bin"
-    "$HOME/.local/bin"
-  ];
 
   # Write ~/.claude content declaratively
-  home.file = skillFiles // {
+  claudeHomeFiles = skillFiles // {
     # Settings base (read-only reference, merged by activation script)
     "${claudeDir}/settings-base.json" = {
       text = settingsJson;
@@ -288,17 +276,33 @@ in
       executable = true;
     };
   };
+in
+{
+  # Shell integration
+  programs.zsh.shellAliases = aliases;
+  programs.zsh.sessionVariables = sessionVars;
 
-  # `libdocs` + `graphify-reindex` on PATH — usable by Claude, by APEX and its
-  # subagents, and by the user in a plain terminal. home.packages is a list:
-  # this merges with the definitions in the other home modules.
-  home.packages = [
-    libdocsPkg
-    apexVerifyExternalPkg
-    graphifyReindexPkg
-    vaultSnapshotPkg
-  ];
+  home = {
+    # npm global prefix (nix store is immutable, npm install -g needs a writable prefix)
+    # ~/.local/bin = uv tool bin dir (`uv tool install` drops graphify/graphify-mcp there)
+    sessionPath = [
+      "$HOME/.npm-global/bin"
+      "$HOME/.local/bin"
+    ];
 
-  # Activation scripts
-  home.activation = activationScripts;
+    file = claudeHomeFiles;
+
+    # `libdocs` + `graphify-reindex` on PATH — usable by Claude, by APEX and its
+    # subagents, and by the user in a plain terminal. home.packages is a list:
+    # this merges with the definitions in the other home modules.
+    packages = [
+      libdocsPkg
+      apexVerifyExternalPkg
+      graphifyReindexPkg
+      vaultSnapshotPkg
+    ];
+
+    # Activation scripts
+    activation = activationScripts;
+  };
 }

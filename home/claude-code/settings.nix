@@ -209,12 +209,15 @@ in
         # avec « Couldn't load public key ». Régression introduite par la PR
         # #101 et constatée au premier commit suivant. Une clé publique est
         # publique — la privée, elle, reste refusée.
-        # Trello : le skill et /trello lisent la clé et le token par `cat` en
-        # Bash (skills.nix, commands.nix). `${homeDirectory}/**/secrets`
-        # ci-dessus et `Read(~/.config/secrets/**)` (fusionné au sandbox)
-        # les bloquent ; la règle au chemin le plus étroit l'emporte (docs:
+        # Trello : le wrapper `trello` (home/claude-code/trello.nix) lit la clé
+        # et le token lui-même, dans un sous-processus sandboxé — ces deux
+        # entrées sont ce qui le fait marcher. `${homeDirectory}/**/secrets`
+        # ci-dessus et `Read(~/.config/secrets/**)` (fusionné au sandbox) les
+        # bloquent ; la règle au chemin le plus étroit l'emporte (docs:
         # sandboxing), donc ces deux FICHIERS seuls sont ré-ouverts — le reste
-        # du répertoire reste refusé.
+        # du répertoire reste refusé. Le deny `Read(~/.config/secrets/**)`
+        # bloque toujours le Read / `cat` de Claude lui-même : seul le wrapper
+        # les lit, et il ne les affiche jamais.
         allowRead = [
           "${homeDirectory}/.ssh/id_ed25519.pub"
           "${homeDirectory}/.config/secrets/trello-api-key"
@@ -312,6 +315,7 @@ in
         "$defaults"
         "Organization: personal nix-darwin config repo AlxWrtl/NixConfig (github.com), cloned at ~/.config/nix-darwin; primary use: personal macOS system configuration."
         "Source control: master is protected server-side by the GitHub ruleset protect-master (PR required, force-push and deletion refused, no bypass); the agent works on feature branches it creates itself."
+        "Trello: api.trello.com is the user's own Trello account, reached only through the packaged `trello` CLI wrapper (reads ~/.config/secrets/trello-* itself, never prints them); reading boards and creating/moving/commenting cards there is trusted user-intended data flow."
       ];
       allow = [
         "$defaults"
@@ -377,6 +381,9 @@ in
         # Library docs via the Context7 REST API. A narrow grant on purpose:
         # the wrapper exists so this rule is not `Bash(curl *)`.
         "Bash(libdocs *)"
+        # Trello REST API via the packaged wrapper: it reads the secrets itself and
+        # keeps them out of argv, URL and output. Narrow on purpose, never `Bash(curl *)`.
+        "Bash(trello *)"
         # Nix option docs at the flake.lock rev: read-only eval, sandboxed, own read-only-store fallback. Never in excludedCommands.
         "Bash(nix-options *)"
         # External cross-vendor verifier (APEX `-e`). Wrapper around a

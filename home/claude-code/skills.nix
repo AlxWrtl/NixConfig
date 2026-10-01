@@ -3243,94 +3243,114 @@ in
   '';
 
   # =========================================================================
-  # Trello — CLI via REST API v1 (curl). Replaces the removed MCP server.
-  # Declarative, zero npx daemon. Secrets read at runtime from ~/.config/secrets.
+  # Trello — the packaged `trello` CLI (home/claude-code/trello.nix) over the
+  # REST API v1. Replaces the removed MCP server. The wrapper reads the secrets
+  # in ~/.config/secrets itself; the skill never touches them.
   # =========================================================================
   skillTrello = ''
     ---
     name: trello
-    description: "Pilot Trello from the shell via the REST API v1 (curl). Use when the user mentions Trello, a board, list, card, or kanban and wants to read or create/move cards. Replaces the former MCP server — there are no native Trello MCP tools."
+    description: "Pilot Trello from the shell via the packaged `trello` CLI (REST API v1). Use when the user mentions Trello, a board, list, card, or kanban and wants to read or create/move/comment cards. Replaces the former MCP server — there are no native Trello MCP tools."
     ---
 
-    # Trello — CLI (REST API v1)
+    # Trello — `trello` CLI (REST API v1)
 
-    Drive Trello with `curl` + `jq`. No MCP server, no npx. Auth via a personal
-    API key + token read at runtime from `~/.config/secrets` (never hardcode,
-    never echo the values).
+    One binary on PATH, `trello`, packaged by nix (home/claude-code/trello.nix,
+    script home/claude-code/scripts/trello.sh). No MCP server, no npx, no curl.
 
-    ## Auth — load credentials first (every session that touches Trello)
+    ## Auth — the wrapper owns it
 
-    ```bash
-    TRELLO_KEY=$(cat "$HOME/.config/secrets/trello-api-key")
-    TRELLO_TOKEN=$(cat "$HOME/.config/secrets/trello-token")
-    AUTH="key=$TRELLO_KEY&token=$TRELLO_TOKEN"
-    ```
+    `trello` reads the API key + token from `~/.config/secrets/trello-api-key`
+    and `~/.config/secrets/trello-token` itself, and sends them only as an
+    Authorization header — never in a URL, never printed. Never read, `cat`,
+    echo or copy those files yourself.
 
-    If either file is missing, stop and tell the user to create it — do NOT
-    proceed with empty credentials.
+    Missing or malformed secret, or `HTTP 401` / `invalid key` /
+    `invalid token` / `unauthorized permission requested` on stderr: STOP. Ask
+    the user to (re)populate both files with a freshly generated key + token,
+    then re-run. Never continue with empty or rejected credentials.
 
-    ## Read operations
+    ## Rule — bare `trello …` calls only
 
-    ```bash
-    # List my boards (id  name)
-    curl -s "https://api.trello.com/1/members/me/boards?fields=name,id&$AUTH" \
-      | jq -r '.[] | "\(.id)  \(.name)"'
+    - One `trello …` command per Bash call, nothing around it: no command
+      substitution, no pipes, no `&&` / `;` chains. The allow rule
+      `Bash(trello *)` matches a bare call only; anything else falls back to
+      the auto-mode classifier.
+    - Never curl api.trello.com directly, never pass `allowed_domains`.
+    - Multi-line text goes on stdin: `-` plus a quoted heredoc (below).
 
-    # List lists of a board (id  name)
-    curl -s "https://api.trello.com/1/boards/<BOARD_ID>/lists?fields=name,id&$AUTH" \
-      | jq -r '.[] | "\(.id)  \(.name)"'
-
-    # List cards of a list (id  name)
-    curl -s "https://api.trello.com/1/lists/<LIST_ID>/cards?fields=name,id&$AUTH" \
-      | jq -r '.[] | "\(.id)  \(.name)"'
-    ```
-
-    ## Write operations
+    ## Read commands
 
     ```bash
-    # Create a card in a list
-    curl -s -X POST "https://api.trello.com/1/cards?$AUTH" \
-      --data-urlencode "idList=<LIST_ID>" \
-      --data-urlencode "name=Card title" \
-      --data-urlencode "desc=Card description" \
-      | jq -r '"created: \(.id)  \(.shortUrl)"'
-
-    # Move a card to another list
-    curl -s -X PUT "https://api.trello.com/1/cards/<CARD_ID>?$AUTH" \
-      --data-urlencode "idList=<DEST_LIST_ID>" >/dev/null
-
-    # Comment on a card
-    curl -s -X POST "https://api.trello.com/1/cards/<CARD_ID>/actions/comments?$AUTH" \
-      --data-urlencode "text=Comment body" >/dev/null
+    trello boards                       # open boards: id<TAB>name
+    trello lists <BOARD>                # lists of a board: id<TAB>name
+    trello cards <LIST_ID>              # cards of a list: id<TAB>name<TAB>shortUrl
+    trello search <words...>            # matching cards (max 10), same TSV; empty = no hit
+    trello card <CARD>                  # one JSON object: card, checklists, last 10 comments
+    trello find-list <BOARD> <name...>  # id of the list named <name> (case-insensitive, exact)
     ```
+
+    ## Write commands
+
+    ```bash
+    # Create a card; `-` reads the description from stdin. Prints id<TAB>shortUrl.
+    trello create <LIST_ID> "Card title" - <<'EOF'
+    Card description,
+    on several lines.
+    EOF
+
+    # Move a card to another list. Prints "moved <card> -> <list>".
+    trello move <CARD> <DEST_LIST_ID>
+
+    # Comment a card: one-liner, or `-` plus a heredoc for multi-line text.
+    trello comment <CARD> "Short comment"
+    trello comment <CARD> - <<'EOF'
+    Line one.
+    Line two.
+    EOF
+    ```
+
+    Ids: `<BOARD>` and `<CARD>` = 24-hex id or 8-char shortLink (the segment
+    after `/b/` or `/c/` in a Trello URL); `<LIST_ID>` = 24-hex id. Anything
+    else is refused before any network call.
+
+    ## Output and exit codes
+
+    - List-like output is TSV (tab-separated), one item per line; `card` is JSON.
+    - Exit 0 ok | 1 runtime error (secrets, network, HTTP >= 400, no match —
+      message on stderr) | 2 usage error (bad arguments or id).
 
     ## Name → ID resolution
 
-    The API works on IDs, not names. Resolve in order: board name → BOARD_ID →
-    list name → LIST_ID, then act. When the user gives a name, list first and
-    match (case-insensitive) before any write. Ask if the match is ambiguous.
+    The API works on ids, not names. Run `trello boards` and match the board
+    name (case-insensitive), then `trello find-list <BOARD> <list name>` for the
+    list id, then act. `find-list` exit 1 = zero or several matches; its stderr
+    lists the board's list names. Ask if a match is ambiguous.
 
     ## Constraints
-    - Rate limits: 300 req/10s per key, 100 req/10s per token. Batch loops →
-      add a short sleep and retry on HTTP 429 with backoff.
+    - Rate limits: 300 req/10s per key, 100 req/10s per token. On HTTP 429,
+      wait, then retry with backoff.
     - Never print the key/token. Confirm before any write (create/move/comment).
-    - This is a write-capable integration: treat create/move/delete as
+    - This is a write-capable integration: treat create/move/comment as
       outward-facing actions — confirm first unless told to proceed.
+    - Test writes (throwaway cards, command validation, dry runs) go to the
+      no-stakes board **Tech & Pit** — never to a real board. Reading is fine
+      anywhere; only test WRITES are restricted. (User rule, 2026-08-14.)
     ${
       contract {
         expects = "a Trello intent (read board/list/cards, or create/move/comment on a card), names or IDs";
         produces = "the requested data (ids + names) or the result of a create/move/comment action";
-        sideEffects = "network calls to api.trello.com; writes create/modify Trello cards";
+        sideEffects = "network calls to api.trello.com through the `trello` wrapper; writes create/modify Trello cards";
       }
     }${
       scope {
         useWhen = "the user wants to read or modify Trello boards/lists/cards from the shell";
-        notFor = "non-Trello task trackers, or bulk migrations (use the API directly with proper backoff).";
+        notFor = "non-Trello task trackers, or bulk migrations (extend the wrapper, with proper backoff, first).";
       }
     }${
       handoffs [
-        "If credentials are missing → ask the user to populate ~/.config/secrets/trello-{api-key,token}."
-        "For complex automations → write a dedicated script rather than ad-hoc curl."
+        "If credentials are missing, malformed or rejected → ask the user to repopulate ~/.config/secrets/trello-{api-key,token}."
+        "If an endpoint is missing → extend home/claude-code/scripts/trello.sh (and checks/trello-cli.nix), never ad-hoc curl."
       ]
     }  '';
 

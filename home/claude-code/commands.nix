@@ -116,23 +116,21 @@
     DONE_LIST = "Done"    # destination list on success — adapt to the board
     ```
 
-    Read `~/.claude/skills/trello/SKILL.md` first: it owns the auth mechanics and
-    every write endpoint used here. This command adds only read endpoints of the
-    same REST API v1.
+    Read `~/.claude/skills/trello/SKILL.md` first: it owns the `trello` CLI —
+    auth, commands, output formats. Every Trello call below is a bare
+    `trello …` command from that skill.
 
-    ## 0. Auth (verbatim from the trello skill)
+    ## 0. Auth (owned by the `trello` wrapper)
 
-    ```bash
-    TRELLO_KEY=$(cat "$HOME/.config/secrets/trello-api-key")
-    TRELLO_TOKEN=$(cat "$HOME/.config/secrets/trello-token")
-    AUTH="key=$TRELLO_KEY&token=$TRELLO_TOKEN"
-    ```
+    The wrapper reads `~/.config/secrets/trello-api-key` and
+    `~/.config/secrets/trello-token` itself; never read or print them.
 
-    Missing file, or any response containing `invalid key` / `invalid token` /
-    `unauthorized permission requested`: STOP. Apply the skill's rule — ask the
-    user to (re)populate `~/.config/secrets/trello-api-key` and
-    `~/.config/secrets/trello-token` with a freshly generated key + token, then
-    re-run. Never continue with empty or rejected credentials, never print them.
+    Wrapper stderr reporting a missing or malformed secret, `HTTP 401`,
+    `invalid key`, `invalid token` or `unauthorized permission requested`:
+    STOP. Apply the skill's rule — ask the user to (re)populate
+    `~/.config/secrets/trello-api-key` and `~/.config/secrets/trello-token`
+    with a freshly generated key + token, then re-run. Never continue with
+    empty or rejected credentials.
 
     ## 1. Resolve `<ref>` (every token of $ARGUMENTS up to the first flag)
 
@@ -145,19 +143,20 @@
     1. **Short id** — `<ref>` is a single token of 8 alphanumeric chars
        (`^[a-zA-Z0-9]{8}$`) → try it as CARD_ID. It is only a candidate: an
        8-character one-word title matches the same shape. If the load in step 2
-       returns 404, do not stop — fall through to form 3 and search that same
-       token as a title.
+       returns 404 (`trello card` exits 1 with `HTTP 404` on stderr), do not
+       stop — fall through to form 3 and search that same token as a title.
     2. **URL** — contains `trello.com/c/` → the id is the segment right after
        `/c/`, e.g. `https://trello.com/c/aB3dEf9h/12-title` → `aB3dEf9h`.
     3. **Otherwise: title search**
 
        ```bash
-       curl -s "https://api.trello.com/1/search?modelTypes=cards&cards_limit=10&$AUTH" \
-         --data-urlencode "query=<TITLE>" -G \
-         | jq -r '.cards[] | "\(.id)  \(.name)  \(.shortUrl)"'
+       trello search <TITLE words>
        ```
 
-       - 0 hit → STOP, say the card was not found. Do NOT create anything.
+       One line per hit: `id<TAB>name<TAB>shortUrl` (at most 10).
+
+       - 0 hit (empty output) → STOP, say the card was not found. Do NOT create
+         anything.
        - 1 hit → that card.
        - 2+ hits → list the candidates (id, name, shortUrl) and `AskUserQuestion`.
          NEVER guess, never pick the first.
@@ -165,15 +164,17 @@
     ## 2. Load the card (read-only)
 
     ```bash
-    curl -s "https://api.trello.com/1/cards/$CARD_ID?fields=name,desc,idList,idBoard,shortUrl&labels=all&$AUTH"
-    curl -s "https://api.trello.com/1/cards/$CARD_ID/checklists?$AUTH"
-    curl -s "https://api.trello.com/1/cards/$CARD_ID/actions?filter=commentCard&limit=10&$AUTH"
+    trello card <CARD_ID>
+    trello lists <idBoard>
     ```
 
-    Resolve the list and board display names from `idList` / `idBoard`
-    (`GET /1/boards/<BOARD_ID>/lists?fields=name,id` — skill endpoint).
+    `trello card` prints one JSON object: `card` (name, desc, idList, idBoard,
+    shortUrl, labels), `checklists`, and `comments` (last 10: date, author,
+    text). `trello lists <idBoard>` gives the list names: resolve the card's
+    list display name from its `idList`; the board name, if needed, comes from
+    `trello boards`.
 
-    If the card cannot be loaded (404, empty body, auth error): STOP and say so.
+    If the card cannot be loaded (exit 1: 404, auth error): STOP and say so.
     Do not continue without a card — there is no task to run. The one exception is
     the 404 of a form-1 candidate id, which falls back to the title search of
     step 1 form 3; if that search also fails, STOP.
@@ -208,33 +209,35 @@
 
     Two writes, in this order:
 
-    1. **Trello comment** (skill endpoint):
+    1. **Trello comment** (skill command, text on stdin):
 
        ```bash
-       curl -s -X POST "https://api.trello.com/1/cards/$CARD_ID/actions/comments?$AUTH" \
-         --data-urlencode "text=<SUMMARY>" >/dev/null
+       trello comment <CARD_ID> - <<'EOF'
+       <SUMMARY>
+       EOF
        ```
 
        `<SUMMARY>` = 3-5 lines: what was implemented, how it was verified, then
        the PR URL on its own last line.
 
     2. **Move to DONE_LIST** — resolve the name to an id first, then move
-       (both skill endpoints):
+       (both skill commands):
 
        ```bash
-       DEST=$(curl -s "https://api.trello.com/1/boards/$BOARD_ID/lists?fields=name,id&$AUTH" \
-         | jq -r --arg n "$DONE_LIST" '.[] | select(.name == $n) | .id')
-       curl -s -X PUT "https://api.trello.com/1/cards/$CARD_ID?$AUTH" \
-         --data-urlencode "idList=$DEST" >/dev/null
+       trello find-list <idBoard> Done
+       trello move <CARD_ID> <LIST_ID>
        ```
 
-       No list matches `DONE_LIST` → keep the comment, skip the move, and report
-       the mismatch with the board's actual list names.
+       `Done` = the DONE_LIST value; `<LIST_ID>` = the single line `find-list`
+       prints. `find-list` exits 1 (no list, or several, named `DONE_LIST`) →
+       keep the comment, skip the move, and report the mismatch with the
+       board's actual list names (printed on its stderr).
 
     3. **Obsidian** — the standard `-n` note, enriched as described in step 3.
 
     ## 5. Guardrails
 
+    - Only bare `trello …` calls — no curl, no command substitution, no pipes.
     - NO Trello write before a successful end of run. The comment and the move are
       the last actions, never optimistic, never partial-progress reporting.
     - Failed, blocked or aborted run → ZERO Trello write. Say it explicitly:

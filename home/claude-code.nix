@@ -78,6 +78,7 @@ let
     hookPostCompactRestore
     hookQualityGate
     hookGovernanceAudit
+    hookCorrectionBudget
     hookReactDocsGate
     hookNullResultGate
     ;
@@ -258,6 +259,10 @@ let
     };
     "${claudeDir}/hooks/governance-audit.js" = {
       text = hookGovernanceAudit;
+      executable = true;
+    };
+    "${claudeDir}/hooks/correction-budget.js" = {
+      text = hookCorrectionBudget;
       executable = true;
     };
     "${claudeDir}/hooks/rtk-nix-rewrite.sh" = {

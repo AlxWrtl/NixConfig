@@ -24,7 +24,7 @@ the check is already self-verifying for presence — a vanished needle turns
 What DOES distinguish a real guard from a decorative one is decidable without
 building anything: is the needle the rule, or a signpost pointing at it?
 
-    "Max 3 correction rounds"  -> deleting the rule deletes the needle -> red
+    "Max 2 correction rounds"  -> deleting the rule deletes the needle -> red
     "Scope ladder"             -> deleting the rungs leaves the heading -> green
 
 The second shape is not hypothetical. On 2026-09-05 the scope-ladder invariant

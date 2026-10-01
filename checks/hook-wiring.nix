@@ -28,8 +28,11 @@
 #      JSON and a missing git in protect-main; its time budget under the host
 #      timeout; malformed JSON, a broken git in the cwd and a broken git in a
 #      `cd` target in block-main-bash; its linear executor scan on a newline
-#      flood; the argv call in format-typescript. Every other case is run and
-#      graded, with no mutant to show it bites.
+#      flood; the argv call in format-typescript. Run 61 adds: `pull` as a
+#      ref move, every command target (not the first), the file's own repo
+#      in protect-main, `notebook_path`, and the vault exemption — the last
+#      two killed on an allow case, as an over-block. Every other case is run
+#      and graded, with no mutant to show it bites.
 #
 # The corpus is EVALUATED, not read as text: home/claude-code.nix is imported
 # as a module and its `home.file` is the same attrset home-manager installs.
@@ -294,6 +297,26 @@ let
       hook = "block-main-bash.js";
       text = "/(?:^|[\\n;|&(])[ \\t]*(?:sh|";
     };
+    A9 = {
+      hook = "block-main-bash.js";
+      text = "oneOf(/commit|push|merge|rebase|update-ref|pull/)";
+    };
+    A10 = {
+      hook = "block-main-bash.js";
+      text = "for (const x of t.found) {";
+    };
+    A11 = {
+      hook = "protect-main.js";
+      text = "const f = branchOf(home);";
+    };
+    A12 = {
+      hook = "protect-main.js";
+      text = "ti.file_path || ti.notebook_path";
+    };
+    A13 = {
+      hook = "block-main-bash.js";
+      text = "function isVaultTop(dir) {";
+    };
     A5-require = {
       hook = "format-typescript.js";
       text = "const { spawnSync } = require(\"child_process\");";
@@ -410,6 +433,72 @@ let
         }
       ];
     }
+    # Run 61. `pull` merges into the current branch: without it a pull on
+    # master is not a ref move and passes.
+    {
+      id = "M9";
+      hook = "block-main-bash.js";
+      kills = "bb-pull-master";
+      swaps = [
+        {
+          anchor = "A9";
+          to = "oneOf(/commit|push|merge|rebase|update-ref/)";
+        }
+      ];
+    }
+    # Only the first target read, as the old viaC/viaCd did: a second `cd`
+    # to master goes unchecked.
+    {
+      id = "M10";
+      hook = "block-main-bash.js";
+      kills = "bb-second-cd";
+      swaps = [
+        {
+          anchor = "A10";
+          to = "for (const x of t.found.slice(0, 1)) {";
+        }
+      ];
+    }
+    # The repo the FILE belongs to is never read: only the cwd decides, so a
+    # feature-branch cwd writes into master.
+    {
+      id = "M11";
+      hook = "protect-main.js";
+      kills = "pm-cross-feat-cwd";
+      swaps = [
+        {
+          anchor = "A11";
+          to = "const f = { kind: \"norepo\" };";
+        }
+      ];
+    }
+    # notebook_path unread: every NotebookEdit has "no file_path" and is
+    # denied, even outside any repo. Killed on the ALLOW partner, as an
+    # over-block: on master the no-path deny still denies, for another reason.
+    {
+      id = "M12";
+      hook = "protect-main.js";
+      kills = "pm-notebook-outside";
+      swaps = [
+        {
+          anchor = "A12";
+          to = "ti.file_path";
+        }
+      ];
+    }
+    # No vault exemption: a commit in the vault on main is denied. Killed on
+    # an ALLOW case, as an over-block.
+    {
+      id = "M13";
+      hook = "block-main-bash.js";
+      kills = "bb-vault-commit";
+      swaps = [
+        {
+          anchor = "A13";
+          to = "function isVaultTop(dir) { return false;";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -427,6 +516,13 @@ let
     "pm-feat"
     "pm-norepo"
     "pm-detached"
+    "pm-cross-feat-cwd"
+    "pm-cross-norepo-cwd"
+    "pm-feat-to-norepo"
+    "pm-notebook-master"
+    "pm-notebook-outside"
+    "pm-vault-main"
+    "pm-vault-crosscwd"
     "bb-master-commit"
     "bb-master-malformed"
     "bb-master-nogit"
@@ -439,7 +535,29 @@ let
     "bb-detached-commit"
     "bb-cd-nonexistent"
     "bb-cd-broken"
+    "bb-pull-master"
+    "bb-cross-C-after-c"
+    "bb-second-cd"
+    "bb-gitdir-env"
+    "bb-leading-cd-feat"
+    "bb-vault-commit"
     "fmt-inject"
+  ];
+
+  # The vault exemption is keyed on the path settings.nix bakes into both
+  # guards. The vault cases run a copy of the body with that literal, and
+  # only that literal, pointed at a fixture: counted here at eval, and again
+  # on each body (mutants included) at run time.
+  vaultLit = builtins.toJSON settings.alxVaultPath;
+  occurrences =
+    needle: text:
+    (
+      builtins.stringLength text - builtins.stringLength (builtins.replaceStrings [ needle ] [ "" ] text)
+    )
+    / builtins.stringLength needle;
+  vaultLitMiscounts = builtins.filter (n: occurrences vaultLit (bodyText n) != 1) [
+    "protect-main.js"
+    "block-main-bash.js"
   ];
 
   bodyText = n: bodies.${n} or "";
@@ -505,10 +623,13 @@ let
     DETACHED="$root/detached"
     NOREPO="$root/norepo"
     LINK="$root/link"
+    VAULT="$root/vault"
+    VAULT_LIT=${lib.escapeShellArg vaultLit}
     GITBIN=${pkgs.git}/bin
     g init -q -b master "$MASTER"
     g -C "$MASTER" remote add origin https://example.invalid/x.git
     g init -q -b master "$LOCAL"
+    g init -q -b main "$VAULT"
     g init -q -b feat/probe "$FEAT"
     g init -q -b master "$DETACHED"
     g -C "$DETACHED" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q --allow-empty -m probe
@@ -531,6 +652,7 @@ let
     malformed='{"hook_event_name":"PreToolUse","tool_input":{'
 
     pm_in() { ${jq} -cn --arg f "$1" '{hook_event_name:"PreToolUse",tool_name:"Write",tool_input:{file_path:$f,content:"x"}}'; }
+    pm_nb_in() { ${jq} -cn --arg f "$1" '{hook_event_name:"PreToolUse",tool_name:"NotebookEdit",tool_input:{notebook_path:$f,new_source:"x"}}'; }
     bb_in() { ${jq} -cn --arg c "$1" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c}}'; }
     fmt_in() { ${jq} -cn --arg f "$1" '{hook_event_name:"PostToolUse",tool_name:"Write",tool_input:{file_path:$f}}'; }
     # A commit followed by 64 KB of newlines, built by jq: a shell `$(…)`
@@ -571,10 +693,29 @@ let
       esac
     }
 
+    # A clean deny where an allow was due is the other mismatch: the one the
+    # over-block canaries (M12, M13) exist to cause.
     is_allow() {
       [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
-      [ ! -s "$d/$lbl.out" ] || { why="stdout not empty — an allow is silence"; return 1; }
       [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      if [ -s "$d/$lbl.out" ]; then
+        why="stdout not empty — an allow is silence"
+        verdict=$(${jq} -r '.hookSpecificOutput.permissionDecision // "none"' "$d/$lbl.out" 2> /dev/null) || verdict="unparseable"
+        [ "$verdict" != deny ] || { why="decision 'deny', expected allow"; kind=mismatch; }
+        return 1
+      fi
+    }
+
+    # $1 body. Writes the copy with the baked vault literal, found exactly
+    # once, pointed at $VAULT; leaves its path in $vb.
+    vaultify() {
+      vsrc=$(cat "$1") || { why="cannot read $1"; return 1; }
+      vrest=''${vsrc#*"$VAULT_LIT"}
+      [ "$vrest" != "$vsrc" ] || { why="vault literal missing: $VAULT_LIT is not in $1"; return 1; }
+      case "$vrest" in *"$VAULT_LIT"*) why="vault literal occurs more than once in $1"; return 1 ;; esac
+      vrep="\"$VAULT\""
+      vb="$d/$lbl.vault.js"
+      printf '%s\n' "''${vsrc/"$VAULT_LIT"/"$vrep"}" > "$vb"
     }
 
     # $1 case, $2 body under test, $3 tag. 0 passed, 1 failed ($why), 2 no such case.
@@ -618,6 +759,25 @@ let
           run "$lbl" "$2" "$NOREPO" "$GITBIN" "$(pm_in "$NOREPO/a.ts")"; is_allow ;;
         pm-detached)
           run "$lbl" "$2" "$DETACHED" "$GITBIN" "$(pm_in "$DETACHED/a.ts")"; is_allow ;;
+        # Run 61, B4: the branch of the repo the FILE is in, whatever the cwd.
+        pm-cross-feat-cwd)
+          run "$lbl" "$2" "$FEAT" "$GITBIN" "$(pm_in "$MASTER/a.ts")"; is_deny "BLOCKED: on master." ;;
+        pm-cross-norepo-cwd)
+          run "$lbl" "$2" "$NOREPO" "$GITBIN" "$(pm_in "$MASTER/a.ts")"; is_deny "BLOCKED: on master." ;;
+        pm-feat-to-norepo)
+          run "$lbl" "$2" "$FEAT" "$GITBIN" "$(pm_in "$NOREPO/a.ts")"; is_allow ;;
+        # B5: NotebookEdit names its target in notebook_path.
+        pm-notebook-master)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(pm_nb_in "$MASTER/n.ipynb")"; is_deny "BLOCKED: on master." ;;
+        pm-notebook-outside)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(pm_nb_in "$NOREPO/n.ipynb")"; is_allow ;;
+        # The vault on main is exempt, from its own cwd and from another.
+        pm-vault-main)
+          vaultify "$2" || return 1
+          run "$lbl" "$vb" "$VAULT" "$GITBIN" "$(pm_in "$VAULT/n.md")"; is_allow ;;
+        pm-vault-crosscwd)
+          vaultify "$2" || return 1
+          run "$lbl" "$vb" "$FEAT" "$GITBIN" "$(pm_in "$VAULT/n.md")"; is_allow ;;
         bb-master-commit)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "git commit -m x")"; is_deny "BLOCKED: on master." ;;
         bb-master-malformed)
@@ -630,8 +790,9 @@ let
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_flood)"; is_deny "BLOCKED: on master." ;;
         bb-master-status)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "git status")"; is_allow ;;
+        # No remote is no exemption (run 61, B3): the non-vault control.
         bb-local-commit)
-          run "$lbl" "$2" "$LOCAL" "$GITBIN" "$(bb_in "git commit -m x")"; is_allow ;;
+          run "$lbl" "$2" "$LOCAL" "$GITBIN" "$(bb_in "git commit -m x")"; is_deny "BLOCKED: on master." ;;
         bb-feat-commit)
           run "$lbl" "$2" "$FEAT" "$GITBIN" "$(bb_in "git commit -m x")"; is_allow ;;
         bb-norepo-commit)
@@ -642,6 +803,21 @@ let
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "cd /nonexistent57 && git commit -m x")"; is_deny "BLOCKED: on master." ;;
         bb-cd-broken)
           run "$lbl" "$2" "$FEAT" "$root/badbin" "$(bb_in "cd $MASTER && git commit -m x")"; is_deny "in the directory the command targets" ;;
+        # Run 61, B2: pull merges into the current branch.
+        bb-pull-master)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "git pull origin feat/x")"; is_deny "BLOCKED: on master." ;;
+        # B1: every target is read, not the first `-C` or `cd` alone.
+        bb-cross-C-after-c)
+          run "$lbl" "$2" "$FEAT" "$GITBIN" "$(bb_in "git -c k=v -C $MASTER commit -m x")"; is_deny "BLOCKED: on master." ;;
+        bb-second-cd)
+          run "$lbl" "$2" "$FEAT" "$GITBIN" "$(bb_in "cd $FEAT && true; cd $MASTER && git commit -m x")"; is_deny "BLOCKED: on master." ;;
+        bb-gitdir-env)
+          run "$lbl" "$2" "$FEAT" "$GITBIN" "$(bb_in "GIT_DIR=$MASTER/.git git commit -m x")"; is_deny "BLOCKED: on master." ;;
+        bb-leading-cd-feat)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "cd $FEAT && git commit -m x")"; is_allow ;;
+        bb-vault-commit)
+          vaultify "$2" || return 1
+          run "$lbl" "$vb" "$VAULT" "$GITBIN" "$(bb_in "git commit -m x")"; is_allow ;;
         fmt-inject)
           rm -f "$TMPDIR/PWNED" "$root/fakebin/prettier.log"
           f="$root/fmt/\$(touch $TMPDIR/PWNED).ts"
@@ -703,11 +879,11 @@ let
           killed=$((killed + 1))
           echo "hook-wiring: canary $id killed by $c ($why)" ;;
         1:*)
-          echo "hook-wiring: canary $id turned $c red for the wrong reason ($why): only a missed deny or a PWNED file counts as a kill" >&2
+          echo "hook-wiring: canary $id turned $c red for the wrong reason ($why): only a missed deny, a deny where an allow was due, or a PWNED file counts as a kill" >&2
           dump "$lbl"
           exit 1 ;;
         0:*)
-          echo "hook-wiring: canary $id survived — $c still passes with its fail-closed branch put back to exit 0, so the case no longer tests what it names" >&2
+          echo "hook-wiring: canary $id survived — $c still passes with its branch put back the way it was, so the case no longer tests what it names" >&2
           dump "$lbl"
           exit 1 ;;
         *)
@@ -791,6 +967,11 @@ let
       name = "D3 runtime: every run hook is registered with one positive integer timeout";
       ok = badTimeouts == [ ];
       msg = "hook(s) run by D whose registrations give no single positive integer `timeout`: ${show badTimeouts}. D grants each body the host's timeout and no more; without one there is nothing to grant";
+    }
+    {
+      name = "D4 vault: the baked vault path occurs exactly once in each branch guard";
+      ok = vaultLitMiscounts == [ ];
+      msg = "${vaultLit} (settings.alxVaultPath, JSON) is not in exactly one place in: ${show vaultLitMiscounts}. The vault cases repoint that one literal at a fixture; missing, the exemption is keyed on nothing D can run, and twice, the copy is only half repointed";
     }
   ];
 

@@ -2,7 +2,11 @@
 # All command hooks: read JSON from stdin, exit 0 + JSON stdout
 # permissionDecision: "allow" | "deny" | "ask"
 # In Nix '' strings: escape single quotes as ''' (two apostrophes + the quote)
-{ graphifyReindexPkg, vaultSnapshotPkg }:
+{
+  graphifyReindexPkg,
+  vaultSnapshotPkg,
+  alxVaultPath,
+}:
 {
   hookProtectMain = ''
     #!/usr/bin/env node
@@ -13,9 +17,11 @@
     // through. Skeleton ported from home/codex/scripts/protect-main.js; the
     // output keeps the Claude form: deny = ONE JSON object written
     // synchronously to fd 1, exit 0, nothing on stderr; allow = exit 0, no
-    // output. Allowing needs positive knowledge: git says "not a git
-    // repository", the branch is not protected (detached counts as not), or
-    // the resolved target is provably outside the resolved worktree.
+    // output. Allowing needs positive knowledge about the repository the FILE
+    // belongs to (run 61): the cwd alone let a feature or non-repo cwd edit a
+    // file in another repo sitting on master. The file's repo is read from its
+    // nearest existing directory; it allows when that is no repo, a branch
+    // that is not protected (detached counts as not), or the vault.
     //
     // Two time bounds, because a JS timer cannot fire while spawnSync blocks:
     // an unref'd watchdog for a stdin that never closes, and a wall-clock
@@ -30,6 +36,10 @@
     const GIT_MS = 1500;
     const DEADLINE = Date.now() + BUDGET_MS;
     const CUT = "Run: git checkout -b <type>/<desc> (e.g. feat/auth-redirect, fix/nav-crash) then retry.";
+    // The one repo exempt from this guard: the vault is a local-only safety
+    // net with no PR flow. Exempt by PATH (user decision 2026-09-30); a repo
+    // without a remote is no longer exempt for that alone.
+    const VAULT = ${builtins.toJSON alxVaultPath};
 
     let settled = false;
     let branchSeen = null;
@@ -153,50 +163,115 @@
       return null;
     }
 
+    // The deepest EXISTING directory on the target's path: a Write creates
+    // its file, so the file itself may not be there to ask git about.
+    function nearestDir(p) {
+      let cur = p;
+      for (let i = 0; i < 64; i++) {
+        try {
+          if (fs.statSync(cur).isDirectory()) return cur;
+        } catch (e) {
+          if (!e || (e.code !== "ENOENT" && e.code !== "ENOTDIR")) return null;
+        }
+        const parent = path.dirname(cur);
+        if (parent === cur) return null;
+        cur = parent;
+      }
+      return null;
+    }
+
+    // { kind: "norepo" } | { kind: "branch", branch } | { kind: "broken", why }
+    // Same shape as block-main-bash's branchOf. A directory INSIDE a .git
+    // (rev-parse says "false") still reads its branch: writing a ref file
+    // there moves that branch as surely as a commit.
+    function branchOf(dir) {
+      const probe = git(["rev-parse", "--is-inside-work-tree"], dir);
+      const broken = gitBroken(probe);
+      if (broken) return { kind: "broken", why: broken };
+      if (probe.status !== 0) {
+        if (/not a git repository/i.test(String(probe.stderr || ""))) return { kind: "norepo" };
+        return { kind: "broken", why: "git rev-parse failed" };
+      }
+      const br = git(["branch", "--show-current"], dir);
+      const brBroken = gitBroken(br);
+      if (brBroken) return { kind: "broken", why: brBroken };
+      if (br.status !== 0) return { kind: "broken", why: "git branch --show-current failed" };
+      return { kind: "branch", branch: String(br.stdout || "").trim() };
+    }
+
+    // True only when git names a toplevel for `dir` and it is the vault, both
+    // sides realpath'd. Any failure is false: no proof, no exemption.
+    function isVaultTop(dir) {
+      try {
+        const top = git(["rev-parse", "--show-toplevel"], dir);
+        if (gitBroken(top) !== null || top.status !== 0) return false;
+        const t = String(top.stdout || "").replace(/\n$/, "");
+        if (t === "") return false;
+        return fs.realpathSync.native(t) === fs.realpathSync.native(VAULT);
+      } catch {
+        return false;
+      }
+    }
+
     let input = "";
     let ran = false;
 
     function main() {
+      // The cwd no longer allows on its own: it only records a protected
+      // branch, for the messages and for the in-worktree test below.
       const probe = git(["rev-parse", "--is-inside-work-tree"]);
       const probeBroken = gitBroken(probe);
       if (probeBroken) denyUnverifiable(probeBroken);
       if (probe.status !== 0) {
-        if (/not a git repository/i.test(String(probe.stderr || ""))) allow();
-        denyUnverifiable("git rev-parse failed");
+        if (!/not a git repository/i.test(String(probe.stderr || ""))) denyUnverifiable("git rev-parse failed");
+      } else if (String(probe.stdout || "").trim() === "true") {
+        const br = git(["branch", "--show-current"]);
+        const brBroken = gitBroken(br);
+        if (brBroken) denyUnverifiable(brBroken);
+        if (br.status !== 0) denyUnverifiable("git branch --show-current failed");
+        const branch = String(br.stdout || "").trim();
+        if (PROTECTED.indexOf(branch) !== -1) branchSeen = branch;
       }
-      if (String(probe.stdout || "").trim() !== "true") allow();
-
-      const br = git(["branch", "--show-current"]);
-      const brBroken = gitBroken(br);
-      if (brBroken) denyUnverifiable(brBroken);
-      if (br.status !== 0) denyUnverifiable("git branch --show-current failed");
-      const branch = String(br.stdout || "").trim();
-      branchSeen = branch;
-      if (PROTECTED.indexOf(branch) === -1) allow();
 
       let data;
       try { data = JSON.parse(input); } catch { denyOnBranch("the hook input was not valid JSON"); return; }
       if (!data || typeof data !== "object" || Array.isArray(data)) { denyOnBranch("the hook input was not an object"); return; }
       const ti = data.tool_input;
-      const raw = ti && typeof ti === "object" && typeof ti.file_path === "string" && ti.file_path.trim() !== "" ? ti.file_path : null;
-      if (!raw) { denyOnBranch("the hook input carries no tool_input.file_path"); return; }
+      // NotebookEdit carries its target in notebook_path, not file_path.
+      const given = ti && typeof ti === "object" && !Array.isArray(ti) ? ti.file_path || ti.notebook_path : undefined;
+      const raw = typeof given === "string" && given.trim() !== "" ? given : null;
+      if (!raw) { denyOnBranch("the hook input carries no tool_input.file_path or notebook_path"); return; }
       // A `..` walks through whatever the segment before it names, which may
       // be a symlink the resolution below never sees the same way the tool
-      // does: on a protected branch it is refused rather than reasoned about.
+      // does: it is refused rather than reasoned about.
       if (raw.split("/").indexOf("..") !== -1) { denyOnBranch("the target path has a \"..\" segment"); return; }
-
-      const top = git(["rev-parse", "--show-toplevel"]);
-      const topBroken = gitBroken(top);
-      if (topBroken) { denyOnBranch(topBroken); return; }
-      if (top.status !== 0) { denyOnBranch("the worktree root could not be located"); return; }
-      // Only git's own trailing newline is cut: `.trim()` also ate spaces a
-      // directory name may legitimately end with.
-      const realTop = realpathish(String(top.stdout || "").replace(/\n$/, ""));
       const realTarget = realpathish(raw);
-      if (realTop === null || realTarget === null) { denyOnBranch("the target path could not be resolved"); return; }
-      if (realTarget !== realTop && !realTarget.startsWith(realTop + path.sep)) allow();
+      if (realTarget === null) { denyOnBranch("the target path could not be resolved"); return; }
 
-      deny("BLOCKED: on " + safe(branch) + ". " + CUT);
+      if (branchSeen !== null) {
+        const top = git(["rev-parse", "--show-toplevel"]);
+        const topBroken = gitBroken(top);
+        if (topBroken) { denyOnBranch(topBroken); return; }
+        if (top.status !== 0) { denyOnBranch("the worktree root could not be located"); return; }
+        // Only git's own trailing newline is cut: `.trim()` also ate spaces a
+        // directory name may legitimately end with.
+        const realTop = realpathish(String(top.stdout || "").replace(/\n$/, ""));
+        if (realTop === null) { denyOnBranch("the target path could not be resolved"); return; }
+        if (realTarget === realTop || realTarget.startsWith(realTop + path.sep)) {
+          if (isVaultTop(realTop)) allow();
+          deny("BLOCKED: on " + safe(branchSeen) + ". " + CUT);
+        }
+      }
+
+      // The repo the FILE belongs to, whatever the cwd is.
+      const home = nearestDir(realTarget);
+      if (home === null) { denyOnBranch("no existing directory holds the target path"); return; }
+      const f = branchOf(home);
+      if (f.kind === "broken") denyUnverifiable(f.why + " in the repository the file belongs to");
+      if (f.kind === "branch" && PROTECTED.indexOf(f.branch) !== -1 && !isVaultTop(home)) {
+        deny("BLOCKED: on " + safe(f.branch) + ". " + CUT);
+      }
+      allow();
     }
 
     function start() {
@@ -1547,6 +1622,9 @@
     const GIT_MS = 1500;
     const DEADLINE = Date.now() + BUDGET_MS;
     const CUT = "Create a branch first: git checkout -b <type>/<desc> (e.g. feat/auth-redirect). Merge to master happens via PR on GitHub.";
+    // The one repo exempt from this guard, by PATH (user decision
+    // 2026-09-30): see the decision block at the bottom.
+    const VAULT = ${builtins.toJSON alxVaultPath};
 
     let settled = false;
     let branchSeen = null;
@@ -1639,10 +1717,12 @@
 
     const RULES = [
       // Verbs that commit, publish or move a ref on their own. The verb IS the
-      // decision here, there is no flag to inspect.
+      // decision here, there is no flag to inspect. `pull` is a fetch plus a
+      // merge or rebase into the CURRENT branch: on master it lands commits
+      // that never went through a PR (run 61, B2).
       { id: "write-verb",
         why: "authors a commit, publishes, or moves a ref outright",
-        pat: seq(oneOf(/commit|push|merge|rebase|update-ref/), EOW) },
+        pat: seq(oneOf(/commit|push|merge|rebase|update-ref|pull/), EOW) },
 
       // Three verbs put commits on the current branch without being spelled
       // `commit`: cherry-pick, revert and am each REPLAY work onto HEAD, so on
@@ -2012,13 +2092,191 @@
         if (/not a git repository/i.test(String(probe.stderr || ""))) return { kind: "norepo" };
         return { kind: "broken", why: "git rev-parse failed" };
       }
-      if (String(probe.stdout || "").trim() !== "true") return { kind: "norepo" };
+      // "false" is a directory INSIDE a .git (or a bare repo): not a norepo.
+      // `git -C repo/.git update-ref refs/heads/master X` moves master from
+      // there, so its branch is read like any other (run 61).
       const br = git(["branch", "--show-current"], dir);
       const brBroken = gitBroken(br);
       if (brBroken) return { kind: "broken", why: brBroken };
       if (br.status !== 0) return { kind: "broken", why: "git branch --show-current failed" };
       // Detached HEAD prints nothing, and is not a protected branch.
       return { kind: "branch", branch: String(br.stdout || "").trim() };
+    }
+
+    // The branch of a GIT DIRECTORY named by --git-dir / GIT_DIR: rev-parse
+    // --is-inside-work-tree says false there, so it is asked directly.
+    function branchOfGitDir(p) {
+      const br = git(["--git-dir=" + p, "branch", "--show-current"]);
+      const brBroken = gitBroken(br);
+      if (brBroken) return { kind: "broken", why: brBroken };
+      if (br.status !== 0) {
+        if (/not a git repository/i.test(String(br.stderr || ""))) return { kind: "norepo" };
+        return { kind: "broken", why: "git branch --show-current failed" };
+      }
+      return { kind: "branch", branch: String(br.stdout || "").trim() };
+    }
+
+    // True only when git names a toplevel for `dir` and it is the vault, both
+    // sides realpath'd. Any failure is false: no proof, no exemption.
+    function isVaultTop(dir) {
+      try {
+        const top = git(["rev-parse", "--show-toplevel"], dir);
+        if (gitBroken(top) !== null || top.status !== 0) return false;
+        const t = String(top.stdout || "").replace(/\n$/, "");
+        if (t === "") return false;
+        return fs.realpathSync.native(t) === fs.realpathSync.native(VAULT);
+      } catch {
+        return false;
+      }
+    }
+
+    // ---- the directories a command may write to (run 61, B1) ----------
+    // The old retarget read only the FIRST `git -C` and the first `cd`, so a
+    // `-c k=v` before `-C`, a second `cd`, `pushd`, a subshell, `--git-dir`
+    // or GIT_DIR sent a commit to master from a feature cwd. Now every one of
+    // them is collected, and each candidate is checked: adding a directory
+    // can only add a refusal. A missing directory is not a repo and is
+    // skipped; one the shell would compute ($, backtick, glob, `cd -`,
+    // `popd`, `pushd +N`) cannot be placed and denies.
+    //
+    // One shell word. Same five mutually exclusive branches as the GIT value
+    // (see the ReDoS note there) plus a backslash escape, and the bare branch
+    // stops at the shell separators so `(cd x)` and `cd x;` end on `x`.
+    const TOK = /(?:\\[\s\S]|'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"\\;&|<>()])+/;
+    const PART = /\\([\s\S])|'([^']*)'|"([^"]*)"|(['"])|([^\\'"]+)/g;
+    // Its text, or null when the shell would compute it.
+    const shellWord = (tok) => {
+      if (typeof tok !== "string" || /^~[^/]/.test(tok)) return null;
+      let out = "";
+      let p;
+      PART.lastIndex = 0;
+      while ((p = PART.exec(tok)) !== null) {
+        if (p[1] !== undefined) out += p[1];
+        else if (p[2] !== undefined) out += p[2];
+        else if (p[3] !== undefined) { if (/[$`\\]/.test(p[3])) return null; out += p[3]; }
+        else if (p[4] !== undefined) return null;
+        else { if (/[$`*?[{]/.test(p[5])) return null; out += p[5]; }
+      }
+      if (out === "") return null;
+      if (/^~(?:\/|$)/.test(tok)) out = os.homedir() + out.slice(1);
+      return out;
+    };
+    // `cd` / `pushd` / `popd` as a word the shell runs: after a separator, a
+    // blank, a quote (`bash -c "cd x && ..."`) or `{ ( !`, so `then cd x`
+    // counts too. Its options, then its one argument if any.
+    const CD_WORD = new RegExp(seq(/(?<![^\s;&|({!"'`])(cd|pushd|popd)(?![\w.\/-])(?:[ \t]+(?:-[LPe@]+|--)(?=[\s;&|<>()]|$))*/, "(?:[ \\t]+(", TOK, "))?"), "g");
+    // Every `git` word the rules could read as a command; `--git-dir` and a
+    // `.git` path segment are not.
+    const GIT_AT = /(?<!\.)\bgit(?![\w-])/g;
+    // One global option after `git`, read from where the last one ended.
+    const GIT_OPT = new RegExp(seq(/\s+/, oneOf(seq(/-C\s+/, "(", TOK, ")"), seq(/--(git-dir|work-tree)(?:=|\s+)/, "(", TOK, ")"), seq(/-c\s+/, TOK), /--?[A-Za-z][\w-]*(?:=\S+)?/)), "y");
+    const GIT_ENV = new RegExp(seq(/(?<![\w$])GIT_(DIR|WORK_TREE)=/, "(", TOK, ")?"), "g");
+    // GIT_DIR=x written right before the git word it applies to.
+    const GIT_DIR_PREFIX = new RegExp(seq(/(?:^|[\s;&|(])GIT_DIR=/, "(", TOK, ")", /[ \t]+$/));
+    const LEAD_CD = new RegExp(seq(/^[ \t]*cd(?:[ \t]+--)?[ \t]+/, "(", TOK, ")", /[ \t]*&&/));
+    // A lone `&` backgrounds what precedes it, in a subshell: the `cd` there
+    // does not move the rest of the command.
+    const BACKGROUND = /(?<![&><|])&(?![&>])/;
+
+    function targetsOf(cmd) {
+      const cwd = process.cwd();
+      const found = [];
+      const seen = new Map();
+      let bad = null;
+      let n = 0;
+      const isDir = (p, gd) => {
+        try {
+          const s = fs.statSync(p);
+          return gd || s.isDirectory();
+        } catch {
+          return false;
+        }
+      };
+      // Relative arguments are resolved against the cwd AND every directory
+      // found so far: `cd a && cd b` and `git -C a -C b` both chain. True
+      // when one of its candidates exists.
+      const add = (tok, gd, raw) => {
+        if (bad !== null) return false;
+        if (++n > 64) { bad = "more than 64 directory changes"; return false; }
+        const w = shellWord(tok);
+        if (w === null) { bad = raw; return false; }
+        const bases = [cwd].concat(found.filter((f) => !f.gd).map((f) => f.p));
+        const cands = path.isAbsolute(w) ? [path.resolve(w)] : bases.map((b) => path.resolve(b, w));
+        let any = false;
+        for (const c of cands) {
+          const key = (gd ? "g:" : "d:") + c;
+          if (seen.has(key)) { any = any || seen.get(key); continue; }
+          const ok = isDir(c, gd);
+          seen.set(key, ok);
+          if (!ok) continue;
+          any = true;
+          if (found.length >= 64) { bad = "more than 64 target directories"; return false; }
+          found.push({ p: c, gd: gd });
+        }
+        return any;
+      };
+      // The raw text, and the view with tight quotes dropped that the rules
+      // also read (`git "-C" dir commit`). A `\` + newline joins lines.
+      const views = [cmd.split("\\\n").join(" ")];
+      views.push(dequoteTight(views[0]));
+      const gitWords = [];
+      const flagged = [];
+      for (const v of views) {
+        n = 0;
+        let words = 0;
+        let flags = 0;
+        CD_WORD.lastIndex = 0;
+        let c;
+        while (bad === null && (c = CD_WORD.exec(v)) !== null) {
+          if (c[1] === "popd") { bad = "popd"; break; }
+          if (c[2] === undefined) {
+            if (c[1] === "pushd") { bad = "pushd"; break; }
+            add("~", false, "cd");
+            continue;
+          }
+          if (c[2] === "-" || (c[1] === "pushd" && /^[+-][0-9]+$/.test(c[2]))) { bad = c[1] + " " + c[2]; break; }
+          add(c[2], false, c[2]);
+        }
+        GIT_ENV.lastIndex = 0;
+        let e;
+        while (bad === null && (e = GIT_ENV.exec(v)) !== null) {
+          add(e[2] === undefined ? "" : e[2], e[1] === "DIR", "GIT_" + e[1] + "=" + (e[2] || ""));
+        }
+        GIT_AT.lastIndex = 0;
+        let g;
+        while (bad === null && (g = GIT_AT.exec(v)) !== null) {
+          words++;
+          let pos = GIT_AT.lastIndex;
+          let o;
+          GIT_OPT.lastIndex = pos;
+          while (bad === null && (o = GIT_OPT.exec(v)) !== null) {
+            pos = GIT_OPT.lastIndex;
+            if (o[1] !== undefined) { if (add(o[1], false, o[1])) flags++; }
+            else if (o[2] !== undefined) {
+              if (add(o[3], o[2] === "git-dir", o[3]) && o[2] === "git-dir") flags++;
+            }
+          }
+          const pre = GIT_DIR_PREFIX.exec(v.slice(Math.max(0, g.index - 8192), g.index));
+          if (pre !== null && add(pre[1], true, "GIT_DIR=" + pre[1])) flags++;
+          GIT_AT.lastIndex = pos;
+        }
+        gitWords.push(words);
+        flagged.push(flags);
+      }
+      // The cwd leaves the set only when the command provably never runs git
+      // there: (a) it OPENS with `cd <existing dir> &&` and nothing sends the
+      // shell back (`cd -`, `popd`, a computed `cd` all set `bad`; a lone `&`
+      // runs the `cd` in a subshell); or (b) it holds exactly ONE git word,
+      // in both views, and that word carries -C / --git-dir / a GIT_DIR=
+      // prefix to an existing path. `git -C feat log; git commit` has two.
+      let dropCwd = false;
+      const lead = LEAD_CD.exec(views[0]);
+      if (lead !== null && !BACKGROUND.test(views[0])) {
+        const w = shellWord(lead[1]);
+        if (w !== null && isDir(path.resolve(cwd, w), false)) dropCwd = true;
+      }
+      if (gitWords[0] === 1 && gitWords[1] === 1 && flagged[0] > 0 && flagged[1] > 0) dropCwd = true;
+      return { found: found, bad: bad, dropCwd: bad === null && dropCwd };
     }
 
     // The command could not be read at all: nothing can be shown to be safe,
@@ -2051,55 +2309,38 @@
         deny("BLOCKED: this push targets main/master. Push your own branch by name (git push -u origin <your-branch>) and merge via a PR on GitHub.");
       }
       if (!movesRefOnCurrentBranch(cmd)) allow();
-      // Check the branch of the repo the COMMAND targets, not the session cwd.
-      // `git -C <dir>` and a leading `cd <dir> &&` both retarget it; reading
-      // the session cwd blocked legitimate commits in another repo, and let
-      // `cd /elsewhere && git commit` through when the cwd was not a repo.
-      // The target is taken only when it is an existing directory that git
-      // reads as a work tree on a branch. An existing directory git cannot
-      // read (hung, corrupt) DENIES: cwd would judge another repo than the one
-      // the command writes to, so a feature cwd would pass a master commit. A
-      // missing directory or a non-repo falls back to cwd. The directory test
-      // comes first: git spawned in a missing cwd fails with ENOENT, which
-      // would read as "git absent".
-      let dir = process.cwd();
-      let known = null;
-      const viaC = cmd.match(/git\s+-C\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
-      const viaCd = cmd.match(/(?:^|&&|;|\|\|)\s*cd\s+("[^"]+"|'[^']+'|[^\s;&|]+)/);
-      const raw = (viaC && viaC[1]) || (viaCd && viaCd[1]);
-      if (raw) {
-        let p = raw.replace(/^["']/, "").replace(/["']$/, "");
-        if (p === "~" || p.startsWith("~/")) p = path.join(os.homedir(), p.slice(1));
-        const candidate = path.resolve(process.cwd(), p);
-        let isDir = false;
-        try {
-          isDir = fs.statSync(candidate).isDirectory();
-        } catch {
-          // missing or unreadable: not a usable target, cwd stays
-        }
-        if (isDir) {
-          const c = branchOf(candidate);
-          if (c.kind === "broken") denyUnverifiable(c.why + " in the directory the command targets");
-          if (c.kind === "branch") { dir = candidate; known = c; }
+      // Check the branch of EVERY repo the command may write to, not only the
+      // session cwd (run 61): the cwd, unless the command provably leaves it
+      // (targetsOf), then each directory it names. Reading the cwd alone
+      // blocked legitimate commits in another repo, and reading only the
+      // first `-C`/`cd` let a second one commit to master. An existing
+      // directory git cannot read (hung, corrupt) DENIES.
+      //
+      // No remote is no longer an exemption (user decision 2026-09-30): it
+      // let any throwaway repo on master take commits. Only the vault is
+      // exempt, by the realpath of its toplevel: ~/Vaults/AlxVault is the
+      // local-only git safety net of the Obsidian vault, with no PR to go
+      // through. A --git-dir / GIT_DIR target is never exempt.
+      const t = targetsOf(cmd);
+      if (!t.dropCwd) {
+        const st = branchOf(process.cwd());
+        if (st.kind === "broken") denyUnverifiable(st.why);
+        if (st.kind === "branch" && PROTECTED.indexOf(st.branch) !== -1) {
+          branchSeen = st.branch;
+          if (!isVaultTop(process.cwd())) deny("BLOCKED: on " + safe(st.branch) + ". " + CUT);
         }
       }
-      const st = known || branchOf(dir);
-      if (st.kind === "broken") denyUnverifiable(st.why);
-      if (st.kind === "norepo") allow();
-      branchSeen = st.branch;
-      if (PROTECTED.indexOf(st.branch) === -1) allow();
-      // A repo with NO remote cannot receive a PR, so "merge via PR" has no
-      // meaning there and this rule would forbid committing at all. Concrete
-      // case: ~/Vaults/AlxVault, the local-only git safety net for the
-      // Obsidian vault — this hook blocked three legitimate commits to it.
-      // Narrowed, not weakened: repos WITH a remote are still protected
-      // exactly as before. Fail-closed on doubt — if `git remote` fails,
-      // hangs or is absent we keep blocking, because a protection that
-      // guesses wrong must guess in the safe direction.
-      const rm = git(["remote"], dir);
-      const hasRemote = gitBroken(rm) !== null || rm.status !== 0 || String(rm.stdout || "").trim().length > 0;
-      if (!hasRemote) allow();
-      deny("BLOCKED: on " + safe(st.branch) + ". " + CUT);
+      for (const x of t.found) {
+        const c = x.gd ? branchOfGitDir(x.p) : branchOf(x.p);
+        if (c.kind === "broken") denyUnverifiable(c.why + " in the directory the command targets");
+        if (c.kind !== "branch" || PROTECTED.indexOf(c.branch) === -1) continue;
+        if (!x.gd && isVaultTop(x.p)) continue;
+        deny("BLOCKED: on " + safe(c.branch) + ". " + CUT);
+      }
+      if (t.bad !== null) {
+        denyUnverifiable("the command targets a directory that cannot be resolved (" + safe(String(t.bad).slice(0, 120)) + ")");
+      }
+      allow();
     }
 
     function start() {

@@ -26,6 +26,7 @@ let
   hooks = import ../home/claude-code/hooks.nix {
     graphifyReindexPkg = "/nix/store/00000000000000000000000000000000-stub";
     vaultSnapshotPkg = "/nix/store/00000000000000000000000000000000-stub";
+    alxVaultPath = "/nonexistent/vault-stub";
   };
 
   # Step file basename -> the nix attribute holding its content.

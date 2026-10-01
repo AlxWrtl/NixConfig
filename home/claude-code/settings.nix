@@ -9,6 +9,8 @@ let
   alxVaultPath = "${homeDirectory}/Vaults/AlxVault";
 in
 {
+  inherit alxVaultPath;
+
   settingsJson = builtins.toJSON {
     "$schema" = "https://json.schemastore.org/claude-code-settings.json";
     language = "french";
@@ -541,7 +543,7 @@ in
     hooks = {
       PreToolUse = [
         {
-          matcher = "Edit|Write";
+          matcher = "Edit|Write|NotebookEdit";
           hooks = [
             {
               type = "command";

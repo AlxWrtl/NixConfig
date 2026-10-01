@@ -5,9 +5,16 @@
 # WHAT IT GRADES. Above all the push-destination predicate
 # (`pushTargetsProtectedRef`): a push whose DESTINATION names master/main is
 # denied from ANY branch, in any repo, with or without a remote. The
-# current-branch rule it sits in front of is graded only for non-regression
-# (AC6): a push from master is still denied, a commit on a remote-less master
-# still passes.
+# current-branch rule it sits in front of is graded for non-regression (AC6):
+# a push from master is still denied, and a commit on a remote-less master is
+# DENIED — only the vault is exempt (user decision 2026-09-30, run 61).
+#
+# EVERY REPO THE COMMAND WRITES TO (run 61, B1/B2). The branch rule reads
+# each directory a command may target, not only the first `-C`/`cd`: `-c k=v`
+# before `-C`, a second `cd`, `--git-dir=`, `GIT_DIR=`, a computed `cd "$R"`,
+# a subshell and `pushd` all deny from a feature cwd, and `git pull` on master
+# denies. Their partners (`cd <feature> &&` from master, a single `-C
+# <feature>`, a missing `cd` target, the vault) must PASS.
 #
 # EVERY RULE IN BOTH POLARITIES. A guard that denies every push scores green
 # on every P case, so each widening has partners that must PASS: `master-foo`,
@@ -20,10 +27,15 @@
 # printing anything would pass an absence test just as well.
 #
 # THE REAL CONDITIONS, BUILT IN $WORK. The hook reads the target repo's
-# branch and remotes, so the probe makes four cwd's: FEAT (feat/probe, with a
-# remote), MASTER (master, with a remote), LOCAL (master, no remote) and
+# branch and remotes, so the probe makes five cwd's: FEAT (feat/probe, with a
+# remote), MASTER (master, with a remote), LOCAL (master, no remote), VAULT
+# (main, no remote — the path baked into the hook as `alxVaultPath`) and
 # NOREPO (outside any work tree). No commit is ever made: the branch is set by
 # `git init --initial-branch`, so no signing key or identity is needed.
+#
+# The vault path is baked at extraction, so the v-cases run only when THIS
+# run extracted the hook; against a given hook.js (and so in every mutant
+# child) they print `skip` — never silently absent.
 #
 # EVERY RUN IS BOUNDED. The hook runs under a 10 s alarm; the `pass-fast` case
 # (128 KB of `git push ` with no separator) bounds the run at 1000 ms. The
@@ -182,7 +194,7 @@ extract_hook() { # extract_hook <destination>
     exit 2
   }
   "$nix" eval --raw --impure --expr \
-    "(import \"$HOOKS_NIX\" { graphifyReindexPkg = \"/nix/store/x\"; vaultSnapshotPkg = \"/nix/store/y\"; }).hookBlockMainBash" \
+    "(import \"$HOOKS_NIX\" { graphifyReindexPkg = \"/nix/store/x\"; vaultSnapshotPkg = \"/nix/store/y\"; alxVaultPath = \"$WORK/vault\"; }).hookBlockMainBash" \
     > "$dest" 2> "$WORK/extract.err" || {
     echo "probe: extracting hookBlockMainBash from hooks.nix failed" >&2
     head -c 800 "$WORK/extract.err" >&2
@@ -195,6 +207,8 @@ extract_hook() { # extract_hook <destination>
 }
 
 ORIG="$WORK/block-main-bash.js"
+# 1 only when this run baked "$WORK/vault" into the hook it grades.
+VAULT_BAKED=0
 if [ -n "$SUT" ]; then
   SUT="$(abspath "$SUT")"
   [ -f "$SUT" ] && [ -r "$SUT" ] || {
@@ -204,6 +218,7 @@ if [ -n "$SUT" ]; then
 else
   extract_hook "$ORIG"
   SUT="$ORIG"
+  VAULT_BAKED=1
 fi
 
 # ==============================================================================
@@ -215,7 +230,7 @@ fi
 # the original, syntax-checked, then graded by re-running this same script
 # against it. Nothing is ever written into the repository.
 
-M1_EXPECT="k1-env-commit-msg p01-origin-master p01-local-no-remote p01-no-repo p02-origin-main p03-head-colon-master p04-refs-heads-master p05-force-plus-head-main p06-set-upstream-master p07-delete-master p08-heads-main p09-quoted-master p10-git-C-push p11-chained-push p12-two-refspecs p13-bash-c-push p14-redirect-glued p15-head-colon-redirect p16-line-continuation"
+M1_EXPECT="k1-env-commit-msg p01-origin-master p01-no-repo p02-origin-main p03-head-colon-master p04-refs-heads-master p05-force-plus-head-main p06-set-upstream-master p07-delete-master p08-heads-main p09-quoted-master p10-git-C-push p11-chained-push p12-two-refspecs p13-bash-c-push p14-redirect-glued p15-head-colon-redirect p16-line-continuation"
 M2_EXPECT="n03-master-foo n10-mainline"
 M3_EXPECT="p04-refs-heads-master p08-heads-main"
 M4_EXPECT="k1-env-commit-msg p13-bash-c-push"
@@ -361,7 +376,8 @@ MASTER="$WORK/master" # master, with a remote
 LOCAL="$WORK/local"   # master, no remote
 NOREPO="$WORK/norepo" # outside any work tree
 HOMED="$WORK/home"    # the $HOME the hook sees
-mkdir -p "$FEAT" "$MASTER" "$LOCAL" "$NOREPO" "$HOMED"
+VAULT="$WORK/vault"   # main, no remote: the path passed as alxVaultPath
+mkdir -p "$FEAT" "$MASTER" "$LOCAL" "$NOREPO" "$HOMED" "$VAULT"
 
 # The work dir must not itself sit in a work tree: NOREPO would then be "in git".
 if "$GIT" -C "$NOREPO" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
@@ -374,6 +390,7 @@ fi
 "$GIT" -C "$MASTER" init -q --initial-branch=master
 "$GIT" -C "$MASTER" remote add origin https://example.invalid/p.git
 "$GIT" -C "$LOCAL" init -q --initial-branch=master
+"$GIT" -C "$VAULT" init -q --initial-branch=main
 
 fixture_ok() { # fixture_ok <dir> <branch> <remotes>
   local b r
@@ -387,6 +404,7 @@ fixture_ok() { # fixture_ok <dir> <branch> <remotes>
 fixture_ok "$FEAT" feat/probe origin
 fixture_ok "$MASTER" master origin
 fixture_ok "$LOCAL" master ""
+fixture_ok "$VAULT" main ""
 
 # 128 KB on one line, no separator: 14564 x `git push ` (9 bytes). Quadratic
 # for a scan that restarts at every `git push`, linear for one that does not.
@@ -527,7 +545,32 @@ check n11-heredoc-body pass "$FEAT" "$HD_PUSH"
 check k1-env-commit-msg deny "$FEAT" 'env X=1 git commit -m "git push origin master"'
 # --- AC6, no regression of the current-branch rule ---------------------------
 check ac6-master-push-own-branch deny "$MASTER" 'git push origin feat/x'
-check ac6-local-commit-no-remote pass "$LOCAL" 'git commit -m x'
+check ac6-local-commit-no-remote deny "$LOCAL" 'git commit -m x'
+# --- B1, MUST DENY: every repo the command writes to is read (run 61) --------
+check b1-c-then-C deny "$FEAT" "git -c k=v -C $MASTER commit -m x"
+check b1-C-log-then-commit deny "$MASTER" "git -C $FEAT log; git commit -m x"
+check b1-second-cd deny "$FEAT" "cd $FEAT && true; cd $MASTER && git commit -m x"
+check b1-gitdir-flag deny "$FEAT" "git --git-dir=$MASTER/.git commit -m x"
+check b1-gitdir-env deny "$FEAT" "GIT_DIR=$MASTER/.git git commit -m x"
+check b1-var-cd deny "$FEAT" "R=$MASTER; cd \"\$R\" && git commit -m x"
+check b1-pushd deny "$FEAT" "pushd $MASTER && git commit -m x"
+check b1-subshell deny "$FEAT" "(cd $MASTER && git commit -m x)"
+# --- B2, MUST DENY: a pull merges into the current branch --------------------
+check b2-pull-bare deny "$MASTER" 'git pull'
+check b2-pull-master deny "$MASTER" 'git pull origin feat/x'
+# --- B1 partners, MUST PASS: the command provably lands on a feature branch --
+check b1p-leading-cd pass "$MASTER" "cd $FEAT && git add -A && git commit -m x"
+check b1p-single-C pass "$MASTER" "git -C $FEAT commit -m x"
+check b1p-cd-missing-feat pass "$FEAT" 'cd /nonexistent57 && git commit -m x'
+check b1p-status-master pass "$MASTER" 'git status'
+# --- VAULT, MUST PASS: the one exempt repo, by the realpath of its toplevel --
+if [ "$VAULT_BAKED" = "1" ]; then
+  check v01-vault-commit pass "$VAULT" 'git commit -m x'
+  check v02-vault-from-feat pass "$FEAT" "cd $VAULT && git commit -m x"
+else
+  printf 'skip  %-30s %s\n' v01-vault-commit "vault path baked at extraction — hook given as $SUT"
+  printf 'skip  %-30s %s\n' v02-vault-from-feat "vault path baked at extraction — hook given as $SUT"
+fi
 # --- MUST PASS FAST: adversarial shape ---------------------------------------
 check push-128k-fast pass-fast "$FEAT" "$PUSH128K"
 

@@ -18,6 +18,7 @@ let
   hooks = import ./claude-code/hooks.nix {
     inherit (graphifyReindex) graphifyReindexPkg;
     inherit (vaultSnapshot) vaultSnapshotPkg;
+    inherit (settings) alxVaultPath;
   };
   agents = import ./claude-code/agents.nix;
   shell = import ./claude-code/shell.nix;

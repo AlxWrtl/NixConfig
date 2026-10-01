@@ -153,11 +153,7 @@ let
   # Hooks installed on purpose and registered nowhere. Each line is a standing
   # claim that the dead text is intentional; delete the hook or register it and
   # this list must shrink, which is why A4 and A5 below fail on a stale entry.
-  knownUnwired = [
-    # Rewrites `nix-instantiate`/`nixfmt` into `rtk …`. Written, installed, and
-    # named by no command in settings.nix — measured, not assumed.
-    "rtk-nix-rewrite.sh"
-  ];
+  knownUnwired = [ ];
 
   deadHooks = builtins.filter (
     n: !(builtins.elem n wiredNames) && !(builtins.elem n knownUnwired)

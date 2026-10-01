@@ -103,7 +103,7 @@ function main() {
 
   const cwd = typeof data.cwd === "string" && data.cwd !== "" ? data.cwd : process.cwd();
   const runDir = path.join(cwd, ".claude", "output", "apex", marker);
-  let isDir = false;
+  let isDir;
   try { isDir = fs.statSync(runDir).isDirectory(); } catch { isDir = false; }
   if (!isDir) {
     deny("BLOCKED: APEX-CORRECTION-ROUND " + marker + ": run dir not found (" + safe(runDir) + "); name the run this round belongs to, then retry.");

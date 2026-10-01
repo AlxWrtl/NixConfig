@@ -103,7 +103,7 @@ process.stdin.on("end", () => {
         // Classify the value, never its rendering: this is what tells
         // `"0"` from `"sombre"` and `[]` from `[1,2,3]`.
         let parsed = null;
-        let parsedOk = false;
+        let parsedOk;
         try { parsed = JSON.parse(s); parsedOk = true; } catch (e) { parsedOk = false; }
         if (parsedOk) return classify(parsed, depth + 1);
         // `none` and `not found` are deliberately ABSENT from this list:

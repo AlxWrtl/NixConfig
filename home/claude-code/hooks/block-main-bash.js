@@ -281,7 +281,7 @@ const stripInertText = (cmd) => {
       if (cmd[k] === "-") k++;
       while (cmd[k] === " " || cmd[k] === "\t") k++;
       let quoted = false;
-      let delim = "";
+      let delim;
       if (cmd[k] === "'" || cmd[k] === '"') {
         const q = cmd[k];
         const e = cmd.indexOf(q, k + 1);
@@ -562,7 +562,7 @@ const shellWord = (tok) => {
 // `cd` / `pushd` / `popd` as a word the shell runs: after a separator, a
 // blank, a quote (`bash -c "cd x && ..."`) or `{ ( !`, so `then cd x`
 // counts too. Its options, then its one argument if any.
-const CD_WORD = new RegExp(seq(/(?<![^\s;&|({!"'`])(cd|pushd|popd)(?![\w.\/-])(?:[ \t]+(?:-[LPe@]+|--)(?=[\s;&|<>()]|$))*/, "(?:[ \\t]+(", TOK, "))?"), "g");
+const CD_WORD = new RegExp(seq(/(?<![^\s;&|({!"'`])(cd|pushd|popd)(?![\w./-])(?:[ \t]+(?:-[LPe@]+|--)(?=[\s;&|<>()]|$))*/, "(?:[ \\t]+(", TOK, "))?"), "g");
 // Every `git` word the rules could read as a command; `--git-dir` and a
 // `.git` path segment are not.
 const GIT_AT = /(?<!\.)\bgit(?![\w-])/g;

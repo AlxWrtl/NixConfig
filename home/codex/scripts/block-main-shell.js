@@ -581,7 +581,7 @@ const stripInertText = (cmd) => {
       if (cmd[k] === "-") k++;
       while (cmd[k] === " " || cmd[k] === "\t") k++;
       let quoted = false;
-      let delim = "";
+      let delim;
       if (cmd[k] === "'" || cmd[k] === '"') {
         const q = cmd[k];
         const e = cmd.indexOf(q, k + 1);

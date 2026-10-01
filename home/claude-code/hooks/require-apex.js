@@ -46,7 +46,7 @@ process.stdin.on("end", () => {
       // 6.8 s). The project-dir class refuses `/`, so `/.claude/projects/`
       // repeated cannot nest one scan inside another (over 30 s).
       const noTemp = HUGE ? "" : command.replace(
-        /(?<![^\s'"|;&)])[^\s'"|;&)]*(\$\{?TMPDIR\}?|\/var\/folders\/|\/(private\/)?tmp\/|scratchpad|\/dev\/[a-z]+|\/\.claude\/projects\/[^\s'"|;&)\/]*\/memory\/)[^\s'"|;&)]*/g,
+        /(?<![^\s'"|;&)])[^\s'"|;&)]*(\$\{?TMPDIR\}?|\/var\/folders\/|\/(private\/)?tmp\/|scratchpad|\/dev\/[a-z]+|\/\.claude\/projects\/[^\s'"|;&)/]*\/memory\/)[^\s'"|;&)]*/g,
         " "
       );
 

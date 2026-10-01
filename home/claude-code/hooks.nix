@@ -240,12 +240,6 @@ in
     builtins.toJSON alxVaultPath
   );
 
-  # Save working state before compaction so it can be restored
-  hookPreCompactState = builtins.readFile ./hooks/pre-compact-state.js;
-
-  # Restore state after compaction via additionalContext
-  hookPostCompactRestore = builtins.readFile ./hooks/post-compact-restore.js;
-
   hookSessionStart = builtins.readFile ./hooks/session-start.sh;
 
   # SessionEnd: refresh the AlxVault knowledge graph. Reason for existing: the
@@ -327,12 +321,6 @@ in
   hookCircuitBreakerReset = builtins.readFile ./hooks/circuit-breaker-reset.js;
 
   hookStopFailure = builtins.readFile ./hooks/stop-failure.sh;
-
-  # Complements the native `rtk hook claude`: the native hook only rewrites
-  # rtk's built-in command list, NOT commands covered by custom filters.toml
-  # entries (verified 2026-07). This rewrites the nix commands our user-global
-  # filters handle. Disjoint from the native list — no double-rewrite possible.
-  hookRtkNixRewrite = builtins.readFile ./hooks/rtk-nix-rewrite.sh;
 
   # Encrypted off-machine snapshot at session end. Detached with nohup for the
   # same reason as the reindex: the work must outlive Claude Code's exit, and

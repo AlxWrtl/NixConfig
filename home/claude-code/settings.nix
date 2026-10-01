@@ -697,28 +697,6 @@ in
           ];
         }
       ];
-      PreCompact = [
-        {
-          hooks = [
-            {
-              type = "command";
-              command = "${node} ~/.claude/hooks/pre-compact-state.js";
-              timeout = 10;
-            }
-          ];
-        }
-      ];
-      PostCompact = [
-        {
-          hooks = [
-            {
-              type = "command";
-              command = "${node} ~/.claude/hooks/post-compact-restore.js";
-              timeout = 5;
-            }
-          ];
-        }
-      ];
       Notification = [
         {
           hooks = [

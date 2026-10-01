@@ -57,7 +57,6 @@ let
     featureChainScript
     ;
   inherit (hooks)
-    hookRtkNixRewrite
     hookProtectMain
     hookRequireApex
     hookApexFlags
@@ -74,8 +73,6 @@ let
     hookStopFailure
     hookCircuitBreaker
     hookCircuitBreakerReset
-    hookPreCompactState
-    hookPostCompactRestore
     hookQualityGate
     hookGovernanceAudit
     hookCorrectionBudget
@@ -245,14 +242,6 @@ let
       text = hookCircuitBreakerReset;
       executable = true;
     };
-    "${claudeDir}/hooks/pre-compact-state.js" = {
-      text = hookPreCompactState;
-      executable = true;
-    };
-    "${claudeDir}/hooks/post-compact-restore.js" = {
-      text = hookPostCompactRestore;
-      executable = true;
-    };
     "${claudeDir}/hooks/quality-gate.js" = {
       text = hookQualityGate;
       executable = true;
@@ -263,10 +252,6 @@ let
     };
     "${claudeDir}/hooks/correction-budget.js" = {
       text = hookCorrectionBudget;
-      executable = true;
-    };
-    "${claudeDir}/hooks/rtk-nix-rewrite.sh" = {
-      text = hookRtkNixRewrite;
       executable = true;
     };
     "${claudeDir}/hooks/react-docs-gate.js" = {

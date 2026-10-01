@@ -61,6 +61,7 @@
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
         codex-config = import ./checks/codex-config.nix { inherit pkgs; };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };
+        js-lint = import ./checks/js-lint.nix { inherit pkgs; };
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };
       };
 

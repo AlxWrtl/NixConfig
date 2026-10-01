@@ -118,6 +118,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── claude-config.nix
 │   ├── codex-config.nix
 │   ├── hook-wiring.nix
+│   ├── js-lint.nix
 │   └── readme-consistency.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
 ├── wallpapers/                  # Desktop wallpaper
@@ -192,6 +193,7 @@ system.
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
 | `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |
 | `hook-wiring` | Claude Code hook wiring, from the evaluated module rather than from text: every hook file `home/claude-code.nix` installs is named by a `command` in `home/claude-code/settings.nix` and every such command names a file that exists, both senses reported apart; `additionalContext` emitted only inside `hookSpecificOutput`, the one shape the reference documents; the `hookEventName` a hook writes equal to the event registering it. Each direction is guarded by a corpus-non-empty assertion first, because an extractor that stops matching would otherwise be green forever. The branch guards are also RUN against fixture repos, each under the timeout its registration gives the host: `protect-main.js` and `block-main-bash.js` must deny on malformed input and on a missing or hung git and stay silent off a protected branch, `format-typescript.js` must hand a `$(…)` file path to prettier unexpanded. Canary mutants, which must turn their case red by a missed deny or a PWNED file and not by a crash, cover these branches only: malformed JSON, a missing git and the time budget in `protect-main.js`; malformed JSON, a broken git in the cwd or in a `cd` target, and the linear executor scan on a newline flood in `block-main-bash.js`; the argv call in `format-typescript.js`. The other cases are graded without a mutant |
+| `js-lint` | ESLint (`pkgs.eslint`, eslint:recommended rebuilt from `builtinRules`, node globals) over every tracked `.js`: the Claude hooks in `home/claude-code/hooks/` and the Codex scripts; asserts the file count and that a canary with an unused variable turns it red |
 | `readme-consistency` | This file against the repo: the APEX flag table vs the skill, `/apex` examples typing only live flags, every `.nix` in `modules/` `home/` `checks/` `hosts/` present in the Structure tree, every check listed above, no dangling path, no alias documented that no attrset declares, no hard count |
 
 Run them before every commit that touches `.nix` files — `format-check` in
@@ -356,7 +358,7 @@ declared in this repo decide what actually happens.
 | Layer | Where | Can it be ignored? |
 |-------|-------|--------------------|
 | Skill | `home/claude-code/skills.nix` | Yes — it is context the model reads |
-| Hooks | `home/claude-code/hooks.nix`, wired in `home/claude-code/settings.nix` | No — the harness executes them |
+| Hooks | bodies in `home/claude-code/hooks/`, wired by `home/claude-code/hooks.nix` into `home/claude-code/settings.nix` | No — the harness executes them |
 | Checks | `checks/` via `nix flake check` | No — they block the merge |
 | Server ruleset | GitHub `protect-master` on this repo's default branch | No — GitHub refuses the push |
 

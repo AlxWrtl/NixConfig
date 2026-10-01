@@ -62,6 +62,7 @@ CHECK = REPO / "checks" / "apex-consistency.nix"
 SOURCES = [
     REPO / "home" / "claude-code" / "skills.nix",
     REPO / "home" / "claude-code" / "hooks.nix",
+    *sorted((REPO / "home" / "claude-code" / "hooks").glob("*")),
 ]
 
 

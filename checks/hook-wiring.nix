@@ -637,6 +637,7 @@ let
     "bb-master-hung"
     "bb-master-nl-flood"
     "bb-master-C-flood"
+    "bb-master-gl-bound"
     "bb-master-status"
     "bb-local-commit"
     "bb-feat-commit"
@@ -788,6 +789,9 @@ let
     bb_flood() { ${jq} -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:("git commit -m x" + ("\n" * 65536))}}'; }
     # 1000 bare `-C` before the verb: linear now, past any timeout before run 65.
     bb_cflood() { ${jq} -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:("git" + (" -C" * 1000) + " commit")}}'; }
+    # 4000 `git` words over 68 KB: past the G·L scan bound, refused unscanned
+    # (4.7 s, i.e. a host-timeout allow, before the bound existed).
+    bb_glbound() { ${jq} -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:("git" + (" -c user.name=git" * 4000) + " commit")}}'; }
 
     # correction-budget: run dirs live in a fixture repo, the counter under
     # $HOME, which run() pins to $TMPDIR. The counter thus outlives a case and
@@ -941,6 +945,8 @@ let
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_flood)"; is_deny "BLOCKED: on master." ;;
         bb-master-C-flood)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_cflood)"; is_deny "BLOCKED: on master." ;;
+        bb-master-gl-bound)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_glbound)"; is_deny "too large to scan" ;;
         bb-master-status)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "git status")"; is_allow ;;
         # No remote is no exemption (run 61, B3): the non-vault control.

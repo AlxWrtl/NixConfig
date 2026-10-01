@@ -59,7 +59,8 @@
 #       origin master"` escapes again).
 #   m5  `<` `>` dropped from the word end (`git push origin master>/dev/null`
 #       escapes again).
-#   m6  the linear two-pass scan replaced by the old lazy single regex
+#   m6  the linear two-pass scan replaced by the old lazy single regex,
+#       with the G*L size bound lifted (it would skip the scan otherwise)
 #       (same verdicts, quadratic time: only pass-fast may go red).
 #   m7  the `\` + newline fold removed (a continued push escapes again).
 #
@@ -250,14 +251,14 @@ lit_sub() {
 }
 
 build_mutant() { # build_mutant <mN> <destination>
-  local which="$1" dest="$2" from="" to=""
+  local which="$1" dest="$2" from="" to="" from2="" to2=""
   case "$which" in
     m1) from='if (pushTargetsProtectedRef(cmd))' to='if (false)' ;;
     m2) from='(?:refs\/heads\/|heads\/)?(?:master|main)(?=[\s;&|()<>"'"'"'`]|$)/;' to='(?:refs\/heads\/|heads\/)?(?:master|main)/;' ;;
     m3) from='(?:refs\/heads\/|heads\/)?(?:master|main)(?=' to='(?:master|main)(?=' ;;
     m4) from='(?:master|main)(?=[\s;&|()<>"'"'"'`]|$)/;' to='(?:master|main)(?=[\s;&|()<>]|$)/;' ;;
     m5) from='(?:master|main)(?=[\s;&|()<>"'"'"'`]|$)/;' to='(?:master|main)(?=[\s;&|()"'"'"'`]|$)/;' ;;
-    m6) from='const scan = (v) => [...v.matchAll(PUSH_SEG)].some((m) => DST_WORD.test(m[1]));' to='const scan = (v) => new RegExp(src(GIT) + "push" + src(EOW) + "[^;&|\\n()]*?\\s" + src(PROTECTED_DST)).test(v);' ;;
+    m6) from='const scan = (v) => [...v.matchAll(PUSH_SEG)].some((m) => DST_WORD.test(m[1]));' to='const scan = (v) => new RegExp(src(GIT) + "push" + src(EOW) + "[^;&|\\n()]*?\\s" + src(PROTECTED_DST)).test(v);' from2='const SCAN_BOUND = 1e7;' to2='const SCAN_BOUND = Infinity;' ;;
     m7) from='const v = c.replace(/\\\n/g, " ");' to='const v = c;' ;;
   esac
   local n
@@ -267,6 +268,19 @@ build_mutant() { # build_mutant <mN> <destination>
     return 1
   }
   lit_sub "$ORIG" "$dest" "$from" "$to"
+  # Second edit, same discipline: its text exactly once, then present after.
+  if [ -n "$from2" ]; then
+    n="$(grep -cF -- "$from2" "$dest" || true)"
+    [ "$n" = "1" ] || {
+      echo "probe: $which did not apply — expected its text exactly once, found $n (looked for: $from2)" >&2
+      return 1
+    }
+    lit_sub "$dest" "$dest.2" "$from2" "$to2" && mv "$dest.2" "$dest"
+    grep -qF -- "$to2" "$dest" || {
+      echo "probe: $which did not apply — replacement not found (looked for: $to2)" >&2
+      return 1
+    }
+  fi
   if ! grep -qF -- "$to" "$dest"; then
     echo "probe: $which did not apply — replacement not found (looked for: $to)" >&2
     return 1

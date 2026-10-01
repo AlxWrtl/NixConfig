@@ -358,7 +358,7 @@ declared in this repo decide what actually happens.
 | Layer | Where | Can it be ignored? |
 |-------|-------|--------------------|
 | Skill | `home/claude-code/skills.nix` | Yes — it is context the model reads |
-| Hooks | `home/claude-code/hooks.nix`, wired in `home/claude-code/settings.nix` | No — the harness executes them |
+| Hooks | bodies in `home/claude-code/hooks/`, wired by `home/claude-code/hooks.nix` into `home/claude-code/settings.nix` | No — the harness executes them |
 | Checks | `checks/` via `nix flake check` | No — they block the merge |
 | Server ruleset | GitHub `protect-master` on this repo's default branch | No — GitHub refuses the push |
 

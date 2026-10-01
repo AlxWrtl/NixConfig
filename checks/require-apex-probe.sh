@@ -454,7 +454,7 @@ build_mutant() { # build_mutant <mN> <destination>
     m32) from='rm|rmdir|' to='rm|' ;;
     m33) from='\bopen\s{0,8}\(' to='\bopen\(' ;;
     m34) from='(?<![^\s'"'"'"|;&)])[^\s'"'"'"|;&)]*(\$\{?TMPDIR' to='[^\s'"'"'"|;&)]*(\$\{?TMPDIR' ;;
-    m35) from='\/\.claude\/projects\/[^\s'"'"'"|;&)\/]*\/memory\/' to='\/\.claude\/projects\/[^\s'"'"'"|;&)]*\/memory\/' ;;
+    m35) from='\/\.claude\/projects\/[^\s'"'"'"|;&)/]*\/memory\/' to='\/\.claude\/projects\/[^\s'"'"'"|;&)]*\/memory\/' ;;
     m36) from='"(^|[\\n|;&][ \\t]*|\\$\\([ \\t]*|&&[ \\t]*|\\|\\|[ \\t]*)"' to='"(^|[\\n|;&]\\s*|\\$\\(\\s*|&&\\s*|\\|\\|\\s*)"' ;;
     m37) from='[^|;&]{0,1024}\s-\w*i\b/' to='[^|;&]*\s-\w*i\b/' ;;
     m38) from='command.length > 262144' to='command.length > 1e12' ;;

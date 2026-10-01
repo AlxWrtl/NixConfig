@@ -65,7 +65,13 @@ if (typeof watchdog.unref === "function") watchdog.unref();
 // region, a quote without one is a literal (that is the `(?![^']*')`
 // guard, which also keeps an UNBALANCED quote consuming exactly what the
 // old `\S+` consumed, so no denial is lost), anything else is itself.
-const GIT = /\bgit(?:\s+(?:-[Cc]\s+(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
+// LINEAR TIME, the same rule one level up: a `-c` / `-C` value may not
+// itself be option-shaped (the `(?!--?[A-Za-z]...\s)` guard), because
+// that token is already the generic branch's. Without it `-C -C -C ...`
+// split as value-or-option in Fibonacci-many ways and a failing rule
+// backtracked through all of them: 30 `-C` took 1.6 s, 64 never returned,
+// and the host reads its 5 s timeout as an allow.
+const GIT = /\bgit(?:\s+(?:-[Cc]\s+(?!--?[A-Za-z][\w-]*(?:=\S+)?\s)(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
 
 // End of a verb, or of a short-option cluster. NOT `\b`: `\b` only asks for
 // a word/non-word boundary, and `-` is a non-word char, so it cannot tell

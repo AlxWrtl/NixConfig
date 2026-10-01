@@ -268,9 +268,12 @@ const oneOf = (...alts) => "(?:" + alts.map(src).join("|") + ")";
 // be tried BEFORE the generic option branch. A value is a RUN of quoted
 // regions and plain characters, and each character has exactly ONE branch —
 // the naive (?:'[^']*'|"[^"]*"|\S)+ shape backtracked exponentially on
-// `git -c 'x'"y"` repeated, and a FAILING match never came back.
+// `git -c 'x'"y"` repeated, and a FAILING match never came back. Same rule one
+// level up: a `-c` / `-C` value may not be option-shaped (the `(?!--?...\s)`
+// guard), since the generic branch already owns that token — otherwise
+// `-C -C -C ...` splits Fibonacci-many ways and 30 of them took 3.3 s.
 const GIT =
-  /\bgit(?:\s+(?:-[Cc]\s+(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
+  /\bgit(?:\s+(?:-[Cc]\s+(?!--?[A-Za-z][\w-]*(?:=\S+)?\s)(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
 
 // End of a verb, or of a short-option cluster. NOT `\b`: `-` is a non-word
 // character, so `\b` cannot tell the end of `merge` from the start of

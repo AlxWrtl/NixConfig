@@ -9,17 +9,16 @@ _:
       cleanup = "zap";
       autoUpdate = true;
       upgrade = true;
-      # brew bundle runs as root during activation; `brew trust` writes to the
-      # user's $HOMEBREW_USER_CONFIG_HOME/trust.json, which root never reads, so
-      # third-party taps (rtk-ai/tap) get refused. Disable the trust gate for
-      # the activation run — taps here are declared in this config, i.e. trusted.
-      extraEnv = {
-        HOMEBREW_NO_REQUIRE_TAP_TRUST = "1";
-      };
     };
 
+    # Homebrew 6+ refuses untrusted third-party taps. Activation runs
+    # `brew bundle` as homebrew.user (sudo --user), and bundle records the
+    # Brewfile `trusted: true` in that user's trust store itself.
     taps = [
-      "rtk-ai/tap"
+      {
+        name = "rtk-ai/tap";
+        trusted = true;
+      }
     ];
 
     brews = [

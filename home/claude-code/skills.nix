@@ -2198,7 +2198,9 @@ in
        correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`
        (<run-id> = this run's `.claude/output/apex/` dir name); any other brief
        naming 06-resolve.md or a correction round carries
-       `APEX-CORRECTION-ROUND: none`. Denied (budget spent) → STOP: deliver with
+       `APEX-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
+       both counted, and counts once the spawn/send is attempted, even if later
+       denied. Denied (budget spent) → STOP: deliver with
        the residuals list verbatim and the failing output, or ask the user.
        Never weaken a check to make it pass, never declare success on partial
        green.

@@ -33,8 +33,9 @@
 #      in protect-main, `notebook_path`, and the vault exemption — the last
 #      two killed on an allow case, as an over-block. Run 62 adds
 #      correction-budget: the cap on correction rounds per run (the third
-#      marked round is denied) and the marker a brief naming 06-resolve.md or
-#      a correction round must carry. Every other case is run and graded, with
+#      marked round is denied, a SendMessage re-brief counted alongside) and
+#      the marker a brief naming 06-resolve.md or a correction round must
+#      carry. Every other case is run and graded, with
 #      no mutant to show it bites.
 #
 # The corpus is EVALUATED, not read as text: home/claude-code.nix is imported
@@ -336,6 +337,10 @@ let
       hook = "correction-budget.js";
       text = "if (!marker && MENTIONS.test(prompt)) { denyNoMarker(); return; }";
     };
+    A-cb-tools = {
+      hook = "correction-budget.js";
+      text = "if (data.tool_name !== \"Agent\" && data.tool_name !== \"Task\" && data.tool_name !== \"SendMessage\") { allow(); return; }";
+    };
   };
 
   # The M5 mutant names its shell: execSync's default /bin/sh dispatches
@@ -535,6 +540,19 @@ let
         }
       ];
     }
+    # Agent-only: a correction re-brief sent by SendMessage to a live agent
+    # is never counted, and the cap is bypassed by re-briefing.
+    {
+      id = "M-cb-sendmessage";
+      hook = "correction-budget.js";
+      kills = "cb-sendmessage-round3-deny";
+      swaps = [
+        {
+          anchor = "A-cb-tools";
+          to = "if (data.tool_name !== \"Agent\") { allow(); return; }";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -579,6 +597,7 @@ let
     "bb-vault-commit"
     "fmt-inject"
     "cb-round3-deny"
+    "cb-sendmessage-round3-deny"
     "cb-nomarker-deny"
     "cb-other-run-allow"
     "cb-plain-allow"
@@ -714,6 +733,8 @@ let
     }
     # $1 brief, $2 marker: a run-id, none, or absent for no marker line.
     cb_in() { ${jq} -cn --arg p "$1" --arg m "''${2-}" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"Agent",cwd:$c,session_id:"probe",tool_input:{description:"probe",subagent_type:"general-purpose",prompt:(if $m == "" then $p else $p + "\nAPEX-CORRECTION-ROUND: " + $m end)}}'; }
+    # Same brief as a SendMessage re-brief to a live agent ($2 required).
+    cb_msg() { ${jq} -cn --arg p "$1" --arg m "$2" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"SendMessage",cwd:$c,session_id:"probe",tool_input:{to:"implementer",summary:"probe",message:($p + "\nAPEX-CORRECTION-ROUND: " + $m)}}'; }
     # $1 body, $2 run-id, $3 round number: one marked round, due an allow.
     cb_round() {
       run "$lbl" "$1" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$2")"
@@ -899,6 +920,12 @@ let
           cb_round "$2" 62-x 1 || return 1
           cb_round "$2" 62-x 2 || return 1
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2)" ;;
+        # Two spawned rounds, then a third sent to a live agent: same budget.
+        cb-sendmessage-round3-deny)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_msg "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2)" ;;
         cb-nomarker-deny)
           cb_reset
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md.")"; is_deny "has no APEX-CORRECTION-ROUND line" ;;

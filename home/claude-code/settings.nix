@@ -613,12 +613,13 @@ in
           ];
         }
         {
-          matcher = "Agent";
+          matcher = "Agent|SendMessage";
           hooks = [
             {
               type = "command";
               # APEX correction-round budget: denies the 3rd marked round of a
-              # run. NOT async — a deny must land before the spawn.
+              # run, spawned or re-briefed by SendMessage. NOT async — a deny
+              # must land before the spawn.
               command = "${node} ~/.claude/hooks/correction-budget.js";
               timeout = 5;
             }

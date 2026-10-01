@@ -301,16 +301,21 @@
     process.stdin.on("error", start);
   '';
 
-  # PreToolUse on Agent: a hard cap on APEX correction rounds (run 62). A
-  # correction brief carries `APEX-CORRECTION-ROUND: <run-id>`; each one is
-  # counted in ~/.claude/apex-correction-budget/<run-id>.json (outside the
-  # Bash sandbox's writable paths) and the one past MAX_ROUNDS is denied. A
-  # brief naming 06-resolve.md or a correction round must carry the marker,
-  # with a run-id or `none`. Unmarked, unrelated or unreadable input is let
-  # through: it cannot be told apart from normal Agent use. Once a marker
-  # names a run, every failure denies: fail-open is the unbounded loop this
-  # hook exists to stop. Guardrail, not barrier: `none` is a visible claim.
-  # Two parallel marked spawns can race on the counter (last write wins).
+  # PreToolUse on Agent and SendMessage: a hard cap on APEX correction rounds
+  # (run 62). A correction round goes through either channel, a fresh spawn
+  # or a re-brief sent to a live agent, and both are counted. Its brief
+  # carries `APEX-CORRECTION-ROUND: <run-id>`; each round claims the first
+  # free slot ~/.claude/apex-correction-budget/<run-id>.round<n>, n in
+  # 1..MAX_ROUNDS (outside the Bash sandbox's writable paths), and the round
+  # finding none is denied. A slot is created exclusively (O_EXCL), so
+  # parallel marked spawns cannot both take the last one. A round counts
+  # when the spawn/send is attempted (PreToolUse), even if a later hook or
+  # the user then denies it. A brief naming 06-resolve.md or a correction
+  # round must carry the marker, with a run-id or `none`. Unmarked,
+  # unrelated or unreadable input is let through: it cannot be told apart
+  # from normal Agent use. Once a marker names a run, every failure denies:
+  # fail-open is the unbounded loop this hook exists to stop. Guardrail, not
+  # barrier: `none` is a visible claim.
   hookCorrectionBudget = ''
     #!/usr/bin/env node
     "use strict";
@@ -320,7 +325,7 @@
 
     const MAX_ROUNDS = 2;
     const BUDGET_MS = 3000;
-    const RUN_ID = /^[0-9]{2,}-[a-z0-9-]+$/;
+    const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
     const MARKER = /^[\s>*`-]*APEX-CORRECTION-ROUND:\s*([^\s`]*)[\s`]*$/;
     const MENTIONS = /06-resolve\.md|correction round/i;
 
@@ -389,10 +394,12 @@
       let data;
       try { data = JSON.parse(input); } catch { allow(); return; }
       if (!data || typeof data !== "object" || Array.isArray(data)) { allow(); return; }
-      if (data.tool_name !== "Agent" && data.tool_name !== "Task") { allow(); return; }
+      if (data.tool_name !== "Agent" && data.tool_name !== "Task" && data.tool_name !== "SendMessage") { allow(); return; }
       const ti = data.tool_input;
       if (!ti || typeof ti !== "object" || Array.isArray(ti)) { allow(); return; }
-      const prompt = typeof ti.prompt === "string" ? ti.prompt : "";
+      // Agent/Task carry `prompt`, SendMessage `message`; a non-string
+      // message (a structured request) is no brief.
+      const prompt = [ti.prompt, ti.message].find((v) => typeof v === "string" && v !== "") || "";
       if (prompt === "") { allow(); return; }
 
       let marker = null;
@@ -407,7 +414,7 @@
       }
       if (!marker && MENTIONS.test(prompt)) { denyNoMarker(); return; }
       if (marker === null || marker === "none") { allow(); return; }
-      if (!RUN_ID.test(marker)) {
+      if (!RUN_ID.test(marker) || marker.includes("..")) {
         deny("BLOCKED: APEX-CORRECTION-ROUND names \"" + safe(marker) + "\", which is neither none nor a run-id like 62-correction-budget; fix the line, then retry.");
         return;
       }
@@ -424,40 +431,28 @@
 
       const home = process.env.HOME || os.homedir();
       const dir = path.join(home, ".claude", "apex-correction-budget");
-      const file = path.join(dir, marker + ".json");
-      let state = { rounds: [] };
-      let text = null;
-      try {
-        text = fs.readFileSync(file, "utf8");
-      } catch (e) {
-        if (!e || e.code !== "ENOENT") { denyState("unreadable", file); return; }
-      }
-      if (text !== null) {
-        try { state = JSON.parse(text); } catch { denyState("unreadable", file); return; }
-        if (!state || typeof state !== "object" || !Array.isArray(state.rounds)) { denyState("unreadable", file); return; }
-      }
-
-      if (state.rounds.length >= MAX_ROUNDS) {
-        deny("budget de correction épuisé (" + MAX_ROUNDS + "/" + MAX_ROUNDS + ") : livrer avec la liste des résiduels, ou demander à l'utilisateur (run " + marker + ")");
-        return;
-      }
-
-      state.rounds.push({
+      const stamp = JSON.stringify({
         ts: new Date().toISOString(),
+        tool: safe(data.tool_name),
         session: safe(data.session_id),
-        description: safe(ti.description).slice(0, 200)
-      });
-      const tmp = file + "." + process.pid + ".tmp";
-      try {
-        fs.mkdirSync(dir, { recursive: true });
-        fs.writeFileSync(tmp, JSON.stringify(state) + "\n");
-        fs.renameSync(tmp, file);
-      } catch {
-        try { fs.unlinkSync(tmp); } catch {}
-        denyState("unwritable", file);
+        description: safe(ti.description || ti.summary).slice(0, 200)
+      }) + "\n";
+      try { fs.mkdirSync(dir, { recursive: true }); } catch { denyState("unwritable", dir); return; }
+
+      // Claim a slot by exclusive create: of two racing rounds, one wins.
+      for (let n = 1; n <= MAX_ROUNDS; n++) {
+        const slot = path.join(dir, marker + ".round" + n);
+        try {
+          fs.writeFileSync(slot, stamp, { flag: "wx" });
+        } catch (e) {
+          if (e && e.code === "EEXIST") continue;
+          denyState("unwritable", slot);
+          return;
+        }
+        allow();
         return;
       }
-      allow();
+      deny("budget de correction épuisé (" + MAX_ROUNDS + "/" + MAX_ROUNDS + ") : livrer avec la liste des résiduels, ou demander à l'utilisateur (run " + marker + ")");
     }
 
     function start() {

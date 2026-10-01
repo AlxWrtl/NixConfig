@@ -28,14 +28,16 @@
 #      JSON and a missing git in protect-main; its time budget under the host
 #      timeout; malformed JSON, a broken git in the cwd and a broken git in a
 #      `cd` target in block-main-bash; its linear executor scan on a newline
-#      flood; the argv call in format-typescript. Run 61 adds: `pull` as a
+#      flood; the two argv calls in format-typescript. Run 61 adds: `pull` as a
 #      ref move, every command target (not the first), the file's own repo
 #      in protect-main, `notebook_path`, and the vault exemption — the last
 #      two killed on an allow case, as an over-block. Run 62 adds
 #      correction-budget: the cap on correction rounds per run (the third
 #      marked round is denied, a SendMessage re-brief counted alongside) and
 #      the marker a brief naming 06-resolve.md or a correction round must
-#      carry. Every other case is run and graded, with
+#      carry. Run 64 adds format-typescript's prettier-config gate: a file
+#      whose project has no prettier config is never written. Every other
+#      case is run and graded, with
 #      no mutant to show it bites.
 #
 # The corpus is EVALUATED, not read as text: home/claude-code.nix is imported
@@ -321,6 +323,14 @@ let
       hook = "format-typescript.js";
       text = "const { spawnSync } = require(\"child_process\");";
     };
+    A5-find = {
+      hook = "format-typescript.js";
+      text = "const found = spawnSync(\"prettier\", [\"--find-config-path\", file], { stdio: \"ignore\", timeout: 8000, killSignal: \"SIGKILL\" });";
+    };
+    A5-gate = {
+      hook = "format-typescript.js";
+      text = "if (found.status === 0) {";
+    };
     A5-call = {
       hook = "format-typescript.js";
       text = "spawnSync(\"prettier\", [\"--write\", file], { stdio: \"ignore\", timeout: 8000, killSignal: \"SIGKILL\" });";
@@ -339,10 +349,11 @@ let
     };
   };
 
-  # The M5 mutant names its shell: execSync's default /bin/sh dispatches
+  # The M5 mutants name their shell: execSync's default /bin/sh dispatches
   # through /private/var/select/sh on macOS, which the build sandbox may not
   # expose — a mutant that cannot start a shell would survive for the wrong
-  # reason. The injection is a property of ANY shell; bash is pinned.
+  # reason. The injection is a property of ANY shell; bash is pinned. Each
+  # puts ONE of the two prettier calls through a shell, the other stays argv.
   mutants = [
     {
       id = "M1";
@@ -395,11 +406,39 @@ let
       swaps = [
         {
           anchor = "A5-require";
-          to = "const { execSync } = require(\"child_process\");";
+          to = "const { spawnSync, execSync } = require(\"child_process\");";
         }
         {
           anchor = "A5-call";
           to = "execSync(\"prettier --write \" + JSON.stringify(file), { stdio: \"ignore\", timeout: 8000, shell: \"${pkgs.bash}/bin/bash\" });";
+        }
+      ];
+    }
+    {
+      id = "M5-find";
+      hook = "format-typescript.js";
+      kills = "fmt-inject";
+      swaps = [
+        {
+          anchor = "A5-require";
+          to = "const { spawnSync, execSync } = require(\"child_process\");";
+        }
+        {
+          anchor = "A5-find";
+          to = "const found = { status: (execSync(\"prettier --find-config-path \" + JSON.stringify(file), { stdio: \"ignore\", timeout: 8000, shell: \"${pkgs.bash}/bin/bash\" }), 0) };";
+        }
+      ];
+    }
+    # Run 64. No config gate: every file is written, prettier config or not —
+    # this nix repo reformatted on every Edit.
+    {
+      id = "M5-gate";
+      hook = "format-typescript.js";
+      kills = "fmt-no-config";
+      swaps = [
+        {
+          anchor = "A5-gate";
+          to = "if (true) {";
         }
       ];
     }
@@ -592,6 +631,7 @@ let
     "bb-leading-cd-feat"
     "bb-vault-commit"
     "fmt-inject"
+    "fmt-no-config"
     "cb-round3-deny"
     "cb-sendmessage-round3-deny"
     "cb-nomarker-deny"
@@ -668,7 +708,8 @@ let
   # reading git and one that refuses on purpose look alike. Allow: exit 0 and
   # silence on both streams, byte for byte.
   # Positive controls: pm-master-inrepo and bb-master-commit (the guard really
-  # reaches its branch read), fmt-inject's prettier.log (prettier really ran).
+  # reaches its branch read), fmt-inject's prettier.log (prettier really ran),
+  # fmt-no-config's config.log (the hook really asked for a config).
   runtimeProbe = ''
     root="$TMPDIR/hook-probe"
     d="$root/out"
@@ -697,7 +738,16 @@ let
     ln -s "$MASTER/dangling-target.ts" "$NOREPO/dangling"
     # `exec`: SIGKILL on timeout must reach the sleeper, not orphan it on the pipe.
     printf '%s\n' '#!${pkgs.bash}/bin/bash' 'exec ${pkgs.coreutils}/bin/sleep 30' > "$root/hangbin/git"
-    printf '%s\n' '#!${pkgs.bash}/bin/bash' 'printf "%s\n" "$2" >> "''${0%/*}/prettier.log"' > "$root/fakebin/prettier"
+    # The fake prettier. `--find-config-path` logs its path to config.log and
+    # exits 1 (no config) while a no-config marker sits beside it, else 0;
+    # `--write` alone logs to prettier.log, so that log holds only what was
+    # formatted.
+    printf '%s\n' '#!${pkgs.bash}/bin/bash' \
+      'here="''${0%/*}"' \
+      'case "$1" in' \
+      '  --find-config-path) printf "%s\n" "$2" >> "$here/config.log"; [ ! -e "$here/no-config" ]; exit $? ;;' \
+      '  --write) printf "%s\n" "$2" >> "$here/prettier.log" ;;' \
+      'esac' > "$root/fakebin/prettier"
     # A git that fails on MASTER alone ("bad object HEAD", not "not a git
     # repository") and is real git elsewhere: `cd $MASTER && git commit` from
     # FEAT must deny, not fall back to FEAT's branch. Matched on the physical
@@ -898,7 +948,7 @@ let
           vaultify "$2" || return 1
           run "$lbl" "$vb" "$VAULT" "$GITBIN" "$(bb_in "git commit -m x")"; is_allow ;;
         fmt-inject)
-          rm -f "$TMPDIR/PWNED" "$root/fakebin/prettier.log"
+          rm -f "$TMPDIR/PWNED" "$root/fakebin/prettier.log" "$root/fakebin/config.log" "$root/fakebin/no-config"
           f="$root/fmt/\$(touch $TMPDIR/PWNED).ts"
           # The file must exist: the hook skips anything but a regular file.
           # Its name holds slashes, so its parents are directories.
@@ -910,6 +960,19 @@ let
           grep -Fxq -- "$f" "$root/fakebin/prettier.log" 2> /dev/null \
             || { why="prettier never received the path verbatim — a probe that never reaches prettier cannot see an injection"; return 1; }
           ;;
+        # Run 64: the project has no prettier config, so the file is left
+        # alone — exit 0, silent, and `--write` never called.
+        fmt-no-config)
+          rm -f "$root/fakebin/prettier.log" "$root/fakebin/config.log"
+          f="$root/fmt/no-config.ts"
+          : > "$f"
+          : > "$root/fakebin/no-config"
+          run "$lbl" "$2" "$root" "$root/fakebin:${pkgs.coreutils}/bin" "$(fmt_in "$f")"
+          rm -f "$root/fakebin/no-config"
+          [ ! -s "$root/fakebin/prettier.log" ] || { why="prettier --write ran on a file whose project has no prettier config"; kind=mismatch; return 1; }
+          grep -Fxq -- "$f" "$root/fakebin/config.log" 2> /dev/null \
+            || { why="the hook never asked prettier for a config — a probe that never reaches the gate cannot see it skip"; return 1; }
+          is_allow ;;
         # Run 62: two marked rounds per run, the third denied.
         cb-round3-deny)
           cb_reset

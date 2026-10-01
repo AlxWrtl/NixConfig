@@ -31,8 +31,12 @@
 #      flood; the argv call in format-typescript. Run 61 adds: `pull` as a
 #      ref move, every command target (not the first), the file's own repo
 #      in protect-main, `notebook_path`, and the vault exemption — the last
-#      two killed on an allow case, as an over-block. Every other case is run
-#      and graded, with no mutant to show it bites.
+#      two killed on an allow case, as an over-block. Run 62 adds
+#      correction-budget: the cap on correction rounds per run (the third
+#      marked round is denied, a SendMessage re-brief counted alongside) and
+#      the marker a brief naming 06-resolve.md or a correction round must
+#      carry. Every other case is run and graded, with
+#      no mutant to show it bites.
 #
 # The corpus is EVALUATED, not read as text: home/claude-code.nix is imported
 # as a module and its `home.file` is the same attrset home-manager installs.
@@ -325,6 +329,18 @@ let
       hook = "format-typescript.js";
       text = "spawnSync(\"prettier\", [\"--write\", file], { stdio: \"ignore\", timeout: 8000, killSignal: \"SIGKILL\" });";
     };
+    A-cb-cap = {
+      hook = "correction-budget.js";
+      text = "const MAX_ROUNDS = 2;";
+    };
+    A-cb-marker = {
+      hook = "correction-budget.js";
+      text = "if (!marker && MENTIONS.test(prompt)) { denyNoMarker(); return; }";
+    };
+    A-cb-tools = {
+      hook = "correction-budget.js";
+      text = "if (data.tool_name !== \"Agent\" && data.tool_name !== \"Task\" && data.tool_name !== \"SendMessage\") { allow(); return; }";
+    };
   };
 
   # The M5 mutant names its shell: execSync's default /bin/sh dispatches
@@ -499,6 +515,44 @@ let
         }
       ];
     }
+    # Run 62. A third round allowed: the cap is one round looser than stated.
+    {
+      id = "M-cb-cap";
+      hook = "correction-budget.js";
+      kills = "cb-round3-deny";
+      swaps = [
+        {
+          anchor = "A-cb-cap";
+          to = "const MAX_ROUNDS = 3;";
+        }
+      ];
+    }
+    # No marker required: a correction brief that omits the line is never
+    # counted, and the cap is bypassed by leaving it out.
+    {
+      id = "M-cb-marker";
+      hook = "correction-budget.js";
+      kills = "cb-nomarker-deny";
+      swaps = [
+        {
+          anchor = "A-cb-marker";
+          to = ";";
+        }
+      ];
+    }
+    # Agent-only: a correction re-brief sent by SendMessage to a live agent
+    # is never counted, and the cap is bypassed by re-briefing.
+    {
+      id = "M-cb-sendmessage";
+      hook = "correction-budget.js";
+      kills = "cb-sendmessage-round3-deny";
+      swaps = [
+        {
+          anchor = "A-cb-tools";
+          to = "if (data.tool_name !== \"Agent\") { allow(); return; }";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -542,6 +596,13 @@ let
     "bb-leading-cd-feat"
     "bb-vault-commit"
     "fmt-inject"
+    "cb-round3-deny"
+    "cb-sendmessage-round3-deny"
+    "cb-nomarker-deny"
+    "cb-other-run-allow"
+    "cb-plain-allow"
+    "cb-none-allow"
+    "cb-state-unwritable-deny"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -584,6 +645,7 @@ let
     "protect-main.js"
     "block-main-bash.js"
     "format-typescript.js"
+    "correction-budget.js"
   ];
   timeoutsOf =
     n:
@@ -659,6 +721,26 @@ let
     # would strip the very newlines the case is about.
     bb_flood() { ${jq} -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:("git commit -m x" + ("\n" * 65536))}}'; }
 
+    # correction-budget: run dirs live in a fixture repo, the counter under
+    # $HOME, which run() pins to $TMPDIR. The counter thus outlives a case and
+    # reaches the canary re-runs: every cb case wipes it first.
+    CBREPO="$root/cbrepo"
+    CBSTATE="$TMPDIR/.claude/apex-correction-budget"
+    cb_reset() {
+      if [ -e "$CBSTATE" ]; then chmod -R u+w "$CBSTATE"; fi
+      rm -rf "$CBSTATE"
+      mkdir -p "$CBREPO/.claude/output/apex/62-x" "$CBREPO/.claude/output/apex/63-y"
+    }
+    # $1 brief, $2 marker: a run-id, none, or absent for no marker line.
+    cb_in() { ${jq} -cn --arg p "$1" --arg m "''${2-}" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"Agent",cwd:$c,session_id:"probe",tool_input:{description:"probe",subagent_type:"general-purpose",prompt:(if $m == "" then $p else $p + "\nAPEX-CORRECTION-ROUND: " + $m end)}}'; }
+    # Same brief as a SendMessage re-brief to a live agent ($2 required).
+    cb_msg() { ${jq} -cn --arg p "$1" --arg m "$2" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"SendMessage",cwd:$c,session_id:"probe",tool_input:{to:"implementer",summary:"probe",message:($p + "\nAPEX-CORRECTION-ROUND: " + $m)}}'; }
+    # $1 body, $2 run-id, $3 round number: one marked round, due an allow.
+    cb_round() {
+      run "$lbl" "$1" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$2")"
+      is_allow || { why="round $3 on $2: $why"; return 1; }
+    }
+
     # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
     # $tmo is the host's timeout for the hook under test (probe_case sets it);
     # 124 is `timeout` killing it, which the host reads as no decision.
@@ -726,6 +808,7 @@ let
       case "$1" in
         pm-*) tmo=${hostTimeout "protect-main.js"} ;;
         bb-*) tmo=${hostTimeout "block-main-bash.js"} ;;
+        cb-*) tmo=${hostTimeout "correction-budget.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -831,6 +914,45 @@ let
           grep -Fxq -- "$f" "$root/fakebin/prettier.log" 2> /dev/null \
             || { why="prettier never received the path verbatim — a probe that never reaches prettier cannot see an injection"; return 1; }
           ;;
+        # Run 62: two marked rounds per run, the third denied.
+        cb-round3-deny)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2)" ;;
+        # Two spawned rounds, then a third sent to a live agent: same budget.
+        cb-sendmessage-round3-deny)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_msg "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2)" ;;
+        cb-nomarker-deny)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md.")"; is_deny "has no APEX-CORRECTION-ROUND line" ;;
+        # A new run is a new counter: 62-x spent, 63-y still allowed.
+        cb-other-run-allow)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          cb_round "$2" 63-y 1 ;;
+        cb-plain-allow)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Summarize the README.")"; is_allow ;;
+        cb-none-allow)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Check what the last correction round changed." none)"; is_allow ;;
+        # A marked round whose count cannot be recorded fails closed. Skipped,
+        # and said, where mode 555 does not stop the builder (root).
+        cb-state-unwritable-deny)
+          cb_reset
+          mkdir -p "$CBSTATE"
+          chmod 555 "$CBSTATE"
+          if (: > "$CBSTATE/.probe") 2> /dev/null; then
+            rm -f "$CBSTATE/.probe"
+            echo "hook-wiring: $1 skipped — $CBSTATE stays writable at mode 555"
+            return 0
+          fi
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "BLOCKED: budget state unwritable" ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -841,6 +963,7 @@ let
         pm-*) echo ${hookFile "protect-main.js"} ;;
         bb-*) echo ${hookFile "block-main-bash.js"} ;;
         fmt-*) echo ${hookFile "format-typescript.js"} ;;
+        cb-*) echo ${hookFile "correction-budget.js"} ;;
       esac
     }
 

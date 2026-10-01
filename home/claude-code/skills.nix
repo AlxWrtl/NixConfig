@@ -2193,10 +2193,17 @@ in
        implementer (`model: opus`) with a SHARPER brief each round (root cause,
        exact files/lines, expected end state, exact command that must pass), then
        re-verifies the new diff.
-    6. Loop until every acceptance criterion is green. Max 3 correction rounds:
-       still red after 3 → STOP, surface the remaining issues verbatim with the
-       failing output. Never weaken a check to make it pass, never declare success
-       on partial green.
+    6. Loop until every acceptance criterion is green. Max 2 correction rounds,
+       enforced by the correction-budget hook (PreToolUse on Agent): every
+       correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`
+       (<run-id> = this run's `.claude/output/apex/` dir name); any other brief
+       naming 06-resolve.md or a correction round carries
+       `APEX-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
+       both counted, and counts once the spawn/send is attempted, even if later
+       denied. Denied (budget spent) → STOP: deliver with
+       the residuals list verbatim and the failing output, or ask the user.
+       Never weaken a check to make it pass, never declare success on partial
+       green.
 
     ## Pressure-test — when the diff changes APEX's own rules
 

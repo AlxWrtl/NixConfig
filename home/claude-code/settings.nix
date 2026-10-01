@@ -497,6 +497,9 @@ in
         # and Edit denies are also merged into sandbox denyWrite.
         "Edit(**/.git/hooks/**)"
         "Edit(**/.git/config)"
+        # correction-budget.js counter: Edit deny also lands in sandbox
+        # denyWrite, so neither Edit/Write nor Bash can reset a run's rounds.
+        "Edit(~/.claude/apex-correction-budget/**)"
         "Bash(gh repo delete*)"
         "Bash(gh auth token*)"
         "Bash(gh auth *--show-token*)"
@@ -606,6 +609,19 @@ in
               command = "${node} ~/.claude/hooks/governance-audit.js";
               timeout = 3;
               async = true;
+            }
+          ];
+        }
+        {
+          matcher = "Agent|SendMessage";
+          hooks = [
+            {
+              type = "command";
+              # APEX correction-round budget: denies the 3rd marked round of a
+              # run, spawned or re-briefed by SendMessage. NOT async — a deny
+              # must land before the spawn.
+              command = "${node} ~/.claude/hooks/correction-budget.js";
+              timeout = 5;
             }
           ];
         }

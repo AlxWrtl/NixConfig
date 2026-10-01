@@ -83,7 +83,12 @@ let
   invariants = [
     {
       name = "verify: correction rounds are bounded";
-      needle = "Max 3 correction rounds";
+      needle = "Max 2 correction rounds";
+    }
+    {
+      name = "verify: correction briefs carry the budget marker";
+      needle = "correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`";
+      scope = skills.apexOrchestration;
     }
     {
       name = "verify: checks are never weakened to pass";

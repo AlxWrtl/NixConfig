@@ -36,7 +36,8 @@
 #      marked round is denied, a SendMessage re-brief counted alongside) and
 #      the marker a brief naming 06-resolve.md or a correction round must
 #      carry. Run 64 adds format-typescript's prettier-config gate: a file
-#      whose project has no prettier config is never written. Every other
+#      whose project has no prettier config is never written. Run 65 adds
+#      the linear `git` prefix: 1000 `-C` before a commit on master. Every other
 #      case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -319,6 +320,10 @@ let
       hook = "block-main-bash.js";
       text = "function isVaultTop(dir) {";
     };
+    A14 = {
+      hook = "block-main-bash.js";
+      text = "-[Cc]\\s+(?!--?[A-Za-z][\\w-]*(?:=\\S+)?\\s)";
+    };
     A5-require = {
       hook = "format-typescript.js";
       text = "const { spawnSync } = require(\"child_process\");";
@@ -550,6 +555,20 @@ let
         }
       ];
     }
+    # Run 65. The `git` prefix without its option-shaped-value guard: each
+    # `-C` reads as a value or as an option, a failing rule backtracks
+    # through Fibonacci-many splits, and 1000 of them outlive the host timeout.
+    {
+      id = "M14";
+      hook = "block-main-bash.js";
+      kills = "bb-master-C-flood";
+      swaps = [
+        {
+          anchor = "A14";
+          to = "-[Cc]\\s+";
+        }
+      ];
+    }
     # Run 62. A third round allowed: the cap is one round looser than stated.
     {
       id = "M-cb-cap";
@@ -617,6 +636,8 @@ let
     "bb-master-nogit"
     "bb-master-hung"
     "bb-master-nl-flood"
+    "bb-master-C-flood"
+    "bb-master-gl-bound"
     "bb-master-status"
     "bb-local-commit"
     "bb-feat-commit"
@@ -766,6 +787,11 @@ let
     # A commit followed by 64 KB of newlines, built by jq: a shell `$(…)`
     # would strip the very newlines the case is about.
     bb_flood() { ${jq} -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:("git commit -m x" + ("\n" * 65536))}}'; }
+    # 1000 bare `-C` before the verb: linear now, past any timeout before run 65.
+    bb_cflood() { ${jq} -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:("git" + (" -C" * 1000) + " commit")}}'; }
+    # 4000 `git` words over 68 KB: past the G·L scan bound, refused unscanned
+    # (4.7 s, i.e. a host-timeout allow, before the bound existed).
+    bb_glbound() { ${jq} -cn '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:("git" + (" -c user.name=git" * 4000) + " commit")}}'; }
 
     # correction-budget: run dirs live in a fixture repo, the counter under
     # $HOME, which run() pins to $TMPDIR. The counter thus outlives a case and
@@ -917,6 +943,10 @@ let
           run "$lbl" "$2" "$MASTER" "$root/hangbin" "$(bb_in "git commit -m x")"; is_deny "did not answer in time" ;;
         bb-master-nl-flood)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_flood)"; is_deny "BLOCKED: on master." ;;
+        bb-master-C-flood)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_cflood)"; is_deny "BLOCKED: on master." ;;
+        bb-master-gl-bound)
+          run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_glbound)"; is_deny "too large to scan" ;;
         bb-master-status)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "git status")"; is_allow ;;
         # No remote is no exemption (run 61, B3): the non-vault control.

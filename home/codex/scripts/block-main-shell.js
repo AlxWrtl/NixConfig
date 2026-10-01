@@ -268,9 +268,15 @@ const oneOf = (...alts) => "(?:" + alts.map(src).join("|") + ")";
 // be tried BEFORE the generic option branch. A value is a RUN of quoted
 // regions and plain characters, and each character has exactly ONE branch —
 // the naive (?:'[^']*'|"[^"]*"|\S)+ shape backtracked exponentially on
-// `git -c 'x'"y"` repeated, and a FAILING match never came back.
+// `git -c 'x'"y"` repeated, and a FAILING match never came back. Same rule one
+// level up: a `-c` / `-C` value may not be option-shaped (the `(?!--?...\s)`
+// guard), since the generic branch already owns that token — otherwise
+// `-C -C -C ...` splits Fibonacci-many ways and 30 of them took 3.3 s.
+// That makes it linear per `git` start, not in total: an unanchored test
+// retries at every `git` word, so the cost is (git words) x (length). The
+// product is bounded by SCAN_BOUND in main(), before any rule runs.
 const GIT =
-  /\bgit(?:\s+(?:-[Cc]\s+(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
+  /\bgit(?:\s+(?:-[Cc]\s+(?!--?[A-Za-z][\w-]*(?:=\S+)?\s)(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
 
 // End of a verb, or of a short-option cluster. NOT `\b`: `-` is a non-word
 // character, so `\b` cannot tell the end of `merge` from the start of
@@ -668,6 +674,17 @@ const PUSH_SEG = new RegExp(
   "g",
 );
 const DST_WORD = new RegExp("\\s" + src(PROTECTED_DST));
+// (git words) x (length) is what every GIT-prefixed regex costs; counted in
+// one linear pass. 1e7 keeps the scan under ~100 ms, while a 20 KB heredoc
+// naming git a dozen times is ~2.4e5.
+const SCAN_BOUND = 1e7;
+const GIT_WORD = /\bgit/g;
+const scanCost = (c) => {
+  let g = 0;
+  GIT_WORD.lastIndex = 0;
+  while (GIT_WORD.exec(c) !== null) g++;
+  return { g: g, l: c.length, over: g * c.length > SCAN_BOUND };
+};
 const scan = (v) => [...v.matchAll(PUSH_SEG)].some((m) => DST_WORD.test(m[1]));
 const pushTargetsProtectedRef = (c) => {
   const v = c.replace(/\\\n/g, " ");
@@ -1253,6 +1270,48 @@ function main() {
   );
 
   if (tryBranchEscape(dirs, run)) return;
+
+  // Past the size bound no GIT-prefixed regex runs: a push naming main/master
+  // is refused outright, anything else is judged as a hit on every directory
+  // it may land in.
+  const cost = scanCost(cmd);
+  if (cost.over) {
+    const big = {
+      id: "scan-size-bound",
+      family: "git",
+      why:
+        "is too large to scan (" +
+        cost.g +
+        " `git` words x " +
+        cost.l +
+        " chars exceeds the " +
+        SCAN_BOUND +
+        " size bound)",
+    };
+    if (/\bpush(?![\w-])/.test(cmd) && /(?:master|main)(?![\w-])/.test(cmd))
+      deny(
+        "BLOCKED: this shell command " +
+          big.why +
+          " and names a push and main/master (rule " +
+          big.id +
+          "). " +
+          CUT,
+      );
+    const brt = retargetDirs(texts, dirs, run);
+    if (brt.bad !== null)
+      denyUnverifiable(
+        "the command " +
+          big.why +
+          " and targets a directory that cannot be resolved (" +
+          safe(brt.bad.slice(0, 80)) +
+          ")",
+      );
+    const bigAll = dirs.slice();
+    for (const d of brt.dirs) if (bigAll.indexOf(d) === -1) bigAll.push(d);
+    if (bigAll.length === 0 && brt.gitDirs.length === 0)
+      denyUnverifiable("no candidate working directory exists");
+    decide(bigAll, [big], brt.gitDirs);
+  }
 
   // Unconditional: no repo, remote or branch lookup decides this one.
   if (pushTargetsProtectedRef(cmd))

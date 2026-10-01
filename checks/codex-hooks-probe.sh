@@ -462,6 +462,10 @@ b8_row bs-b8-vim-version-pass "$FIX_MASTER" 0 "vim --version"
 # under MAX_CMD, on FEATURE: must be inspected and allowed inside 1 s.
 FS_FAST_CMD=$(printf 'sed curl tar vim wget -x (cd %.0s' $(seq 4366))
 S_FS_FAST=$(sh_payload sh-fs-fast "$FIX_FEAT" "\"$FS_FAST_CMD\"")
+# Run 65: 1000 bare `-C` before the verb (Fibonacci backtracking before the
+# GIT value guard), and 4000 `git` words over 68 KB (past the G·L scan bound).
+S_C_FLOOD=$(sh_payload sh-c-flood "$FIX_MASTER" "\"git$(printf ' -C%.0s' $(seq 1000)) commit\"")
+S_GL_BOUND=$(sh_payload sh-gl-bound "$FIX_MASTER" "\"git$(printf ' -c user.name=git%.0s' $(seq 4000)) commit\"")
 FS_FAST_NOCD_CMD=$(printf 'sed curl tar vim wget -x %.0s' $(seq 4366))
 S_FS_FAST_NOCD=$(sh_payload sh-fs-fast-nocd "$FIX_FEAT" "\"$FS_FAST_NOCD_CMD\"")
 S_NOCMD=$(pay sh-nocmd "{\"hook_event_name\":\"PreToolUse\",\"tool_name\":\"shell\",\"cwd\":\"$FIX_MASTER\",\"tool_input\":{\"description\":\"list files\"}}")
@@ -723,6 +727,8 @@ $B8_ROWS
 # Deny is intended: >64 cd targets -> unresolvable -> fail-closed; still must be fast.
 bs-fs-regex-128k|bs|$FIX_FEAT|base|$S_FS_FAST|2|-|more than 64 directory changes|1
 bs-fs-regex-128k-nocd|bs|$FIX_FEAT|base|$S_FS_FAST_NOCD|0|-|-|1
+bs-master-C-flood|bs|$FIX_MASTER|base|$S_C_FLOOD|2|.hookSpecificOutput.permissionDecision == "deny"|BLOCKED:|1
+bs-master-gl-bound|bs|$FIX_MASTER|base|$S_GL_BOUND|2|.hookSpecificOutput.permissionDecision == "deny"|too large to scan.*size bound|1
 bs-malformed-stdin|bs|$FIX_MASTER|base|$P_BROKEN|2|.hookSpecificOutput.permissionDecision == "deny"|-|
 bs-missing-command|bs|$FIX_MASTER|base|$S_NOCMD|2|.hookSpecificOutput.permissionDecision == "deny"|-|
 bs-no-git-on-path|bs|$FIX_MASTER|nogit|$S_PERL|2|.hookSpecificOutput.permissionDecision == "deny"|-|

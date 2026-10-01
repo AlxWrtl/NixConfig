@@ -65,7 +65,19 @@ if (typeof watchdog.unref === "function") watchdog.unref();
 // region, a quote without one is a literal (that is the `(?![^']*')`
 // guard, which also keeps an UNBALANCED quote consuming exactly what the
 // old `\S+` consumed, so no denial is lost), anything else is itself.
-const GIT = /\bgit(?:\s+(?:-[Cc]\s+(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
+// LINEAR PER `git` START, the same rule one level up: a `-c` / `-C` value
+// may not itself be option-shaped (the `(?!--?[A-Za-z]...\s)` guard),
+// because that token is already the generic branch's. Without it
+// `-C -C -C ...` split as value-or-option in Fibonacci-many ways and a
+// failing rule backtracked through all of them: 30 `-C` took 1.6 s, 64
+// never returned, and the host reads its 5 s timeout as an allow.
+// Linear per start is not linear in total: an unanchored test retries at
+// every `git` word, and each try may run to the end of the string, so the
+// cost is (number of `git` words) x (length). `git -c user.name=git`
+// repeated 6000 times took 10.5 s. That product is bounded by SCAN_BOUND
+// in main(): past it no regex runs at all, and the command is refused
+// wherever a protected branch is in play.
+const GIT = /\bgit(?:\s+(?:-[Cc]\s+(?!--?[A-Za-z][\w-]*(?:=\S+)?\s)(?:'[^']*'|'(?![^']*')|"[^"]*"|"(?![^"]*")|[^\s'"])+|--?[A-Za-z][\w-]*(?:=\S+)?))*\s+/;
 
 // End of a verb, or of a short-option cluster. NOT `\b`: `\b` only asks for
 // a word/non-word boundary, and `-` is a non-word char, so it cannot tell
@@ -381,6 +393,21 @@ const PROTECTED_DST = /\+?(?:[^\s:;&|<>()]*:)?(?:refs\/heads\/|heads\/)?(?:maste
 // continuation to the shell, so it is folded to a space first.
 const PUSH_SEG = new RegExp(src(GIT) + "push" + src(EOW) + "([^;&|\\n()]*)", "g");
 const DST_WORD = new RegExp("\\s" + src(PROTECTED_DST));
+// Every GIT-prefixed regex above costs (number of `git` words) x (length):
+// see the comment on GIT. Both are counted in one linear pass, and past
+// SCAN_BOUND the command is not scanned. 1e7 keeps the full scan under
+// ~100 ms; a 20 KB heredoc commit message naming git a dozen times is
+// ~2.4e5. Over the bound, a push and a master/main word anywhere deny
+// outright (the destination scan is skipped, so it is approximated by
+// excess), and everything else is judged as if a rule had fired.
+const SCAN_BOUND = 1e7;
+const GIT_WORD = /\bgit/g;
+const scanCost = (c) => {
+  let g = 0;
+  GIT_WORD.lastIndex = 0;
+  while (GIT_WORD.exec(c) !== null) g++;
+  return { g: g, l: c.length, over: g * c.length > SCAN_BOUND };
+};
 const scan = (v) => [...v.matchAll(PUSH_SEG)].some((m) => DST_WORD.test(m[1]));
 const pushTargetsProtectedRef = (c) => {
   const v = c.replace(/\\\n/g, " ");
@@ -703,10 +730,19 @@ function main() {
   const ti = data.tool_input;
   const cmd = ti && typeof ti === "object" && !Array.isArray(ti) ? ti.command : undefined;
   if (typeof cmd !== "string") { decideBlind([process.cwd()], "the command field was not a string"); return; }
-  if (pushTargetsProtectedRef(cmd)) {
-    deny("BLOCKED: this push targets main/master. Push your own branch by name (git push -u origin <your-branch>) and merge via a PR on GitHub.");
+  const cost = scanCost(cmd);
+  const tooBig = cost.over
+    ? "the command is too large to scan (" + cost.g + " `git` words x " + cost.l + " chars exceeds the " + SCAN_BOUND + " size bound)"
+    : null;
+  if (tooBig !== null) {
+    if (/\bpush(?![\w-])/.test(cmd) && /(?:master|main)(?![\w-])/.test(cmd))
+      deny("BLOCKED: " + tooBig + " and it names a push and main/master. " + CUT);
+  } else {
+    if (pushTargetsProtectedRef(cmd)) {
+      deny("BLOCKED: this push targets main/master. Push your own branch by name (git push -u origin <your-branch>) and merge via a PR on GitHub.");
+    }
+    if (!movesRefOnCurrentBranch(cmd)) allow();
   }
-  if (!movesRefOnCurrentBranch(cmd)) allow();
   // Check the branch of EVERY repo the command may write to, not only the
   // session cwd (run 61): the cwd, unless the command provably leaves it
   // (targetsOf), then each directory it names. Reading the cwd alone
@@ -725,7 +761,10 @@ function main() {
     if (st.kind === "broken") denyUnverifiable(st.why);
     if (st.kind === "branch" && PROTECTED.indexOf(st.branch) !== -1) {
       branchSeen = st.branch;
-      if (!isVaultTop(process.cwd())) deny("BLOCKED: on " + safe(st.branch) + ". " + CUT);
+      if (!isVaultTop(process.cwd())) {
+        if (tooBig !== null) denyOnBranch(tooBig);
+        deny("BLOCKED: on " + safe(st.branch) + ". " + CUT);
+      }
     }
   }
   for (const x of t.found) {
@@ -733,6 +772,7 @@ function main() {
     if (c.kind === "broken") denyUnverifiable(c.why + " in the directory the command targets");
     if (c.kind !== "branch" || PROTECTED.indexOf(c.branch) === -1) continue;
     if (!x.gd && isVaultTop(x.p)) continue;
+    if (tooBig !== null) { branchSeen = c.branch; denyOnBranch(tooBig); }
     deny("BLOCKED: on " + safe(c.branch) + ". " + CUT);
   }
   if (t.bad !== null) {

@@ -86,6 +86,60 @@ describe('board reducer', () => {
     expect(finishAgentTurn(one, 'nope', 'answer', 1)).toBe(one)
   })
 
+  test('a killed or failed owner closes its running shells', () => {
+    const owner = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
+    const list = addShell(owner, { id: 'b1', label: 'sleep', startedAt: 1, ownerAgentId: 'a1' })
+    const bySnapshot = applyAgentSnapshot(list, [{ id: 'a1', description: 'x', type: 'Explore', status: 'killed' }], 50)
+    const shellAfter = bySnapshot.find(t => t.id === 'b1')
+    expect(shellAfter?.status).toBe('killed')
+    expect(shellAfter?.endedAt).toBe(50)
+    const byTurn = finishAgentTurn(list, 'a1', 'error', 60)
+    expect(byTurn.find(t => t.id === 'b1')?.status).toBe('killed')
+    expect(byTurn.find(t => t.id === 'b1')?.endedAt).toBe(60)
+    expect(finishAgentTurn(list, 'a1', 'aborted', 70).find(t => t.id === 'b1')?.status).toBe('killed')
+  })
+
+  test('a completed owner keeps its shells running', () => {
+    const owner = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
+    const list = addShell(owner, { id: 'b1', label: 'sleep', startedAt: 1, ownerAgentId: 'a1' })
+    const bySnapshot = applyAgentSnapshot(list, [{ id: 'a1', description: 'x', type: 'Explore', status: 'completed' }], 50)
+    expect(bySnapshot.find(t => t.id === 'b1')?.status).toBe('running')
+    expect(finishAgentTurn(list, 'a1', 'answer', 50).find(t => t.id === 'b1')?.status).toBe('running')
+  })
+
+  test('shells of another owner or of the main loop are untouched', () => {
+    let list = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
+    list = addAgent(list, { id: 'a2', label: 'y', startedAt: 0, agentType: 'Explore' })
+    list = addShell(list, { id: 'b2', label: 'other', startedAt: 1, ownerAgentId: 'a2' })
+    list = addShell(list, { id: 'b3', label: 'main', startedAt: 2 })
+    const out = finishAgentTurn(list, 'a1', 'aborted', 50)
+    expect(out.find(t => t.id === 'b2')?.status).toBe('running')
+    expect(out.find(t => t.id === 'b3')?.status).toBe('running')
+  })
+
+  test('an already finished shell keeps its end state and time', () => {
+    const owner = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
+    const started = addShell(owner, { id: 'b1', label: 'sleep', startedAt: 1, ownerAgentId: 'a1' })
+    const done = finishByNotification(started, { id: 'b1', status: 'completed' }, 5)
+    const out = finishAgentTurn(done, 'a1', 'aborted', 50)
+    expect(out.find(t => t.id === 'b1')?.status).toBe('completed')
+    expect(out.find(t => t.id === 'b1')?.endedAt).toBe(5)
+  })
+
+  test('no shell to close: the snapshot answers the same reference', () => {
+    const owner = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
+    const list = addShell(owner, { id: 'b1', label: 'sleep', startedAt: 1, ownerAgentId: 'a1' })
+    expect(applyAgentSnapshot(list, [{ id: 'a1', description: 'x', type: 'Explore', status: 'running' }], 50)).toBe(list)
+  })
+
+  test('an owner gone from the agent list closes its running shells', () => {
+    const owner = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
+    const list = addShell(owner, { id: 'b1', label: 'sleep', startedAt: 1, ownerAgentId: 'a1' })
+    const out = applyAgentSnapshot(list, [], 80)
+    expect(out.find(t => t.id === 'b1')?.status).toBe('killed')
+    expect(out.find(t => t.id === 'b1')?.endedAt).toBe(80)
+  })
+
   test('clear empties, and an empty list stays the same reference', () => {
     expect(clear(shell('b1')).length).toBe(0)
     const empty: Task[] = []

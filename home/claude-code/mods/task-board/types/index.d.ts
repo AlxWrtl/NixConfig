@@ -16,6 +16,8 @@ export type TaskBoardTask = {
   status: TaskBoardStatus
   toolUseId?: string
   agentType?: string
+  // Shell only: the subagent whose loop started it (absent on the main loop).
+  ownerAgentId?: string
 }
 
 declare module 'claude-code' {

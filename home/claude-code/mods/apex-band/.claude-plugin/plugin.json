@@ -1,0 +1,7 @@
+{
+  "name": "apex-band",
+  "version": "0.1.0",
+  "description": "Bande au-dessus du prompt : run APEX en cours (titre, mode, étape, branche, baseline).",
+  "author": { "name": "alx" },
+  "types": "./types/index.d.ts"
+}

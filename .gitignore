@@ -8,3 +8,6 @@ result-*
 # Documentation (moved to .claude/docs)
 .claude/docs/
 CLAUDE.md
+
+# Claude Code mods: types the engine lays into each loaded mod folder
+home/claude-code/mods/*/.claude-plugin/types/

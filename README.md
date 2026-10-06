@@ -108,6 +108,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── claude-code.nix          # Claude Code entrypoint — imports claude-code/
 │   ├── claude-code/             # settings, hooks, agents, skills, commands, rules…
 │   │                            #   incl. skills-manifest.nix (Claude skills)
+│   │                            #   and mods/ (task-board, apex-band) via mods.nix
 │   ├── codex.nix                # Codex CLI entrypoint — imports codex/
 │   └── codex/                   # hooks.json generator, activation, hook & merge scripts
 ├── checks/                      # Flake checks (see Quality Gates)
@@ -116,6 +117,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── apex-plan-provenance.nix
 │   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
 │   ├── claude-config.nix
+│   ├── claude-mods.nix
 │   ├── codex-config.nix
 │   ├── hook-wiring.nix
 │   ├── js-lint.nix
@@ -192,6 +194,7 @@ system.
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
 | `apex-plan-provenance` | Every premise in an APEX plan carries `[M]` or `[I]` as its first token: the clause still stands in step-02-plan, and the line detector is run against two inline fixtures — one correctly tagged, one identical but for a stripped tag — so a detector that stopped detecting fails instead of passing. Presence is not truth: it proves the tag is THERE, never that it is earned; falsifying a tag is the examine reviewer's job and the Fable premises pass |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
+| `claude-mods` | Claude Code mods (`home/claude-code/mods.nix`), offline structure only: `names` equal the folders under `home/claude-code/mods/` both ways, each `plugin.json` parses and names its folder, each `hooks.json` names one existing module, no `.js` there, no sound / host process / network / file write / dynamic import / toast in any source and no `deny` in a hooks module, settings `env.CLAUDE_CODE_PLUGIN_DIRS` equal to the `~/.claude/mods/<name>` folders, activation copying them with the DRY_RUN skip and the engine's types excluded. Canaries: the scan must flag `$.audio.speak`, the filter a `.js` name, the comparison an extra name. `claude plugin validate --strict` and `claude plugin test` on each mod folder are the code gate and run in the session (`claude` is not in the build sandbox) |
 | `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |
 | `hook-wiring` | Claude Code hook wiring, from the evaluated module rather than from text: every hook file `home/claude-code.nix` installs is named by a `command` in `home/claude-code/settings.nix` and every such command names a file that exists, both senses reported apart; `additionalContext` emitted only inside `hookSpecificOutput`, the one shape the reference documents; the `hookEventName` a hook writes equal to the event registering it. Each direction is guarded by a corpus-non-empty assertion first, because an extractor that stops matching would otherwise be green forever. The branch guards are also RUN against fixture repos, each under the timeout its registration gives the host: `protect-main.js` and `block-main-bash.js` must deny on malformed input and on a missing or hung git and stay silent off a protected branch, `format-typescript.js` must hand a `$(…)` file path to prettier unexpanded and must not call `prettier --write` when `--find-config-path` finds no prettier config. Canary mutants, which must turn their case red by a missed deny or a PWNED file and not by a crash, cover these branches only: malformed JSON, a missing git and the time budget in `protect-main.js`; malformed JSON, a broken git in the cwd or in a `cd` target, and the linear executor scan on a newline flood in `block-main-bash.js`; each of the two argv calls and the prettier-config gate in `format-typescript.js`. The other cases are graded without a mutant |
 | `js-lint` | ESLint (`pkgs.eslint`, eslint:recommended rebuilt from `builtinRules`, node globals) over every tracked `.js`: the Claude hooks in `home/claude-code/hooks/` and the Codex scripts; asserts the file count and that a canary with an unused variable turns it red |
@@ -243,9 +246,23 @@ list, deliberately not duplicated here.
 | Shell | home-manager (`home/zsh.nix`) | zsh + fzf + zoxide + autosuggestions + syntax highlighting + aliases |
 | Git | home-manager (`home/git.nix`) | SSH signing, rebase-on-pull, fsck |
 | SSH | home-manager (`home/ssh.nix`) | Host configs (Tailscale) |
-| Claude Code | home-manager (`home/claude-code/`) | settings, hooks, agents, skills, commands, rules, shell aliases |
+| Claude Code | home-manager (`home/claude-code/`) | settings, hooks, agents, skills, commands, rules, mods, shell aliases |
 | Codex CLI | home-manager (`home/codex/`) | `hooks.json` + hook scripts (store symlinks), `config.toml` merge, hook-trust verification |
 | Secrets | git-crypt (`secrets.nix`, `backups/`) | Git email, SSH hosts, app config exports |
+
+**Claude Code mods.** `home/claude-code/mods.nix` lists the mods under
+`home/claude-code/mods/` (TypeScript plugins of function hooks, no
+dependency, no sound). Activation copies them into `~/.claude/mods` as real
+writable files — that folder is nix-owned, a hand-placed mod there is deleted
+on the next rebuild — and `env.CLAUDE_CODE_PLUGIN_DIRS` loads them.
+`task-board`: `/task-board` opens a "Tâches" pane listing background shells
+and subagents with their duration and state (en cours / fini / échoué).
+`apex-band`: a band above the prompt shows the live APEX run of the working
+directory (title, mode, current step, branch, baseline) and nothing
+otherwise. Run yourself after a rebuild, in a new session: `/task-board`, a
+background `sleep 5` going from en cours to fini, a failing background
+command shown échoué, the band present during an APEX run and absent
+elsewhere.
 
 ## Codex Hooks — Trusting Them After a Rebuild
 

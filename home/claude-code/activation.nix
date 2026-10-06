@@ -3,6 +3,7 @@
   pkgs,
   lib,
   scraplingShimPkg,
+  modsSrc,
 }:
 {
   claudeCodeDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -206,6 +207,38 @@
     set -e
     if [ "$settingsMergeRc" -ne 0 ]; then
       echo "⚠ claudeCodeSettingsMerge failed (rc=$settingsMergeRc) — settings.json not merged, see error above" >&2
+    fi
+  '';
+
+  # -------------------------
+  # Claude Code mods → ~/.claude/mods (real, user-writable copies)
+  # -------------------------
+  # ~/.claude/mods is nix-owned: `--delete` removes whatever is not in
+  # home/claude-code/mods, a hand-placed folder included. Not home.file: the
+  # engine writes `.claude-plugin/types/` into every loaded mod folder, which a
+  # read-only store symlink refuses; those engine files are excluded from both
+  # the copy and the delete. Same subshell + rc-capture as
+  # claudeCodeSettingsMerge: a failure is reported, the chain goes on.
+  # `--checksum`, not `-t`: every store file has mtime 1, so `-t` would give
+  # an edited file of unchanged size the same size+mtime as its old copy and
+  # rsync's quick check would skip it. Unchanged files are left untouched,
+  # so a running session does not hot-reload on a rebuild that changed nothing.
+  # Dry-run (HM sets DRY_RUN, tested for set-ness): skip, write nothing.
+  claudeCodeMods = lib.hm.dag.entryAfter [ "claudeCodeDirs" ] ''
+    set +e
+    (
+      if [[ -v DRY_RUN ]]; then echo "dry-run: skip claudeCodeMods"; exit 0; fi
+      set -euo pipefail
+      mkdir -p "$HOME/.claude/mods"
+      ${pkgs.rsync}/bin/rsync -r --checksum --delete \
+        --exclude='/*/.claude-plugin/types/' \
+        --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
+        ${modsSrc}/ "$HOME/.claude/mods/"
+    )
+    modsRc=$?
+    set -e
+    if [ "$modsRc" -ne 0 ]; then
+      echo "⚠ claudeCodeMods failed (rc=$modsRc) — ~/.claude/mods not updated, see error above" >&2
     fi
   '';
 

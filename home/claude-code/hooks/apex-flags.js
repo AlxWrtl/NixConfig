@@ -50,20 +50,15 @@ process.stdin.on("end", () => {
 
     const next = (kept.join(" ") + " " + rest).trim();
 
-    // The Fable spend is decided here, by regex, not by the coordinator's
-    // judgement mid-run — that judgement is exactly what kept getting
-    // skipped. HIGH only: not because the quota is scarce (measured here,
-    // 21 Fable spawns against 6489 coordinator messages — it never bound),
-    // but because an independent read is worth its round-trip only where a
-    // miss is expensive, which is what ORCHESTRATION.md keeps it for.
+    // HIGH only: the detector + fallback rule lives in ORCHESTRATION.md External verify
     const fable = isHigh
       ? "HIGH risk signal in this brief (hook/settings/permission/sandbox/deny/secret/"
-        + "credential). The Fable read-only pass is MANDATORY for this run: once the "
-        + "machine gate is green, spawn a subagent with an explicit model: fable over "
-        + "the REAL diff plus the ACs, then apply its bounded fix-list. Fable is "
-        + "read-only — it returns PASS or a fix-list and never edits. Unless -E was "
-        + "typed, the external cross-vendor pass (-e) also runs, IN ADDITION TO the "
-        + "Fable pass, never instead of it; a BLOCKED external verdict is an unrun check. "
+        + "credential). Unless -E was typed, the external cross-vendor pass (-e) runs as a "
+        + "read-only DETECTOR once the machine gate is green: triage each finding by evidence "
+        + "(test, command, file:line) — confirmed goes to an Opus fix, unconfirmed is "
+        + "dismissed with its reason, none is applied as-is. A BLOCKED external verdict, or "
+        + "-E typed, leaves no usable external verdict: spawn ONE Fable read-only pass "
+        + "(explicit model: fable) over the REAL diff plus the ACs and record the cause. "
         + "Fast mode is NOT eligible for this run."
       : null;
 

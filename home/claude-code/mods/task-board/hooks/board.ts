@@ -31,7 +31,9 @@ const TEAMMATE = 'teammate'
 
 // An ended status word, or undefined for anything else (still running, or a
 // word this build does not name: the task keeps `running`).
-function endedStatus(word: string | undefined): Status | undefined {
+type EndedStatus = Exclude<Status, 'running'>
+
+function endedStatus(word: string | undefined): EndedStatus | undefined {
   if (word === 'completed' || word === 'failed' || word === 'killed') return word
   return undefined
 }
@@ -98,6 +100,39 @@ export function finishByNotification(tasks: Task[], note: Notification, now: num
   if (task === undefined || task.status !== 'running') return tasks
   const endedAt = note.durationMs === undefined ? now : task.startedAt + note.durationMs
   return replaceAt(tasks, index, { ...task, status, endedAt })
+}
+
+// A task-notification row's text, as a subagent's transcript keeps it:
+// `<task-id>…</task-id>` and `<status>…</status>`. A missing id, or a status
+// word that is not an end, reads as undefined.
+export function parseTaskNotification(
+  text: string,
+): { id: string; status: EndedStatus } | undefined {
+  const id = /<task-id>([^<]*)<\/task-id>/.exec(text)?.[1]?.trim()
+  const status = endedStatus(/<status>([^<]*)<\/status>/.exec(text)?.[1]?.trim())
+  if (id === undefined || id === '' || status === undefined) return undefined
+  return { id, status }
+}
+
+// Every `<task-notification>…</task-notification>` block of a row: a row
+// delivered while the loop was busy may batch several. A malformed block is
+// skipped.
+export function parseTaskNotifications(text: string): Array<{ id: string; status: EndedStatus }> {
+  const notes: Array<{ id: string; status: EndedStatus }> = []
+  for (const block of text.matchAll(/<task-notification>([\s\S]*?)<\/task-notification>/g)) {
+    const note = parseTaskNotification(block[1] ?? '')
+    if (note !== undefined) notes.push(note)
+  }
+  return notes
+}
+
+// A shell stopped by TaskStop: only a running shell row closes, as killed;
+// an agent id (TaskStop accepts both) or an unknown one is a no-op.
+export function stopShell(tasks: Task[], id: string, now: number): Task[] {
+  const index = tasks.findIndex(t => t.id === id && t.kind === 'shell')
+  const task = tasks[index]
+  if (task === undefined || task.status !== 'running') return tasks
+  return replaceAt(tasks, index, { ...task, status: 'killed', endedAt: now })
 }
 
 // A subagent's background shell notifies that subagent's loop, never the

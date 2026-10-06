@@ -317,11 +317,73 @@ let
       scope = skills.apexStep00Init;
     }
     {
-      # The cheap failure: treating the external pass as a substitute and
-      # dropping the Fable diff read, trading a diff-grounded review for a
-      # vendor opinion.
-      name = "orchestration: external verify adds to the Fable pass, never replaces it";
-      needle = "IN ADDITION TO the Fable diff pass, never instead of it.";
+      # On high-stakes the external pass IS the diff read, and Fable is held
+      # back for the fallback. Losing this clause lets the old default creep
+      # back: a Fable diff pass stacked beside -e on every high-stakes run.
+      name = "orchestration: on high-stakes, external is the detector and Fable is not stacked beside it";
+      needle = "is the default read-only DETECTOR on the diff, and Fable is not spawned beside it";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # Cross-family detection buys recall, not precision: a finding applied
+      # as-is is a vendor opinion merged unread. Evidence decides each one.
+      name = "orchestration: external findings are triaged by evidence";
+      needle = "Triage each external finding by evidence";
+      scope = skills.apexOrchestration;
+    }
+    {
+      # The same triage rule, at the site the coordinator reads on a HIGH
+      # signal. Without it the hook string can drift back to "apply the list".
+      name = "hook: a HIGH signal tells the coordinator to triage each finding by evidence";
+      needle = "triage each finding by evidence";
+      scope = hooks.hookApexFlags;
+    }
+    {
+      # Scoped to step-04: the triage file is written at validate, and the
+      # tally is what the ~4-week review of the -e trade reads.
+      name = "validate: external findings are recorded in a triage file";
+      needle = "04-external-triage.md";
+      scope = skills.apexStep04Validate;
+    }
+    {
+      name = "validate: the triage file carries a confirmed/unique/dismissed tally";
+      needle = "`confirmed=N unique=U dismissed=D`";
+      scope = skills.apexStep04Validate;
+    }
+    {
+      # The fallback has to be reachable from the step that sees the BLOCKED
+      # verdict; an orchestration-only copy leaves validate without the trigger.
+      name = "validate: no usable external verdict spawns the Fable fallback";
+      needle = "spawn the Fable fallback";
+      scope = skills.apexStep04Validate;
+    }
+    {
+      name = "examine: one blind opus reviewer works a merged checklist";
+      needle = "Launch ONE blind code-reviewer agent";
+      scope = skills.apexStep05Examine;
+    }
+    {
+      # One reviewer means the security boxes are no longer a standing agent;
+      # this is the clause that still puts them on the checklist when it matters.
+      name = "examine: security and data-integrity boxes are added on a HIGH signal";
+      needle = "security and data-integrity boxes are added to the reviewer's checklist when";
+      scope = skills.apexStep05Examine;
+    }
+    {
+      name = "plan: no premises pass runs unless -p is typed";
+      needle = "without `-p` typed, no premises pass runs";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # A coordinator that reads full command output pays for it on every
+      # later turn; the exit code plus the tail is what a verdict needs.
+      name = "orchestration: the coordinator reads command output in the tail";
+      needle = "reads command output in the tail only";
+      scope = skills.apexOrchestration;
+    }
+    {
+      name = "orchestration: a verdict with no exit code is an unrun check";
+      needle = "A verdict with no exit code is an unrun check";
       scope = skills.apexOrchestration;
     }
     {
@@ -399,11 +461,12 @@ let
       scope = skills.apexStep01Analyze;
     }
     {
-      # The one clause that puts a SECOND reader on the analyze summary's
-      # absences and numbers. Scoped to analyze because a pass that runs after
-      # the plan is written reviews a conclusion, not its premises.
-      name = "analyze: absences and numbers get a Fable pass";
-      needle = "## Fable analyze pass (absences and numbers)";
+      # The one clause that still puts a SECOND reader on the analyze summary's
+      # absences and numbers, now that no separate Fable pass reads them: each
+      # reaches the plan as a premise, which the examine reviewer re-reads.
+      # Scoped to analyze because that is where the claim is first made.
+      name = "analyze: absences and numbers reach a re-reader as premises";
+      needle = "reaches a re-reader as a premise with its command";
       scope = skills.apexStep01Analyze;
     }
     {
@@ -444,23 +507,22 @@ let
       scope = skills.skillTestingPatterns;
     }
     {
-      # The clause that extends the Fable cartridge to the analyze summary. The
-      # four bounded artefacts are one sentence; without this needle the
-      # analyze item can be dropped from the list and every other orchestration
-      # needle stays green, leaving step-01's `## Fable analyze pass` section
-      # with nothing in ORCHESTRATION that lets a spawn be spent on it.
-      name = "orchestration: the analyze summary is a bounded artefact a Fable pass may read";
-      needle = "or the analyze summary's absence claims and numbers";
+      # The trigger of the Fable diff pass, now a fallback. Without this needle
+      # the trigger can be reworded into a default again (every high-stakes
+      # run) or into nothing (a BLOCKED external verdict leaves the diff
+      # unread), and every other orchestration needle stays green.
+      name = "orchestration: Fable fallback fires only without a usable external verdict";
+      needle = "has no usable external verdict — BLOCKED, or `-E` typed — spawn ONE Fable read-only pass";
       scope = skills.apexOrchestration;
     }
     {
-      # A Fable pass that runs without being written down leaves no audit
+      # A verify pass that runs without being written down leaves no audit
       # trail, and one that was planned and skipped leaves none either. Scoped
       # to step-02-plan because the record has to be made WHERE the plan is
       # written; the same sentence in orchestration would describe a duty with
       # no document to carry it.
-      name = "plan: the Fable passes that will run are recorded in the plan";
-      needle = "**Record in the plan which Fable passes will run**";
+      name = "plan: the verify passes that will run are recorded in the plan";
+      needle = "**Record in the plan which verify passes will run**";
       scope = skills.apexStep02Plan;
     }
     {
@@ -774,6 +836,25 @@ let
     ]
   ) (builtins.attrNames confidenceSites);
 
+  # The removed Fable default, guarded by absence. The needles above prove the
+  # detector + fallback wording is present; they cannot see the old "Fable on
+  # every high-stakes run" sentence re-added next to it, in the hook or in the
+  # skill text.
+  fableDefaultSites = {
+    hookApexFlags = [ "The Fable read-only pass is MANDATORY" ];
+    corpus = [
+      "IN ADDITION TO the Fable"
+      "is the DEFAULT — spawn it whether or not a premises pass"
+    ];
+  };
+  fableDefaultTexts = {
+    hookApexFlags = hooks.hookApexFlags;
+    inherit corpus;
+  };
+  staleFableDefault = builtins.filter (
+    n: builtins.any (s: pkgs.lib.hasInfix s fableDefaultTexts.${n}) fableDefaultSites.${n}
+  ) (builtins.attrNames fableDefaultSites);
+
   # Non-vacuity, asserted at the DEFINITION and not at the use site. `hasInfix
   # ""` is true against every string, so a needle emptied by a bad edit turns
   # its invariant permanently green — the exact silent-pass shape this file
@@ -1026,6 +1107,11 @@ let
       "confidence-score docs trigger is back in: "
       + builtins.concatStringsSep ", " staleConfidence
       + ". The trigger is categorical (API call / option / signature / version); a self-rated confidence is what fails silently."
+    )
+    ++ pkgs.lib.optional (staleFableDefault != [ ]) (
+      "the Fable-by-default verify is back in: "
+      + builtins.concatStringsSep ", " staleFableDefault
+      + ". On high-stakes the external pass is the detector; Fable runs only as the fallback (no usable external verdict) or on -p."
     )
     ++ pkgs.lib.optional (unknownSuiteFlags != [ ]) (
       "the eval-suite types flag(s) the skill no longer declares: "

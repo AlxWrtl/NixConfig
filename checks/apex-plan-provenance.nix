@@ -11,8 +11,8 @@
 # Measured in this repo on 2026-09-05: three rules were shipped, read well and
 # did nothing at all. `nix flake check` was green each time — because it proves
 # a clause is present, never that the clause does something. The reader able to
-# falsify a tag is Agent 1's slot in step-05-examine and the Fable premises
-# pass. Not this file.
+# falsify a tag is the premise box of the step-05-examine reviewer and, when
+# -p is typed, the Fable premises pass. Not this file.
 #
 # This check does NOT walk `.claude/output`. The fact is replayable in one
 # command: `.claude/` is gitignored, so `git ls-files .claude/output` returns

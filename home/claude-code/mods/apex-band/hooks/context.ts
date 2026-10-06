@@ -107,3 +107,16 @@ export function isLive(run: Run, mtimeMs: number, now: number): boolean {
   if (run.steps.length === 0) return true
   return run.steps.some(s => s.kind === 'pending' || s.kind === 'running')
 }
+
+// The branch named by a .git/HEAD file ("ref: refs/heads/<name>"), or
+// undefined for a detached HEAD (a bare sha) or anything unrecognised.
+export function headBranch(text: string): string | undefined {
+  const name = /^ref:\s*refs\/heads\/(\S+)\s*$/.exec(text.trim())?.[1]
+  return name === undefined || name === '' ? undefined : name
+}
+
+// Off-branch only when both the run's branch and HEAD's are known and
+// differ: a run without Branch, or a detached/unreadable HEAD, stays shown.
+export function onBranch(run: Run, head: string | undefined): boolean {
+  return run.branch === undefined || head === undefined || run.branch === head
+}

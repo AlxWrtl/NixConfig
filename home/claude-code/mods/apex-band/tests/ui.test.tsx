@@ -29,8 +29,9 @@ Baseline: green
 `
 
 // A fake working directory beneath the plugin: one run directory whose
-// context file was written `ageMs` before NOW, or no apex folder at all.
-function world(on: On, files: { ageMs: number } | null): void {
+// context file was written `ageMs` before NOW, or no apex folder at all;
+// `.git/HEAD` holds `head`, or is missing when `head` is undefined.
+function world(on: On, files: { ageMs: number } | null, head?: string): void {
   on('session.start', () => ({ cwd: '/work' }))
   on('session.cwd', () => ({ value: '/work' }))
   on('fs.list', ($, e) => {
@@ -40,7 +41,10 @@ function world(on: On, files: { ageMs: number } | null): void {
   on('fs.stat', () => ({
     value: { kind: 'file', size: CONTEXT.length, mtimeMs: NOW - (files?.ageMs ?? 0), isLink: false },
   }))
-  on('fs.read', () => ({ value: CONTEXT }))
+  on('fs.read', ($, e) => {
+    if (e.path !== '/work/.git/HEAD') return { value: CONTEXT }
+    return head === undefined ? { deny: 'ENOENT' } : { value: head }
+  })
   // The engine's own (empty) band beneath the plugin.
   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
     const { Box } = $.ui.resolve(e)
@@ -93,5 +97,25 @@ test('a survey takes the band', async ($, on) => {
     props: { ...BAND.props, hasSurvey: true },
   })
   expect(await ui.find({ type: 'Text', text: /APEX/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('nothing is drawn for a run on another branch', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { ageMs: 1000 }, 'ref: refs/heads/master\n')
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /APEX/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a run on the checked-out branch is drawn', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { ageMs: 1000 }, 'ref: refs/heads/feat/test\n')
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
+  expect(await ui.find({ type: 'Text', text: /APEX · run under test/ })).toBeDefined()
   await ui.unmount()
 })

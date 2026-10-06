@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { STALE_MS, isLive, parseContext, statusKind } from '../hooks/context.ts'
+import { STALE_MS, headBranch, isLive, onBranch, parseContext, statusKind } from '../hooks/context.ts'
 
 const NOW = 10 * STALE_MS
 
@@ -130,5 +130,33 @@ describe('isLive', () => {
   test('no Progress table: live on freshness alone', () => {
     expect(isLive(parseContext(NO_MODE, 'd'), NOW - 1000, NOW)).toBe(true)
     expect(isLive(parseContext(NO_MODE, 'd'), NOW - STALE_MS - 1, NOW)).toBe(false)
+  })
+})
+
+describe('headBranch', () => {
+  test('a symbolic ref names the branch', () => {
+    expect(headBranch('ref: refs/heads/master\n')).toBe('master')
+    expect(headBranch('ref: refs/heads/fix/apex-band-hide\n')).toBe('fix/apex-band-hide')
+    expect(headBranch('ref: refs/heads/feat/x\r\n')).toBe('feat/x')
+  })
+
+  test('detached sha or garbage: no branch', () => {
+    expect(headBranch('5328846a1b2c3d4e5f60718293a4b5c6d7e8f901\n')).toBeUndefined()
+    expect(headBranch('gitdir: ../.git/worktrees/x\n')).toBeUndefined()
+    expect(headBranch('')).toBeUndefined()
+  })
+})
+
+describe('onBranch', () => {
+  const run = parseContext(STANDARD, 'd')
+
+  test('same branch is on, another branch is off', () => {
+    expect(onBranch(run, 'feat/claude-mods-task-board-apex-band')).toBe(true)
+    expect(onBranch(run, 'master')).toBe(false)
+  })
+
+  test('unknown run branch or unknown HEAD: on', () => {
+    expect(onBranch(parseContext('# APEX: x\n', 'd'), 'master')).toBe(true)
+    expect(onBranch(run, undefined)).toBe(true)
   })
 })

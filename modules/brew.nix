@@ -116,7 +116,7 @@ _:
 
     masApps = {
       "DaisyDisk" = 411643860;
-      "Keynote" = 409183694;
+      "Keynote" = 361285480;
       # NE PAS commenter cette ligne pour contourner un échec de MAJ mas.
       # Mesuré le 2026-09-23 : `brew bundle --zap --force-cleanup` (la commande
       # que lance nix-darwin) DÉSINSTALLE une app App Store retirée du Brewfile.
@@ -126,8 +126,8 @@ _:
       "Microsoft Excel" = 462058435;
       "Microsoft PowerPoint" = 462062816;
       "Microsoft Word" = 462054704;
-      "Numbers" = 409203825;
-      "Pages" = 409201541;
+      "Numbers" = 361304891;
+      "Pages" = 361309726;
       "Trello" = 1278508951;
       "Affinity Photo" = 824183456;
       "Affinity Publisher" = 881418622;

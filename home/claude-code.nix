@@ -32,6 +32,7 @@ let
   activationScripts = import ./claude-code/activation.nix {
     inherit pkgs lib;
     inherit (scraplingShim) scraplingShimPkg;
+    modsSrc = ./claude-code/mods;
   };
 
   inherit (claudeMd) claudeMdGlobal;

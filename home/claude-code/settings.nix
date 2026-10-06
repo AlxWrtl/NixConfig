@@ -7,6 +7,9 @@ let
   # Obsidian vault — shared constant, reusable by other modules.
   # Real on-disk location (NOT the iCloud~md~obsidian mirror path).
   alxVaultPath = "${homeDirectory}/Vaults/AlxVault";
+
+  # Claude Code mods: names and the absolute folders the engine loads.
+  mods = import ./mods.nix;
 in
 {
   inherit alxVaultPath;
@@ -27,6 +30,8 @@ in
       CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
       CLAUDE_STREAM_IDLE_TIMEOUT_MS = "600000";
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
+      # Mods (task-board, apex-band) copied to ~/.claude/mods by activation.
+      CLAUDE_CODE_PLUGIN_DIRS = mods.pluginDirs homeDirectory;
     };
 
     # Défaut déclaratif : Opus 5.5 = workhorse full-loop. L'alias `opus` suit le

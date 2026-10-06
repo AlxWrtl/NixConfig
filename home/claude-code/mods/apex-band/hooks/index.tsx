@@ -1,14 +1,15 @@
 // apex-band: a band above the prompt showing the live APEX run of the
 // session's working directory (title, mode, current step, branch,
 // baseline), read from <cwd>/.claude/output/apex/*/00-context.md. Draws
-// nothing when no run is live. Read-only: it never writes a file.
+// nothing when no run is live, or when the run's branch is not the one
+// checked out (<cwd>/.git/HEAD). Read-only: it never writes a file.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
 import type { ApexBandRun } from '../types'
 import { layoutBand } from './band.ts'
-import { isLive, parseContext } from './context.ts'
+import { headBranch, isLive, onBranch, parseContext } from './context.ts'
 
 const POLL_MS = 5000
 
@@ -55,7 +56,15 @@ async function scan($: EngineInterface): Promise<ApexBandRun | null> {
     return null
   }
   const parsed = parseContext(text, newest.dir)
-  return isLive(parsed, newest.mtimeMs, await $.clock.now()) ? parsed : null
+  if (!isLive(parsed, newest.mtimeMs, await $.clock.now())) return null
+  let head: string | undefined
+  try {
+    head = headBranch(await $.fs.read(`${cwd}/.git/HEAD`))
+  } catch {
+    // No repo here, or a worktree whose .git is a file: branch unknown, shown.
+    head = undefined
+  }
+  return onBranch(parsed, head) ? parsed : null
 }
 
 async function refresh($: EngineInterface): Promise<void> {

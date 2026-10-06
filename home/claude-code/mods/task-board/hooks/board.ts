@@ -48,7 +48,7 @@ function normalize(tasks: Task[]): Task[] {
 
 export function addShell(
   tasks: Task[],
-  shell: { id: string; label: string; startedAt: number; toolUseId?: string },
+  shell: { id: string; label: string; startedAt: number; toolUseId?: string; ownerAgentId?: string },
 ): Task[] {
   if (tasks.some(t => t.id === shell.id)) return tasks
   const task: Task = {
@@ -58,6 +58,7 @@ export function addShell(
     startedAt: shell.startedAt,
     status: 'running',
     ...(shell.toolUseId === undefined ? {} : { toolUseId: shell.toolUseId }),
+    ...(shell.ownerAgentId === undefined ? {} : { ownerAgentId: shell.ownerAgentId }),
   }
   return normalize([...tasks, task])
 }
@@ -99,11 +100,29 @@ export function finishByNotification(tasks: Task[], note: Notification, now: num
   return replaceAt(tasks, index, { ...task, status, endedAt })
 }
 
+// A subagent's background shell notifies that subagent's loop, never the
+// main one: once the owner ends killed or failed, or leaves the agent list,
+// its still running shells are closed as `killed`. An owner that completed
+// keeps them (it may resume on the shell's notification).
+export function closeOrphanShells(tasks: Task[], ownerId: string, endedAt: number): Task[] {
+  const isOrphan = (t: Task): boolean => t.kind === 'shell' && t.status === 'running' && t.ownerAgentId === ownerId
+  if (!tasks.some(isOrphan)) return tasks
+  return normalize(tasks.map(t => (isOrphan(t) ? { ...t, status: 'killed', endedAt } : t)))
+}
+
 // A `$.agent.list()` snapshot: unknown agents are added; a known running
 // agent the list reports ended is finished, except a teammate (it goes
 // `idle` between turns and is never finished from here).
 export function applyAgentSnapshot(tasks: Task[], list: readonly AgentSnapshot[], now: number): Task[] {
   let out = tasks
+  for (const agent of list) {
+    const ended = endedStatus(agent.status)
+    if ((ended === 'killed' || ended === 'failed') && agent.type !== TEAMMATE) out = closeOrphanShells(out, agent.id, now)
+  }
+  const listed = new Set(list.map(a => a.id))
+  for (const t of tasks) {
+    if (t.kind === 'agent' && !listed.has(t.id)) out = closeOrphanShells(out, t.id, now)
+  }
   for (const agent of list) {
     const index = out.findIndex(t => t.id === agent.id)
     const ended = endedStatus(agent.status)
@@ -133,7 +152,8 @@ export function finishAgentTurn(tasks: Task[], agentId: string, reason: TurnReas
   const task = tasks[index]
   if (task === undefined || task.status !== 'running' || task.agentType === TEAMMATE) return tasks
   const status: Status = reason === 'answer' ? 'completed' : reason === 'aborted' ? 'killed' : 'failed'
-  return replaceAt(tasks, index, { ...task, status, endedAt: now })
+  const out = replaceAt(tasks, index, { ...task, status, endedAt: now })
+  return status === 'completed' ? out : closeOrphanShells(out, agentId, now)
 }
 
 export function clear(tasks: Task[]): Task[] {

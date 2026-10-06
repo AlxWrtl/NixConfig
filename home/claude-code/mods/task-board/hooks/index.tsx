@@ -112,7 +112,17 @@ export const register: Register = on => {
       const startedAt = await $.clock.now()
       const label = stringField(e, 'description') ?? stringField(e, 'command') ?? 'shell'
       const toolUseId = stringField(e, 'tool_use_id')
-      await change($, current => addShell(current, { id, label, startedAt, ...(toolUseId === undefined ? {} : { toolUseId }) }))
+      // Set only inside a subagent loop: its shells close with it (board.ts).
+      const ownerAgentId = stringField(e, 'agentId')
+      await change($, current =>
+        addShell(current, {
+          id,
+          label,
+          startedAt,
+          ...(toolUseId === undefined ? {} : { toolUseId }),
+          ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
+        }),
+      )
     }
     return ran
   }).catch(($, e, next) => next(e))

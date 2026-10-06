@@ -149,7 +149,7 @@ in
       "Diagnosis stays INSIDE apex — execute phase spawns the debugger agent (model: opus)."
       "If scope is unclear → run /discuss first, then return to apex."
       "After tests fail repeatedly → debugger agent (model: opus) inside the execute phase."
-      "After finish on L/XL or high-stakes changes → the external `-e` pass is the read-only detector; the coordinator triages each finding by evidence and an Opus implementer fixes the confirmed ones. No usable external verdict (BLOCKED or -E) → ONE Fable read-only diff pass. Routine/reversible → Opus 5.5 self-verify only. `-p` typed → Fable premises pass at plan approval."
+      "After finish on high-stakes changes → the external `-e` pass is the read-only detector; the coordinator triages each finding by evidence and an Opus implementer fixes the confirmed ones. No usable external verdict (BLOCKED or -E) → ONE Fable read-only diff pass. Routine/reversible → Opus 5.5 self-verify only. `-p` typed → Fable premises pass at plan approval."
     ]}
   '';
 
@@ -547,7 +547,8 @@ in
     ## Absences and numbers
 
     There is no separate analyze pass by Fable: every absence and every number
-    the plan rests on reaches a re-reader as a premise with its command.
+    the plan rests on reaches a re-reader as a premise with its command — the
+    examine reviewer when -x runs, replayed only under -p.
 
     ## If save mode (-s):
     Write findings to `.claude/output/apex/{task-id}/01-analyze.md`
@@ -1188,6 +1189,7 @@ in
     `id | file:line | dismissed | reason` — then a tally
     `confirmed=N unique=U dismissed=D`, where unique = confirmed and found by
     no other pass in this run.
+
     No usable external verdict on high-stakes (BLOCKED, or -E typed) → spawn the Fable fallback
     (ORCHESTRATION.md) and record its cause in 04-validate.md.
 
@@ -1298,9 +1300,9 @@ in
     - [ ] Convention violations (step-01), dead code, needless complexity.
 
     ### Security & data integrity (added on signal)
-    The security and data-integrity boxes are added to the reviewer's checklist when
-    the run carries a HIGH risk signal or the real diff touches a HIGH path
-    (step-00-init), auth, shell/SQL/template construction, or permission/sandbox
+    The security and data-integrity boxes are added to the reviewer's checklist when the run is High-stakes
+    (step-00-init Mode Gate), carries a HIGH risk signal, or the real diff touches
+    a HIGH path, auth, shell/SQL/template construction, or permission/sandbox
     config.
     - [ ] AuthN/authZ gaps; missing input validation; data exposed in responses.
     - [ ] Injection surfaces: SQL, shell, template, XSS, CSRF.
@@ -2132,8 +2134,8 @@ in
     or an unparseable verdict all produce `verdict: BLOCKED` with a reason.
     A degraded external run is never a pass.
     The coordinator surfaces BLOCKED as an UNRUN check — never as green, and
-    never as a reason to stop the run: the machine gate, and the Fable fallback
-    it triggers, decide the run's colour.
+    never as a reason to stop the run: the machine gate, and on high-stakes, the
+    Fable fallback it triggers, decide the run's colour.
 
     ## Coordinator context — command output stays small
 

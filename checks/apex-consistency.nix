@@ -354,8 +354,15 @@ let
       # The fallback has to be reachable from the step that sees the BLOCKED
       # verdict; an orchestration-only copy leaves validate without the trigger.
       name = "validate: no usable external verdict spawns the Fable fallback";
-      needle = "spawn the Fable fallback";
+      needle = "No usable external verdict on high-stakes (BLOCKED, or -E typed) → spawn the Fable fallback";
       scope = skills.apexStep04Validate;
+    }
+    {
+      # The same fallback at the site the coordinator reads on a HIGH signal;
+      # the -E half is what makes the fallback reachable without a BLOCKED run.
+      name = "hook: -E typed on a HIGH signal spawns the Fable fallback";
+      needle = "-E typed, leaves no usable external verdict: spawn ONE Fable read-only pass";
+      scope = hooks.hookApexFlags;
     }
     {
       name = "examine: one blind opus reviewer works a merged checklist";
@@ -365,8 +372,8 @@ let
     {
       # One reviewer means the security boxes are no longer a standing agent;
       # this is the clause that still puts them on the checklist when it matters.
-      name = "examine: security and data-integrity boxes are added on a HIGH signal";
-      needle = "security and data-integrity boxes are added to the reviewer's checklist when";
+      name = "examine: security and data-integrity boxes are added on High-stakes or a HIGH signal";
+      needle = "security and data-integrity boxes are added to the reviewer's checklist when the run is High-stakes";
       scope = skills.apexStep05Examine;
     }
     {
@@ -845,6 +852,8 @@ let
     corpus = [
       "IN ADDITION TO the Fable"
       "is the DEFAULT — spawn it whether or not a premises pass"
+      "the default spend"
+      "(the default pass)"
     ];
   };
   fableDefaultTexts = {

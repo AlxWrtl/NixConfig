@@ -327,7 +327,7 @@ flag set, applied to every flag you did not type.
 | Fast | `-pr -n` | 1-2 files, short change — separate implementer, auto-escalates to Standard |
 | Diagnosis | `-x -pr -o -n` | bug/crash — reproduce first, debugger agent implements, ships as a PR |
 | Standard | `-t -pr -o -n` | full orchestration |
-| High-stakes | `-t -x -pr -o -n -e` | irreversible / security / architecture / prod — adds the adversarial pass, an independent read-only verify on the real diff, and the external cross-vendor pass |
+| High-stakes | `-t -x -pr -o -n -e` | irreversible / security / architecture / prod — one examine reviewer, then Codex `-e` as read-only detector whose findings are triaged by evidence; Fable only as fallback when no usable external verdict (BLOCKED or `-E`), or under `-p` |
 | Pure research | none | analyze only, no branch |
 
 ### Flags

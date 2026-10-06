@@ -259,7 +259,8 @@ on the next rebuild — and `env.CLAUDE_CODE_PLUGIN_DIRS` loads them.
 and subagents with their duration and state (en cours / fini / échoué); a
 subagent's still running shells turn échoué when it is killed, fails, or
 leaves the agent list (a teammate's: only when it leaves the list), since
-their notification would never reach the main loop.
+their notification would never reach the main loop; a shell also closes on its
+subagent's own notification row and on a TaskStop.
 `apex-band`: a band above the prompt shows the live APEX run of the working
 directory (title, mode, current step, branch, baseline) and nothing
 otherwise. Run yourself after a rebuild, in a new session: `/task-board`, a

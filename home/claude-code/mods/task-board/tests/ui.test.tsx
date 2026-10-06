@@ -85,3 +85,74 @@ for (const [status, word] of [
     await ui.unmount()
   })
 }
+
+test('a TaskStop of a background shell turns it "échoué", its result passes through unchanged', async ($, on) => {
+  mock.clock(on, { now: 1_000 })
+  on('tool.call', { tool: 'Bash' }, () => ({
+    result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bg-3' },
+  }))
+  const stopped = { message: 'Successfully stopped task: bg-3', task_id: 'bg-3', task_type: 'local_bash' }
+  on('tool.call', { tool: 'TaskStop' }, () => ({ result: stopped }))
+  await $.tool.call({ tool: 'Bash', command: 'sleep 60', description: 'attendre', run_in_background: true })
+
+  const ran = await $.tool.call({ tool: 'TaskStop', task_id: 'bg-3' })
+  expect(ran.result).toEqual(stopped)
+
+  const ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: 'échoué' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'en cours' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a refused or failed TaskStop leaves the shell "en cours"', async ($, on) => {
+  mock.clock(on, { now: 1_000 })
+  on('tool.call', { tool: 'Bash' }, () => ({
+    result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bg-4' },
+  }))
+  let refuse = true
+  on('tool.call', { tool: 'TaskStop' }, () => (refuse ? { deny: 'non' } : { result: 'No task found', isError: true as const }))
+  await $.tool.call({ tool: 'Bash', command: 'sleep 60', run_in_background: true })
+
+  await $.tool.call({ tool: 'TaskStop', task_id: 'bg-4' })
+  refuse = false
+  await $.tool.call({ tool: 'TaskStop', task_id: 'bg-4' })
+
+  const ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: 'en cours' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'échoué' })).toBeUndefined()
+  await ui.unmount()
+})
+
+const subagentRow = (id: string) =>
+  `[SYSTEM NOTIFICATION - NOT USER INPUT]\n\n<task-notification>\n<task-id>${id}</task-id>\n<status>completed</status>\n<summary>Background command "x" completed (exit code 0)</summary>\n</task-notification>`
+
+for (const [name, extra, word] of [
+  ['a subagent\'s notification row turns its shell "fini"', { agentId: 'a1', origin: { kind: 'task-notification' } }, 'fini'],
+  ['a main-loop notification row is left to ui.render', { origin: { kind: 'task-notification' } }, 'en cours'],
+  ['a subagent row of another origin is ignored', { agentId: 'a1', origin: { kind: 'model', model: 'm' } }, 'en cours'],
+] as const) {
+  test(name, async ($, on) => {
+    mock.clock(on, { now: 1_000 })
+    on('tool.call', { tool: 'Bash' }, () => ({
+      result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: 'bg-5' },
+    }))
+    await $.tool.call({ tool: 'Bash', command: 'reindex', run_in_background: true })
+
+    const message = {
+      type: 'user' as const,
+      role: 'user' as const,
+      isMeta: true as const,
+      content: [{ type: 'text', text: subagentRow('bg-5') }],
+    }
+    // The kit has no session.append bottom: a test hook answering without
+    // next is skipped, and the bottom throws. The plugin reads the row before
+    // next, so its effect is checked past that throw.
+    await expect($.session.append({ message, door: 'delivery', uuid: 'row-1', ...extra })).rejects.toThrow(
+      /no implementation for session.append/,
+    )
+
+    const ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+    expect(await ui.find({ type: 'Text', text: word })).toBeDefined()
+    await ui.unmount()
+  })
+}

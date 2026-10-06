@@ -13,7 +13,9 @@ import {
   clear,
   finishAgentTurn,
   finishByNotification,
+  parseTaskNotifications,
   runningCount,
+  stopShell,
 } from './board.ts'
 import type { Notification, Task } from './board.ts'
 import { layoutRow } from './format.ts'
@@ -38,6 +40,19 @@ function numberField(record: unknown, key: string): number | undefined {
   if (typeof record !== 'object' || record === null) return undefined
   const value: unknown = Reflect.get(record, key)
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+// A row's text: a string as is, else its text blocks joined (any other
+// block skipped); anything else reads as empty.
+function rowText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  const parts: string[] = []
+  for (const block of content) {
+    const text = stringField(block, 'type') === 'text' ? stringField(block, 'text') : undefined
+    if (text !== undefined) parts.push(text)
+  }
+  return parts.join('\n')
 }
 
 // Applies a pure change to the task list, writing only when it changed.
@@ -176,6 +191,36 @@ export const register: Register = on => {
     }
     return next(e)
   })
+
+  // A subagent's shell notifies that subagent's loop only: its row never
+  // reaches the main transcript (nor the ui.render path above). Main-loop
+  // rows stay on that path. Read before next: the row is relayed unchanged.
+  on('session.append', async ($, e, next) => {
+    const agentId = e.agentId
+    if (agentId !== undefined && agentId !== '' && e.origin.kind === 'task-notification') {
+      const notes = parseTaskNotifications(rowText(e.message.content))
+      if (notes.length > 0) {
+        const at = await $.clock.now()
+        await change($, current => notes.reduce((list, note) => finishByNotification(list, note, at), current))
+      }
+    }
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
+  // A shell stopped by TaskStop gets no notification row: close it as
+  // killed. TaskStop also stops agents; stopShell leaves agent rows to the
+  // agent snapshot.
+  on('tool.call', { tool: 'TaskStop' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (ran.isError !== true && ran.result !== undefined) {
+      const id = stringField(ran.result, 'task_id') ?? stringField(e, 'task_id') ?? stringField(e, 'shell_id')
+      if (id !== undefined) {
+        const at = await $.clock.now()
+        await change($, current => stopShell(current, id, at))
+      }
+    }
+    return ran
+  }).catch(($, e, next) => next(e))
 
   on('turn.complete', async ($, e, next) => {
     const agentId = e.agentId

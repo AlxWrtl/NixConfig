@@ -8,7 +8,10 @@ import {
   clear,
   finishAgentTurn,
   finishByNotification,
+  parseTaskNotification,
+  parseTaskNotifications,
   runningCount,
+  stopShell,
 } from '../hooks/board.ts'
 import type { Task } from '../hooks/board.ts'
 
@@ -144,5 +147,63 @@ describe('board reducer', () => {
     expect(clear(shell('b1')).length).toBe(0)
     const empty: Task[] = []
     expect(clear(empty)).toBe(empty)
+  })
+})
+
+describe('task notification text', () => {
+  const text = (id: string, status: string): string =>
+    `<task-notification>\n<task-id>${id}</task-id>\n<status>${status}</status>\n<summary>Background command "x" ${status}</summary>\n</task-notification>`
+
+  test('completed / failed / killed are read with their id', () => {
+    expect(parseTaskNotification(text('banaihxzj', 'completed'))).toEqual({ id: 'banaihxzj', status: 'completed' })
+    expect(parseTaskNotification(text('b2', 'failed'))).toEqual({ id: 'b2', status: 'failed' })
+    expect(parseTaskNotification(text('b3', 'killed'))).toEqual({ id: 'b3', status: 'killed' })
+  })
+
+  test('an unknown status, a malformed row or a missing id read as nothing', () => {
+    expect(parseTaskNotification(text('b1', 'running'))).toBeUndefined()
+    expect(parseTaskNotification('<task-id>b1</task-id><status>completed')).toBeUndefined()
+    expect(parseTaskNotification('<status>completed</status>')).toBeUndefined()
+    expect(parseTaskNotification(text('', 'completed'))).toBeUndefined()
+    expect(parseTaskNotification('plain text')).toBeUndefined()
+  })
+
+  test("a completed owner's shell closes on its parsed notification", () => {
+    const owner = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
+    const started = addShell(owner, { id: 'b1', label: 'reindex', startedAt: 1, ownerAgentId: 'a1' })
+    const ownerDone = finishAgentTurn(started, 'a1', 'answer', 10)
+    expect(ownerDone.find(t => t.id === 'b1')?.status).toBe('running')
+    const note = parseTaskNotification(text('b1', 'completed'))
+    expect(note).toBeDefined()
+    const out = note === undefined ? ownerDone : finishByNotification(ownerDone, note, 20)
+    expect(out.find(t => t.id === 'b1')?.status).toBe('completed')
+    expect(out.find(t => t.id === 'b1')?.endedAt).toBe(20)
+    expect(note === undefined ? out : finishByNotification(out, note, 30)).toBe(out)
+  })
+
+  test('a row with one block reads one notification', () => {
+    expect(parseTaskNotifications(`[SYSTEM NOTIFICATION]\n\n${text('b1', 'completed')}`)).toEqual([
+      { id: 'b1', status: 'completed' },
+    ])
+    expect(parseTaskNotifications('plain text')).toEqual([])
+  })
+
+  test('a batched row reads every block, skipping a malformed one', () => {
+    const row = [text('b1', 'completed'), text('b2', 'failed'), text('b3', 'running')].join('\n')
+    expect(parseTaskNotifications(row)).toEqual([
+      { id: 'b1', status: 'completed' },
+      { id: 'b2', status: 'failed' },
+    ])
+  })
+
+  test('a TaskStop closes a running shell as killed; an agent or unknown id is a no-op', () => {
+    const list = shell('b1', 5)
+    const out = stopShell(list, 'b1', 40)
+    expect(out[0]?.status).toBe('killed')
+    expect(out[0]?.endedAt).toBe(40)
+    expect(stopShell(list, 'zz', 40)).toBe(list)
+    expect(stopShell(out, 'b1', 50)).toBe(out)
+    const agent = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
+    expect(stopShell(agent, 'a1', 40)).toBe(agent)
   })
 })

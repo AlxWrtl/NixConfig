@@ -398,6 +398,8 @@ in
         # External cross-vendor verifier (APEX `-e`). Wrapper around a
         # read-only `codex exec` subprocess: it reviews, it never edits.
         "Bash(apex-verify-external *)"
+        # APEX tier classifier: read-only git diff/show/ls-files over the diff.
+        "Bash(apex-tier *)"
         # Knowledge-graph refresh wrapper (no args; writes only to ~/GraphVault
         # — see sandbox allowWrite). Fired in background by APEX steps 01b/09b.
         "Bash(graphify-reindex)"
@@ -572,10 +574,9 @@ in
           ];
         }
         {
-          # Rewrites APEX flags from risk signals before the skill starts.
-          # A typed flag is a floor, never a ceiling: nothing typed is stripped;
-          # on a HIGH risk signal the missing depth flags and -e are added
-          # (-E cancels -e).
+          # Reports the context size (tokens, from the transcript tail) when
+          # APEX starts. Context only: never rewrites the flags, never decides
+          # a permission. The tier is decided on the diff by `apex-tier`.
           matcher = "Skill";
           hooks = [
             {

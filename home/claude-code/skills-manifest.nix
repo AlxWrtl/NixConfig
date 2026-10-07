@@ -59,10 +59,6 @@ in
           text = skills.apexStep00Init;
         }
         {
-          path = "steps/step-00b-branch.md";
-          text = skills.apexStep00bBranch;
-        }
-        {
           path = "steps/step-00b-save.md";
           text = skills.apexStep00bSave;
         }
@@ -125,6 +121,18 @@ in
         {
           path = "steps/ORCHESTRATION.md";
           text = skills.apexOrchestration;
+        }
+        {
+          path = "steps/DIRECT.md";
+          text = skills.apexDirect;
+        }
+        {
+          path = "steps/HIGH-STAKES.md";
+          text = skills.apexHighStakes;
+        }
+        {
+          path = "steps/COMMANDS.md";
+          text = skills.apexCommands;
         }
         {
           path = "eval-suite.json";

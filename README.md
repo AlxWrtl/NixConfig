@@ -115,6 +115,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── agent-instructions.nix
 │   ├── apex-consistency.nix
 │   ├── apex-plan-provenance.nix
+│   ├── apex-tier.nix
 │   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
 │   ├── claude-config.nix
 │   ├── claude-mods.nix
@@ -193,6 +194,7 @@ system.
 | `agent-instructions` | The shared instruction trunk actually reaches both rendered outputs: every shared section body present in `CLAUDE.md` and `AGENTS.md`, each heading exactly once, headings equal the declared trunk-plus-delta list in order, no mechanism Codex lacks named to Codex or smuggled through the trunk, the nix Docs Gate divergence pinned as Codex-inline only, each output under 100 lines, `Project Map` gone from both |
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
 | `apex-plan-provenance` | Every premise in an APEX plan carries `[M]` or `[I]` as its first token: the clause still stands in step-02-plan, and the line detector is run against two inline fixtures — one correctly tagged, one identical but for a stripped tag — so a detector that stopped detecting fails instead of passing. Presence is not truth: it proves the tag is THERE, never that it is earned; falsifying a tag is the examine reviewer's job and the Fable premises pass |
+| `apex-tier` | The built `apex-tier` classifier against throwaway git repos: a `matcher` added under `hooks.Notification` is direct, an entry added inside a `deny = [ ... ]` list is high, a `permissionDecision` branch in `hooks/x.js` is high, a 40-line README change is standard, a new `.env.example` is high. Canary M1 (the permission regex replaced by one that never matches) must turn the deny-list case away from high, proving that assertion rests on the permission class |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
 | `claude-mods` | Claude Code mods (`home/claude-code/mods.nix`), offline structure only: `names` equal the folders under `home/claude-code/mods/` both ways, each `plugin.json` parses and names its folder, each `hooks.json` names one existing module, no `.js` there, no sound / host process / network / file write / dynamic import / toast in any source and no `deny` in a hooks module, settings `env.CLAUDE_CODE_PLUGIN_DIRS` equal to the `~/.claude/mods/<name>` folders, activation copying them with the DRY_RUN skip and the engine's types excluded. Canaries: the scan must flag `$.audio.speak`, the filter a `.js` name, the comparison an extra name. `claude plugin validate --strict` and `claude plugin test` on each mod folder are the code gate and run in the session (`claude` is not in the build sandbox) |
 | `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |
@@ -324,11 +326,14 @@ coordinator never accumulates raw context. Phase summaries are persisted to
 ### Mode Gate
 
 The gate picks the depth, never whether to run. Each mode carries a default
-flag set, applied to every flag you did not type.
+flag set, applied to every flag you did not type. The tier (Direct, Standard,
+High-stakes) is decided on the diff, not on the brief: `apex-tier`
+(`home/claude-code/apex-tier.nix`) reads its size, its paths and the
+indentation ancestry of each changed line.
 
 | Mode | Default flags | Notes |
 |------|---------------|-------|
-| Fast | `-pr -n` | 1-2 files, short change — separate implementer, auto-escalates to Standard |
+| Direct | `-pr` | ≤ 3 files, ≤ 30 changed lines, no sensitive surface |
 | Diagnosis | `-x -pr -o -n` | bug/crash — reproduce first, debugger agent implements, ships as a PR |
 | Standard | `-t -pr -o -n` | full orchestration |
 | High-stakes | `-t -x -pr -o -n -e` | irreversible / security / architecture / prod — one examine reviewer, then Codex `-e` as read-only detector whose findings are triaged by evidence; Fable only as fallback when no usable external verdict (BLOCKED or `-E`), or under `-p` |

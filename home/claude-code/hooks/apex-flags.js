@@ -1,4 +1,48 @@
 #!/usr/bin/env node
+// PreToolUse on Skill: reports the context size at APEX start, nothing else.
+//
+// It used to classify risk from the BRIEF TEXT and rewrite the flags. Removed
+// on 2026-10-07: a 28-line Notification matcher change was forced to
+// high-stakes (Codex + Fable) only because the brief said "settings" and
+// "hook". Words in a brief are not risk; the diff is. Risk is now decided on
+// the diff by `apex-tier` (SKILL.md tier table). This hook never rewrites the
+// call and never decides a permission.
+//
+// FAIL-OPEN: every error exits 0 (no output, or context=unknown).
+const fs = require("fs");
+
+const TAIL = 256 * 1024;
+
+function contextTokens(path) {
+  if (typeof path !== "string" || path === "") return null;
+  let fd;
+  try {
+    fd = fs.openSync(path, "r");
+    const size = fs.fstatSync(fd).size;
+    const len = Math.min(size, TAIL);
+    const buf = Buffer.alloc(len);
+    fs.readSync(fd, buf, 0, len, size - len);
+    const lines = buf.toString("utf8").split("\n");
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (!line.includes('"usage"')) continue;
+      let entry;
+      try { entry = JSON.parse(line); } catch (e) { continue; }
+      const msg = entry && entry.message;
+      const u = msg && msg.usage;
+      if (!u || (entry.type !== "assistant" && msg.role !== "assistant")) continue;
+      const n = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0)
+        + (u.cache_creation_input_tokens || 0);
+      return Number.isFinite(n) ? n : null;
+    }
+    return null;
+  } catch (e) {
+    return null;
+  } finally {
+    if (fd !== undefined) { try { fs.closeSync(fd); } catch (e) { /* fail open */ } }
+  }
+}
+
 let input = "";
 process.stdin.on("data", c => input += c);
 process.stdin.on("end", () => {
@@ -6,91 +50,16 @@ process.stdin.on("end", () => {
     const data = JSON.parse(input);
     const ti = data.tool_input || {};
     if (ti.skill !== "apex") process.exit(0);
-
-    const args = typeof ti.args === "string" ? ti.args : "";
-    // `nix`, `flake` and `rebuild` were in STANDARD and had to go: in a
-    // nix-darwin config repo every task names a .nix file, so they matched
-    // everything and made the trivial tier unreachable (that tier was itself
-    // removed on 2026-08-17). Measured against the real briefs of
-    // 2026-08-08 — a two-line CLAUDE.md edit escalated to -b -s -t -pr
-    // purely because the path contained "claude-md.nix".
-    // A signal that fires on every task is not a signal.
-    const HIGH = /(hook|settings|permission|sandbox|deny|secret|credential)/i;
-    const STANDARD = /(supprime|delete|remove|\brm\b|migration|\bmaster\b|\bmain\b|\bprod\b)/i;
-
-    let target;
-    // Leading tokens that look like flags; everything after is the task.
-    const parts = args.trim().split(/\s+/);
-    let i = 0;
-    while (i < parts.length && /^-[a-zA-Z0-9]+$/.test(parts[i])) i++;
-    const typed = parts.slice(0, i);
-    const rest = parts.slice(i).join(" ");
-
-    // -e now means external verify: one cross-vendor read-only pass over
-    // the same diff. The hook must never STRIP it — deleting a typed flag
-    // makes the feature inert with no error anywhere. It is ADDED only on a
-    // HIGH signal, mirroring the High-stakes default set of the Mode Gate;
-    // a typed -E still wins (the uppercase-OFF loop below). STANDARD never
-    // adds it: another vendor's round-trip is spent only where a miss is
-    // expensive.
-    const kept = typed.slice();
-
-    // Branch and save left the flag surface: both are mode invariants now,
-    // so the tiers only carry what is still a real flag.
-    const isHigh = HIGH.test(args);
-    if (isHigh) target = ["-t", "-x", "-pr", "-e"];
-    else if (STANDARD.test(args)) target = ["-t", "-pr"];
-    else process.exit(0);
-
-    // Add what is missing, but never override an explicit uppercase OFF.
-    for (const f of (target || [])) {
-      const off = "-" + f.slice(1).toUpperCase();
-      if (kept.indexOf(f) === -1 && kept.indexOf(off) === -1) kept.push(f);
-    }
-
-    const next = (kept.join(" ") + " " + rest).trim();
-
-    // HIGH only: the detector + fallback rule lives in ORCHESTRATION.md External verify
-    const fable = isHigh
-      ? "HIGH risk signal in this brief (hook/settings/permission/sandbox/deny/secret/"
-        + "credential). Unless -E was typed, the external cross-vendor pass (-e) runs as a "
-        + "read-only DETECTOR once the machine gate is green: triage each finding by evidence "
-        + "(test, command, file:line) — confirmed goes to an Opus fix, unconfirmed is "
-        + "dismissed with its reason, none is applied as-is. A BLOCKED external verdict, or "
-        + "-E typed, leaves no usable external verdict: spawn ONE Fable read-only pass "
-        + "(explicit model: fable) over the REAL diff plus the ACs and record the cause. "
-        + "Fast mode is NOT eligible for this run."
-      : null;
-
-    // Emit even when the flags are already right: without this the context
-    // is dropped whenever the user typed -t -x -pr themselves.
-    const unchanged = next === args.trim();
-    if (unchanged && !fable) process.exit(0);
-
-    // When there is nothing to rewrite, send the context ALONE. Adding
-    // permissionDecision "allow" here would auto-approve the Skill call and
-    // bypass every downstream check, to rewrite nothing.
-    if (unchanged) {
-      // Only the nested form carrying hookEventName is documented.
-      process.stdout.write(JSON.stringify({
-        hookSpecificOutput: { hookEventName: "PreToolUse", additionalContext: fable }
-      }));
-      process.exit(0);
-    }
-
-    const out = {
+    const n = contextTokens(data.transcript_path);
+    const tp = typeof data.transcript_path === "string" ? data.transcript_path : "unknown";
+    process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
-        permissionDecision: "allow",
-        updatedInput: { skill: ti.skill, args: next }
+        additionalContext: "APEX start: context=" + (n === null ? "unknown" : n)
+          + " tokens; transcript=" + tp
+          + ". Tier is decided on the diff (SKILL.md); apex-tier re-checks it."
       }
-    };
-    // Nested, like its twin twelve lines up. A root-level
-    // `additionalContext` is not read by any event: on THIS branch — the
-    // frequented one, taken by every bare `/apex` whose flags get
-    // rewritten — the Fable instruction reached nobody.
-    if (fable) out.hookSpecificOutput.additionalContext = fable;
-    process.stdout.write(JSON.stringify(out));
-  } catch (e) {}
+    }));
+  } catch (e) { /* fail open */ }
   process.exit(0);
 });

@@ -42,40 +42,49 @@ in
   skillApex = ''
     ---
     name: apex
-    description: "Universal task workflow (APEX methodology) — EVERY task that modifies files routes through APEX, any size or type: feature, endpoint, module, dashboard, fix, bug, refactor, config. The internal mode gate adapts the depth (fast, diagnosis, standard, high-stakes) but every task runs the full analyze → plan → execute → validate chain (Fast: mini-plan → execute → validate). Opus 5.5 plans, executes and self-verifies; on high-stakes, Codex reads the diff as a read-only detector whose findings are triaged by evidence; Fable verifies read-only only as fallback (no usable external verdict) or on the plan's premises when -p is typed. Not for pure questions or research with zero file modification."
+    description: "Universal task workflow (APEX) — EVERY task that modifies files routes through APEX, in any project, any size or type: feature, fix, bug, refactor, config, docs. A tier gate sizes the run from the diff: Direct (inline), Diagnosis, Standard, High-stakes. Not for pure questions or research with zero file modification."
     ---
 
-    # APEX: Systematic Implementation Workflow
+    # APEX: tiered implementation workflow
 
-    A structured multi-step workflow: analyze → plan → execute → validate.
-    - Read each step's file ONLY when you reach it AND its flag is active.
-    - Skip steps whose flags are off, because loading them wastes context.
-    - Consult `steps/ROUTING.md` for every transition so routing stays in one place.
-    - Act as COORDINATOR per `steps/ORCHESTRATION.md`: spawn each phase as a
-      fresh subagent and keep only its summary, so context stays clean. There
-      is no inline shortcut — every task is orchestrated.
-    - Model routing (ORCHESTRATION.md): Opus 5.5 is the workhorse (coordinates,
-      plans, codes, self-verifies); on high-stakes, the external `-e` pass is a
-      read-only detector on the real diff whose findings are triaged by
-      evidence; Fable is a read-only verifier only as fallback (no usable
-      external verdict) or on the plan's premises when `-p` is typed — every
-      spawn passes an explicit `model`, never inherit.
-    - Process fixe : Opus 5.5 plan+code+auto-verif → gate machine (parse/lint/test,
-      gratuit) → sur haut-enjeu, Codex relit le diff (détecteur, triage par preuve) ;
-      Fable seulement sans verdict externe exploitable (BLOCKED ou -E) ou avec -p
-      (read-only, fix-list ; jamais rédacteur du plan)
-      → si pas bon, Opus 5.5 corrige (brief plus précis à chaque tour) jusqu'à vert.
-    - Profondeur ∝ blast-radius : standard → orchestration + gate machine +
-      auto-verif ACs ; dur/irréversible → grounding + détecteur externe triagé + adversarial
-      scalé. La profondeur varie, l'orchestration non.
-    - Les agents spécialisés de ~/.claude/agents/ sont des exécutants au service
-      d'apex, jamais des points d'entrée.
+    This file is the router. Read ONLY the file for your tier — every other
+    step file stays unread unless your tier's route reaches it.
 
-    ## Effort per step
+    ## Tier gate (run FIRST, before any edit)
 
-    Effort is per-step, not global. High: 01-analyze, 02-plan, 05-examine. Low:
-    branch, save, 03-execute, run-tests, finish. Medium: the rest. Each step file
-    restates its effort at the top.
+    The coordinator first writes two lines, from the files it will touch:
+
+    ```
+    Files: {path}, {path}
+    Est-lines: {changed lines, added + removed}
+    ```
+
+    Tier is decided on the diff, never on the brief's words. A brief that says
+    "hook" or "settings" is not high-stakes; a diff that edits a deny rule is.
+    Precedence, first match wins: Diagnosis > High-stakes > Direct > Standard.
+
+    | Mode | Default flags | When | Read |
+    |------|---------------|------|------|
+    | Direct | `-pr` | ≤ 3 files, ≤ 30 changed lines, no sensitive surface, not a bug | `steps/DIRECT.md` + `steps/COMMANDS.md` |
+    | Diagnosis | `-x -pr -o -n` | bug / error / crash / broken: reproduce first, debugger agent implements | as Standard |
+    | Standard / complex | `-t -pr -o -n` | everything else that changes files | `steps/step-00-init.md`, `steps/ORCHESTRATION.md`, `steps/ROUTING.md`, `steps/COMMANDS.md`, then steps as routed |
+    | High-stakes | `-t -x -pr -o -n -e` | the diff touches a sensitive surface | Standard list + `steps/HIGH-STAKES.md` |
+    | Pure research | none | zero file change | none — answer directly; no branch, no PR |
+
+    Sensitive surface — judged on the CONTENT of `Files:` and of the real diff:
+    - permission rules: `allow` / `deny` / `ask` entries, sandbox keys;
+    - secrets: `.env*`, `secrets/`, `*token*` / `*key*` / `*cert*` paths;
+    - a hook's guard decision path: the branch that denies or blocks
+      (`deny`, `block`, `permissionDecision`, `exit 2`);
+    - irreversible work: data deletion, migrations, force-push or history
+      rewrite;
+    - a production deploy.
+
+    Adding or removing a notification hook or a settings value is NOT high.
+
+    The tier is re-checked on the real diff by `apex-tier --base {trunk}`
+    (`{trunk}` = the branch this run cut from). A higher tier than planned
+    escalates, keeping the branch and the diff (DIRECT.md, ROUTING.md).
 
     ## Available Flags
 
@@ -94,235 +103,89 @@ in
     | -o | -O | Obsidian — load vault context; must cite the notes it read or state the vault is silent |
     | -n | -N | Note — session note at end |
 
-    Branch-first and on-disk persistence are INVARIANTS of every mode, not
-    options; the depth of the run is decided by the Mode Gate, not by a flag.
+    Branch-first and on-disk persistence are INVARIANTS of every tier, not
+    options: the branch is cut per the Git section of CLAUDE.md, and the run's
+    files live under `.claude/output/apex/{task-id}/`. Every spawn passes an
+    explicit `model` per CLAUDE.md — never inherit.
+
+    Flag precedence, highest first:
+    1. Typed by the user — lowercase forces ON, uppercase forces OFF
+       (`-PR` cancels the default `-pr`, `-T` the default `-t`).
+    2. The tier's default set (table above).
+    3. OFF.
+
+    Never on by default — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`.
+    `-e` is a default of High-stakes only. State the tier and the resolved
+    flags in `00-context.md`.
 
     ## Common Usage
 
     ```
-    /apex add feature              # Basic — the Mode Gate picks the depth
-    /apex -t -pr add endpoint      # Tests + PR
-    /apex -q -x migrate schema     # Clarify first, then adversarial review
-    /apex -e refactor auth guard   # + one cross-vendor read-only verify pass
+    /apex fix typo in README        # Direct
+    /apex -t -pr add endpoint       # Standard + tests + PR
+    /apex -q -x migrate schema      # Clarify first, then adversarial review
+    /apex -e refactor auth guard    # + one cross-vendor read-only verify pass
     ```
 
     ## Execution
 
-    Execute `steps/step-00-init.md` now: read the file and follow it.
-
-    Verify any nix-config changes this workflow produces with:
-
-    ```bash
-    nix-instantiate --parse file.nix && sudo darwin-rebuild switch --flake .#alex-mbp
-    ```
+    Write `Files:` + `Est-lines:`, pick the tier, then read the files in its
+    Read column now and follow them.
 
     ${contract {
       expects = "task description with optional flags. Example: /apex -q -t implement user auth";
-      produces = "complete implementation through progressive steps: init → analyze → plan → execute → validate (Fast: mini-plan → execute → validate) (+ optional: tests, examine, resolve, finish).";
+      produces = "the change on its own branch, verified by the machine gate, shipped per -pr; Standard and High-stakes run init → analyze → plan → execute → validate.";
       sideEffects = "modifies source files, optionally creates tests, commits, creates PRs.";
     }}
     ${scope {
-      useWhen = "EVERY task that modifies files, in any project, any size — the mode gate adapts the depth (fast single implementer for 1-2 file short changes, debugger-as-implementer for bugs, adversarial pass on high-stakes) but always orchestrates.";
+      useWhen = "EVERY task that modifies files, in any project, any size — the tier gate sizes the run from the diff.";
       notFor = "Pure questions or research with zero file modification → answer directly, no workflow.";
     }}
 
     ## Error handling
 
-    - If a step fails (blocked task, red build/tests): stop, surface the raw error
-      and failing criteria, never fabricate success or push past red checks.
-    - If a prerequisite is missing (no git repo, no test framework): warn and fall
-      back (manual verification / skip the gated step), do not silently swallow.
+    - A failed step (blocked task, red build/tests): stop, surface the raw
+      error and failing criteria; never fabricate success or push past red.
+    - Missing prerequisite (no git repo, no test framework): warn and fall
+      back (manual verification / skip the gated step), never swallow it.
     - Unknown flag → reject it and print the valid flag list.
-
-    ## Idempotency, deps & compatibility
-
-    - **Idempotent**: safe to re-run; git branch/commit steps are no-ops when
-      already applied. Resume is not a flag: the phase summaries persisted under
-      `.claude/output/apex/` let a run be resumed manually by pointing APEX at them.
-    - **Requires git** for branch/PR steps; needs node or python only when the
-      target project does. Alternatively runs read-only if absent.
-    - **Namespaced** under `apex/`: step files and `.claude/output/apex/` outputs;
-      no global names leak.
-    - **Compatibility**: minimum version is any model supporting the `effort` param.
+    - Re-running is safe: branch/commit steps are no-ops when applied, and
+      the summaries under `.claude/output/apex/` let a run resume by hand.
 
     ${handoffs [
       "Diagnosis stays INSIDE apex — execute phase spawns the debugger agent (model: opus)."
       "If scope is unclear → run /discuss first, then return to apex."
-      "After tests fail repeatedly → debugger agent (model: opus) inside the execute phase."
-      "After finish on high-stakes changes → the external `-e` pass is the read-only detector; the coordinator triages each finding by evidence and an Opus implementer fixes the confirmed ones. No usable external verdict (BLOCKED or -E) → ONE Fable read-only diff pass. Routine/reversible → Opus 5.5 self-verify only. `-p` typed → Fable premises pass at plan approval."
+      "High-stakes verify (external detector, Fable fallback, `-p` premises) → steps/HIGH-STAKES.md."
     ]}
   '';
 
   # --- Step 00: Init ---
   apexStep00Init = ''
-    # Step 00: Initialize
+    # Step 00: Initialize (Standard / Diagnosis / High-stakes)
     <!-- effort: medium -->
 
     YOU ARE THE COORDINATOR, not an executor. Do NOT do the analysis or coding
-    yourself. You spawn each phase as a fresh subagent and keep only its
-    summary — read [ORCHESTRATION.md](ORCHESTRATION.md) now and follow it for
-    every phase. There is no inline mode to fall back on.
+    yourself: spawn each phase as a fresh subagent and keep only its summary,
+    per [ORCHESTRATION.md](ORCHESTRATION.md). Direct never reads this file —
+    its whole run is DIRECT.md.
 
-    Privileged commands: only `sudo …` (password prompt) goes to the
-    "Run yourself" list; bare `nix flake check` and `darwin-rebuild build`
-    you run yourself. `git push`, `git commit`, `git pull`,
-    `git fetch`, `gh`, `codex` and bare `nix flake check` are excluded from
-    the sandbox — run them as standalone commands: one per Bash call, from the repo cwd, no
-    `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
-    (multi-line text: `git commit -F <file>`,
-    `gh pr create --body-file <file>`); any of those keeps the call sandboxed
-    and it fails. Inside the sandbox, `.git/config` and `.git/hooks` are
-    read-only in every repo: `git branch -d/-m/-u`,
-    `git checkout -b <x> origin/<y>`, `git remote`, `git config --local`,
-    `git init` and `git clone` fail there — run them with
-    dangerouslyDisableSandbox (one retry, permission box).
-    Other sandbox-blocked commands (docker, local DB sockets):
-    retry ONCE with dangerouslyDisableSandbox — the permission box lets the
-    user approve or refuse. Never weaken the sandbox config itself.
-    Blocked automatically (classifier or sandbox) is not a hand-off: ask the
-    user in the conversation, naming the exact action (« je le lance ? … »),
-    and on their explicit yes run it yourself. A no from the user — in the
-    permission box or in the conversation — is final: do not ask again.
-    Never hand the user a command to type, never a `! cmd`.
-    See the classification rule in ORCHESTRATION.md.
-
-    ## Parse Flags
-
-    Extract flags from $ARGUMENTS, then resolve the rest from the Mode Gate
-    default set below (the gate runs first — a flag's default depends on the
-    chosen mode).
-
-    Precedence, highest first:
-    1. Flag typed by the user — lowercase forces ON, uppercase forces OFF.
-       `-PR` cancels an auto `-pr`, `-T` cancels an auto `-t`, and so on.
-    2. Mode default set.
-    3. OFF.
-
-    Never auto-enabled — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`.
-    Each is expensive in its own way (a second implementation, a separate
-    test-author agent, an independent Fable read spent where a miss is
-    expensive, a web search, a question put to the user) — none belongs on a
-    typo fix. `-e` costs a round-trip to another vendor's model, so it is
-    auto-enabled ONLY as part of the High-stakes default set; in Diagnosis and
-    Standard it must be typed.
-
-    ## Session model guard (run FIRST)
-
-    The coordinator runs on Opus 5.5 (the workhorse: plans, codes, self-verifies).
-    It is the default session model — no model switch needed to start. Fable is
-    NOT the coordinator; it is invoked only as a read-only fallback verifier
-    (high-stakes run with no usable external verdict) or on the premises when
-    -p is typed (see ORCHESTRATION.md). A Fable session CAN coordinate,
-    but coordinating spends the independent read on plumbing: what a Fable pass
-    is worth is that it did not write the code, and a session that coordinated
-    has already lost that. Prefer Opus 5.5 and keep Fable for the verify pass
-    where a miss is expensive.
-
-    ## Mode Gate (run BEFORE anything else — NEVER redirect out of APEX)
-
-    Every task runs through APEX. The gate picks the MODE, not whether. Each
-    mode carries a DEFAULT FLAG SET, applied to every flag the user did not
-    type (precedence in Parse Flags above):
-
-    | Mode | Default flags |
-    |------|---------------|
-    | Fast | `-pr -n` |
-    | Diagnosis | `-x -pr -o -n` |
-    | Standard / complex | `-t -pr -o -n` |
-    | High-stakes | `-t -x -pr -o -n -e` |
-    | Pure research | none |
-
-    `-o` and `-n` are defaults, not conveniences: they are the two ends of one
-    loop. `-o` reads the knowledge graph at the start (step-01b) to recover the
-    OLD relational body recency retrieval cannot see; `-n` writes the session
-    note at the end (step-09b) and fires the incremental reindex that feeds the
-    NEXT session. Drop `-n` and the loop stays open — no note, no reindex, and
-    the graph goes stale in silence, which is the failure you never notice.
-    Pure research keeps neither: it changes no file, so it has nothing to log.
-    Fast keeps -n (the note and reindex close the loop) and drops -o (a graph
-    read buys nothing on a typo).
-    Both stay cancellable per run with `-O` / `-N` (uppercase precedence above).
-
-    `-e` rides on High-stakes only: where a miss is expensive, a reader from
-    another vendor's family is worth its round-trip. `-E` cancels it for the
-    run. A BLOCKED external verdict is an unrun check, not a pass and not a
-    reason to stop.
-
-    Branch-first and the on-disk summary chain are NOT in these sets because
-    they are not flags: they are behaviours of the modes themselves, described
-    under "Invariants of every mode" below.
-
-    - There is NO inline tier. The trivial tier (removed 2026-08-17) ran
-      inline, and an inline run is one where the coordinator grades its own
-      work. Fast is not that tier: the coordinator never grades its own work —
-      a separate implementer subagent writes the diff. A small diff is not a
-      safe diff — the two smallest changes measured (a 45-rule rewrite and a
-      blocking hook) were also the two that most needed the chain. Size picks
-      the DEPTH, never whether to orchestrate.
-    - **Fast** — 1-2 files, short change (text/doc/comment, a config value, a
-      package added). Fast is never chosen on a HIGH risk signal,
-      never for Diagnosis.
-      Precedence: HIGH > Diagnosis > Fast — a bug/crash brief is Diagnosis
-      even at 1 file.
-      Fast is ineligible when -t, -x or -e is active, typed or hook-added.
-      Run: the coordinator writes a 3-5 line mini-plan in `02-plan.md` plus
-      `02-acs.md`. The mini-plan MUST carry `Files:` (max 2 paths), passed
-      verbatim to the implementer as its write boundary. It also
-      carries a `Style:` line and a `Docs:` line, passed verbatim too:
-      `Style:` names the step-01-analyze.md style sources that exist, read
-      by path, or `none`; `Docs:` follows the Docs line section of step-02-plan.md.
-      `02-acs.md` carries the `Docs:` line as `AC-docs:`.
-      The coordinator then
-      spawns ONE implementer subagent (`model: sonnet`, or `opus` effort low),
-      reads the real diff and runs the machine gate itself, output read in the
-      tail (ORCHESTRATION.md "Coordinator context"); branch + PR +
-      merge as step-09.
-      Fast escalates to Standard when, at 04-validate, the real diff
-      (`git add -N . && git diff --numstat {trunk} -- . ':!.claude/output'`,
-      tracked + untracked, APEX's own artifacts excluded)
-      exceeds 2 files or 20 changed lines, touches a HIGH path,
-      or the gate is red.
-      HIGH path = any diff path in the hook's HIGH class or CLAUDE.md's
-      secrets rule — hooks.nix, settings.nix, sandbox/permission config,
-      `.env*`, secrets/, `*token*`/`*key*`/`*cert*` — checked on the
-      mini-plan's `Files:` BEFORE the implementer is spawned, and again on
-      the real diff.
-      The escalation keeps the branch and the diff, re-enters 01-analyze with
-      the Standard flags, and records the cause in 00-context.md.
-    - **Diagnosis** — bug / error / crash / broken: analyze phase reproduces
-      the error first; execute phase spawns the debugger agent (`model: opus`)
-      as implementer. Stays inside APEX. Ships like the other modes: `-pr` is a
-      default, so the fix ends as a PR on its branch, merged automatically
-      once the gate is green (as step-09).
-    - **Standard / complex**: full orchestration per ORCHESTRATION.md.
-    - **High-stakes** — irreversible / security / architecture / prod: adds the
-      adversarial pass, plus the external read-only detector (`-e`) on the real
-      diff; Fable only on its fallback.
-    - **Pure research / no file change**: analyze phase only (Explore fan-out),
-      report findings, skip execute/validate. No branch, no PR. A question with
-      zero file change should not reach APEX at all — answer it directly.
-
-    `-pr` ends the run with a commit + PR on the run's own branch; master is
-    never committed to directly. Opt out of a given run with `-PR`.
-
-    State the chosen mode AND the resolved flag set in the init summary, and
-    record both in state below.
-
-    ## Invariants of every mode (not flags)
-
-    - **Branch first.** If the current branch is `main`/`master`, cut a branch
-      before the first edit. Every mode, no flag involved, nothing to disable.
-    - **Save.** Persisting each phase summary to disk is an orchestration
-      mechanism, not an option: fresh-context-per-phase relies on that chain to
-      survive compaction. Always active, every run.
+    - Tier, default flags and flag precedence: SKILL.md (single source).
+    - How to run any command (privileged, sandbox-excluded, blocked):
+      [COMMANDS.md](COMMANDS.md).
+    - Spawn models: CLAUDE.md and the model table in ORCHESTRATION.md.
+    - Branch first: per the Git section of CLAUDE.md (protect-main enforces
+      it) — on `main`/`master`, cut the branch before the first edit; record
+      `{trunk}` = the branch you cut from.
 
     ## Initialize State
 
     Record the following:
     - **Task**: the user's request (everything after flags)
-    - **Flags**: which flags are active
+    - **Tier**: from the SKILL.md tier gate, with its `Files:` and
+      `Est-lines:` lines
+    - **Flags**: which flags are active, resolved per SKILL.md
     - **Working directory**: current project path
-    - **Git status**: current branch, clean/dirty, uncommitted changes
+    - **Git status**: current branch, `{trunk}`, clean/dirty, uncommitted changes
     - **Baseline**: the project's own gate, run BEFORE the first edit, and its
       verdict recorded. Use the cheapest gate that still discriminates, and
       use the SAME commands step-04 will run — a gate compared against a
@@ -335,7 +198,7 @@ in
         else's uncommitted work. Record the tree as dirty beside the verdict.
       - **Privileged.** Bare `nix flake check` runs outside the sandbox: run
         it yourself (in the background if long). Only a `sudo` command goes on
-        the "Run yourself" list per ORCHESTRATION.md, then record
+        the "Run yourself" list per COMMANDS.md, then record
         `baseline: skipped — {command} — {reason}`. A skipped baseline is an
         unknown one: nothing at validate may then be dismissed as
         pre-existing.
@@ -348,53 +211,27 @@ in
     ```
     APEX initialized
     Task: {description}
+    Tier: {tier}
     Flags: {active flags}
-    Branch: {current branch}
+    Branch: {current branch} (trunk: {trunk})
     Status: {clean/dirty}
     Baseline: {gate} -> {green | red: check | skipped: reason}
     ```
 
-    ## Sub-Steps
+    ## Save
 
-    Execute these in order:
+    Read [step-00b-save.md](step-00b-save.md) and execute it — unconditional:
+    the on-disk summary chain is an invariant, not a flag.
 
-    1. Read [step-00b-branch.md](step-00b-branch.md) and execute it —
-       unconditional, because branch-first is an invariant. It is a no-op when
-       the run is already on a feature branch.
-    2. Read [step-00b-save.md](step-00b-save.md) and execute it —
-       unconditional, like branch-first.
-
-    Note: `-o` and `-n` are on by default (see the mode table) but are NOT
-    init-time sub-steps — they fire later in the chain.
-    - `-o` fires at end of step-01-analyze (loads vault BEFORE planning, and
-      queries the knowledge graph for relations recency cannot reach).
-    - `-n` fires at terminal steps (04/05/06/08/09): writes the session note,
-      THEN fires `graphify-reindex` in the background. That reindex is the only
-      thing keeping the graph current, so a run that skips `-n` silently
-      degrades the next run's `-o`.
+    `-o` and `-n` are not init-time sub-steps. `-o` fires at the end of
+    step-01-analyze (vault + knowledge graph before planning); `-n` fires at
+    the terminal steps: it writes the session note, THEN runs
+    `graphify-reindex` in the background — the only thing keeping the graph
+    current, so a run that skips `-n` silently degrades the next run's `-o`.
 
     ## Next Step
 
-    Consult ROUTING.md.
-    If Fast:
-      Write `02-plan.md` (3-5 lines: `Files:`, `Style:`, `Docs:`) and `02-acs.md`
-      (ACs + `AC-docs:`), then read
-      [step-03-execute.md](step-03-execute.md) and execute it.
-    Else:
-      Read [step-01-analyze.md](step-01-analyze.md) and execute it.
-  '';
-
-  # --- Step 00b: Branch ---
-  apexStep00bBranch = ''
-    # Step 00b: Branch Setup
-
-    1. Check current branch. If already on a feature branch, use it.
-    2. If on main/master, create a new branch:
-       - Name format: `feat/{task-id}` where task-id is a short slug from the task description
-       - `git checkout -b feat/{task-id}`
-    3. Confirm branch is ready.
-
-    Return to step-00-init flow.
+    Consult [ROUTING.md](ROUTING.md).
   '';
 
   # --- Step 00b: Save ---
@@ -429,11 +266,25 @@ in
     | 02-plan | pending | |
     | 03-execute | pending | |
     | 04-validate | pending | |
+
+    ## Tokens
+    Context growth, not billed tokens.
+
+    | phase | agent | model | tokens |
+    |-------|-------|-------|--------|
+
+    coordinator context: {start}→{end}
     ```
 
-    Fast: mark 01-analyze `skipped (Fast)` and 02-plan `coordinator mini-plan`.
+    When 01-analyze is skipped (files known, ROUTING.md), mark it `skipped`.
 
     After each step completes, update this progress table.
+
+    `## Tokens` — one row per spawned agent, `tokens` copied from its
+    task-notification `<usage><subagent_tokens>`. `coordinator context`:
+    `{start}` from the apex-flags hook line `APEX start: context=N`, `{end}`
+    read at end of run. Any value absent → write `unknown`, never a guess.
+    These are context sizes, not billed tokens: never present them as cost.
 
     Return to step-00-init flow.
   '';
@@ -442,6 +293,10 @@ in
   apexStep01Analyze = ''
     # Step 01: Analyze
     <!-- effort: high -->
+
+    Skipped when the files to touch are already known: Standard goes straight
+    to 02-plan (ROUTING.md linear spine). Run it only when they are not.
+    Diagnosis never skips it: it reproduces the error first, files known or not.
 
     YOU ARE AN EXPLORER, not a planner. Do NOT plan or implement yet.
     Your only job is to deeply understand the codebase and the task.
@@ -1104,8 +959,7 @@ in
     Do NOT deviate from the plan. Do NOT add features that weren't planned.
 
     Per ORCHESTRATION.md: your input is the plan phase summary + the persisted
-    plan path. Return the execute phase summary schema. (Fast: no step-01
-    exists; the mini-plan is the whole input.)
+    plan path. Return the execute phase summary schema.
 
     Before the first edit, re-check the "Conflicts & Constraints" from step-01:
     if implementation reveals a conflict that was missed, STOP and revise the
@@ -1125,8 +979,8 @@ in
     ## Rules
 
     - ONE todo in_progress at a time
-    - Follow the plan's style: step-01's Style sources and Conventions, or in
-      Fast the mini-plan's `Style:` line — never conventions from memory
+    - Follow the plan's style: step-01's Style sources and Conventions, or the
+      plan's `Style:` line when 01 was skipped — never conventions from memory
     - Write no library API call, config option or signature the plan's `Docs:`
       line does not cover: STOP and return `UNSOURCED_API: {symbol} — {file}`;
       the coordinator re-plans
@@ -1229,6 +1083,13 @@ in
        One without is a finding, sent back to plan, never waived; `Docs: n/a (text)`
        over a diff that adds one is a finding too. AC-docs is an AC, so the `-e`
        pass and any Fable pass check it with no extra brief.
+    8. **Tier re-check**: run `apex-tier --base {trunk}` on the real diff and
+       record its line (`tier=… lines=… files=… reasons=…`) verbatim in
+       `04-validate.md`. `tier=high` on a Standard run escalates to
+       High-stakes before the terminal router: keep the branch and the diff,
+       add the High-stakes default flags (`-x`, `-e`), read
+       `steps/HIGH-STAKES.md`, record the cause in `00-context.md`, then run
+       the `-e` pass above.
 
     ## Divergence check (`-2`)
 
@@ -1248,8 +1109,6 @@ in
 
     ## Next Step
 
-    Fast: apply the 04-validate Fast row of the linear spine FIRST (measure
-    the diff, escalate if it trips), then the terminal router.
     Apply the shared terminal router in [ROUTING.md](ROUTING.md) (this is
     04-validate → rule 1 `-t` is in play).
   '';
@@ -1301,7 +1160,7 @@ in
 
     ### Security & data integrity (added on signal)
     The security and data-integrity boxes are added to the reviewer's checklist when the run is High-stakes
-    (step-00-init Mode Gate), carries a HIGH risk signal, or the real diff touches
+    (SKILL.md tier gate), `apex-tier` reports `tier=high`, or the real diff touches
     a HIGH path, auth, shell/SQL/template construction, or permission/sandbox
     config.
     - [ ] AuthN/authZ gaps; missing input validation; data exposed in responses.
@@ -1433,25 +1292,15 @@ in
   apexStep09Finish = ''
     # Step 09: Finish
 
-    ## Git Operations
+    ## Ship
 
-    1. **Stage changes**: `git add` all modified/created files
-    2. **Commit**: use conventional commit format
-       - `feat: {description}` for new features
-       - `fix: {description}` for bug fixes
-       - Include a body with key changes if the diff is large
-       - Write the message to a file first (Write tool), then
-         `git commit -F <file>`
-    3. **Push**: `git push -u origin {branch-name}`
+    Stage, commit, push, open the PR and squash-merge it per
+    [COMMANDS.md](COMMANDS.md) "Ship (`-pr`)" — the command shapes live there
+    only. Commit message: conventional (`feat:` / `fix:` …), body for a large
+    diff.
 
-    Each git/gh command is ONE standalone Bash call from the repo cwd (see
-    step-00): no `cd … &&`, no `git -C`, no heredoc or `$(…)` — otherwise it
-    stays sandboxed and fails.
+    ## Pull Request content
 
-    ## Create Pull Request
-
-    Write the PR body to a file first (Write tool), then
-    `gh pr create --title "<title>" --body-file <file>`, with:
     - **Title**: conventional format matching the commit
     - **Body**: structured with:
       - ## Summary (what was done)
@@ -1462,10 +1311,10 @@ in
     ## Before creating it
     Show the PR title and body in the transcript, then create it — no approval
     wait: the `-pr` default already authorizes commit, push and PR on the run's
-    branch. Then, once the gate is green, merge it yourself — each a standalone
-    Bash call: `gh pr merge <n> --squash --delete-branch`, `git switch master`,
-    `git pull --ff-only`, `git branch -D <branch>`. Force-pushing and rewriting
-    pushed history still need the user's explicit go.
+    branch. Once the gate is green, merge it yourself, then return to
+    `{trunk}`, pull and delete the local branch (COMMANDS.md shapes).
+    Force-pushing and rewriting pushed history still need the user's
+    explicit go.
 
     ## COMPLETE
 
@@ -1842,25 +1691,47 @@ in
       ],
       "edge_cases": [
         {
-          "name": "minimal-task-still-orchestrated",
+          "name": "minimal-task-direct",
           "category": "minimal",
           "prompt": "apex add a missing semicolon in index.ts",
-          "expected_behavior": "APEX runs; Fast still spawns an implementer; nothing runs inline.",
+          "expected_behavior": "APEX runs at the Direct tier: inline edit, machine gate, then apex-tier re-checks the real diff; no implementer is spawned.",
           "assertions": [
-            {"type": "pattern", "value": "step-00|[Ii]nitializ", "description": "Must initialize rather than shortcut"},
-            {"type": "pattern", "value": "ORCHESTRATION|subagent|spawn|phase", "description": "Must actually orchestrate, not merely announce initialization"},
+            {"type": "pattern", "value": "Direct", "description": "The tier gate picks Direct for a one-line, non-sensitive diff"},
+            {"type": "pattern", "value": "gate|apex-tier", "description": "Direct still runs the machine gate and the apex-tier real-diff re-check"},
             {"type": "excludes", "value": "overkill", "description": "Must not decline the task as too big a hammer"},
             {"type": "excludes", "value": "too small", "description": "Must not decline the task for its size"},
             {"type": "excludes", "value": "quick-fix", "description": "Must not reroute to quick-fix — excludes is a literal substring test, so each phrasing needs its own entry"}
           ]
         },
         {
+          "name": "notification-matcher-direct",
+          "category": "mode",
+          "prompt": "ajoute un matcher au hook Notification dans settings.nix",
+          "expected_behavior": "The tier gate picks Direct: adding a notification hook matcher is a settings value, not a sensitive surface; the words hook and settings in the brief do not make it high-stakes.",
+          "assertions": [
+            {"type": "pattern", "value": "Direct", "description": "Tier is decided on the diff, not on the brief's words"},
+            {"type": "pattern", "value": "gate|apex-tier", "description": "Direct still runs the machine gate and the apex-tier re-check"},
+            {"type": "excludes", "value": "tier=high", "description": "A notification matcher is not a sensitive surface"}
+          ]
+        },
+        {
+          "name": "permissions-deny-high-stakes",
+          "category": "mode",
+          "prompt": "ajoute Bash(rm *) à permissions.deny dans settings.nix",
+          "expected_behavior": "The tier gate picks High-stakes: the diff edits a deny permission rule, a sensitive surface, however small it is.",
+          "assertions": [
+            {"type": "pattern", "value": "High-stakes", "description": "A deny rule edit is a sensitive surface, so High-stakes wins over Direct"},
+            {"type": "pattern", "value": "HIGH-STAKES|-e|[Ee]xternal", "description": "High-stakes adds the external read-only detector"},
+            {"type": "excludes", "value": "Tier: Direct", "description": "Size never downgrades a sensitive surface to Direct"}
+          ]
+        },
+        {
           "name": "diagnosis-task",
           "category": "mode",
           "prompt": "apex why is the app crashing on startup?",
-          "expected_behavior": "The Mode Gate selects diagnosis mode and runs the chain inside APEX; the debugger agent implements from the execute phase.",
+          "expected_behavior": "The tier gate selects Diagnosis and runs the chain inside APEX; the debugger agent implements from the execute phase.",
           "assertions": [
-            {"type": "pattern", "value": "[Mm]ode [Gg]ate", "description": "Must name the gate that selects the mode"},
+            {"type": "pattern", "value": "[Mm]ode [Gg]ate|[Tt]ier [Gg]ate", "description": "Must name the gate that selects the tier"},
             {"type": "pattern", "value": "debugger agent|execute phase", "description": "The chain runs inside APEX, implemented by the debugger agent"},
             {"type": "excludes", "value": "instead of apex", "description": "Nothing runs in place of the chain"}
           ]
@@ -1889,9 +1760,9 @@ in
           "name": "huge-codebase",
           "category": "scale",
           "prompt": "apex refactor the entire monorepo — 500+ files across 12 services",
-          "expected_behavior": "APEX runs; the Mode Gate picks high-stakes depth. No pre-APEX triage exists — the plan's Tasks section carries the breakdown, and -k groups it into file-disjoint waves.",
+          "expected_behavior": "APEX runs; the tier gate picks the depth. No pre-APEX triage exists — the plan's Tasks section carries the breakdown, and -k groups it into file-disjoint waves.",
           "assertions": [
-            {"type": "pattern", "value": "[Mm]ode [Gg]ate|high-stakes", "description": "Depth is chosen by the Mode Gate, not by declining the task"},
+            {"type": "pattern", "value": "[Mm]ode [Gg]ate|[Tt]ier [Gg]ate|[Hh]igh-stakes|Standard", "description": "Depth is chosen by the tier gate, not by declining the task"},
             {"type": "pattern", "value": "[Ww]ave|[Tt]ask|-k", "description": "The breakdown lives in the plan's tasks, not in a pre-APEX step"},
             {"type": "excludes", "value": "before running apex", "description": "Nothing runs before APEX — the gate picks depth, never whether"}
           ]
@@ -1948,17 +1819,20 @@ in
     transition logic inside step files. This table is the only place that decides
     where to go next. Edit transitions HERE, nowhere else.
 
+    Direct does not use this table until it escalates: its whole run is
+    steps/DIRECT.md.
+
     ## Linear spine
 
     | From | Next (unconditional) |
     |------|----------------------|
-    | 00-init | 03-execute IF Fast (coordinator writes the 02-plan.md mini-plan and 02-acs.md), else 01-analyze |
+    | 00-init | Diagnosis: 01-analyze always (reproduction first). Standard / High-stakes: 01-analyze IF the files to touch are unknown, else 02-plan |
+    | Direct escalation | 02-plan with the Standard (or High-stakes) flags; branch and diff kept, cause in 00-context.md |
     | 01-analyze | 01b-obsidian IF `-o`, else 02-plan |
     | 01b-obsidian | 02-plan |
     | 02-plan | 02c-verify IF `-v`, else 03-execute |
     | 02c-verify | 03-execute |
     | 03-execute | 04-validate |
-    | 04-validate (Fast only, before the terminal router below) | 01-analyze with Standard flags IF diff > 2 files / > 20 lines, HIGH path touched, or gate red; record cause in 00-context.md |
 
     ## Post-validate / post-tests / post-resolve — shared terminal router
 
@@ -2001,8 +1875,8 @@ in
     ## Roles
 
     - **Coordinator** = the main `/apex` run. It is the ONLY agent allowed to
-      spawn (subagents cannot spawn subagents — depth is capped at 1). It does
-      NOT do the analysis/coding itself; it spawns a phase agent, receives its
+      spawn (subagents cannot spawn subagents — depth is capped at 1). Outside
+      Direct it does NOT do the analysis/coding itself; it spawns a phase agent, receives its
       summary, verifies it, persists it, then spawns the next phase.
     - **Phase agent** = a fresh subagent (Agent tool) per phase. Receives a
       self-contained brief, works in its own window, returns ONLY a bounded
@@ -2020,8 +1894,7 @@ in
     | Plan | plan phase agent | `opus` (effort high/max) |
     | Execute (parallel waves under `-k`, coordinator's call) | implementer agents | `opus` (low effort mechanical) |
     | Bulk / large-context execute | implementer agents | `sonnet` |
-    | Fast plan | coordinator inline | none |
-    | Fast implementer | implementer agent | `sonnet` (or `opus` effort low) |
+    | Direct (edit + self-check, DIRECT.md) | coordinator inline | none |
     | Run tests | test-runner | sonnet |
     | Self-verify (every task) | COORDINATOR inline (Opus 5.5) | none — fresh-context adversarial pass |
     | High-stakes fallback verify (no usable external verdict) / premises (`-p`) | fable verifier subagent | `fable` — READ-ONLY, bounded verdict |
@@ -2044,6 +1917,158 @@ in
     coordinator persists the correction itself, per the rule in step-02-plan, and
     does so BEFORE spawning execute — the same applies to a contradiction raised
     later, mid-run.
+
+    ## High-stakes blocks live in HIGH-STAKES.md
+
+    Test-first (`-f`), Divergence (`-2`), the Fable rule and premises pass,
+    External verify (`-e`), Worktree isolation and the Pressure-test are in
+    `steps/HIGH-STAKES.md`. Read it on High-stakes, or when one of those
+    flags is typed.
+
+    ## Coordinator context — command output stays small
+
+    The coordinator reads command output in the tail only: a command whose
+    output can exceed ~30 lines runs in the background or with its output cut to
+    the tail, and the coordinator reads the exit code plus the last failing lines.
+    A verdict with no exit code is an unrun check.
+    Sandbox-excluded commands (bare `nix flake check`, `git push`, `gh`, `codex`)
+    stay standalone — no pipe — so run them with `run_in_background` and read
+    the tail of the output file.
+    A gate runner subagent (`model: sonnet`, never haiku) is reserved for
+    multi-command or long test suites whose failure needs diagnosis; its verdict
+    quotes the command, its exit code and the last failing lines.
+    The coordinator keeps reading `git diff --stat` and the hunks it must judge.
+
+    ## Verify loop (Opus 5.5 self-verify; external detector on high-stakes)
+
+    After EVERY execute wave, verify — depth scaled to blast-radius:
+    1. Machine gate FIRST (free): parse / typecheck / lint / tests, output read in
+       the tail (Coordinator context above). Never spend a
+       model to find what a compiler finds.
+    2. Read the execute summary AND the actual diff (`git diff --stat` + the diff
+       of touched files). Never trust the summary alone.
+    3. Opus 5.5 coordinator self-verifies each acceptance criterion against the real
+       diff (fresh-context adversarial pass — Opus 5.5's strength).
+    4. HIGH-STAKES ONLY (irreversible / security / architecture / prod): the
+       external detector (`-e`) over diff + ACs, findings triaged by evidence;
+       no usable external verdict → the Fable fallback pass (HIGH-STAKES.md).
+    5. Issues found → CORRECTIONS list (persisted): one line per issue —
+       `file: problem → expected fix`. The coordinator re-briefs an Opus 5.5
+       implementer (`model: opus`) with a SHARPER brief each round (root cause,
+       exact files/lines, expected end state, exact command that must pass), then
+       re-verifies the new diff.
+    6. Loop until every acceptance criterion is green. Max 2 correction rounds,
+       enforced by the correction-budget hook (PreToolUse on Agent): every
+       correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`
+       (<run-id> = this run's `.claude/output/apex/` dir name); any other brief
+       naming 06-resolve.md or a correction round carries
+       `APEX-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
+       both counted, and counts once the spawn/send is attempted, even if later
+       denied. Denied (budget spent) → STOP: deliver with
+       the residuals list verbatim and the failing output, or ask the user.
+       Never weaken a check to make it pass, never declare success on partial
+       green.
+
+    ## When this applies
+
+    - Standard, Diagnosis and High-stakes. Direct is the one inline tier
+      (steps/DIRECT.md): the coordinator edits a small, non-sensitive diff
+      itself, guarded by the machine gate and `apex-tier` on the real diff,
+      and escalates here the moment either says no.
+    - In Standard/High-stakes the coordinator never grades its own work: a
+      separate implementer subagent writes the diff, the coordinator verifies.
+    - Standard skips the analyze phase when `Files:` is already known
+      (ROUTING.md): the plan is the first spawn.
+    - Forces `-s` (save) ON: the chain of summaries is also persisted to disk so
+      it survives compaction and enables manual resume from disk. Fresh context + external
+      memory are two halves of the same mechanism; do not enable one without the other.
+
+    ## Fan-out lives in the COORDINATOR, not the phase
+
+    Because a phase agent cannot itself spawn (depth=1), any parallel fan-out is
+    done by the coordinator, which then hands the synthesis to the phase agent:
+    - **Analyze**: coordinator spawns the parallel Explore agents, collects their
+      bounded summaries, THEN spawns the analyzer agent with those summaries as
+      input. The analyzer produces the Conflicts & Constraints synthesis.
+    - **Execute (parallel waves)**: when `-k` produced independent waves, the coordinator spawns the implementer agents per wave
+      directly; there is no separate "execute agent" wrapping them.
+
+    Before spawning a wave, re-check its file-disjointness (step-02b) by
+    re-reading the persisted task list at the plan path — the phase summary is
+    bounded and does not carry the per-task `Files:` lists. The coordinator
+    schedules the concurrency, so it owns the collision.
+
+    ## Phase brief (what the coordinator passes IN)
+
+    Every spawn must include, per Anthropic's worker-brief contract:
+    1. **Objective** — the one job of this phase.
+    2. **Output format** — the exact summary schema below (mandatory).
+    3. **Context** — the task + the PRECEDING phase summaries (distilled), plus
+       the on-disk plan path. Never the raw transcript.
+    4. **Tools & boundaries** — which tools to use, what NOT to touch. For an
+       implementer in a `-k` wave, "what NOT to touch" is literal: pass the
+       task's `Files:` list verbatim as the only paths it may write.
+
+    ## Phase summary (what each phase returns OUT — fixed schema)
+
+    ```
+    PHASE: {analyze|plan|execute|validate}
+    OBJECTIVE_MET: yes | partial | no
+    DECISIONS: {key choices made}
+    ARTIFACTS: {files touched / created, plan path, ACs}
+    OPEN_RISKS: {anything the next phase must know}
+    HANDOFF: {the single most important thing for the next phase}
+    ```
+
+    Target 1-2k tokens. Distilled, not raw. Over-compression loses subtle info
+    whose importance only appears later — keep every decision and open risk.
+
+    ## BLOCKED is a valid result
+
+    Any phase agent may return `OBJECTIVE_MET: no` plus a `BLOCKED: {reason}`
+    line instead of forcing an answer it does not have. The coordinator treats
+    BLOCKED as a result, never as a failure to paper over: read the reason, then
+    re-brief with what was missing, change approach, or put the question to the
+    user. An agent that invents a plausible completion because "no" felt like
+    failing costs far more than one that stops and says why. Never re-spawn an
+    identical brief hoping for a different answer, and never restate a BLOCKED
+    phase as done in the run summary.
+
+    ## Completeness check (mitigates path dependency)
+
+    Before spawning phase N+1, the coordinator verifies phase N's summary has all
+    schema fields filled and OBJECTIVE_MET is yes/partial. An empty field →
+    re-spawn with a sharper brief. OBJECTIVE_MET no → handle the BLOCKED reason
+    per the rule above. An omission here propagates silently all the way to
+    validate.
+
+    ## Persistence
+
+    Write each phase summary to `.claude/output/apex/{task-id}/NN-{phase}.md` as
+    it completes. The coordinator's live context holds only the summaries; the
+    disk copy is the source of truth for manual resume.
+    ## Commands
+
+    Privileged and sandbox command classification: `steps/COMMANDS.md`.
+
+    ## Cost note
+
+    Measured 2026-10-07: a 28-line settings diff run through the full chain
+    cost ~220k tokens (analyze 70k + implementer 38k + coordinator ~114k).
+    Multi-agent work costs ≈15× a plain chat, and every subagent pays ~20k of
+    bootstrap before it reads a line. That is the price of clean context on
+    work that needs it — not a price to pay on a one-line change. Size the
+    run on the diff (SKILL.md tier table): Direct for the small and
+    non-sensitive, this chain for the rest.
+  '';
+
+  # --- High-stakes additions (steps/HIGH-STAKES.md) ---
+  # Moved out of ORCHESTRATION.md: only the High-stakes tier reads them.
+  apexHighStakes = ''
+    # APEX High-stakes — what the top tier adds to Standard
+
+    Read on top of ORCHESTRATION.md when the tier is High-stakes, or when
+    one of the flags below is typed in another tier.
 
     ## Test-first (`-f`) — a SEPARATE agent writes the failing tests
 
@@ -2104,9 +2129,9 @@ in
 
     ## External verify (`-e`) — one cross-vendor read-only pass
 
-    `-e` is a default of the High-stakes set only; the risk-signal hook adds it
-    only on a HIGH signal, `-E` cancels it, and in Diagnosis or Standard it
-    runs only when typed.
+    `-e` is a default of the High-stakes set only; a run escalated to
+    High-stakes by `apex-tier` gains it, `-E` cancels it, and in Diagnosis or
+    Standard it runs only when typed.
     On high-stakes, `-e` is the default read-only DETECTOR on the diff, and Fable is not spawned beside it.
 
     Cross-family detection is what `-e` buys: Opus 5.5 and Fable share a training
@@ -2136,50 +2161,50 @@ in
     The coordinator surfaces BLOCKED as an UNRUN check — never as green, and
     never as a reason to stop the run: the machine gate, and on high-stakes, the
     Fable fallback it triggers, decide the run's colour.
+    External verify runs one pass; triage correctness against the ACs only — style findings dismissed by category.
 
-    ## Coordinator context — command output stays small
+    ## Worktree isolation — for a different problem than collisions
 
-    The coordinator reads command output in the tail only: a command whose
-    output can exceed ~30 lines runs in the background or with its output cut to
-    the tail, and the coordinator reads the exit code plus the last failing lines.
-    A verdict with no exit code is an unrun check.
-    Sandbox-excluded commands (bare `nix flake check`, `git push`, `gh`, `codex`)
-    stay standalone — no pipe — so run them with `run_in_background` and read
-    the tail of the output file.
-    A gate runner subagent (`model: sonnet`, never haiku) is reserved for
-    multi-command or long test suites whose failure needs diagnosis; its verdict
-    quotes the command, its exit code and the last failing lines.
-    The coordinator keeps reading `git diff --stat` and the hunks it must judge.
+    The harness already provides isolation, so nothing here builds it: an
+    `Agent` spawn takes `isolation: "worktree"` and gets its own git worktree,
+    auto-cleaned when it changed nothing. `EnterWorktree` moves the WHOLE
+    session's working directory and refuses to create a second one from
+    inside a worktree, so it is the wrong instrument for parallel subagents.
 
-    ## Verify loop (Opus 5.5 self-verify; external detector on high-stakes)
+    Do NOT reach for a worktree to make a wave safe. File-disjoint waves solve
+    that at the source, and isolating implementers creates a worse problem:
+    their edits land in another directory on another branch, and someone has
+    to merge them back. Isolation buys separation, not integration.
 
-    After EVERY execute wave, verify — depth scaled to blast-radius:
-    1. Machine gate FIRST (free): parse / typecheck / lint / tests, output read in
-       the tail (Coordinator context above). Never spend a
-       model to find what a compiler finds.
-    2. Read the execute summary AND the actual diff (`git diff --stat` + the diff
-       of touched files). Never trust the summary alone.
-    3. Opus 5.5 coordinator self-verifies each acceptance criterion against the real
-       diff (fresh-context adversarial pass — Opus 5.5's strength).
-    4. HIGH-STAKES ONLY (irreversible / security / architecture / prod): the
-       external detector (`-e`) over diff + ACs, findings triaged by evidence;
-       no usable external verdict → the Fable fallback pass.
-    5. Issues found → CORRECTIONS list (persisted): one line per issue —
-       `file: problem → expected fix`. The coordinator re-briefs an Opus 5.5
-       implementer (`model: opus`) with a SHARPER brief each round (root cause,
-       exact files/lines, expected end state, exact command that must pass), then
-       re-verifies the new diff.
-    6. Loop until every acceptance criterion is green. Max 2 correction rounds,
-       enforced by the correction-budget hook (PreToolUse on Agent): every
-       correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`
-       (<run-id> = this run's `.claude/output/apex/` dir name); any other brief
-       naming 06-resolve.md or a correction round carries
-       `APEX-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
-       both counted, and counts once the spawn/send is attempted, even if later
-       denied. Denied (budget spent) → STOP: deliver with
-       the residuals list verbatim and the failing output, or ask the user.
-       Never weaken a check to make it pass, never declare success on partial
-       green.
+    Whoever spawns the worktree owns the merge, and owes three things before
+    the run can close: the worktree's branch name recorded in the phase
+    summary, its diff read explicitly (`git -C {worktree} diff`) because the
+    coordinator's `git diff` cannot see it, and that branch merged into the
+    run's own branch BEFORE step-09 — otherwise the work reaches neither the
+    commit nor the PR.
+
+    Spawn WITH `isolation: "worktree"` when the work itself is hostile to the
+    checkout you are standing in:
+    - it installs, upgrades or removes dependencies
+    - it runs a destructive or long migration you may want to abandon whole
+    - it is an experiment whose likeliest outcome is `git checkout .`
+    - two whole builds cannot share one checkout. Note this is NOT `-2`,
+      which stays scoped to the core pure functions in a scratch file and
+      needs no worktree.
+
+    The test is the WORK, not the situation. Work hostile to this checkout
+    earns a worktree even when it sits inside a wave; a collision never earns
+    one, and is still fixed by splitting the wave. When both descriptions fit,
+    split the wave first, then decide the worktree on the work alone.
+
+    Two things the harness does NOT do inside a fresh worktree, both of which
+    have to be in the brief or the agent starts on sand:
+    - **Dependencies are absent.** A new worktree has no `node_modules`, no
+      `target/`, no `.venv`. Name the install command explicitly — `pnpm
+      install`, `cargo build`, `uv sync` — and expect it to cost minutes.
+    - **The baseline is unproven.** Run the project's own gate there before
+      the first edit, and record the result. Without it, a red check at the
+      end cannot be told apart from a red check that was already there.
 
     ## Pressure-test — when the diff changes APEX's own rules
 
@@ -2235,180 +2260,151 @@ in
     one's expected answer was wrong twice: the fixture named a helper whose
     tie-break reintroduced the very bug the task reported, and both arms were
     right to refuse it. Budget for the probe being wrong before the rule is.
+  '';
 
-    ## When this applies
+  # --- Direct tier: the one inline tier (steps/DIRECT.md) ---
+  apexDirect = ''
+    # APEX Direct — the one inline tier
+    <!-- effort: low -->
 
-    - Always active. There is no inline mode: even Fast spawns a separate
-      implementer, so the coordinator never grades its own work.
-    - Fast is the ONE carve-out: no analyze phase, the coordinator writes the
-      3-5 line mini-plan itself (a plan is not graded code); execute is still a
-      separate implementer spawn and validate runs as step-04.
-    - Forces `-s` (save) ON: the chain of summaries is also persisted to disk so
-      it survives compaction and enables manual resume from disk. Fresh context + external
-      memory are two halves of the same mechanism; do not enable one without the other.
+    Direct is for a diff of ≤ 3 files and ≤ 30 changed lines that touches no
+    sensitive surface and is not a bug (SKILL.md tier table). The coordinator
+    edits the files itself and spawns no implementer: no analyze phase, no
+    plan agent, no subagent at all.
 
-    ## Fan-out lives in the COORDINATOR, not the phase
+    Why inline: this revokes the 2026-08-17 'no inline tier': the coordinator does grade its own diff here; the safeguard is the machine gate plus the real-diff re-check, not self-grading.
+    A 28-line settings diff measured ~220k tokens through the full chain; the
+    same change inline costs a fraction, and the two checks below are
+    deterministic, so they do not care who wrote the diff.
 
-    Because a phase agent cannot itself spawn (depth=1), any parallel fan-out is
-    done by the coordinator, which then hands the synthesis to the phase agent:
-    - **Analyze**: coordinator spawns the parallel Explore agents, collects their
-      bounded summaries, THEN spawns the analyzer agent with those summaries as
-      input. The analyzer produces the Conflicts & Constraints synthesis.
-    - **Execute (parallel waves)**: when `-k` produced independent waves, the coordinator spawns the implementer agents per wave
-      directly; there is no separate "execute agent" wrapping them.
+    Default flags: `-pr` only; -o and -n run only when typed — a vault
+    read and a session note buy nothing on a one-line change. Typed `-t`,
+    `-x` or `-e` are honoured: they run after step 5 as in Standard.
 
-    Before spawning a wave, re-check its file-disjointness (step-02b) by
-    re-reading the persisted task list at the plan path — the phase summary is
-    bounded and does not carry the per-task `Files:` lists. The coordinator
-    schedules the concurrency, so it owns the collision.
+    ## Steps (in order)
 
-    ## Worktree isolation — for a different problem than collisions
+    1. **Branch.** Per the Git section of CLAUDE.md: on `main`/`master`, cut
+       `{type}/{task-id}` before the first edit; on a feature branch, stay.
+       Record `{trunk}` = the branch you cut from.
+    2. **Context file.** Write `.claude/output/apex/{task-id}/00-context.md`:
 
-    The harness already provides isolation, so nothing here builds it: an
-    `Agent` spawn takes `isolation: "worktree"` and gets its own git worktree,
-    auto-cleaned when it changed nothing. `EnterWorktree` moves the WHOLE
-    session's working directory and refuses to create a second one from
-    inside a worktree, so it is the wrong instrument for parallel subagents.
+       ```markdown
+       # APEX: {task}
+       Tier: Direct
+       Flags: {resolved flags}
+       Files: {path}, {path}
+       Est-lines: {N}
+       Baseline: {gate} -> {green | red: check | skipped: reason}
 
-    Do NOT reach for a worktree to make a wave safe. File-disjoint waves solve
-    that at the source, and isolating implementers creates a worse problem:
-    their edits land in another directory on another branch, and someone has
-    to merge them back. Isolation buys separation, not integration.
+       ## Tokens
+       | Point | Coordinator context |
+       |-------|---------------------|
+       | start | {n} |
+       | end | {n} |
+       ```
 
-    Whoever spawns the worktree owns the merge, and owes three things before
-    the run can close: the worktree's branch name recorded in the phase
-    summary, its diff read explicitly (`git -C {worktree} diff`) because the
-    coordinator's `git diff` cannot see it, and that branch merged into the
-    run's own branch BEFORE step-09 — otherwise the work reaches neither the
-    commit nor the PR.
+       ACs go in the same file under `## ACs`, one line each.
+    3. **Baseline gate.** Run the project's own gate BEFORE the first edit —
+       the same command step 5 will run (`pnpm typecheck && pnpm lint`,
+       `nix flake check --no-build`, `cargo check`). Record its verdict.
+       Already red → name the failing check; only that check may be blamed
+       on the baseline later. Only a `sudo` gate is skipped (COMMANDS.md),
+       and a skipped baseline dismisses nothing as pre-existing.
+    4. **Edit inline**, only the paths in `Files:`. A path outside `Files:`
+       is not a quiet addition — it is a re-tier: go to step 6's escalation.
+    5. **Machine gate.** Re-run the baseline command; read the exit code and
+       the tail only (ORCHESTRATION.md "Coordinator context").
+    6. **Tier re-check.** Run `apex-tier --base {trunk}` and read its verdict
+       line. Escalate when it is anything but `tier=direct`, OR the gate is
+       red (a red gate never gets a fix inline):
+       - Direct escalates to Standard (or to High-stakes when `apex-tier`
+         says `tier=high`): keep the branch and the diff, record the cause
+         in `00-context.md` (`Escalated: {apex-tier verdict | gate red: check}`),
+         then go to step-02-plan with the Standard or High-stakes default
+         flags. High-stakes also reads `steps/HIGH-STAKES.md`.
+       - Direct never runs a correction round inline. The first implementer
+         brief after an escalation carries `APEX-CORRECTION-ROUND: {run-id}`
+         ({run-id} = this run's `.claude/output/apex/` dir name), so the
+         correction budget counts it.
+    7. **Self-check.** Read `git diff` of the touched files and check each AC
+       against it, one line per AC: `AC — met | not met — evidence`. A not-met
+       AC is an escalation (step 6), not a second inline edit.
+    8. **Ship.** Commit, push, PR and merge per `steps/COMMANDS.md`
+       (`-pr` default; `-PR` opts out of the whole ship step — no commit, the
+       change stays uncommitted on the run's branch, as in Standard). Fill the `## Tokens`
+       end row, then present: tier, files, gate verdict, `apex-tier` line,
+       PR link.
 
-    Spawn WITH `isolation: "worktree"` when the work itself is hostile to the
-    checkout you are standing in:
-    - it installs, upgrades or removes dependencies
-    - it runs a destructive or long migration you may want to abandon whole
-    - it is an experiment whose likeliest outcome is `git checkout .`
-    - two whole builds cannot share one checkout. Note this is NOT `-2`,
-      which stays scoped to the core pure functions in a scratch file and
-      needs no worktree.
+    ## What Direct never does
 
-    The test is the WORK, not the situation. Work hostile to this checkout
-    earns a worktree even when it sits inside a wave; a collision never earns
-    one, and is still fixed by splitting the wave. When both descriptions fit,
-    split the wave first, then decide the worktree on the work alone.
+    - Spawn an implementer, an analyzer or a verifier.
+    - Skip `apex-tier --base {trunk}`, or trust `Est-lines:` over its verdict.
+    - Edit a path outside `Files:` without re-tiering.
+    - Correct a red gate inline.
+  '';
 
-    Two things the harness does NOT do inside a fresh worktree, both of which
-    have to be in the brief or the agent starts on sand:
-    - **Dependencies are absent.** A new worktree has no `node_modules`, no
-      `target/`, no `.venv`. Name the install command explicitly — `pnpm
-      install`, `cargo build`, `uv sync` — and expect it to cost minutes.
-    - **The baseline is unproven.** Run the project's own gate there before
-      the first edit, and record the result. Without it, a red check at the
-      end cannot be told apart from a red check that was already there.
+  # --- Commands: privileged/sandbox classification, stated once (steps/COMMANDS.md) ---
+  apexCommands = ''
+    # APEX Commands — classify, then run, escalate or delegate
 
-    ## Phase brief (what the coordinator passes IN)
+    The ONE place that says how a command is run. Every tier reads it; no step
+    file restates it. Before running ANY command (coordinator or phase agent),
+    classify it — by capability, not by task: do not special-case nix.
 
-    Every spawn must include, per Anthropic's worker-brief contract:
-    1. **Objective** — the one job of this phase.
-    2. **Output format** — the exact summary schema below (mandatory).
-    3. **Context** — the task + the PRECEDING phase summaries (distilled), plus
-       the on-disk plan path. Never the raw transcript.
-    4. **Tools & boundaries** — which tools to use, what NOT to touch. For an
-       implementer in a `-k` wave, "what NOT to touch" is literal: pass the
-       task's `Files:` list verbatim as the only paths it may write.
-
-    ## Phase summary (what each phase returns OUT — fixed schema)
-
-    ```
-    PHASE: {analyze|plan|execute|validate}
-    OBJECTIVE_MET: yes | partial | no
-    DECISIONS: {key choices made}
-    ARTIFACTS: {files touched / created, plan path, ACs}
-    OPEN_RISKS: {anything the next phase must know}
-    HANDOFF: {the single most important thing for the next phase}
-    ```
-
-    Target 1-2k tokens. Distilled, not raw. Over-compression loses subtle info
-    whose importance only appears later — keep every decision and open risk.
-
-    ## BLOCKED is a valid result
-
-    Any phase agent may return `OBJECTIVE_MET: no` plus a `BLOCKED: {reason}`
-    line instead of forcing an answer it does not have. The coordinator treats
-    BLOCKED as a result, never as a failure to paper over: read the reason, then
-    re-brief with what was missing, change approach, or put the question to the
-    user. An agent that invents a plausible completion because "no" felt like
-    failing costs far more than one that stops and says why. Never re-spawn an
-    identical brief hoping for a different answer, and never restate a BLOCKED
-    phase as done in the run summary.
-
-    ## Completeness check (mitigates path dependency)
-
-    Before spawning phase N+1, the coordinator verifies phase N's summary has all
-    schema fields filled and OBJECTIVE_MET is yes/partial. An empty field →
-    re-spawn with a sharper brief. OBJECTIVE_MET no → handle the BLOCKED reason
-    per the rule above. An omission here propagates silently all the way to
-    validate.
-
-    ## Persistence
-
-    Write each phase summary to `.claude/output/apex/{task-id}/NN-{phase}.md` as
-    it completes. The coordinator's live context holds only the summaries; the
-    disk copy is the source of truth for manual resume.
-
-    ## Privileged commands — classify, then escalate or delegate
-
-    Before running ANY command (coordinator or phase agent), classify it. This is
-    generalist: do not special-case nix — judge by capability, not by task.
-
-    - **Safe** — read-only, parse, test, edit a file in the repo, `git status/add`,
-      `nix-instantiate --parse`, grep, build steps that do not touch the system:
-      execute directly.
+    - **Safe** — read-only, parse, test, edit a file in the repo,
+      `git status/add`, `nix-instantiate --parse`, grep, build steps that do
+      not touch the system: execute directly. Bare `nix flake check` and
+      `darwin-rebuild build` (no sudo) you run yourself, long ones with
+      `run_in_background`.
     - **Password-interactive** — `sudo …` (including `sudo darwin-rebuild
       switch`) and system package installs that prompt for a password: DO NOT
       execute; add the exact command to a **"Run yourself" list** in the phase
-      summary / final output. Only this bullet goes to that list.
+      summary / final output. Only this bullet goes to that list. A baseline
+      that needs one is recorded `baseline: skipped — {command} — {reason}`.
     - **Blocked automatically** (classifier or sandbox) — not a hand-off: ask
       the user in the conversation, naming the exact action
       (« je le lance ? … »), and on their explicit yes run it yourself. A no
       from the user — in the permission box or in the conversation — is final:
       do not ask again.
-      Never hand the user a command to type, never a `! cmd`. Bare
-      `nix flake check` and `darwin-rebuild build` (no sudo) you run
-      yourself, long ones with run_in_background.
+      Never hand the user a command to type, never a `! cmd`.
     - **Sandbox-excluded** — `git push`, `git commit`, `git pull`, `git fetch`,
-      `gh`, `codex` and bare `nix flake check` run OUTSIDE the sandbox only when the Bash call is that
-      command alone: run them as standalone commands from the repo cwd — no
-      `cd … &&`, no `git -C`, no `&&` chain, no redirection, heredoc or `$(…)`
-      (multi-line text: `-F <file>` / `--body-file <file>`). If one fails on
-      sandbox evidence, fix the shape; do not escalate.
-      Inside the sandbox, `.git/config` and `.git/hooks` are read-only in
-      every repo: `git branch -d/-m/-u`, `git checkout -b <x> origin/<y>`,
-      `git remote`, `git config --local`, `git init` and `git clone` fail
-      there — run them with dangerouslyDisableSandbox (one retry, permission
-      box).
-    - **Sandbox-blocked** — docker, local DB sockets, or any
-      command that just failed with clear sandbox evidence (permission denied on
-      allowed work, socket/auth failure): retry ONCE with
-      `dangerouslyDisableSandbox: true`. The `ask` permission rule shows the user
-      a confirmation box — they approve or refuse; a refusal is an answer, not an
-      obstacle to work around. COORDINATOR ONLY: phase agents do not escalate;
-      they surface the command in their summary and the coordinator decides.
-      Never weaken the sandbox config itself and never touch secrets to make a
-      command pass.
-    - **In doubt** — ask the user, unless already durably authorized this session.
+      `gh`, `codex` and bare `nix flake check` run OUTSIDE the sandbox only
+      when the Bash call is that command alone:
+      run them as standalone commands — one per Bash call, from the repo cwd, no `cd … &&`, no
+      `git -C`, no `&&` chain, no redirection, heredoc or `$(…)` (multi-line
+      text: `git commit -F <file>`, `gh pr create --body-file <file>`). Any of
+      those keeps the call sandboxed and it fails. If one fails on sandbox
+      evidence, fix the shape; do not escalate. Long ones run with
+      `run_in_background`; read the tail of the output file.
+    - **Read-only `.git/config`** — inside the sandbox, `.git/config` and
+      `.git/hooks` are read-only in every repo: `git branch -d/-m/-u`,
+      `git checkout -b <x> origin/<y>`, `git remote`, `git config --local`,
+      `git init` and `git clone` fail there — run them with
+      dangerouslyDisableSandbox (one retry, permission box).
+    - **Sandbox-blocked** — docker, local DB sockets, or any command that just
+      failed with clear sandbox evidence (permission denied on allowed work,
+      socket/auth failure): retry ONCE with `dangerouslyDisableSandbox: true`.
+      The `ask` permission rule shows the user a confirmation box — they
+      approve or refuse; a refusal is an answer, not an obstacle to work
+      around. COORDINATOR ONLY: phase agents do not escalate; they surface the
+      command in their summary and the coordinator decides. Never weaken the
+      sandbox config itself and never touch secrets to make a command pass.
+    - **In doubt** — ask the user, unless already durably authorized this
+      session.
 
-    Why: the confirmation box keeps the user in control while avoiding dead-end
-    "Run yourself" lists for one-click approvals. Only password prompts stay
-    delegated (the password belongs in the user's terminal). Acceptance
-    criteria that need a delegated command (e.g. "switch applied") are marked
-    **deferred to user** in the validate summary, not failed.
+    Why: the confirmation box keeps the user in control while avoiding
+    dead-end "Run yourself" lists for one-click approvals. Only password
+    prompts stay delegated (the password belongs in the user's terminal).
+    Acceptance criteria that need a delegated command (e.g. "switch applied")
+    are marked **deferred to user** in the validate summary, not failed.
 
-    ## Cost note
+    ## Ship (`-pr`)
 
-    A 4-phase subagent chain costs materially more tokens than one continuous
-    context (multi-agent ≈ up to ~15× a plain chat). That is the price of robust,
-    pollution-free context. For small tasks the complexity gate (step-00) should
-    have already redirected out of APEX.
+    Commit on the run's branch (`git commit -F <file>`, English, imperative,
+    type prefix), push, `gh pr create --body-file <file>`, then squash-merge
+    the PR once its checks are green — each a standalone command per the
+    rule above. Never commit to `main`/`master`; never force-push or rewrite
+    pushed history without asking.
   '';
 
   # -------------------------

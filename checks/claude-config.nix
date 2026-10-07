@@ -374,9 +374,9 @@ let
 
   emptyHookGroups = builtins.filter (g: (g.hooks or null) == [ ]) preToolUse;
 
-  # Flags READ from the Mode Gate table in step-00, never restated here — same
+  # Flags READ from the tier table in SKILL.md (skillApex), never restated here — same
   # extraction as apex-consistency's rowFlags. null = table reformatted.
-  diagnosisRow = builtins.match ".*\\| Diagnosis \\| `([^`]*)` \\|.*" (skills.apexStep00Init or "");
+  diagnosisRow = builtins.match ".*\\| Diagnosis \\| `([^`]*)` \\|.*" (skills.skillApex or "");
   diagnosisFlags = if diagnosisRow == null then null else builtins.head diagnosisRow;
   readme = builtins.readFile ../README.md;
 
@@ -669,7 +669,7 @@ let
         && builtins.elem "-pr" (pkgs.lib.splitString " " diagnosisFlags)
         && hasInfix ("| Diagnosis | `" + diagnosisFlags + "` |") readme;
       msg =
-        "Mode Gate diagnosis flags read from apexStep00Init: "
+        "tier-table diagnosis flags read from skillApex: "
         + (if diagnosisFlags == null then "<row not found — table reformatted?>" else "`${diagnosisFlags}`")
         + " — either `-pr` is missing (a diagnosis fix then stops on its branch and needs a manual ship) or README.md no longer carries `| Diagnosis | `<same flags>` |`, so the documented flags drift from the ones the skill applies";
     }

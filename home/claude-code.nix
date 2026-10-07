@@ -29,6 +29,7 @@ let
   nixOptions = import ./claude-code/nix-options.nix { inherit pkgs; };
   scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
   apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
+  apexTier = import ./claude-code/apex-tier.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
     inherit pkgs lib;
     inherit (scraplingShim) scraplingShimPkg;
@@ -41,6 +42,7 @@ let
   inherit (trello) trelloPkg;
   inherit (nixOptions) nixOptionsPkg;
   inherit (apexVerifyExternal) apexVerifyExternalPkg;
+  inherit (apexTier) apexTierPkg;
   inherit (graphifyReindex) graphifyReindexPkg;
   inherit (vaultSnapshot) vaultSnapshotPkg;
   inherit (settings)
@@ -291,6 +293,7 @@ in
       trelloPkg
       nixOptionsPkg
       apexVerifyExternalPkg
+      apexTierPkg
       graphifyReindexPkg
       vaultSnapshotPkg
     ];

@@ -214,24 +214,17 @@ in
   # stderr, exit 0, in every path including a parse failure.
   hookNullResultGate = builtins.readFile ./hooks/null-result-gate.js;
 
-  # Rewrites APEX's flags before it starts, from risk signals in the task text.
+  # PreToolUse on Skill: when APEX starts, injects the context size read from
+  # the transcript tail (input + cache read + cache creation tokens of the last
+  # assistant usage). Context only — no updatedInput, no permissionDecision.
   #
-  # The mode gate picks flags from prose, before anything is known about the
-  # change — and a typed flag wins over the mode default. Measured on
-  # 2026-08-08: `-e` was typed on 3 of 3 invocations, under-powering 2 of them
-  # (a 45-rule rewrite and a blocking hook both ran in economy). That evidence
-  # is what eventually retired economy mode entirely on 2026-08-17.
+  # It used to rewrite the flags from regexes over the BRIEF TEXT. Retired on
+  # 2026-10-07: a 28-line Notification matcher change was forced to
+  # high-stakes because the brief said "settings"/"hook". Words are not risk;
+  # the diff is. Risk is now decided on the diff by `apex-tier`
+  # (apex-tier.nix), per the tier table in SKILL.md.
   #
-  # Rule: a typed flag is a FLOOR, never a ceiling. A risk signal can only
-  # raise the tier. `-e` (external verify) is never stripped when typed, and is
-  # added only on a HIGH signal, as part of the High-stakes set — see below.
-  # Uppercase disables the user typed on purpose are preserved.
-  #
-  # False positives are the intended failure direction: a task that merely
-  # mentions "settings" runs more thoroughly than needed. Cheap. The reverse
-  # is not.
-  #
-  # FAIL-OPEN: any error leaves the call untouched.
+  # FAIL-OPEN: any error exits 0 (no output, or context=unknown).
   hookApexFlags = builtins.readFile ./hooks/apex-flags.js;
 
   hookFormatTypescript = builtins.readFile ./hooks/format-typescript.js;
@@ -292,14 +285,10 @@ in
   # design: keyword-matching the prompt would miss exactly the ambiguous cases
   # where the reminder matters most, and a false negative is the failure mode
   # that actually hurts (the rule silently not firing).
-  # DUPLICATION: the mode table below is a hand-maintained COPY of the Mode
-  # Gate table in skills.nix (apexStep00Init -> step-00-init.md), not derived
-  # from it — still edited by hand. It drifted twice ((1) the trivial tier,
-  # removed 2026-08-17, stayed advertised for months; (2) -o/-n became mode
-  # defaults while still listed as opt-in), so drift is now guarded:
-  # `modeDrift`, with `trivialAdvertised`, `missingOptions` and `staleOptions`,
-  # in checks/apex-consistency.nix fails `nix flake check` when this line and
-  # the table disagree.
+  # NO TABLE HERE: it used to carry a hand-maintained copy of the mode table,
+  # which drifted twice. It now only points at the single tier table in
+  # SKILL.md (skillApex in skills.nix), so there is nothing to keep in sync.
+  # File kept ≤ 200 bytes: this line is paid on every prompt.
   hookApexReminder = builtins.readFile ./hooks/apex-reminder.sh;
 
   hookSubagentStop = builtins.readFile ./hooks/subagent-stop.js;

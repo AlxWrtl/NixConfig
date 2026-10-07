@@ -535,6 +535,40 @@ let
       scope = steps.ORCHESTRATION;
     }
     {
+      # Standard with known Files: skips the plan subagent (2026-10-07 cost
+      # cut). Losing the condition brings back an opus planner spawn on every
+      # Standard run; losing the "not graded code" half invites collapsing the
+      # implementer into the coordinator too. Scoped to ORCHESTRATION's "When
+      # this applies", where the spawn sequence is decided.
+      name = "orchestration: a plan subagent runs only after analyze or on high-stakes";
+      needle = "A plan subagent runs only when 01-analyze ran or the tier is High-stakes.";
+      scope = steps.ORCHESTRATION;
+    }
+    {
+      # A general-purpose implementer measured ~53k bootstrap vs ~33-38k for a
+      # typed agent on the same decide-only probe. Without the rule the
+      # default subagent_type creeps back in and the saving is silently lost.
+      name = "orchestration: the implementer is typed, never general-purpose";
+      needle = "The implementer is a typed agent picked by domain, never general-purpose.";
+      scope = steps.ORCHESTRATION;
+    }
+    {
+      # Same cost cut, second site: step-02 is what the coordinator reads when
+      # planning. Without it step-02 reads as always spawning a planner while
+      # ORCHESTRATION says the coordinator plans inline.
+      name = "plan: with Files known the coordinator writes the plan itself";
+      needle = "the COORDINATOR writes 02-plan.md itself";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      # The implementer reads the plan from disk. Pasting it into the brief
+      # pays the plan's tokens twice and lets the brief drift from the
+      # persisted plan the coordinator verifies against.
+      name = "orchestration: an implementer brief never pastes the plan";
+      needle = "never pastes the plan";
+      scope = steps.ORCHESTRATION;
+    }
+    {
       # The tier gate's whole point (2026-10-07): a 28-line Notification
       # matcher was forced to high-stakes because the brief said "settings"
       # and "hook". Words in a brief are not risk; the diff is.

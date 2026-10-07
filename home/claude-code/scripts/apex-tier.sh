@@ -13,7 +13,7 @@
 # raises the tier to at least standard: its content cannot be read here.
 #
 # Tier: high if any reason; else standard if lines > --max-lines (30) or
-# files > 3 (a change spread over many files is not "direct" even when small);
+# files > 4 (a change spread over many files is not "direct" even when small);
 # else direct.
 #
 # Reasons (all escalate to high — the heuristic errs toward escalation):
@@ -42,7 +42,7 @@
 #   A comment that says "deny" also escalates: accepted false positive.
 #
 # --paths p... classifies PATHS ONLY (plan time, before any diff exists):
-# only secret-path and the files>3 rule apply; lines=0. Re-run without
+# only secret-path and the files>4 rule apply; lines=0. Re-run without
 # --paths once the diff exists — that run is authoritative.
 
 usage() {
@@ -253,7 +253,7 @@ fi
 
 if [ "${#reasons[@]}" -gt 0 ]; then
   tier=high
-elif [ "$lines" -gt "$max_lines" ] || [ "$files" -gt 3 ] || [ "$binary" -eq 1 ]; then
+elif [ "$lines" -gt "$max_lines" ] || [ "$files" -gt 4 ] || [ "$binary" -eq 1 ]; then
   tier=standard
 else
   tier=direct

@@ -333,7 +333,7 @@ indentation ancestry of each changed line.
 
 | Mode | Default flags | Notes |
 |------|---------------|-------|
-| Direct | `-pr` | ≤ 3 files, ≤ 30 changed lines, no sensitive surface |
+| Direct | `-pr` | ≤ 4 files, ≤ 30 changed lines, no sensitive surface |
 | Diagnosis | `-x -pr -o -n` | bug/crash — reproduce first, debugger agent implements, ships as a PR |
 | Standard | `-t -pr -o -n` | full orchestration |
 | High-stakes | `-t -x -pr -o -n -e` | irreversible / security / architecture / prod — one examine reviewer, then Codex `-e` as read-only detector whose findings are triaged by evidence; Fable only as fallback when no usable external verdict (BLOCKED or `-E`), or under `-p` |

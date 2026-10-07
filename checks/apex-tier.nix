@@ -13,6 +13,8 @@
 #   F8  scripts/purge.sql gains `DELETE FROM users;` -> high (destructive)
 #   F9  hooks/notification.sh: one osascript text change, the file holds no
 #       decision statement                        -> direct (no over-escalation)
+#   F10 4 new untracked 1-line files a..d.txt     -> direct (files > 4 boundary)
+#   F11 5 new untracked 1-line files a..e.txt     -> standard (files > 4)
 #
 # Canary M1: a copy of the script with PERM_RE replaced by a regex that never
 # matches (`x^`) runs F2 and must NOT say high. If it still does, F2's "high"
@@ -236,6 +238,14 @@ pkgs.runCommand "apex-tier-check" { } ''
   cp ${notifyF9} hooks/notification.sh
   expect "F9 notifier text change" direct - ${tier}/bin/apex-tier
 
+  fixture f10
+  for n in a b c d; do printf 'x\n' > "$n.txt"; done
+  expect "F10 4 new files" direct - ${tier}/bin/apex-tier
+
+  fixture f11
+  for n in a b c d e; do printf 'x\n' > "$n.txt"; done
+  expect "F11 5 new files" standard - ${tier}/bin/apex-tier
+
   # M1 on F2: must not be high.
   fixture m1
   cp ${settingsF2} settings.nix
@@ -251,6 +261,6 @@ pkgs.runCommand "apex-tier-check" { } ''
   esac
   echo "apex-tier: canary M1 killed — F2 without PERM_RE: $m1"
 
-  echo "apex-tier: 9 fixtures, 1 canary — OK"
+  echo "apex-tier: 11 fixtures, 1 canary — OK"
   touch $out
 ''

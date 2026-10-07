@@ -65,7 +65,7 @@ in
 
     | Mode | Default flags | When | Read |
     |------|---------------|------|------|
-    | Direct | `-pr` | ≤ 3 files, ≤ 30 changed lines, no sensitive surface, not a bug | `steps/DIRECT.md` + `steps/COMMANDS.md` |
+    | Direct | `-pr` | ≤ 4 files, ≤ 30 changed lines, no sensitive surface, not a bug | `steps/DIRECT.md` + `steps/COMMANDS.md` |
     | Diagnosis | `-x -pr -o -n` | bug / error / crash / broken: reproduce first, debugger agent implements | as Standard |
     | Standard / complex | `-t -pr -o -n` | everything else that changes files | `steps/step-00-init.md`, `steps/ORCHESTRATION.md`, `steps/ROUTING.md`, `steps/COMMANDS.md`, then steps as routed |
     | High-stakes | `-t -x -pr -o -n -e` | the diff touches a sensitive surface | Standard list + `steps/HIGH-STAKES.md` |
@@ -223,9 +223,10 @@ in
     Read [step-00b-save.md](step-00b-save.md) and execute it — unconditional:
     the on-disk summary chain is an invariant, not a flag.
 
-    `-o` and `-n` are not init-time sub-steps. `-o` fires at the end of
-    step-01-analyze (vault + knowledge graph before planning); `-n` fires at
-    the terminal steps: it writes the session note, THEN runs
+    `-o` and `-n` are not init-time sub-steps. `-o` fires before
+    step-02-plan: at the end of step-01-analyze, or straight from init when
+    analyze is skipped (vault + knowledge graph before planning); `-n` fires
+    at the terminal steps: it writes the session note, THEN runs
     `graphify-reindex` in the background — the only thing keeping the graph
     current, so a run that skips `-n` silently degrades the next run's `-o`.
 
@@ -1826,7 +1827,7 @@ in
 
     | From | Next (unconditional) |
     |------|----------------------|
-    | 00-init | Diagnosis: 01-analyze always (reproduction first). Standard / High-stakes: 01-analyze IF the files to touch are unknown, else 02-plan |
+    | 00-init | Diagnosis: 01-analyze always (reproduction first). Standard / High-stakes: 01-analyze IF the files to touch are unknown, else 01b-obsidian IF `-o`, else 02-plan |
     | Direct escalation | 02-plan with the Standard (or High-stakes) flags; branch and diff kept, cause in 00-context.md |
     | 01-analyze | 01b-obsidian IF `-o`, else 02-plan |
     | 01b-obsidian | 02-plan |
@@ -2267,7 +2268,7 @@ in
     # APEX Direct — the one inline tier
     <!-- effort: low -->
 
-    Direct is for a diff of ≤ 3 files and ≤ 30 changed lines that touches no
+    Direct is for a diff of ≤ 4 files and ≤ 30 changed lines that touches no
     sensitive surface and is not a bug (SKILL.md tier table). The coordinator
     edits the files itself and spawns no implementer: no analyze phase, no
     plan agent, no subagent at all.

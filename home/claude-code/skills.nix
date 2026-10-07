@@ -625,8 +625,10 @@ in
 
     YOU ARE A PLANNER, not an implementer. Do NOT write any code yet.
 
-    Per ORCHESTRATION.md: the coordinator spawns this as a fresh
-    planner agent (`model: opus`) whose input is the analyze phase summary (not
+    Files known (01-analyze skipped, not High-stakes): the COORDINATOR writes 02-plan.md itself, short: Files:, ordered steps, command-verifiable ACs, Docs: line, Style: line. No plan subagent.
+
+    Per ORCHESTRATION.md: the coordinator, when 01-analyze ran or on
+    High-stakes, spawns this as a fresh planner agent (`model: opus`) whose input is the analyze phase summary (not
     the raw transcript). Return the plan phase summary schema and persist the
     plan. The coordinator (Opus 5.5) then reviews the plan and approves or
     re-briefs before execute — execute never starts on an unapproved plan.
@@ -959,8 +961,10 @@ in
     YOU ARE AN IMPLEMENTER following a plan, not a designer.
     Do NOT deviate from the plan. Do NOT add features that weren't planned.
 
-    Per ORCHESTRATION.md: your input is the plan phase summary + the persisted
-    plan path. Return the execute phase summary schema.
+    Per ORCHESTRATION.md: your input is the plan path (02-plan.md) and its
+    Files: boundary — read the plan there. Return the execute phase summary
+    schema. The coordinator spawns a typed implementer (subagent_type by
+    domain), never general-purpose.
 
     Before the first edit, re-check the "Conflicts & Constraints" from step-01:
     if implementation reveals a conflict that was missed, STOP and revise the
@@ -1892,9 +1896,9 @@ in
     |-------|-------|-------|
     | Analyze fan-out | Explore / codebase-navigator | sonnet |
     | Analyze synthesis | analyzer phase agent | `opus` (effort high) |
-    | Plan | plan phase agent | `opus` (effort high/max) |
-    | Execute (parallel waves under `-k`, coordinator's call) | implementer agents | `opus` (low effort mechanical) |
-    | Bulk / large-context execute | implementer agents | `sonnet` |
+    | Plan | coordinator inline when 01-analyze was skipped (Standard); plan phase agent only after 01-analyze or on High-stakes | `opus` (effort high/max) |
+    | Execute (parallel waves under `-k`, coordinator's call) | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `opus` (low effort mechanical) |
+    | Bulk / large-context execute | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `sonnet` |
     | Direct (edit + self-check, DIRECT.md) | coordinator inline | none |
     | Run tests | test-runner | sonnet |
     | Self-verify (every task) | COORDINATOR inline (Opus 5.5) | none — fresh-context adversarial pass |
@@ -1906,7 +1910,9 @@ in
     models — a model switch pays the ~15× subagent/context tax. Switch model only
     when the tier gap is real (sonnet for mechanical and bulk work).
 
-    Plan approval: the coordinator reads the returned plan, checks it against the
+    Plan approval: when the coordinator wrote the plan itself, approval is its own
+    Files:/ACs/Docs:/Style: check; the planner/premises rules below apply when a
+    plan agent ran. The coordinator reads the returned plan, checks it against the
     task + analyze summary, then approves it or re-briefs the planner — and
     re-briefs any plan missing its `Docs:` line (step-02-plan.md). Execute
     never starts on an unapproved plan. The planner drafts the premises but never
@@ -1979,7 +1985,15 @@ in
     - In Standard/High-stakes the coordinator never grades its own work: a
       separate implementer subagent writes the diff, the coordinator verifies.
     - Standard skips the analyze phase when `Files:` is already known
-      (ROUTING.md): the plan is the first spawn.
+      (ROUTING.md): the coordinator writes 02-plan.md itself and the implementer is the first spawn.
+    - A plan subagent runs only when 01-analyze ran or the tier is High-stakes.
+      A plan is not graded code: the implementer stays a separate agent and the coordinator verifies its diff, so writer and verifier stay separate.
+    - The implementer is a typed agent picked by domain, never general-purpose.
+      Mapping: nix-expert for `.nix`; frontend-expert / backend-expert by file
+      type; debugger for Diagnosis; quick-fix (`model: sonnet`, explicit) for
+      edit-only mechanical changes — it has no Write tool. No domain match →
+      quick-fix if edit-only, else backend-expert.
+      general-purpose bootstrap measured ~53k on decide-only probes vs ~33-38k for nix-expert/Plan runs (2026-10-07).
     - Forces `-s` (save) ON: the chain of summaries is also persisted to disk so
       it survives compaction and enables manual resume from disk. Fresh context + external
       memory are two halves of the same mechanism; do not enable one without the other.
@@ -2006,6 +2020,7 @@ in
     2. **Output format** — the exact summary schema below (mandatory).
     3. **Context** — the task + the PRECEDING phase summaries (distilled), plus
        the on-disk plan path. Never the raw transcript.
+       An implementer brief names the plan path (02-plan.md) and its Files: boundary; it never pastes the plan.
     4. **Tools & boundaries** — which tools to use, what NOT to touch. For an
        implementer in a `-k` wave, "what NOT to touch" is literal: pass the
        task's `Files:` list verbatim as the only paths it may write.

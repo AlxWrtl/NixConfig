@@ -56,6 +56,11 @@ export const sumTally = (a: ApexBandTally, b: ApexBandTally): ApexBandTally => (
 // All four counts of a tally summed.
 export const tallyTotal = (t: ApexBandTally): number => t.input + t.output + t.cacheRead + t.cacheWrite
 
+// The counts the pane shows as a loop's or phase's work: input, output and
+// cache writes; cache reads (the context re-read on every request) are left
+// out and shown apart.
+export const countedTotal = (t: ApexBandTally): number => t.input + t.output + t.cacheWrite
+
 // A fresh loop, running from `at`.
 function freshLoop(id: string, at: number): ApexBandLoop {
   return { id, status: 'running', steps: 0, calls: 0, tally: ZERO, startedAt: at, durationMs: 0, since: at }

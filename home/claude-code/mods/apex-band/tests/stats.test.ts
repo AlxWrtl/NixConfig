@@ -14,6 +14,7 @@ import {
   startTool,
   syncPhases,
   tallyTotal,
+  countedTotal,
 } from '../hooks/stats.ts'
 import type { Usage } from '../hooks/stats.ts'
 
@@ -111,6 +112,10 @@ describe('loops', () => {
     const { main, sub } = splitTotals(loops)
     expect(tallyTotal(main)).toBe(334)
     expect(tallyTotal(sub)).toBe(668)
+    // Counted totals leave the cache reads (300 per step) out.
+    expect(countedTotal(main)).toBe(34)
+    expect(countedTotal(sub)).toBe(68)
+    expect(main.cacheRead + sub.cacheRead).toBe(900)
   })
 })
 

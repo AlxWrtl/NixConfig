@@ -1,14 +1,16 @@
 // apex-band: a band above the prompt showing the live APEX run of the
-// session's working directory (title, mode, current step, branch,
+// session's working directory (title, colored step bar, mode, branch,
 // baseline), read from <cwd>/.claude/output/apex/*/00-context.md. Draws
-// nothing when no run is live, or when the run's branch is not the one
-// checked out (<cwd>/.git/HEAD). Read-only: it never writes a file.
+// nothing of its own when no run is live, or when the run's branch is not
+// the one checked out (<cwd>/.git/HEAD); the bands of the mods beneath are
+// always kept. Read-only: it never writes a file.
 
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, Timer } from 'claude-code'
+import type { EngineInterface, Register, TextProps, Timer } from 'claude-code'
 
 import type { ApexBandRun } from '../types'
 import { layoutBand } from './band.ts'
+import type { Seg } from './band.ts'
 import { headBranch, isLive, onBranch, parseContext } from './context.ts'
 
 const POLL_MS = 5000
@@ -67,6 +69,15 @@ async function scan($: EngineInterface): Promise<ApexBandRun | null> {
   return onBranch(parsed, head) ? parsed : null
 }
 
+// A segment's Text props: only the styles it sets, never an undefined prop.
+function segProps(seg: Seg): TextProps {
+  return {
+    ...(seg.tone === undefined ? {} : { color: seg.tone }),
+    ...(seg.dim === true ? { dimColor: true } : {}),
+    ...(seg.bold === true ? { bold: true } : {}),
+  }
+}
+
 async function refresh($: EngineInterface): Promise<void> {
   const found = await scan($)
   const current = await read($, run)
@@ -115,13 +126,20 @@ export const register: Register = on => {
 
     const { Box, Text } = $.ui.resolve(e)
     const lines = layoutBand(current, e.props.bodyColumns, e.props.maxRows)
+    // The later mods' band, kept under ours (a tree replaces it otherwise).
+    const theirs = await next(e)
     return (
       <Box flexDirection="column">
         {lines.map(line => (
-          <Text dimColor wrap="truncate-end">
-            {line}
-          </Text>
+          <Box flexDirection="row">
+            {line.map(seg => (
+              <Text {...segProps(seg)} wrap="truncate-end">
+                {seg.text}
+              </Text>
+            ))}
+          </Box>
         ))}
+        {theirs}
       </Box>
     )
   })

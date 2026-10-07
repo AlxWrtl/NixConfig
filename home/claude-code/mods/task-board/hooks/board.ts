@@ -8,6 +8,17 @@ export type Task = TaskBoardTask
 export type Status = TaskBoardStatus
 
 export const CAP = 50
+// A task finished less than RECENT_MS ago is always shown; past it, at most
+// MAX_DONE finished tasks are shown unless the pane shows them all.
+export const RECENT_MS = 30_000
+export const MAX_DONE = 5
+
+// A model step's usage, reduced to the fields counted here.
+export type StepUsage = {
+  input_tokens: number
+  output_tokens: number
+  cache_creation_input_tokens: number
+}
 
 // What a task-notification row carries (UserMessage `e.props.task`).
 export type Notification = {
@@ -185,10 +196,74 @@ export function applyAgentSnapshot(tasks: Task[], list: readonly AgentSnapshot[]
 export function finishAgentTurn(tasks: Task[], agentId: string, reason: TurnReason, now: number): Task[] {
   const index = tasks.findIndex(t => t.id === agentId && t.kind === 'agent')
   const task = tasks[index]
-  if (task === undefined || task.status !== 'running' || task.agentType === TEAMMATE) return tasks
+  if (task === undefined || task.status !== 'running') return tasks
+  // A teammate's turn ending only clears its current tool.
+  if (task.agentType === TEAMMATE) return task.tool === undefined ? tasks : replaceAt(tasks, index, withoutTool(task))
   const status: Status = reason === 'answer' ? 'completed' : reason === 'aborted' ? 'killed' : 'failed'
-  const out = replaceAt(tasks, index, { ...task, status, endedAt: now })
+  const out = replaceAt(tasks, index, { ...withoutTool(task), status, endedAt: now })
   return status === 'completed' ? out : closeOrphanShells(out, agentId, now)
+}
+
+// The task without its current tool (the same object when it has none).
+function withoutTool(task: Task): Task {
+  if (task.tool === undefined) return task
+  const copy: Task = { ...task }
+  delete copy.tool
+  return copy
+}
+
+// A model step of subagent `agentId`: its input, output and cache-write
+// tokens are added to that agent's row (cache reads excluded: with a large
+// context they dwarf the rest). A main-loop step, an unknown agent, a null
+// usage or a zero count: no change.
+export function noteStep(tasks: Task[], agentId: string | undefined, usage: StepUsage | null): Task[] {
+  if (agentId === undefined || usage === null) return tasks
+  const count = usage.input_tokens + usage.output_tokens + usage.cache_creation_input_tokens
+  const index = tasks.findIndex(t => t.id === agentId && t.kind === 'agent')
+  const task = tasks[index]
+  if (task === undefined || !(count > 0)) return tasks
+  return tasks.map((t, i) => (i === index ? { ...task, tokens: (task.tokens ?? 0) + count } : t))
+}
+
+// A tool call in subagent `agentId`'s loop: shown as that running agent's
+// current tool. Main loop, unknown or finished agent, same tool: no change.
+export function noteTool(tasks: Task[], agentId: string | undefined, tool: string): Task[] {
+  if (agentId === undefined || tool === '') return tasks
+  const index = tasks.findIndex(t => t.id === agentId && t.kind === 'agent')
+  const task = tasks[index]
+  if (task === undefined || task.status !== 'running' || task.tool === tool) return tasks
+  return tasks.map((t, i) => (i === index ? { ...task, tool } : t))
+}
+
+// Every finished task removed; running ones kept.
+export function clearDone(tasks: Task[]): Task[] {
+  return tasks.some(t => t.status !== 'running') ? tasks.filter(t => t.status === 'running') : tasks
+}
+
+// True while a finished task is still inside the RECENT_MS window at `now`:
+// the pane's clock must keep ticking for it to fold once the window ends.
+export function hasRecentDone(tasks: readonly Task[], now: number): boolean {
+  return tasks.some(t => t.status !== 'running' && now - (t.endedAt ?? t.startedAt) < RECENT_MS)
+}
+
+// The rows the pane draws: every running task, then the finished ones (most
+// recent first) that are recent, among the first MAX_DONE, or all of them
+// when `showAll`; `hidden` counts the finished tasks left out.
+export function visible(tasks: readonly Task[], now: number, showAll: boolean): { rows: Task[]; hidden: number } {
+  const rows: Task[] = []
+  let done = 0
+  let hidden = 0
+  for (const t of tasks) {
+    if (t.status === 'running') {
+      rows.push(t)
+      continue
+    }
+    const isRecent = now - (t.endedAt ?? t.startedAt) < RECENT_MS
+    if (showAll || isRecent || done < MAX_DONE) rows.push(t)
+    else hidden += 1
+    done += 1
+  }
+  return { rows, hidden }
 }
 
 export function clear(tasks: Task[]): Task[] {

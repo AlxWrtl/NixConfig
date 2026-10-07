@@ -1,8 +1,10 @@
 // task-board: a pane opened by /task-board listing the session's background
 // shells and subagents under a count header, each row a status glyph (en
-// cours / finie / échouée / arrêtée), its kind, label and duration. Observes
-// only: every tool.call hook returns next(e)'s result unchanged. Silent: no
-// sound, no pop-up notification.
+// cours / finie / échouée / arrêtée), its kind, label and duration; an agent
+// row adds its current tool and counted tokens. Finished tasks past five fold
+// into one line; two buttons show them all or clear them. Observes only:
+// every tool.call and turn.step hook returns next(e)'s result unchanged.
+// Silent: no sound, no pop-up notification.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
@@ -12,13 +14,18 @@ import {
   addShell,
   applyAgentSnapshot,
   clear,
+  clearDone,
   finishAgentTurn,
   finishByNotification,
+  hasRecentDone,
+  noteStep,
+  noteTool,
   parseTaskNotifications,
   runningCount,
   stopShell,
+  visible,
 } from './board.ts'
-import type { Notification, Task } from './board.ts'
+import type { Notification, StepUsage, Task } from './board.ts'
 import { GLYPH_WIDTH, KIND_WIDTH, hasBothGroups, layoutRow, summary } from './format.ts'
 
 const PANE = 'task-board'
@@ -28,6 +35,7 @@ const TICK_MS = 1000
 const tasks = atom({ plugin: 'task-board', key: 'tasks' } as const, [])
 const now = atom({ plugin: 'task-board', key: 'now' } as const, 0)
 const isOpen = atom({ plugin: 'task-board', key: 'isOpen' } as const, false)
+const showAll = atom({ plugin: 'task-board', key: 'showAll' } as const, false)
 
 // Reads a field of an engine record whose shape varies per tool; anything
 // that is not a non-empty string reads as undefined.
@@ -63,6 +71,16 @@ async function change($: EngineInterface, fn: (list: Task[]) => Task[]): Promise
   await update($, tasks, fn)
 }
 
+// Runs `write`; a refused state write leaves the board as it was (an
+// observer never fails, nor runs twice, the event it watches).
+async function record(write: () => Promise<void>): Promise<void> {
+  try {
+    await write()
+  } catch {
+    // Display only: the next step or call writes again.
+  }
+}
+
 // Module-level: a hot reload drops the environment and its timers with it.
 let timer: Timer | undefined
 
@@ -71,8 +89,10 @@ async function tick($: EngineInterface): Promise<void> {
   const list = await $.agent.list()
   const snapshot = list.map(a => ({ id: a.id, description: a.description, type: a.type, status: a.status }))
   await change($, current => applyAgentSnapshot(current, snapshot, at))
-  // Per-second refresh only while the pane is open and something runs.
-  if ((await read($, isOpen)) && runningCount(await read($, tasks)) > 0) {
+  // Per-second refresh only while the pane is open and something runs, or a
+  // finished task has yet to leave the recent window (and fold).
+  const live = await read($, tasks)
+  if ((await read($, isOpen)) && (runningCount(live) > 0 || hasRecentDone(live, at))) {
     await update($, now, () => at)
   }
 }
@@ -223,6 +243,24 @@ export const register: Register = on => {
     return ran
   }).catch(($, e, next) => next(e))
 
+  // Each model response of a subagent: its counted tokens on the agent row.
+  on('turn.step', async function* ($, e, next) {
+    const result = yield* next(e)
+    const usage: StepUsage | null = result.usage
+    await record(() => change($, current => noteStep(current, e.agentId, usage)))
+    return result
+  }).catch(async function* ($, e, next) {
+    return yield* next(e)
+  })
+
+  // Any tool call in a subagent loop: shown as that agent's current tool,
+  // recorded before the call runs; its result is passed on unchanged.
+  on('tool.call', async ($, e, next) => {
+    const { agentId, tool } = e
+    await record(() => change($, current => noteTool(current, agentId, tool)))
+    return next(e)
+  }).catch(($, e, next) => next(e))
+
   on('turn.complete', async ($, e, next) => {
     const agentId = e.agentId
     if (agentId !== undefined) {
@@ -245,11 +283,14 @@ export const register: Register = on => {
 
   // Header of non-zero counts, then running rows (oldest first) and finished
   // rows (most recent first, board.ts order), the latter introduced by a dim
-  // label when both groups are shown. Reads state only.
+  // label when both groups are shown; finished rows past the cap fold into a
+  // dim "+N terminées" line. Footer buttons: [t] show all / fold, [x] clear
+  // the finished. Reads state only; only the buttons' presses write.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Button, Text } = $.ui.resolve(e)
     const list = await read($, tasks)
     const at = await read($, now)
+    const isAll = await read($, showAll)
     const cols = Math.max(20, e.props.bodyColumns)
 
     if (list.length === 0) {
@@ -269,14 +310,27 @@ export const register: Register = on => {
       )
       return i === 0 ? [count] : [<Text dimColor> · </Text>, count]
     })
-    const firstDone = hasBothGroups(list) ? list.findIndex(task => task.status !== 'running') : -1
+    const { rows, hidden } = visible(list, at, isAll)
+    const firstDone = hasBothGroups(list) ? rows.findIndex(task => task.status !== 'running') : -1
+    const hasDone = list.some(task => task.status !== 'running')
+    const canFold = isAll || hidden > 0
+    const toggle = (): void => {
+      update($, showAll, value => !value).catch(() => {
+        // State refused: the pane stays as drawn; a later press retries.
+      })
+    }
+    const clearFinished = (): void => {
+      update($, tasks, clearDone).catch(() => {
+        // State refused: the finished rows stay; a later press retries.
+      })
+    }
 
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" flexWrap="wrap">
           {header}
         </Box>
-        {list.flatMap((task, i) => {
+        {rows.flatMap((task, i) => {
           const row = layoutRow(task, Math.max(at, task.startedAt), cols)
           const line = (
             <Box flexDirection="row">
@@ -288,10 +342,15 @@ export const register: Register = on => {
                   <Text dimColor>{row.kind}</Text>
                 </Box>,
               ]}
-              <Box flexGrow={1} flexShrink={1}>
+              <Box flexDirection="row" flexGrow={1} flexShrink={1}>
                 <Text dimColor={row.isDone} wrap="truncate-end">
                   {row.text}
                 </Text>
+                {row.detail === '' ? [] : [
+                  <Text dimColor wrap="truncate-end">
+                    {row.detail}
+                  </Text>,
+                ]}
               </Box>
               <Box flexShrink={0} marginLeft={1}>
                 <Text dimColor>{row.dur}</Text>
@@ -300,6 +359,19 @@ export const register: Register = on => {
           )
           return i === firstDone ? [<Text dimColor>terminées</Text>, line] : [line]
         })}
+        {hidden > 0 ? [<Text dimColor>{`+${hidden} terminée${hidden > 1 ? 's' : ''}`}</Text>] : []}
+        {canFold || hasDone ? [
+          <Box flexDirection="row" flexWrap="wrap">
+            {canFold ? [
+              <Button key="toggle" hotkey="t" label={isAll ? 'replier' : 'tout afficher'} plain dimColor onPress={toggle} />,
+            ] : []}
+            {hasDone ? [
+              <Box marginLeft={canFold ? 2 : 0}>
+                <Button key="clear-done" hotkey="x" label="vider les terminées" plain dimColor onPress={clearFinished} />
+              </Box>,
+            ] : []}
+          </Box>,
+        ] : []}
       </Box>
     )
   })

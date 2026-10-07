@@ -1,4 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { TestBody } from 'claude-code/testing'
 
 const PANE = {
   component: 'Pane',
@@ -214,5 +215,153 @@ test('below 40 columns the kind column is dropped', async ($, on) => {
   expect(await ui.find({ type: 'Text', text: exact('●') })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: exact('dormir') })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'shell' })).toBeUndefined()
+  await ui.unmount()
+})
+
+// A turn.step stream read to its end: its chunks and the value it returned
+// (the kit's top-level stream hands the result as the final done value).
+async function drain<C, R>(stream: AsyncGenerator<C, R>): Promise<{ chunks: C[]; result: R }> {
+  const chunks: C[] = []
+  let step = await stream.next()
+  while (step.done !== true) {
+    chunks.push(step.value)
+    step = await stream.next()
+  }
+  return { chunks, result: step.value }
+}
+
+const STEP_RESULT = {
+  turnId: 't1',
+  index: 0,
+  answer: '',
+  toolUses: [],
+  stopReason: 'tool_use',
+  usage: {
+    input_tokens: 10_000,
+    output_tokens: 1_500,
+    cache_read_input_tokens: 800_000,
+    cache_creation_input_tokens: 500,
+    model: 'claude-opus-5-5',
+  },
+} as const
+
+test('a subagent step passes through unchanged and adds its tokens (cache reads excluded) to its row', async ($, on) => {
+  mock.clock(on, { now: 1_000 })
+  on('tool.call', { tool: 'Agent' }, () => ({
+    result: { status: 'async_launched', agentId: 'a1', description: 'scanner le moteur' },
+  }))
+  on('turn.step', async function* () {
+    yield { kind: 'text', index: 0, text: 'chunk' }
+    return STEP_RESULT
+  })
+  await $.tool.call({ tool: 'Agent', description: 'scanner', prompt: 'go', subagent_type: 'Explore' })
+
+  const { chunks, result } = await drain(
+    $.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 3, agentId: 'a1' }),
+  )
+  expect(chunks).toEqual([{ kind: 'text', index: 0, text: 'chunk' }])
+  expect(result).toEqual(STEP_RESULT)
+  // A main-loop step is passed on too, and counted nowhere.
+  const main = await drain($.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 4 }))
+  expect(main.result).toEqual(STEP_RESULT)
+
+  const ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: exact('Explore · scanner le moteur') })).toBeDefined()
+  const detail = await ui.find({ type: 'Text', text: exact(' · 12k') })
+  expect(detail?.props.dimColor).toBe(true)
+  await ui.unmount()
+})
+
+test('a tool call of any name passes through unchanged', async ($, on) => {
+  const answer = { file: { filePath: '/x', content: 'hi' } }
+  on('tool.call', { tool: 'Read' }, () => ({ result: answer }))
+  // The kit's $.tool.call carries no agentId: a main-loop call (per-agent
+  // tools: board.test.ts).
+  expect(await $.tool.call({ tool: 'Read', file_path: '/x' })).toEqual({ result: answer })
+})
+
+const OPEN_COMMAND = {
+  command: 'task-board',
+  args: '',
+  origin: { kind: 'composer' },
+  presentation: { isFullscreen: false, columns: 80 },
+} as const
+
+// One running shell and `finished` shells stopped at 1 000, then the pane
+// opened at `openAt` (the open sets the pane's clock).
+async function board(
+  $: Parameters<TestBody>[0],
+  on: Parameters<TestBody>[1],
+  finished: number,
+  openAt: number,
+): Promise<void> {
+  const clock = mock.clock(on, { now: 1_000 })
+  let n = 0
+  on('tool.call', { tool: 'Bash' }, () => {
+    n += 1
+    return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId: `bg-${n}` } }
+  })
+  on('tool.call', { tool: 'TaskStop' }, () => ({ result: { message: 'stopped' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  for (let i = 1; i <= finished; i += 1) {
+    await $.tool.call({ tool: 'Bash', command: 'true', description: `fini ${i}`, run_in_background: true })
+    await $.tool.call({ tool: 'TaskStop', task_id: `bg-${i}` })
+  }
+  await $.tool.call({ tool: 'Bash', command: 'sleep 600', description: 'en vie', run_in_background: true })
+  await clock.advance(openAt - 1_000)
+  await $.command.run(OPEN_COMMAND)
+}
+
+test('past 30 s, finished shells beyond five fold into "+2 terminées"', async ($, on) => {
+  await board($, on, 7, 60_000)
+  const ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: exact('en vie') })).toBeDefined()
+  expect((await ui.find({ type: 'Text', text: exact('\\+2 terminées') }))?.props.dimColor).toBe(true)
+  expect(await ui.find({ type: 'Text', text: exact('fini 3') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: exact('fini 2') })).toBeUndefined()
+  expect((await ui.find({ key: 'toggle' }))?.props.label).toBe('tout afficher')
+  expect((await ui.find({ key: 'toggle' }))?.props.hotkey).toBe('t')
+  expect((await ui.find({ key: 'clear-done' }))?.props.hotkey).toBe('x')
+  await ui.unmount()
+})
+
+test('within 30 s every finished shell is shown, no fold line', async ($, on) => {
+  await board($, on, 7, 20_000)
+  const ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: exact('fini 1') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /\+\d+ terminée/ })).toBeUndefined()
+  expect(await ui.find({ key: 'toggle' })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('[t] shows every finished shell then folds them again', async ($, on) => {
+  await board($, on, 7, 60_000)
+  let ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  await ui.press({ key: 'toggle' })
+  await ui.unmount()
+  ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: exact('fini 1') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /\+\d+ terminée/ })).toBeUndefined()
+  expect((await ui.find({ key: 'toggle' }))?.props.label).toBe('replier')
+  await ui.press({ key: 'toggle' })
+  await ui.unmount()
+  ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: exact('fini 1') })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: exact('\\+2 terminées') })).toBeDefined()
+  await ui.unmount()
+})
+
+test('[x] clears every finished shell, keeps the running one; no button left to press', async ($, on) => {
+  await board($, on, 7, 60_000)
+  let ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  await ui.press({ key: 'clear-done' })
+  await ui.unmount()
+  ui = await $.ui.mount({ plugin: 'task-board', surface: 'terminal', ...PANE })
+  expect(await ui.find({ type: 'Text', text: exact('1 en cours') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: exact('en vie') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /fini/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /terminée/ })).toBeUndefined()
+  expect(await ui.find({ key: 'clear-done' })).toBeUndefined()
+  expect(await ui.find({ key: 'toggle' })).toBeUndefined()
   await ui.unmount()
 })

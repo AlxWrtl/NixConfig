@@ -18,10 +18,14 @@ export type TaskBoardTask = {
   agentType?: string
   // Shell only: the subagent whose loop started it (absent on the main loop).
   ownerAgentId?: string
+  // Agent only: the tool its loop is running now, cleared when its turn ends.
+  tool?: string
+  // Agent only: input + output + cache-write tokens of its steps (cache reads excluded).
+  tokens?: number
 }
 
 declare module 'claude-code' {
   interface PluginState {
-    'task-board': { tasks: TaskBoardTask[]; now: number; isOpen: boolean }
+    'task-board': { tasks: TaskBoardTask[]; now: number; isOpen: boolean; showAll: boolean }
   }
 }

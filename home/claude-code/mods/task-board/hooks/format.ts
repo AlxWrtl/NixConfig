@@ -70,21 +70,47 @@ export function hasBothGroups(tasks: readonly TaskBoardTask[]): boolean {
   return tasks.some(t => t.status === 'running') && tasks.some(t => t.status !== 'running')
 }
 
-export type Row = { glyph: string; tone: ThemeKey; kind: string; text: string; dur: string; isDone: boolean }
+// "999", "1.2k", "10k", "1.0M": the unit is chosen after rounding
+// (9 999 → 10k, 999 999 → 1.0M), as apex-band's pane counts.
+export function fmtTokens(n: number): string {
+  const v = Math.max(0, Math.round(n))
+  if (v < 1000) return String(v)
+  const tenths = (v / 1000).toFixed(1)
+  if (Number(tenths) < 10) return `${tenths}k`
+  const thousands = Math.round(v / 1000)
+  if (thousands < 1000) return `${thousands}k`
+  return `${(v / 1_000_000).toFixed(1)}M`
+}
+
+// Cells the label keeps before a row's dim detail is cut.
+const MIN_NAME = 10
+
+// `text` is the label; `detail` the dim " · tool · tokens" suffix of an agent
+// (tool while running, tokens once counted), empty otherwise.
+export type Row = { glyph: string; tone: ThemeKey; kind: string; text: string; detail: string; dur: string; isDone: boolean }
 
 // One row laid out in `cols` cells: glyph column, kind column (empty below
-// KIND_MIN_COLS), label cut with "…", one gap, duration; the four fit.
+// KIND_MIN_COLS), label then dim detail cut with "…" (the label keeps
+// MIN_NAME cells first), one gap, duration; all fit.
 export function layoutRow(task: TaskBoardTask, now: number, cols: number): Row {
   const dur = formatDuration((task.endedAt ?? now) - task.startedAt)
   const kind = cols >= KIND_MIN_COLS ? task.kind : ''
   const base = task.label.replace(/\s+/g, ' ').trim()
   const name = task.kind === 'agent' && task.agentType !== undefined ? `${task.agentType} · ${base}` : base
   const room = cols - GLYPH_WIDTH - (kind === '' ? 0 : KIND_WIDTH) - 1 - dur.length
+  const parts = [
+    task.status === 'running' ? task.tool : undefined,
+    task.tokens !== undefined && task.tokens > 0 ? fmtTokens(task.tokens) : undefined,
+  ].filter((p): p is string => p !== undefined && p !== '')
+  const suffix = parts.map(p => ` · ${p}`).join('')
+  const nameRoom = Math.max(Math.min(name.length, room - suffix.length), Math.min(room, MIN_NAME))
+  const text = truncate(name, nameRoom)
   return {
     glyph: glyph(task.status),
     tone: tone(task.status),
     kind,
-    text: truncate(name, room),
+    text,
+    detail: truncate(suffix, room - text.length),
     dur,
     isDone: task.status !== 'running',
   }

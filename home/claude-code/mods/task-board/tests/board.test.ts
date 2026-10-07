@@ -2,16 +2,23 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   CAP,
+  MAX_DONE,
+  RECENT_MS,
   addAgent,
   addShell,
   applyAgentSnapshot,
   clear,
+  clearDone,
   finishAgentTurn,
   finishByNotification,
   parseTaskNotification,
+  hasRecentDone,
+  noteStep,
+  noteTool,
   parseTaskNotifications,
   runningCount,
   stopShell,
+  visible,
 } from '../hooks/board.ts'
 import type { Task } from '../hooks/board.ts'
 
@@ -205,5 +212,116 @@ describe('task notification text', () => {
     expect(stopShell(out, 'b1', 50)).toBe(out)
     const agent = addAgent([], { id: 'a1', label: 'x', startedAt: 0, agentType: 'Explore' })
     expect(stopShell(agent, 'a1', 40)).toBe(agent)
+  })
+})
+
+const usage = (input: number, output: number, cacheWrite: number) => ({
+  input_tokens: input,
+  output_tokens: output,
+  cache_creation_input_tokens: cacheWrite,
+  // Present on the engine's record, never counted.
+  cache_read_input_tokens: 900_000,
+})
+
+const agent = (id: string): Task[] => addAgent([], { id, label: `agent ${id}`, startedAt: 0, agentType: 'Explore' })
+
+// `count` shells finished at 1 000, 2 000, … (most recent last).
+const finishedShells = (count: number): Task[] => {
+  let list: Task[] = []
+  for (let i = 1; i <= count; i += 1) {
+    list = addShell(list, { id: `s${i}`, label: `cmd ${i}`, startedAt: 0 })
+    list = stopShell(list, `s${i}`, i * 1_000)
+  }
+  return list
+}
+
+describe('agent details', () => {
+  test('noteStep adds input + output + cache write, never cache reads', () => {
+    const once = noteStep(agent('a1'), 'a1', usage(1_000, 200, 50))
+    expect(once[0]?.tokens).toBe(1_250)
+    const twice = noteStep(once, 'a1', usage(10, 0, 0))
+    expect(twice[0]?.tokens).toBe(1_260)
+  })
+
+  test('noteStep: main loop, unknown agent, shell id, null usage, zero count are no-ops', () => {
+    const list = addShell(agent('a1'), { id: 'b1', label: 'x', startedAt: 0 })
+    expect(noteStep(list, undefined, usage(5, 5, 5))).toBe(list)
+    expect(noteStep(list, 'zz', usage(5, 5, 5))).toBe(list)
+    expect(noteStep(list, 'b1', usage(5, 5, 5))).toBe(list)
+    expect(noteStep(list, 'a1', null)).toBe(list)
+    expect(noteStep(list, 'a1', usage(0, 0, 0))).toBe(list)
+  })
+
+  test('noteTool sets a running agent\'s tool; repeats, main loop and finished agents are no-ops', () => {
+    const list = agent('a1')
+    const reading = noteTool(list, 'a1', 'Read')
+    expect(reading[0]?.tool).toBe('Read')
+    expect(noteTool(reading, 'a1', 'Read')).toBe(reading)
+    expect(noteTool(list, undefined, 'Read')).toBe(list)
+    expect(noteTool(list, 'zz', 'Read')).toBe(list)
+    const done = finishAgentTurn(list, 'a1', 'answer', 5)
+    expect(noteTool(done, 'a1', 'Read')).toBe(done)
+  })
+
+  test('the turn ending clears the tool, keeps the tokens; a teammate only loses its tool', () => {
+    const busy = noteStep(noteTool(agent('a1'), 'a1', 'Grep'), 'a1', usage(100, 0, 0))
+    const done = finishAgentTurn(busy, 'a1', 'answer', 9)
+    expect(done[0]?.status).toBe('completed')
+    expect(done[0]?.tool).toBeUndefined()
+    expect(done[0]?.tokens).toBe(100)
+    const mate = noteTool(addAgent([], { id: 't1', label: 'x', startedAt: 0, agentType: 'teammate' }), 't1', 'Bash')
+    const idle = finishAgentTurn(mate, 't1', 'answer', 9)
+    expect(idle[0]?.status).toBe('running')
+    expect(idle[0]?.tool).toBeUndefined()
+    expect(finishAgentTurn(idle, 't1', 'answer', 10)).toBe(idle)
+  })
+
+  test('clearDone removes every finished task, keeps running ones', () => {
+    const list = addShell(finishedShells(3), { id: 'r1', label: 'live', startedAt: 0 })
+    const out = clearDone(list)
+    expect(out.map(t => t.id)).toEqual(['r1'])
+    expect(clearDone(out)).toBe(out)
+  })
+})
+
+describe('visible', () => {
+  const late = 100_000
+
+  test('past the window, at most MAX_DONE finished (most recent first) and the rest hidden', () => {
+    const list = addShell(finishedShells(7), { id: 'r1', label: 'live', startedAt: 0 })
+    const { rows, hidden } = visible(list, late, false)
+    expect(MAX_DONE).toBe(5)
+    expect(rows.map(t => t.id)).toEqual(['r1', 's7', 's6', 's5', 's4', 's3'])
+    expect(hidden).toBe(2)
+  })
+
+  test('showAll shows every finished task', () => {
+    const { rows, hidden } = visible(finishedShells(7), late, true)
+    expect(rows.length).toBe(7)
+    expect(hidden).toBe(0)
+  })
+
+  test('a task finished less than RECENT_MS ago is always shown', () => {
+    const list = finishedShells(7)
+    // At s3 end + RECENT_MS - 1, s3..s7 are recent: s1 and s2 fold.
+    const at = 3_000 + RECENT_MS - 1
+    expect(visible(list, at, false)).toEqual({ rows: list.slice(0, 5), hidden: 2 })
+    const all = visible(list, 1_000 + RECENT_MS - 1, false)
+    expect(all.hidden).toBe(0)
+    expect(all.rows.length).toBe(7)
+    expect(visible(list, 1_000 + RECENT_MS, false).hidden).toBe(1)
+  })
+
+  test('running tasks are always shown, never counted as hidden', () => {
+    let list: Task[] = []
+    for (let i = 0; i < 12; i += 1) list = addShell(list, { id: `r${i}`, label: 'x', startedAt: i })
+    expect(visible(list, late, false)).toEqual({ rows: list, hidden: 0 })
+  })
+
+  test('hasRecentDone: only a finished task inside the window', () => {
+    const list = finishedShells(1)
+    expect(hasRecentDone(list, 1_000 + RECENT_MS - 1)).toBe(true)
+    expect(hasRecentDone(list, 1_000 + RECENT_MS)).toBe(false)
+    expect(hasRecentDone(agent('a1'), 0)).toBe(false)
   })
 })

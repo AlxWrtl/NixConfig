@@ -90,13 +90,15 @@ const MIN_NAME = 10
 export type Row = { glyph: string; tone: ThemeKey; kind: string; text: string; detail: string; dur: string; isDone: boolean }
 
 // One row laid out in `cols` cells: glyph column, kind column (empty below
-// KIND_MIN_COLS), label then dim detail cut with "…" (the label keeps
+// KIND_MIN_COLS, and for an agent whose type already prefixes the label),
+// label then dim detail cut with "…" (the label keeps
 // MIN_NAME cells first), one gap, duration; all fit.
 export function layoutRow(task: TaskBoardTask, now: number, cols: number): Row {
   const dur = formatDuration((task.endedAt ?? now) - task.startedAt)
-  const kind = cols >= KIND_MIN_COLS ? task.kind : ''
+  const typedAgent = task.kind === 'agent' && task.agentType !== undefined
+  const kind = cols >= KIND_MIN_COLS && !typedAgent ? task.kind : ''
   const base = task.label.replace(/\s+/g, ' ').trim()
-  const name = task.kind === 'agent' && task.agentType !== undefined ? `${task.agentType} · ${base}` : base
+  const name = typedAgent ? `${task.agentType} · ${base}` : base
   const room = cols - GLYPH_WIDTH - (kind === '' ? 0 : KIND_WIDTH) - 1 - dur.length
   const parts = [
     task.status === 'running' ? task.tool : undefined,

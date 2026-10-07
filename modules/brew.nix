@@ -38,6 +38,11 @@ _:
       # Auto-updating apps
       "1password"
       "arc"
+      # Épinglé le 2026-10-07 (`brew pin --cask chatgpt`) : le téléchargement du
+      # cask 26.1002.51308 renvoyait 404 et cassait `rebuild`. `brew bundle` saute
+      # les casks épinglés ; l'app continue de se mettre à jour seule (auto_updates).
+      # `brew unpin --cask chatgpt` une fois le cask corrigé en amont ; jamais
+      # retirer l'entrée (cleanup zap = désinstallation).
       "chatgpt"
       "claude"
       "claude-code@latest"

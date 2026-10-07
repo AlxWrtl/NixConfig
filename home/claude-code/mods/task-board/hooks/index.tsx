@@ -1,7 +1,8 @@
 // task-board: a pane opened by /task-board listing the session's background
-// shells and subagents with their duration and state (en cours / fini /
-// échoué). Observes only: every tool.call hook returns next(e)'s result
-// unchanged. Silent: no sound, no pop-up notification.
+// shells and subagents under a count header, each row a status glyph (en
+// cours / finie / échouée / arrêtée), its kind, label and duration. Observes
+// only: every tool.call hook returns next(e)'s result unchanged. Silent: no
+// sound, no pop-up notification.
 
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
@@ -18,7 +19,7 @@ import {
   stopShell,
 } from './board.ts'
 import type { Notification, Task } from './board.ts'
-import { layoutRow } from './format.ts'
+import { GLYPH_WIDTH, KIND_WIDTH, hasBothGroups, layoutRow, summary } from './format.ts'
 
 const PANE = 'task-board'
 const TITLE = 'Tâches'
@@ -242,6 +243,9 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Header of non-zero counts, then running rows (oldest first) and finished
+  // rows (most recent first, board.ts order), the latter introduced by a dim
+  // label when both groups are shown. Reads state only.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text } = $.ui.resolve(e)
     const list = await read($, tasks)
@@ -252,28 +256,49 @@ export const register: Register = on => {
       return (
         <Box flexDirection="column">
           <Text dimColor>Aucune tâche en arrière-plan.</Text>
+          <Text dimColor>Les shells en arrière-plan et les sous-agents s'affichent ici.</Text>
         </Box>
       )
     }
 
+    const header = summary(list).flatMap((part, i) => {
+      const count = (
+        <Text color={part.tone} bold={part.bold}>
+          {part.text}
+        </Text>
+      )
+      return i === 0 ? [count] : [<Text dimColor> · </Text>, count]
+    })
+    const firstDone = hasBothGroups(list) ? list.findIndex(task => task.status !== 'running') : -1
+
     return (
       <Box flexDirection="column">
-        {list.map(task => {
+        <Box flexDirection="row" flexWrap="wrap">
+          {header}
+        </Box>
+        {list.flatMap((task, i) => {
           const row = layoutRow(task, Math.max(at, task.startedAt), cols)
-          const isDone = task.status === 'completed'
-          const isFailed = task.status === 'failed' || task.status === 'killed'
-          return (
+          const line = (
             <Box flexDirection="row">
-              <Text color={isFailed ? 'error' : isDone ? 'inactive' : 'warning'} dimColor={isDone}>
-                {row.state}
-              </Text>
-              <Text dimColor={isDone} wrap="truncate-end">
-                {' '}
-                {row.text}{' '}
-              </Text>
-              <Text dimColor>{row.dur}</Text>
+              <Box width={GLYPH_WIDTH} flexShrink={0}>
+                <Text color={row.tone}>{row.glyph}</Text>
+              </Box>
+              {row.kind === '' ? [] : [
+                <Box width={KIND_WIDTH} flexShrink={0}>
+                  <Text dimColor>{row.kind}</Text>
+                </Box>,
+              ]}
+              <Box flexGrow={1} flexShrink={1}>
+                <Text dimColor={row.isDone} wrap="truncate-end">
+                  {row.text}
+                </Text>
+              </Box>
+              <Box flexShrink={0} marginLeft={1}>
+                <Text dimColor>{row.dur}</Text>
+              </Box>
             </Box>
           )
+          return i === firstDone ? [<Text dimColor>terminées</Text>, line] : [line]
         })}
       </Box>
     )

@@ -3,7 +3,7 @@
 
 export type TaskBoardKind = 'shell' | 'agent'
 
-// `killed` is kept as its own word in state and drawn as "échoué".
+// `killed` is kept as its own word in state and drawn as "arrêtée" (■), not as a failure.
 export type TaskBoardStatus = 'running' | 'completed' | 'failed' | 'killed'
 
 export type TaskBoardTask = {

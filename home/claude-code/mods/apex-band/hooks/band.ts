@@ -1,8 +1,11 @@
 // Pure layout of the band: at most two lines of styled segments, each line
 // fitting `cols` cells. Line 1 is the head (`APEX · <title>`) and the step
 // bar; mode, branch and baseline follow it when they fit, else go to line 2.
-// Widths are counted in code points: a wide glyph (CJK, emoji) in the title
-// may overflow the line by its extra cell.
+// Widths are counted in terminal cells by an approximation (cellWidth): CJK,
+// pictographs and BMP default-emoji symbols (⌚ ✅ ⭐) count 2, joiners, VS16
+// and combining accents 0, the rest 1. Still an approximation: a text symbol
+// promoted to emoji by VS16 (☀️) counts 1, and a grapheme the table
+// misjudges (rare scripts, flag pairs) may be off.
 
 import type { ThemeKey } from 'claude-code'
 
@@ -19,12 +22,93 @@ const MIN_TITLE = 8
 // Code points of `text`, so a surrogate pair is never split.
 const points = (text: string): string[] => Array.from(text)
 
+// Code point ranges drawn two cells wide: Hangul Jamo, CJK and Yi, Hangul
+// syllables, CJK compatibility, vertical and full-width forms, BMP symbols
+// with default emoji presentation (Emoji_Presentation=Yes), the emoji of
+// the 1F000–1F2FF blocks, emoji and pictographs, CJK extensions B and beyond.
+// The band's own glyphs (✓ ✗ ● ○ ■ – › · █ ░ …) stay outside, one cell.
+const WIDE: readonly (readonly [number, number])[] = [
+  [0x1100, 0x115f],
+  [0x231a, 0x231b],
+  [0x23e9, 0x23ec],
+  [0x23f0, 0x23f0],
+  [0x23f3, 0x23f3],
+  [0x25fd, 0x25fe],
+  [0x2614, 0x2615],
+  [0x2648, 0x2653],
+  [0x267f, 0x267f],
+  [0x2693, 0x2693],
+  [0x26a1, 0x26a1],
+  [0x26aa, 0x26ab],
+  [0x26bd, 0x26be],
+  [0x26c4, 0x26c5],
+  [0x26ce, 0x26ce],
+  [0x26d4, 0x26d4],
+  [0x26ea, 0x26ea],
+  [0x26f2, 0x26f3],
+  [0x26f5, 0x26f5],
+  [0x26fa, 0x26fa],
+  [0x26fd, 0x26fd],
+  [0x2705, 0x2705],
+  [0x270a, 0x270b],
+  [0x2728, 0x2728],
+  [0x274c, 0x274c],
+  [0x274e, 0x274e],
+  [0x2753, 0x2755],
+  [0x2757, 0x2757],
+  [0x2795, 0x2797],
+  [0x27b0, 0x27b0],
+  [0x27bf, 0x27bf],
+  [0x2b1b, 0x2b1c],
+  [0x2b50, 0x2b50],
+  [0x2b55, 0x2b55],
+  [0x2e80, 0xa4cf],
+  [0xac00, 0xd7a3],
+  [0xf900, 0xfaff],
+  [0xfe30, 0xfe4f],
+  [0xff00, 0xff60],
+  [0xffe0, 0xffe6],
+  [0x1f004, 0x1f004],
+  [0x1f0cf, 0x1f0cf],
+  [0x1f18e, 0x1f18e],
+  [0x1f191, 0x1f19a],
+  [0x1f200, 0x1f2ff],
+  [0x1f300, 0x1faff],
+  [0x20000, 0x3fffd],
+]
+
+// The cells a code point takes (approximation): 0 for the zero-width
+// joiner, VS16 and combining accents, 2 for the WIDE ranges, else 1.
+export function cellWidth(cp: number): number {
+  if (cp === 0x200d || cp === 0xfe0f || (cp >= 0x300 && cp <= 0x36f)) return 0
+  return WIDE.some(([lo, hi]) => cp >= lo && cp <= hi) ? 2 : 1
+}
+
+const cpCells = (cp: string): number => cellWidth(cp.codePointAt(0) ?? 0)
+
+// Cells of a text.
+export const textCells = (text: string): number => points(text).reduce((n, cp) => n + cpCells(cp), 0)
+
+// The longest head of `text` within `room` cells, whole code points only (a
+// wide glyph that does not fit is dropped, never halved), and its cells.
+function fit(text: string, room: number): { text: string; cells: number; whole: boolean } {
+  const cps = points(text)
+  let cells = 0
+  let n = 0
+  for (const cp of cps) {
+    const w = cpCells(cp)
+    if (cells + w > room) break
+    cells += w
+    n += 1
+  }
+  return { text: cps.slice(0, n).join(''), cells, whole: n === cps.length }
+}
+
 // Cuts `text` to `width` cells, the last one an ellipsis when cut.
 export function truncate(text: string, width: number): string {
   if (width <= 0) return ''
-  const cps = points(text)
-  if (cps.length <= width) return text
-  return width === 1 ? '…' : `${cps.slice(0, width - 1).join('')}…`
+  if (textCells(text) <= width) return text
+  return width === 1 ? '…' : `${fit(text, width - 1).text}…`
 }
 
 // skipped → ignorée, a red word → rouge, a green word → vert, else the raw
@@ -64,10 +148,10 @@ function baselineStyle(word: string): Omit<Seg, 'text'> {
 }
 
 // Total cells of a line.
-const width = (line: readonly Seg[]): number => line.reduce((n, seg) => n + points(seg.text).length, 0)
+export const width = (line: readonly Seg[]): number => line.reduce((n, seg) => n + textCells(seg.text), 0)
 
 // Non-empty groups joined by a dim ` · `.
-function join(groups: readonly (readonly Seg[])[]): Seg[] {
+export function join(groups: readonly (readonly Seg[])[]): Seg[] {
   const out: Seg[] = []
   for (const group of groups) {
     if (group.length === 0) continue
@@ -78,15 +162,17 @@ function join(groups: readonly (readonly Seg[])[]): Seg[] {
 }
 
 // A line cut to `cols` cells, its last cell an ellipsis when cut.
-function hardCut(line: readonly Seg[], cols: number): Seg[] {
+export function hardCut(line: readonly Seg[], cols: number): Seg[] {
   if (width(line) <= cols) return [...line]
   const out: Seg[] = []
   let room = cols - 1
   for (const seg of line) {
     if (room <= 0) break
-    const cps = points(seg.text).slice(0, room)
-    out.push({ ...seg, text: cps.join('') })
-    room -= cps.length
+    const head = fit(seg.text, room)
+    out.push({ ...seg, text: head.text })
+    room -= head.cells
+    // A cut segment ends the line: nothing narrower slips in after it.
+    if (!head.whole) break
   }
   const last = out[out.length - 1]
   if (last === undefined) return [{ text: '…', dim: true }]
@@ -148,7 +234,7 @@ function fitBar(run: ApexBandRun, cols: number): Seg[] {
     const line = join([head(title), b])
     if (width(line) <= cols) return line
   }
-  const minTitle = Math.min(MIN_TITLE, points(title).length)
+  const minTitle = Math.min(MIN_TITLE, textCells(title))
   const last: Seg[][] = steps.length === 0 ? [[]] : [bar(steps, 3)]
   if (steps.length > 0) {
     // With few steps the compact bar can be wider than the spaced one.
@@ -167,7 +253,7 @@ type MetaKey = 'mode' | 'branch' | 'baseline'
 type Meta = { key: MetaKey; segs: Seg[] }
 
 // Mode, branch and `baseline <word>`, the fields the run has, in that order.
-function meta(run: ApexBandRun): Meta[] {
+export function meta(run: ApexBandRun): Meta[] {
   const items: Meta[] = []
   if (run.mode !== undefined && run.mode !== '') items.push({ key: 'mode', segs: [{ text: run.mode, dim: true }] })
   if (run.branch !== undefined && run.branch !== '')

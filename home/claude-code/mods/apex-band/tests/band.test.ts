@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { baselineWord, layoutBand, stepLabel, stepMark } from '../hooks/band.ts'
+import { baselineWord, cellWidth, layoutBand, stepLabel, stepMark, truncate, width } from '../hooks/band.ts'
 import type { Seg } from '../hooks/band.ts'
 import type { Run, Step, StepKind } from '../hooks/context.ts'
 
@@ -233,5 +233,58 @@ describe('layoutBand', () => {
 
   test('missing fields are left out', () => {
     expect(layoutBand({ title: 't', steps: [] }, 80, 2)).toEqual([[{ text: 'APEX · t', dim: true }]])
+  })
+})
+
+describe('cell widths', () => {
+  test('wide, zero-width and narrow code points', () => {
+    expect(cellWidth('漢'.codePointAt(0) ?? 0)).toBe(2)
+    expect(cellWidth('🚀'.codePointAt(0) ?? 0)).toBe(2)
+    expect(cellWidth(0x200d)).toBe(0)
+    expect(cellWidth(0xfe0f)).toBe(0)
+    expect(cellWidth(0x301)).toBe(0)
+    expect(cellWidth('a'.codePointAt(0) ?? 0)).toBe(1)
+  })
+
+  test('BMP default-emoji symbols are wide, independently known widths', () => {
+    expect(cellWidth(0x231a)).toBe(2)
+    expect(cellWidth(0x2705)).toBe(2)
+    expect(cellWidth(0x2b50)).toBe(2)
+    expect(cellWidth(0x26a1)).toBe(2)
+    expect(cellWidth(0x1f004)).toBe(2)
+    expect(cellWidth(0x1f191)).toBe(2)
+    expect(cellWidth(0x1f201)).toBe(2)
+    expect(cellWidth(0x2713)).toBe(1)
+  })
+
+  test('the band\'s own glyphs stay one cell', () => {
+    for (const cp of [0x2713, 0x2717, 0x25cf, 0x25cb, 0x25a0, 0x2013, 0x203a, 0xb7, 0x2588, 0x2591, 0x2026])
+      expect(cellWidth(cp)).toBe(1)
+  })
+
+  test('a title of watches never exceeds cols, cells counted by a local table', () => {
+    // Test-local widths, not cellWidth: ⌚ is 2 cells, every other glyph the
+    // band draws here (ASCII, its marks and separators) is 1.
+    const local = (line: readonly Seg[]): number =>
+      Array.from(textOf(line)).reduce((n, ch) => n + (ch === '⌚' ? 2 : 1), 0)
+    const run: Run = { ...LIVE, title: '⌚⌚⌚⌚⌚⌚⌚⌚⌚⌚' }
+    for (const maxRows of [1, 2])
+      for (let cols = 1; cols <= 40; cols++)
+        for (const line of layoutBand(run, cols, maxRows)) expect(local(line) <= cols).toBe(true)
+  })
+
+  test('a wide glyph that does not fit is dropped, never halved', () => {
+    expect(truncate('漢字漢字', 4)).toBe('漢…')
+    expect(truncate('漢字漢字', 8)).toBe('漢字漢字')
+    expect(truncate('🚀🚀', 2)).toBe('…')
+  })
+
+  test('CJK and emoji titles fit every width in cells', () => {
+    const titles = ['漢字のタイトル 長い説明文です', '🚀🔍 emoji run 👨‍👩‍👧 family', 'ｆｕｌｌ ｗｉｄｔｈ 한국어']
+    for (const title of titles)
+      for (const maxRows of [1, 2])
+        for (let cols = 1; cols <= 80; cols++)
+          for (const line of layoutBand({ ...LIVE, title, branch: 'feat/日本語' }, cols, maxRows))
+            expect(width(line) <= cols).toBe(true)
   })
 })

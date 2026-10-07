@@ -106,10 +106,17 @@ describe('layoutRow', () => {
   test('an agent with a type shows "{type} · {label}"', () => {
     const agent: Task = { id: 'a1', kind: 'agent', label: 'relire la PR', agentType: 'reviewer', startedAt: 0, status: 'running' }
     const row = layoutRow(agent, 0, 80)
-    expect(row.kind).toBe('agent')
+    expect(row.kind).toBe('')
     expect(row.text).toBe('reviewer · relire la PR')
+    const long: Task = { ...agent, label: 'x'.repeat(100) }
+    const typedRow = layoutRow(long, 0, 40)
+    const untypedRow = layoutRow({ ...long, agentType: undefined }, 0, 40)
+    expect(typedRow.text.length).toBe(untypedRow.text.length + KIND_WIDTH)
+    expect(GLYPH_WIDTH + typedRow.text.length + 1 + typedRow.dur.length <= 40).toBe(true)
     const untyped: Task = { id: 'a2', kind: 'agent', label: 'relire la PR', startedAt: 0, status: 'running' }
     expect(layoutRow(untyped, 0, 80).text).toBe('relire la PR')
+    expect(layoutRow(untyped, 0, 80).kind).toBe('agent')
+    expect(layoutRow(untyped, 0, 39).kind).toBe('')
   })
 
   test('a finished task freezes its duration', () => {

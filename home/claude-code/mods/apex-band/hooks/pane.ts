@@ -1,14 +1,15 @@
 // Pure layout of the /apex-pane pane: the run's header, its phases with
-// approximate token counts, one two-line card per subagent, the totals and
-// the external verdict. Every line fits `cols` cells (hard cut otherwise);
-// below 40 columns the share bar and the card's type and model are dropped.
+// approximate token counts, one three-line card per subagent, the totals and
+// the external verdict once there is one. Every line fits `cols` cells (hard
+// cut otherwise); below 40 columns the share bar and the card's type and
+// model are dropped.
 
 import type { ThemeKey } from 'claude-code'
 
 import type { ApexBandLoop, ApexBandLoopStatus, ApexBandPhases, ApexBandRun, ApexBandVerdict } from '../types'
-import { hardCut, join, meta, stepLabel, stepMark } from './band.ts'
+import { hardCut, join, meta, stepLabel, stepMark, width } from './band.ts'
 import type { Seg } from './band.ts'
-import { MAIN, loopDuration, splitTotals, tallyTotal } from './stats.ts'
+import { MAIN, countedTotal, loopDuration, splitTotals } from './stats.ts'
 
 export type PaneInput = {
   run: ApexBandRun | null
@@ -71,23 +72,22 @@ function verdictMark(verdict: string): { glyph: string; tone: ThemeKey } {
   return { glyph: '·', tone: 'inactive' }
 }
 
-// A share of BAR_CELLS cells: filled in the brand tone, the rest dim.
+// A share of BAR_CELLS cells in the brand tone, at least one cell; the rest
+// of the row is left empty (no track drawn).
 function shareBar(share: number): Seg[] {
-  const filled = Math.max(0, Math.min(BAR_CELLS, Math.round(share * BAR_CELLS)))
-  const out: Seg[] = []
-  if (filled > 0) out.push({ text: '█'.repeat(filled), tone: 'claude' })
-  if (filled < BAR_CELLS) out.push({ text: '░'.repeat(BAR_CELLS - filled), dim: true })
-  return out
+  const filled = Math.max(1, Math.min(BAR_CELLS, Math.round(share * BAR_CELLS)))
+  return [{ text: '━'.repeat(filled), tone: 'claude' }]
 }
 
-// The « Phases ≈ » block: one row per step, its tokens (dim — when none)
-// and, when wide enough, its share of the run's counted tokens.
+// The « Phases ≈ » block: one row per step, its counted tokens (cache reads
+// excluded; dim — when none) and, when wide enough and the step has
+// tokens, its share of the run's counted tokens.
 function phaseRows(run: ApexBandRun, phases: ApexBandPhases, cols: number): Seg[][] {
   if (run.steps.length === 0) return []
   const byStep = phases.dir !== null && phases.dir === run.dir ? phases.byStep : {}
   const totals = run.steps.map(s => {
     const tally = byStep[s.step]
-    return tally === undefined ? 0 : tallyTotal(tally)
+    return tally === undefined ? 0 : countedTotal(tally)
   })
   const sum = totals.reduce((a, b) => a + b, 0)
   const labelCells = Math.min(MAX_LABEL, Math.max(...run.steps.map(s => Array.from(stepLabel(s.step)).length)))
@@ -97,39 +97,34 @@ function phaseRows(run: ApexBandRun, phases: ApexBandPhases, cols: number): Seg[
     const label = Array.from(stepLabel(step.step)).slice(0, labelCells).join('').padEnd(labelCells)
     const row: Seg[] = [stepMark(step.kind), { text: ` ${label} `, ...(step.kind === 'running' ? { bold: true } : {}) }]
     row.push(n > 0 ? { text: fmtTokens(n).padStart(TOKEN_CELLS) } : { text: '—'.padStart(TOKEN_CELLS), dim: true })
-    if (cols >= NARROW && sum > 0) row.push({ text: '  ' }, ...shareBar(n / sum))
+    if (cols >= NARROW && n > 0) row.push({ text: '  ' }, ...shareBar(n / sum))
     rows.push(row)
   })
   return rows
 }
 
-// A card's detail line: type · model · tool · N appels · in X · out Y ·
-// duration (in = every input count, cache included); below NARROW only
-// tool · duration.
-function cardDetail(loop: ApexBandLoop, now: number, cols: number): string {
+// A card's detail lines. From NARROW: line A model · duration · in X · out Y
+// (in = input + cache writes), line B type · tool · N appels · cache X (when
+// any cache read); below NARROW one line tool · duration.
+function cardDetail(loop: ApexBandLoop, now: number, cols: number): string[] {
   const dur = formatDuration(loopDuration(loop, now))
-  if (cols < NARROW) return [loop.tool, dur].filter(p => p !== undefined).join(' · ')
-  const input = loop.tally.input + loop.tally.cacheRead + loop.tally.cacheWrite
+  const parts = (list: readonly (string | undefined)[]): string =>
+    list.filter((p): p is string => p !== undefined && p !== '').join(' · ')
+  if (cols < NARROW) return [parts([loop.tool, dur])]
+  const { input, output, cacheRead, cacheWrite } = loop.tally
   return [
-    loop.type,
-    loop.model,
-    loop.tool,
-    plural(loop.calls, 'appel'),
-    `in ${fmtTokens(input)}`,
-    `out ${fmtTokens(loop.tally.output)}`,
-    dur,
+    parts([loop.model, dur, `in ${fmtTokens(input + cacheWrite)}`, `out ${fmtTokens(output)}`]),
+    parts([loop.type, loop.tool, plural(loop.calls, 'appel'), cacheRead > 0 ? `cache ${fmtTokens(cacheRead)}` : undefined]),
   ]
-    .filter(p => p !== undefined && p !== '')
-    .join(' · ')
 }
 
-// One subagent's two lines: glyph and label (bold while running), then the
-// dim detail; a finished card is dim throughout.
+// One subagent's card: glyph and label (bold while running), then its dim
+// detail lines; a finished card is dim throughout.
 function card(loop: ApexBandLoop, now: number, cols: number): Seg[][] {
   const running = loop.status === 'running'
   const label = loop.label ?? loop.type ?? loop.id
   const head: Seg[] = [loopMark(loop.status), running ? { text: ` ${label}`, bold: true } : { text: ` ${label}`, dim: true }]
-  return [head, [{ text: `  ${cardDetail(loop, now, cols)}`, dim: true }]]
+  return [head, ...cardDetail(loop, now, cols).map(detail => [{ text: `  ${detail}`, dim: true }])]
 }
 
 // The « Sous-agents » block: running cards (oldest first), then finished
@@ -148,27 +143,37 @@ function cards(loops: readonly ApexBandLoop[], now: number, cols: number): Seg[]
   return rows
 }
 
-// The « Totaux » block: main loop vs subagents, then the session's cost.
-function totals(loops: readonly ApexBandLoop[], cost: number | null): Seg[][] {
+// The « Totaux » block: main loop vs subagents (counted tokens, cache reads
+// excluded), the cache reads apart (dim, when any), then the session's cost;
+// groups that do not fit `cols` wrap onto a next line.
+function totals(loops: readonly ApexBandLoop[], cost: number | null, cols: number): Seg[][] {
   const { main, sub } = splitTotals(loops)
-  const line: Seg[] = [
-    { text: 'principal ', dim: true },
-    { text: fmtTokens(tallyTotal(main)) },
-    SEP,
-    { text: 'sous-agents ', dim: true },
-    { text: fmtTokens(tallyTotal(sub)) },
+  const cache = main.cacheRead + sub.cacheRead
+  const groups: Seg[][] = [
+    [{ text: 'principal ', dim: true }, { text: fmtTokens(countedTotal(main)) }],
+    [{ text: 'sous-agents ', dim: true }, { text: fmtTokens(countedTotal(sub)) }],
   ]
-  if (cost !== null) line.push(SEP, { text: `$${cost.toFixed(2)}` })
-  return [[{ text: 'Totaux', bold: true }], line]
+  if (cache > 0) groups.push([{ text: `cache ${fmtTokens(cache)}`, dim: true }])
+  if (cost !== null) groups.push([{ text: `$${cost.toFixed(2)}` }])
+  const lines: Seg[][] = [[]]
+  for (const group of groups) {
+    const last = lines[lines.length - 1] ?? []
+    const joined = join([last, group])
+    if (last.length === 0 || width(joined) <= cols) lines[lines.length - 1] = joined
+    else lines.push([...group])
+  }
+  return [[{ text: 'Totaux', bold: true }], ...lines]
 }
 
-// The « Vérif externe » block: the verdict toned and its findings count, or
-// a dim « en attente » until the run has one.
+// The « Vérif externe » block: the verdict toned and its findings count;
+// no block at all until the run has one.
 function verdictRows(verdict: ApexBandVerdict | null, run: ApexBandRun): Seg[][] {
-  const title: Seg[] = [{ text: 'Vérif externe', bold: true }]
-  if (verdict === null || verdict.dir !== run.dir) return [title, [{ text: 'en attente', dim: true }]]
+  if (verdict === null || verdict.dir !== run.dir) return []
   const { glyph, tone } = verdictMark(verdict.verdict)
-  return [title, [{ text: `${glyph} ${verdict.verdict}`, tone }, SEP, { text: plural(verdict.findings, 'constat'), dim: true }]]
+  return [
+    [{ text: 'Vérif externe', bold: true }],
+    [{ text: `${glyph} ${verdict.verdict}`, tone }, SEP, { text: plural(verdict.findings, 'constat'), dim: true }],
+  ]
 }
 
 // The pane as lines of segments, each within max(1, cols) cells.
@@ -189,7 +194,8 @@ export function layoutPane(input: PaneInput, cols: number): Seg[][] {
   const phases = phaseRows(run, input.phases, w)
   if (phases.length > 0) lines.push(BLANK, ...phases)
   lines.push(BLANK, ...cards(input.loops, input.now, w))
-  lines.push(BLANK, ...totals(input.loops, input.cost))
-  lines.push(BLANK, ...verdictRows(input.verdict, run))
+  lines.push(BLANK, ...totals(input.loops, input.cost, w))
+  const verdict = verdictRows(input.verdict, run)
+  if (verdict.length > 0) lines.push(BLANK, ...verdict)
   return lines.map(line => hardCut(line, w))
 }

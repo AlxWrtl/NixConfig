@@ -63,6 +63,10 @@ in
     };
     skipDangerousModePermissionPrompt = true;
 
+    # Turns off Claude Code's built-in desktop notification (Ghostty OSC,
+    # fired at end of turn); the Notification hook below still covers prompts.
+    preferredNotifChannel = "notifications_disabled";
+
     attribution = {
       commit = "";
       pr = "";
@@ -711,6 +715,10 @@ in
       ];
       Notification = [
         {
+          # Pop-up only when Claude needs an answer, not on idle_prompt /
+          # agent_completed (end of turn). Letters, `_` and `|` only: the docs
+          # treat such a matcher as an exact-value list.
+          matcher = "permission_prompt|elicitation_dialog";
           hooks = [
             {
               type = "command";
@@ -788,17 +796,6 @@ in
               type = "command";
               command = "${node} ~/.claude/hooks/subagent-stop.js";
               timeout = 5;
-            }
-          ];
-        }
-      ];
-      TaskCompleted = [
-        {
-          hooks = [
-            {
-              type = "command";
-              command = "bash ~/.claude/hooks/task-completed.sh";
-              timeout = 3;
             }
           ];
         }

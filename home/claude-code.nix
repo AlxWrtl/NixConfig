@@ -70,7 +70,6 @@ let
     hookVaultSnapshot
     hookApexReminder
     hookSubagentStop
-    hookTaskCompleted
     hookNotification
     hookCompactContext
     hookStopFailure
@@ -219,10 +218,6 @@ let
     };
     "${claudeDir}/hooks/subagent-stop.js" = {
       text = hookSubagentStop;
-      executable = true;
-    };
-    "${claudeDir}/hooks/task-completed.sh" = {
-      text = hookTaskCompleted;
       executable = true;
     };
     "${claudeDir}/hooks/notification.sh" = {

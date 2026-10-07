@@ -304,8 +304,6 @@ in
 
   hookSubagentStop = builtins.readFile ./hooks/subagent-stop.js;
 
-  hookTaskCompleted = builtins.readFile ./hooks/task-completed.sh;
-
   hookNotification = builtins.readFile ./hooks/notification.sh;
 
   hookCompactContext = builtins.readFile ./hooks/compact-context.sh;

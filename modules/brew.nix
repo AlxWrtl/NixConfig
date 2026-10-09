@@ -28,6 +28,9 @@ _:
       "ffmpeg"
       "libomp"
       "mas"
+      # Dependency of ffmpeg/krb5/postgresql@16, listed so `cleanup = "zap"`
+      # stops trying (and refusing) to uninstall it on every rebuild.
+      "openssl@4"
       "postgresql@16"
       "trash"
     ];

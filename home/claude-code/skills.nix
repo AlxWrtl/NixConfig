@@ -1898,7 +1898,8 @@ in
     | Analyze fan-out | Explore / codebase-navigator | haiku — read-only search only |
     | Analyze synthesis | analyzer phase agent (`subagent_type: Plan`, read-only — the coordinator writes 01-analyze.md) | `opus` (effort high) |
     | Plan | coordinator inline when 01-analyze was skipped (Standard); plan phase agent (`subagent_type: Plan`, read-only — the coordinator writes 02-plan.md) only after 01-analyze or on High-stakes | `opus` (effort high/max) |
-    | Execute (parallel waves under `-k`, coordinator's call) | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `opus` (low effort mechanical) |
+    | Execute (parallel waves under `-k`, coordinator's call) | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `sonnet` when the plan task spells the exact old→new text or a mechanical sweep with no design decision; `opus` when the task needs a design or logic decision |
+    | Correction round (verify loop step 5) | typed implementer by domain | `opus`, always — the correction-budget hook denies any other model |
     | Bulk / large-context execute | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `sonnet` |
     | Direct (edit + self-check, DIRECT.md) | coordinator inline | none |
     | Run tests | test-runner | sonnet |
@@ -1970,6 +1971,7 @@ in
        implementer (`model: opus`) with a SHARPER brief each round (root cause,
        exact files/lines, expected end state, exact command that must pass), then
        re-verifies the new diff.
+       Correction rounds always run on `model: opus`, whatever model ran the task (quick-fix on sonnet is for planned execute tasks only); the correction-budget hook denies any other model, absent included, before counting the round.
     6. Loop until every acceptance criterion is green. Max 2 correction rounds,
        enforced by the correction-budget hook (PreToolUse on Agent): every
        correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`
@@ -1977,8 +1979,9 @@ in
        naming 06-resolve.md or a correction round carries
        `APEX-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
        both counted, and counts once the spawn/send is attempted, even if later
-       denied. Denied (budget spent) → STOP: deliver with
-       the residuals list verbatim and the failing output, or ask the user.
+       denied. A SendMessage correction goes only to an agent that was spawned on `model: opus`; otherwise spawn a new opus agent.
+       Denied (budget spent) → STOP: deliver with
+       the residuals list verbatim and the failing output, or ask the user to type `apex: +1 tour` alone on a line — the correction-grant hook (UserPromptSubmit) reads the raw prompt and grants that run one more round per prompt; a plain "continue" grants nothing. Without a grant, never run the round inline: the coordinator never grades its own work.
        Never weaken a check to make it pass, never declare success on partial
        green.
 
@@ -1997,7 +2000,7 @@ in
     - The implementer is a typed agent picked by domain, never general-purpose.
       Mapping: nix-expert for `.nix`; frontend-expert / backend-expert by file
       type; debugger for Diagnosis; quick-fix (`model: sonnet`, explicit) for
-      edit-only mechanical changes — it has no Write tool. No domain match →
+      edit-only mechanical execute tasks the plan spells out — it has no Write tool; never for a correction round, which runs on `model: opus`. No domain match →
       quick-fix if edit-only, else backend-expert.
       general-purpose bootstrap measured ~53k on decide-only probes vs ~33-38k for nix-expert/Plan runs (2026-10-07).
     - Forces `-s` (save) ON: the chain of summaries is also persisted to disk so
@@ -2345,7 +2348,7 @@ in
          then go to step-02-plan with the Standard or High-stakes default
          flags. High-stakes also reads `steps/HIGH-STAKES.md`.
        - Direct never runs a correction round inline. The first implementer
-         brief after an escalation carries `APEX-CORRECTION-ROUND: {run-id}`
+         brief after an escalation runs on `model: opus` and carries `APEX-CORRECTION-ROUND: {run-id}`
          ({run-id} = this run's `.claude/output/apex/` dir name), so the
          correction budget counts it.
     7. **Self-check.** Read `git diff` of the touched files and check each AC

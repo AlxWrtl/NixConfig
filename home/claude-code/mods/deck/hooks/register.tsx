@@ -1,20 +1,44 @@
+// deck: one live dashboard pane, opened on demand only (/deck, aliases /apex-pane and
+// /task-board); it never opens by itself and draws no status line: nothing above the prompt
+// unless you open it.
+// From Flightdeck v0.3.2 (MIT, Stephen Casella): main model vitals, the on-call architect,
+// subagent cards and swimlanes, a turn receipt and a session log. Ours: the APEX block on top,
+// drawn only while an APEX run of the session's folder is live (header, phase dots, what asks
+// the user to act, background shells), its phase changes written to the log as `apex`.
+// Observes only: every hook but the commands and the pane returns next(e)'s result unchanged.
+// Read-only: it never writes a file. The run folders are polled every 5 s only while the pane is
+// open, and once per prompt and per finished main turn otherwise; a poll writes nothing that
+// did not change.
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, Timer } from 'claude-code'
 
-import type { AgentCard, Architect, Bucket, Check, Gate, Layout, LogLine, Loop, Main, Roster, Turn, Usage, View } from '../types'
+import type {
+  DeckAgentCard,
+  DeckApexAlert,
+  DeckApexBudget,
+  DeckApexPhases,
+  DeckApexRun,
+  DeckApexShell,
+  DeckApexVerdict,
+  DeckArchitect,
+  DeckLayout,
+  DeckLogLine,
+  DeckMain,
+  DeckRoster,
+  DeckTurn,
+  DeckUsage,
+  DeckView,
+} from '../types'
 import {
   DEFAULT_ARCHITECT,
-  DEFAULT_GATE,
   DEFAULT_MAIN,
   DEFAULT_ROSTER,
   DEFAULT_TURN,
   DEFAULT_USAGE,
   DEFAULT_VIEW,
   EDIT_TOOLS,
-  SCHEMA_VERSION,
   afterCall,
   applyStep,
-  bucketOf,
   cardTitle,
   titleLines,
   consultTimeline,
@@ -26,10 +50,8 @@ import {
   fmtTimer,
   fmtUsd,
   plural,
-  gateSummary,
   gauge,
   isAdvising,
-  isLoopActive,
   kTokens,
   lanes,
   limitLabel,
@@ -38,7 +60,6 @@ import {
   momentOf,
   normalize,
   normalizeCard,
-  normalizeGate,
   normalizeLog,
   noteTool,
   PALETTES,
@@ -49,99 +70,113 @@ import {
   handbackOf,
   adviceLine,
   receiptOf,
-  recordCheck,
-  settleCheck,
   shorten,
   startConsult,
-  stepLoop,
 } from './core'
 import type { Config, Panel } from './core'
+import {
+  PHASE_GLYPH,
+  addPhase,
+  apexHeader,
+  countedTotal,
+  headBranch,
+  isLive,
+  onBranch,
+  parseContext,
+  parseVerdict,
+  phaseMark,
+  phaseNote,
+  settleRun,
+  syncPhases,
+} from './apex'
+import type { PhaseMark, Usage as PhaseUsage } from './apex'
+import {
+  addShell,
+  closeBySnapshot,
+  shellsAfterTurn,
+  finishByNotification,
+  parseTaskNotifications,
+  runningShells,
+  stopShell,
+} from './shells'
+import type { Notification } from './shells'
+import { alertsOf, budgetOf, pickVerdict } from './signals'
 
-const PANE = 'flightdeck'
-const TITLE = 'Flightdeck'
+const PANE = 'deck'
+const TITLE = 'Deck'
 const PANE_COLUMNS = 66
-
+const POLL_MS = 5000
+// The two names the external verification is written under, in a run dir.
+const VERIFY_NAMES = ['04-external-verify.json', 'external-verify.json']
+// Finished shells shown under the running ones; the rest fold into « +N earlier ».
+const DONE_SHELLS = 3
 
 // ---------------------------------------------------------------- state
 
-const meta = atom({ plugin: 'flightdeck', key: 'meta' } as const, { schemaVersion: SCHEMA_VERSION })
-const main = atom({ plugin: 'flightdeck', key: 'main' } as const, DEFAULT_MAIN)
-const usage = atom({ plugin: 'flightdeck', key: 'usage' } as const, DEFAULT_USAGE)
-const architect = atom({ plugin: 'flightdeck', key: 'architect' } as const, DEFAULT_ARCHITECT)
-const gate = atom({ plugin: 'flightdeck', key: 'gate' } as const, DEFAULT_GATE)
-const agents = atom({ plugin: 'flightdeck', key: 'agents' } as const, [])
-const loops = atom({ plugin: 'flightdeck', key: 'loops' } as const, [])
-const log = atom({ plugin: 'flightdeck', key: 'log' } as const, [])
-const turn = atom({ plugin: 'flightdeck', key: 'turn' } as const, DEFAULT_TURN)
-const receipt = atom({ plugin: 'flightdeck', key: 'receipt' } as const, null)
-const view = atom({ plugin: 'flightdeck', key: 'view' } as const, DEFAULT_VIEW)
-const roster = atom({ plugin: 'flightdeck', key: 'roster' } as const, DEFAULT_ROSTER)
+const main = atom({ plugin: 'deck', key: 'main' } as const, DEFAULT_MAIN)
+const usage = atom({ plugin: 'deck', key: 'usage' } as const, DEFAULT_USAGE)
+const architect = atom({ plugin: 'deck', key: 'architect' } as const, DEFAULT_ARCHITECT)
+const agents = atom({ plugin: 'deck', key: 'agents' } as const, [])
+const log = atom({ plugin: 'deck', key: 'log' } as const, [])
+const turn = atom({ plugin: 'deck', key: 'turn' } as const, DEFAULT_TURN)
+const receipt = atom({ plugin: 'deck', key: 'receipt' } as const, null)
+const view = atom({ plugin: 'deck', key: 'view' } as const, DEFAULT_VIEW)
+const roster = atom({ plugin: 'deck', key: 'roster' } as const, DEFAULT_ROSTER)
+const run = atom({ plugin: 'deck', key: 'run' } as const, null)
+const phases = atom({ plugin: 'deck', key: 'phases' } as const, { dir: null, byStep: {} })
+const verdict = atom({ plugin: 'deck', key: 'verdict' } as const, null)
+const budget = atom({ plugin: 'deck', key: 'budget' } as const, null)
+const shells = atom({ plugin: 'deck', key: 'shells' } as const, [])
+
+// Module-level: a hot reload drops the environment and its timer with it.
+let timer: Timer | undefined
+// The pane is open: the 5 s timer runs only then.
+let isPaneOpen = false
+// Polls in a row that missed the run shown (settleRun).
+let misses = 0
+// The poll under way (its number), or null: a second one waits, unless the first is stuck for
+// STUCK_TICKS ticks, when it is given up and polling goes on.
+let pollCount = 0
+let pollUnderWay: number | null = null
+let skippedTicks = 0
+const STUCK_TICKS = 6
 
 type ServerBlock = { type: string; id?: string; name?: string; tool_use_id?: string }
 
 // Every read goes through these, so a value saved under an older shape still reads.
-async function getMain($: EngineInterface): Promise<Main> {
+async function getMain($: EngineInterface): Promise<DeckMain> {
   return normalize(DEFAULT_MAIN, await read($, main))
 }
-async function getUsage($: EngineInterface): Promise<Usage> {
+async function getUsage($: EngineInterface): Promise<DeckUsage> {
   return normalize(DEFAULT_USAGE, await read($, usage))
 }
-async function getArchitect($: EngineInterface): Promise<Architect> {
+async function getArchitect($: EngineInterface): Promise<DeckArchitect> {
   const a = normalize(DEFAULT_ARCHITECT, await read($, architect))
   return { ...a, consults: listOf(a.consults), ids: listOf(a.ids), seen: listOf(a.seen) }
 }
-async function getGate($: EngineInterface): Promise<Gate> {
-  return normalizeGate(await read($, gate))
-}
-async function getCards($: EngineInterface): Promise<AgentCard[]> {
+async function getCards($: EngineInterface): Promise<DeckAgentCard[]> {
   return listOf<unknown>(await read($, agents)).map(normalizeCard)
 }
-async function getLoops($: EngineInterface): Promise<Loop[]> {
-  return listOf<Loop>(await read($, loops))
-}
-async function getLog($: EngineInterface): Promise<LogLine[]> {
+async function getLog($: EngineInterface): Promise<DeckLogLine[]> {
   return normalizeLog(await read($, log))
 }
-async function getTurn($: EngineInterface): Promise<Turn> {
+async function getTurn($: EngineInterface): Promise<DeckTurn> {
   return normalize(DEFAULT_TURN, await read($, turn))
 }
-async function getView($: EngineInterface): Promise<View> {
+async function getView($: EngineInterface): Promise<DeckView> {
   return normalize(DEFAULT_VIEW, await read($, view))
 }
-async function getRoster($: EngineInterface): Promise<Roster> {
+async function getRoster($: EngineInterface): Promise<DeckRoster> {
   const r = normalize(DEFAULT_ROSTER, await read($, roster))
   return { architectTypes: listOf(r.architectTypes) }
 }
-
-/** A stored shape older than this build's: drop what cannot be read, keep the rest. */
-async function migrate($: EngineInterface) {
-  const m = await read($, meta)
-  if ((m?.schemaVersion ?? 0) >= SCHEMA_VERSION) return
-  await update($, log, list => normalizeLog(list))
-  await update($, agents, list => listOf<unknown>(list).map(normalizeCard))
-  await update($, gate, g => normalizeGate(g))
-  await update($, meta, () => ({ schemaVersion: SCHEMA_VERSION }))
+async function getShells($: EngineInterface): Promise<DeckApexShell[]> {
+  return listOf<DeckApexShell>(await read($, shells))
 }
 
-async function say($: EngineInterface, who: string, text: string, kind: LogLine['kind'] = 'info', agentId: string | null = null) {
-  const line: LogLine = { at: await $.clock.now(), who, text, kind, agentId }
+async function say($: EngineInterface, who: string, text: string, kind: DeckLogLine['kind'] = 'info', agentId: string | null = null) {
+  const line: DeckLogLine = { at: await $.clock.now(), who, text, kind, agentId }
   await update($, log, list => [...normalizeLog(list), line].slice(-60))
-}
-
-async function refreshStatus($: EngineInterface, cfg: Config) {
-  if (!cfg.statusLine) return $.ui.status(undefined)
-  const [u, a, g, cards] = await Promise.all([getUsage($), getArchitect($), getGate($), getCards($)])
-  const running = cards.filter(c => c.status === 'running').length
-  const s = gateSummary(g)
-  const parts = [
-    u.pct !== null ? `ctx ${Math.round(u.pct)}%` : null,
-    cards.length > 0 ? `agents ${running}/${cards.length}` : null,
-    a.consults.length > 0 || a.ids.length > 0 ? `${cfg.architectLabel.toLowerCase()} ${isAdvising(a) ? 'advising' : a.consults.length}` : null,
-    s.deny > 0 ? `denied ${s.deny}` : null,
-  ]
-  // Only fields with something to say; with none, no status entry at all.
-  const shown = parts.filter(Boolean)
-  $.ui.status(shown.length > 0 ? shown.join(' · ') : undefined)
 }
 
 async function whoIs($: EngineInterface, agentId: string | undefined) {
@@ -157,7 +192,6 @@ async function consultStarted($: EngineInterface, cfg: Config, id: string, via: 
   await update($, architect, a => startConsult(normalize(DEFAULT_ARCHITECT, a), { id, at, moment, via }))
   if (moment === 'before done') await update($, turn, x => ({ ...normalize(DEFAULT_TURN, x), isReviewing: true }))
   await say($, cfg.architectLabel.toLowerCase(), cfg.moments ? `${moment} · ${via}` : `consulted · ${via}`, 'consult')
-  await refreshStatus($, cfg)
 }
 
 async function consultEnded($: EngineInterface, cfg: Config, advice: string | null, id?: string) {
@@ -167,7 +201,6 @@ async function consultEnded($: EngineInterface, cfg: Config, advice: string | nu
   await update($, architect, a => endConsult(normalize(DEFAULT_ARCHITECT, a), at, text, id))
   await update($, turn, t => ({ ...normalize(DEFAULT_TURN, t), isReviewing: false }))
   await say($, cfg.architectLabel.toLowerCase(), text ? `advice: ${shorten(text, 60)}` : 'advice returned', 'consult')
-  await refreshStatus($, cfg)
 }
 
 async function noteAdvice($: EngineInterface, cfg: Config, advice: string) {
@@ -181,21 +214,29 @@ async function isArchitectType($: EngineInterface, cfg: Config, type: string) {
 
 async function openPane($: EngineInterface) {
   // columns apply when docked beside the transcript, rows when seated inline above the prompt.
-  return $.ui.open({ id: PANE, title: TITLE, columns: PANE_COLUMNS, rows: 8 })
+  const opened = await $.ui.open({ id: PANE, title: TITLE, columns: PANE_COLUMNS, rows: 8 })
+  // Open, even when not placed yet (seated once a surface places it): polled from now on.
+  isPaneOpen = true
+  startPolling($)
+  return opened
 }
 
 async function resetAll($: EngineInterface) {
   await update($, main, m => ({ ...DEFAULT_MAIN, model: normalize(DEFAULT_MAIN, m).model, mode: normalize(DEFAULT_MAIN, m).mode }))
   await update($, architect, () => DEFAULT_ARCHITECT)
-  await update($, gate, () => DEFAULT_GATE)
   await update($, agents, () => [])
-  await update($, loops, () => [])
   await update($, log, () => [])
   await update($, turn, () => DEFAULT_TURN)
   await update($, receipt, () => null)
   await update($, view, () => DEFAULT_VIEW)
   // The context gauge waits for the next measurement rather than showing the pre-clear fill.
   await update($, usage, x => ({ ...normalize(DEFAULT_USAGE, x), pct: null, tokens: null }))
+  // The run comes back on the next poll; its phase buckets start over.
+  await update($, run, () => null)
+  await update($, phases, () => ({ dir: null, byStep: {} }))
+  await update($, verdict, () => null)
+  await update($, budget, () => null)
+  await update($, shells, () => [])
 }
 
 /** The session's cost read fresh, not from the last measurement: the receipt subtracts two of these. */
@@ -208,21 +249,292 @@ async function noteMode($: EngineInterface, mode: string | undefined) {
   if (mode) await update($, main, m => (normalize(DEFAULT_MAIN, m).mode === mode ? normalize(DEFAULT_MAIN, m) : { ...normalize(DEFAULT_MAIN, m), mode }))
 }
 
+// ---------------------------------------------------------------- APEX run (polled)
+
+// Reads a field of an engine record whose shape varies per tool; a value that is not a
+// non-empty string reads as undefined.
+function stringField(record: unknown, key: string): string | undefined {
+  if (typeof record !== 'object' || record === null) return undefined
+  const value: unknown = Reflect.get(record, key)
+  return typeof value === 'string' && value !== '' ? value : undefined
+}
+
+function numberField(record: unknown, key: string): number | undefined {
+  if (typeof record !== 'object' || record === null) return undefined
+  const value: unknown = Reflect.get(record, key)
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+// A row's text: a string as is, else its text blocks joined; another shape reads as empty.
+function rowText(content: unknown): string {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return ''
+  const parts: string[] = []
+  for (const block of content) {
+    const text = stringField(block, 'type') === 'text' ? stringField(block, 'text') : undefined
+    if (text !== undefined) parts.push(text)
+  }
+  return parts.join('\n')
+}
+
+// The newest run's context file and its mtime, or undefined.
+async function newestContext($: EngineInterface, root: string): Promise<{ path: string; dir: string; mtimeMs: number } | undefined> {
+  let entries
+  try {
+    entries = await $.fs.list(root)
+  } catch {
+    // No .claude/output/apex here (or unreadable): no run to show.
+    return undefined
+  }
+  let best: { path: string; dir: string; mtimeMs: number } | undefined
+  for (const entry of entries) {
+    if (entry.kind !== 'dir') continue
+    const path = `${root}/${entry.name}/00-context.md`
+    try {
+      const stat = await $.fs.stat(path)
+      if (best === undefined || stat.mtimeMs > best.mtimeMs) best = { path, dir: entry.name, mtimeMs: stat.mtimeMs }
+    } catch {
+      // A run directory without its context file is not a run: skipped.
+    }
+  }
+  return best
+}
+
+async function scan($: EngineInterface): Promise<DeckApexRun | null> {
+  const cwd = await $.session.cwd()
+  const newest = await newestContext($, `${cwd}/.claude/output/apex`)
+  if (newest === undefined) return null
+  let text: string
+  try {
+    text = await $.fs.read(newest.path)
+  } catch {
+    // Vanished between stat and read, or over 4 MiB: nothing shown this round.
+    return null
+  }
+  const parsed = parseContext(text, newest.dir)
+  if (!isLive(parsed, newest.mtimeMs, await $.clock.now())) return null
+  let head: string | undefined
+  try {
+    head = headBranch(await $.fs.read(`${cwd}/.git/HEAD`))
+  } catch {
+    // No repo here, or a worktree whose .git is a file: branch unknown, shown.
+    head = undefined
+  }
+  return onBranch(parsed, head) ? { ...parsed, dir: newest.dir } : null
+}
+
+// The state library reads and writes named atoms only: one writer per atom, each writing
+// only when the value changed.
+async function putVerdict($: EngineInterface, value: DeckApexVerdict | null): Promise<void> {
+  if (JSON.stringify(await read($, verdict)) === JSON.stringify(value)) return
+  await update($, verdict, () => value)
+}
+
+async function putBudget($: EngineInterface, value: DeckApexBudget | null): Promise<void> {
+  if (JSON.stringify(await read($, budget)) === JSON.stringify(value)) return
+  await update($, budget, () => value)
+}
+
+async function changePhases($: EngineInterface, fn: (value: DeckApexPhases) => DeckApexPhases): Promise<void> {
+  const current = await read($, phases)
+  if (fn(current) === current) return
+  await update($, phases, fn)
+}
+
+async function changeShells($: EngineInterface, fn: (value: DeckApexShell[]) => DeckApexShell[]): Promise<void> {
+  const current = await getShells($)
+  if (fn(current) === current) return
+  await update($, shells, list => fn(listOf<DeckApexShell>(list)))
+}
+
+// The run's external verification, from whichever of its two names was written last;
+// re-read only when that file's mtime moved.
+async function refreshVerdict($: EngineInterface, found: DeckApexRun | null): Promise<void> {
+  const dir = found?.dir
+  if (dir === undefined) return putVerdict($, null)
+  const runDir = `${await $.session.cwd()}/.claude/output/apex/${dir}`
+  let newest: { name: string; mtimeMs: number } | null = null
+  try {
+    for (const entry of await $.fs.list(runDir)) {
+      if (entry.kind !== 'file' || !VERIFY_NAMES.includes(entry.name)) continue
+      newest = pickVerdict(newest, { name: entry.name, mtimeMs: entry.mtimeMs })
+    }
+  } catch {
+    // The run directory vanished: no verification to show.
+    newest = null
+  }
+  if (newest === null) return putVerdict($, null)
+  const current = await read($, verdict)
+  if (current !== null && current.dir === dir && current.mtimeMs === newest.mtimeMs) return
+  let next: DeckApexVerdict | null = null
+  try {
+    const parsed = parseVerdict(await $.fs.read(`${runDir}/${newest.name}`))
+    if (parsed !== null) next = { dir, mtimeMs: newest.mtimeMs, ...parsed }
+  } catch {
+    // Vanished between list and read, or over 4 MiB: shown as pending.
+    next = null
+  }
+  await putVerdict($, next)
+}
+
+// The run's correction budget, from the names in ~/.claude/apex-correction-budget (one file
+// per round used or granted).
+async function refreshBudget($: EngineInterface, found: DeckApexRun | null): Promise<void> {
+  const dir = found?.dir
+  const home = await $.env.get('HOME')
+  if (dir === undefined || home === undefined || home === '') return putBudget($, null)
+  let names: string[]
+  try {
+    names = (await $.fs.list(`${home}/.claude/apex-correction-budget`)).map(entry => entry.name)
+  } catch {
+    // No round was ever claimed on this machine: no budget to show.
+    names = []
+  }
+  await putBudget($, budgetOf(names, dir))
+}
+
+// A subagent's still running shells close once it is killed, fails or leaves the agent list:
+// their notification would only ever reach that loop. Read only while such a shell runs.
+async function snapshotShells($: EngineInterface): Promise<void> {
+  const list = await getShells($)
+  if (!list.some(s => s.status === 'running' && s.ownerAgentId !== undefined)) return
+  const listed = await $.agent.list()
+  const owners = listed.map(a => ({ id: a.id, type: a.type, status: a.status }))
+  const [cards, a] = await Promise.all([getCards($), getArchitect($)])
+  const known = [...cards.map(c => c.id), ...a.ids]
+  const at = await $.clock.now()
+  await changeShells($, current => closeBySnapshot(current, owners, known, at))
+}
+
+// One poll: run (its phase moves to the log), phases, verdict, budget, owned shells.
+async function refresh($: EngineInterface): Promise<void> {
+  const scanned = await scan($)
+  const prev = await read($, run)
+  const settled = settleRun(prev, scanned, misses)
+  misses = settled.misses
+  const found = settled.run
+  if (JSON.stringify(prev) !== JSON.stringify(found)) await update($, run, () => found)
+  const note = phaseNote(prev, found)
+  if (note !== null) await say($, 'apex', note)
+  await changePhases($, value => syncPhases(value, found?.dir ?? null))
+  await refreshVerdict($, found)
+  await refreshBudget($, found)
+  await snapshotShells($)
+}
+
+function onTick($: EngineInterface): void {
+  if (pollUnderWay !== null && skippedTicks < STUCK_TICKS) {
+    skippedTicks += 1
+    return
+  }
+  pollCount += 1
+  const mine = pollCount
+  pollUnderWay = mine
+  skippedTicks = 0
+  refresh($)
+    .catch(() => {
+      // A failed scan or a refused write leaves the figures as they were; the next tick tries again.
+    })
+    .finally(() => {
+      // A poll given up as stuck no longer owns the slot when it settles at last.
+      if (pollUnderWay === mine) pollUnderWay = null
+    })
+}
+
+// One poll now, and the 5 s timer while the pane is open.
+function startPolling($: EngineInterface): void {
+  if (timer === undefined) timer = $.clock.every(POLL_MS, () => onTick($))
+  pollOnce($)
+}
+
+function stopPolling(): void {
+  timer?.cancel()
+  timer = undefined
+}
+
+// A single poll (a prompt, a finished main turn): the log's apex lines fill with the pane closed.
+function pollOnce($: EngineInterface): void {
+  $.clock.after(0, () => onTick($))
+}
+
+// Runs `write`; a refused state write leaves the figures as they were (an observer never fails
+// the event it watches).
+async function record(write: () => Promise<void>): Promise<void> {
+  try {
+    await write()
+  } catch {
+    // Figures only: the next step, call or poll writes again.
+  }
+}
+
+/** One step's usage in the live run's current phase bucket (approximate: the step as last polled). */
+async function notePhase($: EngineInterface, stepUsage: PhaseUsage | null): Promise<void> {
+  await record(async () => {
+    const live = await read($, run)
+    const dir = live?.dir
+    if (dir !== undefined) await changePhases($, current => addPhase(current, dir, live?.currentStep, stepUsage))
+  })
+}
+
+const alertText = (a: DeckApexAlert) =>
+  a.kind === 'step'
+    ? `✗ step ${a.step} failed`
+    : a.kind === 'verify'
+      ? `✗ external verify ${a.verdict} · ${plural(a.findings, 'finding')}`
+      : `■ correction budget spent · ${a.rounds}/${a.cap} rounds`
+
+/** /deck and its aliases: open (the default), close, reset, layout <auto|compact|wide|mini>. */
+async function runCommand($: EngineInterface, args: string) {
+  const [verb = 'open', arg = ''] = args.trim().split(/\s+/)
+  if (verb === 'close') {
+    await $.ui.close({ id: PANE })
+    isPaneOpen = false
+    stopPolling()
+    return { text: 'Deck closed.' }
+  }
+  if (verb === 'reset') {
+    await resetAll($)
+    return { text: 'Deck reset.' }
+  }
+  if (verb === 'layout') {
+    const layout: DeckLayout | null = arg === 'compact' || arg === 'wide' || arg === 'auto' || arg === 'mini' ? arg : null
+    if (!layout) return { text: 'Usage: /deck layout auto|compact|wide|mini' }
+    await update($, view, v => ({ ...normalize(DEFAULT_VIEW, v), layout }))
+    const opened = await openPane($)
+    return { text: opened.isPlaced ? `Deck layout: ${layout}.` : `Layout set to ${layout}; the pane is not shown yet: ${opened.reason}` }
+  }
+  const opened = await openPane($)
+  if (!opened.isPlaced) return { text: `Deck is not shown yet: ${opened.reason}` }
+  return { text: 'Deck opened. Focus it with ctrl+x tab; 1-6 expand cards.' }
+}
+
 // ---------------------------------------------------------------- hooks
 
 export const register: Register = (on, options) => {
   const cfg = parseConfig(options)
   const C = PALETTES[cfg.palette]
-  // tool.check carries no loop id; the tool.call around it does, keyed by the call's id.
-  const callLoop = new Map<string, string | null>()
 
   on('session.start', async ($, e, next) => {
-    await $.command.register({
-      name: 'flightdeck',
-      description: 'Flightdeck, the live agent dashboard: open, close, reset, or set the layout',
-      argumentHint: '[open|close|reset|layout auto|compact|wide|mini]',
-    })
-    await migrate($)
+    // Each command on its own: one refused leaves the others registered.
+    try {
+      await $.command.register({
+        name: 'deck',
+        description: 'Deck, the live agent and APEX dashboard: open, close, reset, or set the layout',
+        argumentHint: '[open|close|reset|layout auto|compact|wide|mini]',
+      })
+    } catch {
+      // Refused: no /deck this session; the aliases and the observers still run.
+    }
+    try {
+      await $.command.register({ name: 'apex-pane', description: 'Opens the deck pane (alias of /deck)' })
+    } catch {
+      // Refused: no /apex-pane this session; /deck still opens the pane.
+    }
+    try {
+      await $.command.register({ name: 'task-board', description: 'Opens the deck pane (alias of /deck)' })
+    } catch {
+      // Refused: no /task-board this session; /deck still opens the pane.
+    }
     // A host without usage (headless, an SDK host, a session not yet bound) just starts without it.
     const u = await $.session.usage().catch(() => null)
     if (u) {
@@ -235,40 +547,38 @@ export const register: Register = (on, options) => {
         limits: u.rateLimits.map(r => ({ kind: r.kind, pct: r.percentUsed })),
       }))
     }
-    if (cfg.openOnStart) void openPane($).catch(() => undefined)
-    await refreshStatus($, cfg)
     return next(e)
   })
 
   on('session.end', async ($, e, next) => {
     if (e.reason === 'clear') {
+      // A /clear starts every figure over; the poll is kept for it.
+      misses = 0
       await resetAll($)
-      await refreshStatus($, cfg)
+    } else {
+      isPaneOpen = false
+      stopPolling()
     }
     return next(e)
   })
 
-  on('command.run', { command: 'flightdeck' }, async ($, e) => {
-    const [verb = 'open', arg = ''] = e.args.trim().split(/\s+/)
-    if (verb === 'close') {
-      await $.ui.close({ id: PANE })
-      return { text: 'Flightdeck closed.' }
+  // The pane closed (its close button, /deck close, another plugin): the 5 s poll stops.
+  on('ui.close', async ($, e, next) => {
+    const closed = await next(e)
+    if (e.id === PANE) {
+      isPaneOpen = false
+      stopPolling()
     }
-    if (verb === 'reset') {
-      await resetAll($)
-      await refreshStatus($, cfg)
-      return { text: 'Flightdeck reset.' }
-    }
-    if (verb === 'layout') {
-      const layout: Layout | null = arg === 'compact' || arg === 'wide' || arg === 'auto' || arg === 'mini' ? arg : null
-      if (!layout) return { text: 'Usage: /flightdeck layout auto|compact|wide|mini' }
-      await update($, view, v => ({ ...normalize(DEFAULT_VIEW, v), layout }))
-      const opened = await openPane($)
-      return { text: opened.isPlaced ? `Flightdeck layout: ${layout}.` : `Layout set to ${layout}; the pane is not shown yet: ${opened.reason}` }
-    }
-    const opened = await openPane($)
-    if (!opened.isPlaced) return { text: `Flightdeck is not shown yet: ${opened.reason}` }
-    return { text: 'Flightdeck opened. Focus it with ctrl+x tab; 1-6 expand cards, f/s/o open the gate rows.' }
+    return closed
+  })
+
+  on('command.run', { command: 'deck' }, async ($, e) => runCommand($, e.args))
+  on('command.run', { command: 'apex-pane' }, async ($, e) => runCommand($, e.args))
+  on('command.run', { command: 'task-board' }, async ($, e) => runCommand($, e.args))
+
+  on('prompt.submit', ($, e, next) => {
+    pollOnce($)
+    return next(e)
   })
 
   on('classic.UserPromptSubmit', async ($, e, next) => {
@@ -312,18 +622,16 @@ export const register: Register = (on, options) => {
         const x = normalize(DEFAULT_MAIN, m)
         return { ...x, model: e.model, effort: String(e.effort ?? x.effort), steps: x.steps + 1 }
       })
-      return yield* next(e)
     }
     const result = yield* next(e)
+    await notePhase($, result.usage)
     const id = e.agentId
-    const [cards, a] = await Promise.all([getCards($), getArchitect($)])
+    if (!id) return result
+    const cards = await getCards($)
     if (cards.some(c => c.id === id)) {
       const step = { model: e.model, usage: result.usage, stopReason: result.stopReason }
       await update($, agents, list => listOf<unknown>(list).map(normalizeCard).map(c => (c.id === id ? applyStep(c, step) : c)))
       if (result.stopReason === 'max_tokens') await say($, await whoIs($, id), 'hit max_tokens', 'error', id)
-    } else if (!a.ids.includes(id)) {
-      const now = await $.clock.now()
-      await update($, loops, l => stepLoop(listOf<Loop>(l), id, now))
     }
     return result
   })
@@ -337,7 +645,6 @@ export const register: Register = (on, options) => {
       costUsd: e.cost?.usd ?? null,
       limits: e.rateLimits.map(r => ({ kind: r.kind, pct: r.percentUsed })),
     }))
-    if (e.changed.includes('context')) await refreshStatus($, cfg)
     return next(e)
   })
 
@@ -354,36 +661,11 @@ export const register: Register = (on, options) => {
     return done
   })
 
-  on('tool.check', async ($, e, next) => {
-    const verdict = await next(e)
-    if (e.tool_use_id) {
-      const check: Check = {
-        id: e.tool_use_id,
-        tool: e.tool,
-        bucket: bucketOf(e.tool),
-        verdict: verdict.decision === 'allow' ? 'rule' : verdict.decision,
-        inSubagent: Boolean(callLoop.get(e.tool_use_id)),
-        detail: shorten(describeInput(e.tool, e.input), 90),
-        at: await $.clock.now(),
-      }
-      await update($, gate, g => recordCheck(normalizeGate(g), check))
-      // The status line updates when the call settles; only a refusal ends here.
-      if (verdict.decision === 'deny') {
-        await say($, 'gate', `denied by rule · ${check.detail}`, 'error')
-        await refreshStatus($, cfg)
-      }
-    }
-    return verdict
-  })
-
   on('tool.call', async ($, e, next) => {
-    callLoop.set(e.tool_use_id, e.agentId ?? null)
-    const ran = await next(e).finally(() => callLoop.delete(e.tool_use_id))
-    const didRun = ran.deny === undefined
-    // Settle this call's pending ask, if it had one; skip the write (and the redraw) otherwise.
-    const g0 = await getGate($)
-    const isSettled = settleCheck(g0, e.tool_use_id, didRun) !== g0
-    if (isSettled) await update($, gate, g => settleCheck(normalizeGate(g), e.tool_use_id, didRun))
+    const ran = await next(e)
+    // A refused call carries neither a result nor an error. An inference, not the refusal's own
+    // field: a tool that answers with an undefined result would read as refused too (log text only).
+    const isRefused = ran.result === undefined && ran.isError !== true
     // A background agent hands its report back through this tool; an architect's report is its advice.
     if (String(e.tool) === 'SubagentHandback') {
       const message = (e as unknown as { message?: unknown }).message
@@ -394,12 +676,9 @@ export const register: Register = (on, options) => {
       }
       return ran
     }
-    if (e.tool === 'Agent') {
-      if (isSettled) await refreshStatus($, cfg)
-      return ran
-    }
-    const hasFailed = didRun && ran.isError === true
-    const isEdit = !hasFailed && didRun && EDIT_TOOLS.has(e.tool)
+    if (e.tool === 'Agent') return ran
+    const hasFailed = !isRefused && ran.isError === true
+    const isEdit = !hasFailed && !isRefused && EDIT_TOOLS.has(e.tool)
     const t0 = await getTurn($)
     if (isEdit || hasFailed || (!e.agentId && t0.errorStreak > 0)) {
       await update($, turn, t => afterCall(normalize(DEFAULT_TURN, t), { inSubagent: Boolean(e.agentId), hasFailed, isEdit }))
@@ -410,19 +689,97 @@ export const register: Register = (on, options) => {
       await update($, agents, list =>
         listOf<unknown>(list)
           .map(normalizeCard)
-          .map(c => (c.id === id ? noteTool(c, { tool: e.tool, text, isError: hasFailed || ran.deny !== undefined }) : c)),
+          .map(c => (c.id === id ? noteTool(c, { tool: e.tool, text, isError: hasFailed || isRefused }) : c)),
       )
     }
     // The log keeps what is worth a glance: refusals, errors and edits; the rest is on the cards.
-    if (ran.deny !== undefined) await say($, await whoIs($, e.agentId), `${text}  denied`, 'error', e.agentId ?? null)
+    if (isRefused) await say($, await whoIs($, e.agentId), `${text}  refused`, 'error', e.agentId ?? null)
     else if (hasFailed) await say($, await whoIs($, e.agentId), `${text}  ✗`, 'error', e.agentId ?? null)
     else if (isEdit) await say($, await whoIs($, e.agentId), text, 'info', e.agentId ?? null)
-    if (isSettled || !didRun) await refreshStatus($, cfg)
     return ran
   })
 
+  // Background shell: run_in_background, or ctrl+B / auto-background, all answer a backgroundTaskId.
+  on('tool.call', { tool: 'Bash' }, async ($, e, next) => {
+    const ran = await next(e)
+    const id = stringField(ran.result, 'backgroundTaskId')
+    if (id !== undefined) {
+      await record(async () => {
+        const startedAt = await $.clock.now()
+        const label = stringField(e, 'description') ?? stringField(e, 'command') ?? 'shell'
+        const toolUseId = stringField(e, 'tool_use_id')
+        // Set only inside a subagent loop: its shells close with it.
+        const ownerAgentId = stringField(e, 'agentId')
+        await changeShells($, current =>
+          addShell(current, {
+            id,
+            label,
+            startedAt,
+            ...(toolUseId === undefined ? {} : { toolUseId }),
+            ...(ownerAgentId === undefined ? {} : { ownerAgentId }),
+          }),
+        )
+      })
+    }
+    return ran
+  }).catch(($, e, next) => next(e))
+
+  // A shell stopped by TaskStop gets no notification row: closed as killed. TaskStop also stops
+  // agents; stopShell leaves those alone.
+  on('tool.call', { tool: 'TaskStop' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (ran.isError !== true && ran.result !== undefined) {
+      const id = stringField(ran.result, 'task_id') ?? stringField(e, 'task_id') ?? stringField(e, 'shell_id')
+      if (id !== undefined) {
+        await record(async () => {
+          const at = await $.clock.now()
+          await changeShells($, current => stopShell(current, id, at))
+        })
+      }
+    }
+    return ran
+  }).catch(($, e, next) => next(e))
+
+  // A background shell's notification row: the one completion signal a shell has. A render hook
+  // never writes state, so the write is deferred to a timer; the row itself is drawn unchanged.
+  on('ui.render', { component: 'UserMessage', props: { origin: { kind: 'task-notification' } } }, ($, e, next) => {
+    const task: unknown = e.props.task
+    const note: Notification = {}
+    const id = stringField(task, 'id')
+    const toolUseId = stringField(task, 'toolUseId')
+    const status = stringField(task, 'status')
+    const durationMs = numberField(task, 'durationMs')
+    if (id !== undefined) note.id = id
+    if (toolUseId !== undefined) note.toolUseId = toolUseId
+    if (status !== undefined) note.status = status
+    if (durationMs !== undefined) note.durationMs = durationMs
+    if (note.status !== undefined) {
+      $.clock.after(0, () => {
+        $.clock
+          .now()
+          .then(at => changeShells($, current => finishByNotification(current, note, at)))
+          .catch(() => {
+            // State refused: the shell stays running until its owner's end or a later redraw.
+          })
+      })
+    }
+    return next(e)
+  })
+
   // A server-side review tool never reaches tool.call: it shows only in the assistant's rows.
+  // A subagent's shell notifies that subagent's loop only: its row never reaches the main
+  // transcript, so it is read here. Read before next: the row is relayed unchanged.
   on('session.append', async ($, e, next) => {
+    const agentId = e.agentId
+    if (agentId !== undefined && agentId !== '' && e.origin.kind === 'task-notification') {
+      const notes = parseTaskNotifications(rowText(e.message.content))
+      if (notes.length > 0) {
+        await record(async () => {
+          const at = await $.clock.now()
+          await changeShells($, current => notes.reduce((list, note) => finishByNotification(list, note, at), current))
+        })
+      }
+    }
     if (!e.agentId && e.message.type === 'assistant') {
       const a = await getArchitect($)
       // Consults this row opened: their result may be in the same row, after the stale read above.
@@ -450,18 +807,17 @@ export const register: Register = (on, options) => {
   on('agent.spawn', async ($, e, next) => {
     const started = await next(e)
     if (!e.parentAgentId) await noteMode($, e.permissionMode)
-    if (started.deny !== undefined || !started.agentId) return started
+    if (!started.agentId) return started
     const id = started.agentId
     if (await isArchitectType($, cfg, e.subagentType)) {
       await update($, architect, a => {
         const x = normalize(DEFAULT_ARCHITECT, a)
         return { ...x, ids: [...listOf<string>(x.ids), id].slice(-40) }
       })
-      await update($, loops, l => listOf<Loop>(l).filter(x => x.id !== id))
       await consultStarted($, cfg, id, e.subagentType.split(':').pop() ?? 'agent')
       return started
     }
-    const card: AgentCard = {
+    const card: DeckAgentCard = {
       ...normalizeCard({}),
       id,
       type: e.name ?? e.subagentType,
@@ -470,9 +826,7 @@ export const register: Register = (on, options) => {
       spawnedAt: await $.clock.now(),
     }
     await update($, agents, list => [...listOf<unknown>(list).map(normalizeCard), card].slice(-24))
-    await update($, loops, l => listOf<Loop>(l).filter(x => x.id !== id))
     await say($, shorten(cardTitle(card), 12), `spawned · ${card.type}`, 'info', id)
-    await refreshStatus($, cfg)
     return started
   })
 
@@ -490,9 +844,11 @@ export const register: Register = (on, options) => {
       })
       await update($, receipt, () => r)
       await update($, main, m => ({ ...normalize(DEFAULT_MAIN, m), isRunning: false }))
-      await refreshStatus($, cfg)
+      pollOnce($)
       return done
     }
+    // Any subagent, the architect too: its still running shells could only ever notify it.
+    await record(() => changeShells($, current => shellsAfterTurn(current, id, e.reason, now)))
     if ((await getArchitect($)).ids.includes(id)) {
       await consultEnded($, cfg, e.answer, id)
       return done
@@ -508,30 +864,36 @@ export const register: Register = (on, options) => {
       const card = cards.find(c => c.id === id)
       const took = card ? fmtDuration(now - card.spawnedAt) : ''
       await say($, await whoIs($, id), status === 'done' ? `done · ${took}` : status, status === 'done' ? 'done' : 'error', id)
-    } else {
-      await update($, loops, l => listOf<Loop>(l).map(x => (x.id === id ? { ...x, isDone: true, lastAt: now } : x)))
     }
-    await refreshStatus($, cfg)
     return done
   })
 
   // ---------------------------------------------------------------- drawing
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    // Drawn means open (a hot reload forgets the flag; the surface does not): polled while it is.
+    if (!isPaneOpen) {
+      isPaneOpen = true
+      startPolling($)
+    }
     const els = $.ui.resolve(e)
     const { Box, Text, Button } = els
-    const hasClient = 'Client' in els
-    const [m, u, a, g, cards, lp, lines, t, r, v, now] = await Promise.all([
+    // Clients draw on terminal and desktop only; elsewhere the same frame as static text.
+    const hasClient = 'Client' in els && (e.surface === 'terminal' || e.surface === 'desktop')
+    const [m, u, a, cards, lines, t, r, v, apexRun, ph, vd, bg, sh, now] = await Promise.all([
       getMain($),
       getUsage($),
       getArchitect($),
-      getGate($),
       getCards($),
-      getLoops($),
       getLog($),
       getTurn($),
       read($, receipt),
       getView($),
+      read($, run),
+      read($, phases),
+      read($, verdict),
+      read($, budget),
+      getShells($),
       $.clock.now(),
     ])
     const W = Math.max(40, e.props.bodyColumns)
@@ -548,14 +910,11 @@ export const register: Register = (on, options) => {
     const isEmpty: Record<Panel, boolean> = {
       main: false,
       architect: !showArchitect,
-      gate: g.recent.length === 0 && gateSummary(g).total === 0,
       agents: cards.length === 0,
-      loops: lp.length === 0,
       receipt: !m.isRunning && !r,
       log: false,
     }
     const panels = cfg.panels.filter(p => !isEmpty[p])
-    const decider = m.mode === 'auto' ? 'classifier' : 'you'
 
     // A connector between panels: animated while its flow is live, a dim line otherwise.
     const rail = (key: string, active: boolean, color: string, width: number, marks: number[] = [], isMerge = false) =>
@@ -580,6 +939,89 @@ export const register: Register = (on, options) => {
       ) : (
         <Text color={color}>{fmtTimer((endAt ?? now) - since)}</Text>
       )
+
+    // ---- APEX: drawn only while a run is live, first and full width
+    const alerts = alertsOf(apexRun, vd, bg)
+    const shellsRunning = runningShells(sh)
+    const doneShells = sh.filter(s => s.status !== 'running')
+    const shownShells = [...sh.filter(s => s.status === 'running'), ...doneShells.slice(0, DONE_SHELLS)]
+    const hiddenShells = sh.length - shownShells.length
+    const byStep = apexRun !== null && ph.dir !== null && ph.dir === apexRun.dir ? ph.byStep : {}
+    const markColor: Record<PhaseMark, string> = { done: C.apex, current: C.apex, pending: C.dim, failed: C.warn, skipped: C.faint }
+    const shellMark = (s: DeckApexShell) =>
+      s.status === 'running'
+        ? { glyph: '◐', color: C.agent }
+        : s.status === 'completed'
+          ? { glyph: '✓', color: C.ok }
+          : s.status === 'failed'
+            ? { glyph: '✗', color: C.warn }
+            : { glyph: '■', color: C.dim }
+    // A shell's row: mark, label, live duration (frozen once ended), status.
+    const shellRow = (s: DeckApexShell, w: number) => {
+      const sm = shellMark(s)
+      return (
+        <Box>
+          <Text color={sm.color}>{`${sm.glyph} `}</Text>
+          <Box width={Math.max(10, w - 24)}>
+            <Text wrap="truncate">{s.label}</Text>
+          </Box>
+          <Text> </Text>
+          <Box flexShrink={0}>{clock(`shell-clock-${s.id}`, s.startedAt, s.endedAt ?? null, C.dim)}</Box>
+          <Text color={sm.color}>{` ${s.status}`}</Text>
+        </Box>
+      )
+    }
+    // The phase dots on one row (a separator Text between them, so each dot reads on its own).
+    const phaseDots = (run: DeckApexRun) =>
+      run.steps.flatMap((s, i) => {
+        const mark = phaseMark(s, run.currentStep)
+        const spent = byStep[s.step]
+        const n = spent ? countedTotal(spent) : 0
+        const dot = (
+          <Text color={markColor[mark]} bold={mark === 'current'}>
+            {`${PHASE_GLYPH[mark]} ${s.step}${n > 0 ? ` ${kTokens(n)}` : ''}`}
+          </Text>
+        )
+        return i === 0 ? [dot] : [<Text>{'  '}</Text>, dot]
+      })
+    const apexBlock = (w: number) => {
+      if (apexRun === null) return null
+      return (
+        <Box flexDirection="column" width={w}>
+          <Box flexDirection="column" borderStyle="round" borderColor={C.apex} paddingX={1} width={w}>
+            <Text color={C.apex} bold wrap="truncate">
+              {apexHeader(apexRun)}
+            </Text>
+            {apexRun.steps.length > 0 ? (
+              <Box flexWrap="wrap" columnGap={2}>
+                {apexRun.steps.map(s => {
+                  const mark = phaseMark(s, apexRun.currentStep)
+                  const spent = byStep[s.step]
+                  const n = spent ? countedTotal(spent) : 0
+                  return (
+                    <Text color={markColor[mark]} bold={mark === 'current'}>
+                      {`${PHASE_GLYPH[mark]} ${s.step}${n > 0 ? ` ${kTokens(n)}` : ''}`}
+                    </Text>
+                  )
+                })}
+              </Box>
+            ) : (
+              <Text color={C.faint}>no progress table yet</Text>
+            )}
+            {alerts.map(al => (
+              <Text color={C.warn} bold wrap="truncate">
+                {alertText(al)}
+              </Text>
+            ))}
+            {shownShells.map(s => shellRow(s, w))}
+            {hiddenShells > 0 ? <Text color={C.faint}>{`+${hiddenShells} earlier shells`}</Text> : null}
+          </Box>
+          {rail('apex-link', m.isRunning || shellsRunning > 0, C.apex, w)}
+        </Box>
+      )
+    }
+    const apexRows =
+      apexRun === null ? 0 : 2 + 1 + 1 + alerts.length + shownShells.length + (hiddenShells > 0 ? 1 : 0) + 1
 
     // ---- main
     const effortN = { low: 1, medium: 2, high: 3, xhigh: 4, max: 4 }[m.effort] ?? 0
@@ -679,73 +1121,9 @@ export const register: Register = (on, options) => {
       )
     }
 
-    // ---- gate
-    const s = gateSummary(g)
-    const verdictColor = (c: Check) =>
-      c.verdict === 'rule' ? C.gate : c.verdict === 'cleared' ? C.cleared : c.verdict === 'ask' ? C.amber : C.warn
-    const gatePanel = (w: number) => {
-      const strip = g.recent.slice(-Math.max(8, w - 4))
-      const open = v.gateOpen
-      return (
-        <Box flexDirection="column" borderStyle="round" borderColor={C.gate} paddingX={1} width={w}>
-          <Box justifyContent="space-between">
-            <Text color={C.gate} bold>
-              {cfg.gateLabel} · permissions
-            </Text>
-            <Text dimColor>{`${s.total} checks`}</Text>
-          </Box>
-          <Box>
-            {strip.length === 0 ? <Text color={C.faint}>no checks yet</Text> : null}
-            {strip.map(c => (
-              <Text color={verdictColor(c)} dimColor={c.inSubagent}>
-                {c.verdict === 'deny' ? '✗' : '■'}
-              </Text>
-            ))}
-          </Box>
-          <Text wrap="truncate">
-            <Text color={C.gate}>■</Text>
-            <Text dimColor>{` ${s.rule} allowed  `}</Text>
-            <Text color={C.cleared}>■</Text>
-            <Text dimColor>{` ${s.cleared} ${decider}  `}</Text>
-            {s.ask > 0 ? <Text color={C.amber}>{`■ ${s.ask} pending  `}</Text> : null}
-            <Text color={s.deny > 0 ? C.warn : C.dim}>{`✗ ${s.deny} denied`}</Text>
-            {w >= 80 && g.recent.some(c => c.inSubagent) ? <Text color={C.faint}>{'  dim: in subagents'}</Text> : null}
-          </Text>
-          <Box columnGap={2}>
-            {(['file', 'shell', 'other'] as const).map((b: Bucket) => {
-              const tl = g.totals[b]
-              const n = tl.rule + tl.ask + tl.cleared + tl.deny
-              return (
-                <Button
-                  key={`gate-${b}`}
-                  plain
-                  hotkey={b[0]}
-                  label={`${b} ${n}${open === b ? ' ▾' : ''}`}
-                  dimColor={n === 0}
-                  onPress={() => update($, view, x => ({ ...normalize(DEFAULT_VIEW, x), gateOpen: normalize(DEFAULT_VIEW, x).gateOpen === b ? null : b }))}
-                />
-              )
-            })}
-          </Box>
-          {open
-            ? g.recent
-                .filter(c => c.bucket === open)
-                .slice(-5)
-                .map(c => (
-                  <Text wrap="truncate">
-                    <Text color={verdictColor(c)}>{c.verdict === 'deny' ? '✗ ' : '■ '}</Text>
-                    <Text color={C.dim}>{`${(c.verdict === 'rule' ? 'allowed' : c.verdict === 'cleared' ? decider : c.verdict === 'ask' ? 'pending' : 'denied').padEnd(10)} `}</Text>
-                    <Text dimColor={c.inSubagent}>{shorten(c.detail, Math.max(10, w - 18))}</Text>
-                  </Text>
-                ))
-            : null}
-        </Box>
-      )
-    }
-
     // ---- agents: cards up to the limit, swimlanes beyond it
-    const statusColor = (c: AgentCard) => (c.status === 'failed' ? C.warn : c.status === 'done' ? C.gate : C.agent)
-    const glyph = (c: AgentCard) => (c.status === 'running' ? '◐' : c.status === 'done' ? '✓' : c.status === 'failed' ? '✗' : '■')
+    const statusColor = (c: DeckAgentCard) => (c.status === 'failed' ? C.warn : c.status === 'done' ? C.ok : C.agent)
+    const glyph = (c: DeckAgentCard) => (c.status === 'running' ? '◐' : c.status === 'done' ? '✓' : c.status === 'failed' ? '✗' : '■')
     const expandOnPress = (id: string) => () =>
       update($, view, x => ({ ...normalize(DEFAULT_VIEW, x), expanded: normalize(DEFAULT_VIEW, x).expanded === id ? null : id }))
 
@@ -861,22 +1239,6 @@ export const register: Register = (on, options) => {
         </Box>
       ) : null
 
-    // ---- other loops (workflow agents, forks): ids that match no card
-    const loopsPanel = (w: number) => {
-      if (lp.length === 0) return null
-      const active = lp.filter(l => isLoopActive(l, now)).length
-      const dots = lp.slice(-Math.max(4, w - 38))
-      return (
-        <Box width={w}>
-          <Text bold>other loops </Text>
-          <Text dimColor>{`${lp.length} seen · ${active} active  `}</Text>
-          {dots.map(l => (
-            <Text color={isLoopActive(l, now) ? C.agent : l.isDone ? C.dim : C.faint}>{isLoopActive(l, now) ? '●' : l.isDone ? '✓' : '○'}</Text>
-          ))}
-        </Box>
-      )
-    }
-
     // ---- receipt: the turn now, or the last one
     const receiptPanel = (w: number) => {
       const isReview = t.isReviewing
@@ -890,7 +1252,7 @@ export const register: Register = (on, options) => {
             </Box>
           ) : r ? (
             <Text wrap="truncate">
-              <Text color={r.reason === 'answer' ? C.gate : C.warn}>{r.reason === 'answer' ? '✓ ' : '✗ '}</Text>
+              <Text color={r.reason === 'answer' ? C.ok : C.warn}>{r.reason === 'answer' ? '✓ ' : '✗ '}</Text>
               <Text>{`last turn ${fmtDuration(r.durationMs)} · ${plural(r.agents, 'agent')} · ${plural(r.edits, 'edit')} · ${plural(r.errors, 'error')}`}</Text>
               {r.costDelta !== null ? <Text color={C.main}>{` · +${fmtUsd(r.costDelta)}`}</Text> : null}
             </Text>
@@ -903,12 +1265,22 @@ export const register: Register = (on, options) => {
     }
 
     // ---- log: whatever rows the other panels leave, 4 to 8
-    const used = 2 + 5 + (showArchitect ? 6 : 0) + 6 + (v.gateOpen ? 5 : 0) + (cards.length > cfg.maxCards ? 3 + Math.min(6, cards.length) : 8) + (expandedCard ? 8 : 0) + (lp.length ? 1 : 0) + 3
+    const used = 2 + apexRows + 5 + (showArchitect ? 6 : 0) + (cards.length > cfg.maxCards ? 3 + Math.min(6, cards.length) : 8) + (expandedCard ? 8 : 0) + 3
     const bodyRows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 40
     const nLog = logRows(bodyRows, used)
     const shownLines = (viewed ? lines.filter(l => l.agentId === viewed) : lines).slice(-nLog)
-    const colorOf = (l: LogLine) =>
-      l.kind === 'error' ? C.warn : l.kind === 'consult' ? C.arch : l.who === 'main' ? C.main : l.who === 'gate' ? C.gate : l.who === 'you' ? C.text : C.agent
+    const colorOf = (l: DeckLogLine) =>
+      l.kind === 'error'
+        ? C.warn
+        : l.kind === 'consult'
+          ? C.arch
+          : l.who === 'apex'
+            ? C.apex
+            : l.who === 'main'
+              ? C.main
+              : l.who === 'you'
+                ? C.text
+                : C.agent
     const logPanel = (w: number) => (
       <Box flexDirection="column" borderStyle="round" borderColor={C.faint} paddingX={1} width={w}>
         <Text dimColor>{viewed ? 'session log · this agent' : 'session log'}</Text>
@@ -932,19 +1304,7 @@ export const register: Register = (on, options) => {
     )
 
     const draw = (p: Panel, w: number) =>
-      p === 'main'
-        ? mainPanel(w)
-        : p === 'architect'
-          ? architectPanel(w)
-          : p === 'gate'
-            ? gatePanel(w)
-            : p === 'agents'
-              ? agentsPanel(w)
-              : p === 'loops'
-                ? loopsPanel(w)
-                : p === 'receipt'
-                  ? receiptPanel(w)
-                  : logPanel(w)
+      p === 'main' ? mainPanel(w) : p === 'architect' ? architectPanel(w) : p === 'agents' ? agentsPanel(w) : p === 'receipt' ? receiptPanel(w) : logPanel(w)
 
     // Panels with the flow between them; the agents panel draws its own rails.
     const column = (ps: Panel[], w: number) => (
@@ -952,7 +1312,7 @@ export const register: Register = (on, options) => {
         {ps.map((p, i) => {
           const prev = ps[i - 1]
           const link =
-            i === 0 || p === 'agents' || prev === 'agents' || p === 'log' || p === 'loops' || prev === 'loops'
+            i === 0 || p === 'agents' || prev === 'agents' || p === 'log'
               ? null
               : rail(`link-${p}`, p === 'architect' ? advising : m.isRunning, p === 'architect' ? C.arch : C.main, w)
           return (
@@ -1000,10 +1360,33 @@ export const register: Register = (on, options) => {
     // Inline above the prompt (the terminal's main screen), the pane is a summary of at most 8 rows.
     const isMini = layout === 'mini' || (layout === 'auto' && e.props.placement === 'inline')
     if (isMini) {
-      const live = [...cards.filter(c => c.status === 'running'), ...cards.filter(c => c.status !== 'running').reverse()].slice(0, 3)
-      const counts = ` ${s.rule} allowed · ${s.cleared} ${decider}${s.ask > 0 ? ` · ${s.ask} pending` : ''} · ${s.deny} denied`
-      const strip = g.recent.slice(-Math.max(4, W - cfg.gateLabel.length - 1 - counts.length))
+      const MINI_ROWS = 8
       const mg = u.pct !== null ? gauge(u.pct, 6) : null
+      // While a run is live it takes its rows first: header, phase dots, each alert, the running
+      // shells; the agents and the receipt get what is left of the 8.
+      const apexMini =
+        apexRun === null
+          ? []
+          : [
+              <Text color={C.apex} bold wrap="truncate">
+                {apexHeader(apexRun)}
+              </Text>,
+              ...(apexRun.steps.length > 0 ? [<Text wrap="truncate">{phaseDots(apexRun)}</Text>] : []),
+              ...alerts.map(al => (
+                <Text color={C.warn} bold wrap="truncate">
+                  {alertText(al)}
+                </Text>
+              )),
+              ...sh.filter(s => s.status === 'running').map(s => shellRow(s, W)),
+            ].slice(0, MINI_ROWS - 1)
+      const room = MINI_ROWS - 1 - apexMini.length
+      const ordered = [...cards.filter(c => c.status === 'running'), ...cards.filter(c => c.status !== 'running').reverse()]
+      let nLive = Math.min(3, cards.length, room)
+      // Agents left out: their « +N more » row takes the last slot.
+      if (cards.length > nLive && nLive > 0 && nLive === room) nLive -= 1
+      const live = ordered.slice(0, nLive)
+      const showMore = cards.length > live.length && room > live.length
+      const showReceipt = !m.isRunning && r !== null && room - live.length - (showMore ? 1 : 0) > 0
       return (
         <Box flexDirection="column" width={W}>
           <Text wrap="truncate">
@@ -1019,19 +1402,7 @@ export const register: Register = (on, options) => {
             {u.costUsd !== null ? <Text dimColor>{` · ${fmtUsd(u.costUsd)}`}</Text> : null}
             {showArchitect ? <Text color={C.arch}>{` · ${cfg.architectLabel.toLowerCase()} ${advising ? 'advising' : a.consults.length}`}</Text> : null}
           </Text>
-          {strip.length > 0 ? (
-            <Box>
-              <Text dimColor>{`${cfg.gateLabel.toLowerCase()} `}</Text>
-              {strip.map(c => (
-                <Text color={verdictColor(c)} dimColor={c.inSubagent}>
-                  {c.verdict === 'deny' ? '✗' : '■'}
-                </Text>
-              ))}
-              <Text color={s.deny > 0 ? C.warn : s.ask > 0 ? C.amber : C.dim} wrap="truncate">
-                {counts}
-              </Text>
-            </Box>
-          ) : null}
+          {apexMini}
           {live.map(c => (
             <Box>
               <Text color={statusColor(c)}>{`${glyph(c)} `}</Text>
@@ -1042,11 +1413,10 @@ export const register: Register = (on, options) => {
               {clock(`mini-clock-${c.id}`, c.spawnedAt, c.endedAt, C.dim)}
             </Box>
           ))}
-          {cards.length > live.length ? (
-            <Text color={C.faint} wrap="truncate">{`+${cards.length - live.length} more agents · /flightdeck layout compact for all`}</Text>
+          {showMore ? (
+            <Text color={C.faint} wrap="truncate">{`+${cards.length - live.length} more agents · /deck layout compact for all`}</Text>
           ) : null}
-          {lp.length > 0 ? <Text dimColor>{`other loops ${lp.length} · ${lp.filter(l => isLoopActive(l, now)).length} active`}</Text> : null}
-          {!m.isRunning && r ? (
+          {showReceipt && r ? (
             <Text dimColor wrap="truncate">
               {`last turn ${fmtDuration(r.durationMs)} · ${plural(r.agents, 'agent')} · ${plural(r.edits, 'edit')} · ${plural(r.errors, 'error')}${r.costDelta !== null ? ` · +${fmtUsd(r.costDelta)}` : ''}`}
             </Text>
@@ -1057,9 +1427,9 @@ export const register: Register = (on, options) => {
 
     const legend = fitLegend(
       [
+        ...(apexRun !== null ? [{ label: 'apex', color: C.apex }] : []),
         { label: 'main', color: C.main },
         { label: 'agents', color: C.agent },
-        { label: cfg.gateLabel.toLowerCase(), color: C.gate },
         ...(showArchitect ? [{ label: cfg.architectLabel.toLowerCase(), color: C.arch }] : []),
       ],
       W,
@@ -1068,8 +1438,8 @@ export const register: Register = (on, options) => {
     const body = isWide ? (
       <Box flexDirection="column">
         <Box columnGap={2}>
-          {column(panels.filter(p => p === 'main' || p === 'architect' || p === 'gate'), colW)}
-          {column(panels.filter(p => p === 'agents' || p === 'loops' || p === 'receipt'), colW)}
+          {column(panels.filter(p => p === 'main' || p === 'architect'), colW)}
+          {column(panels.filter(p => p === 'agents' || p === 'receipt'), colW)}
         </Box>
         {panels.includes('log') ? logPanel(W) : null}
       </Box>
@@ -1081,7 +1451,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column" width={W}>
         <Box justifyContent="center">
           <Text bold wrap="truncate">
-            <Text>FLIGHTDECK</Text>
+            <Text>DECK</Text>
             <Text color={C.dim}> · </Text>
             <Text color={C.main}>{modelName.toUpperCase()}</Text>
             <Text>{m.isRunning ? ' WORKS' : ' IDLE'}</Text>
@@ -1098,6 +1468,7 @@ export const register: Register = (on, options) => {
             </Text>
           ))}
         </Box>
+        {apexBlock(W)}
         {body}
         {svgLanes}
       </Box>

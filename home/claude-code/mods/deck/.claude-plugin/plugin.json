@@ -1,24 +1,11 @@
 {
-  "name": "flightdeck",
-  "version": "0.3.2",
-  "description": "Flightdeck: a live agent dashboard for Claude Code. Main model vitals, an on-call architect, every permission check, subagent cards and swimlanes, a turn receipt and a session log, all from real session events",
+  "name": "deck",
+  "version": "0.1.0",
+  "description": "Deck: live agent and APEX dashboard on demand (/deck, aliases /apex-pane and /task-board). The APEX run on top while one is live (phases, alerts, background shells), then main model vitals, the on-call architect, subagent cards and swimlanes, a turn receipt and a session log. Never opens by itself, no status line. Built from Flightdeck v0.3.2 by Stephen Casella (MIT, https://github.com/scasella/claude-flightdeck).",
   "author": {
-    "name": "Stephen Casella",
-    "url": "https://github.com/scasella"
+    "name": "alx"
   },
-  "homepage": "https://github.com/scasella/claude-flightdeck",
-  "repository": "https://github.com/scasella/claude-flightdeck",
   "license": "MIT",
-  "keywords": [
-    "claude-code",
-    "claude-code-mod",
-    "claude-code-plugin",
-    "dashboard",
-    "subagents",
-    "agents",
-    "observability",
-    "tui"
-  ],
   "types": "./types/index.d.ts",
   "userConfig": {
     "architectPattern": {
@@ -33,17 +20,11 @@
       "type": "string",
       "default": "ARCHITECT"
     },
-    "gateLabel": {
-      "title": "Gate label",
-      "description": "Name shown for the permission panel",
-      "type": "string",
-      "default": "GATE"
-    },
     "panels": {
       "title": "Panels",
-      "description": "Comma-separated panels in display order: main, architect, gate, agents, loops, receipt, log. Leave one out to hide it.",
+      "description": "Comma-separated panels in display order: main, architect, agents, receipt, log. Leave one out to hide it. The APEX block is not a panel: it shows while a run is live.",
       "type": "string",
-      "default": "main,architect,gate,agents,loops,receipt,log"
+      "default": "main,architect,agents,receipt,log"
     },
     "motion": {
       "title": "Motion",
@@ -94,18 +75,6 @@
         "pastel"
       ],
       "default": "theme"
-    },
-    "openOnStart": {
-      "title": "Open on start",
-      "description": "Open the pane when a session starts",
-      "type": "boolean",
-      "default": true
-    },
-    "statusLine": {
-      "title": "Status line",
-      "description": "Show context, agents, consults and denials in the status line",
-      "type": "boolean",
-      "default": true
     }
   }
 }

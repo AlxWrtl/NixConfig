@@ -1,31 +1,25 @@
-// Ported from task-board's board.test (shell, notification, TaskStop and
-// orphan cases): the owner's end now comes from the loop ledger (stats.ts
-// endLoop + endedOwners) or the agent snapshot (closeBySnapshot).
+// Ported from apex-band (shell, notification, TaskStop and orphan cases): the owner's end
+// comes from its turn.complete (shellsAfterTurn, applied by register.tsx to every subagent) or
+// the agent snapshot (closeBySnapshot).
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
   CAP,
   addShell,
   closeBySnapshot,
-  closeOrphanShells,
   finishByNotification,
   parseTaskNotification,
   parseTaskNotifications,
   runningShells,
+  shellsAfterTurn,
   stopShell,
-} from '../hooks/shells.ts'
-import type { Shell } from '../hooks/shells.ts'
-import { endLoop, endedOwners, launchLoop } from '../hooks/stats.ts'
+} from '../hooks/shells'
+import type { Shell } from '../hooks/shells'
 
 const shell = (id: string, startedAt = 0): Shell[] => addShell([], { id, label: `cmd ${id}`, startedAt, toolUseId: `tu-${id}` })
 
-// The owner `a1` (an Explore subagent) ended by its turn with `reason` at
-// `at`; its shells closed when it ended failed or stopped.
-function ownerTurn(list: Shell[], reason: string, at: number): Shell[] {
-  const before = launchLoop([], { id: 'a1', label: 'x', type: 'Explore' }, 0)
-  const after = endLoop(before, 'a1', reason, 1, at)
-  return endedOwners(before, after).reduce((out, id) => closeOrphanShells(out, id, at), list)
-}
+// The owner `a1` ended by its turn with `reason` at `at`.
+const ownerTurn = (list: Shell[], reason: string, at: number): Shell[] => shellsAfterTurn(list, 'a1', reason, at)
 
 const owned = (): Shell[] => addShell([], { id: 'b1', label: 'sleep', startedAt: 1, ownerAgentId: 'a1' })
 const snap = (status: string, type = 'Explore') => [{ id: 'a1', type, status }]
@@ -193,5 +187,22 @@ describe('task notification text', () => {
     expect(stopShell(out, 'b1', 50)).toBe(out)
     // An agent id is never a shell row: TaskStop on a subagent changes nothing here.
     expect(stopShell(list, 'a1', 40)).toBe(list)
+  })
+})
+
+describe('shellsAfterTurn', () => {
+  test('a turn ended without an answer closes that owner\'s running shells, whatever the owner', () => {
+    // An architect's shells too: register.tsx applies it before the architect's early return.
+    const list = addShell(owned(), { id: 'b2', label: 'review', startedAt: 2, ownerAgentId: 'fab1' })
+    const out = shellsAfterTurn(list, 'fab1', 'aborted', 40)
+    expect(out.find(t => t.id === 'b2')?.status).toBe('killed')
+    expect(out.find(t => t.id === 'b2')?.endedAt).toBe(40)
+    expect(out.find(t => t.id === 'b1')?.status).toBe('running')
+  })
+
+  test('an answer, or an owner with no shell, changes nothing (same reference)', () => {
+    const list = owned()
+    expect(shellsAfterTurn(list, 'a1', 'answer', 40)).toBe(list)
+    expect(shellsAfterTurn(list, 'zz', 'aborted', 40)).toBe(list)
   })
 })

@@ -10,23 +10,18 @@
 #   M4 no .js/.cjs/.mjs under mods/ (js-lint counts every tracked .js, and
 #      the mods are TypeScript ES modules, outside its commonjs config);
 #   M5 no source holds a forbidden noun: sound, host processes, network,
-#      file writes, dynamic import, toasts; no `deny` in a hooks module
-#      (the mods observe, they never refuse a call); flightdeck alone is
-#      exempt from `deny` (verdict data), and M5b bans a returned refusal in
-#      its hooks instead: an allow-list, the known data spellings stripped,
-#      then any `deny:` / `decision:` / `permissionDecision` / `{ deny }`
-#      left fails, multiline included;
-#   M5c every flightdeck file under hooks/, types/, .claude-plugin/ has the
-#      sha256 recorded here (upstream tag v0.3.2), both ways;
+#      file writes, dynamic import, toasts; in a hooks module of any mod no
+#      refusal or rewrite token either (`deny`, `permissionDecision`,
+#      `decision:`, `updatedToolOutput`, `preventContinuation`): the mods
+#      observe, they never refuse, rewrite or stop a call;
 #   M6 settings env CLAUDE_CODE_PLUGIN_DIRS is exactly the absolute
 #      ~/.claude/mods/<name> folders of mods.nix, ":"-joined, recomputed here
 #      rather than read back through mods.pluginDirs;
 #   M7 activation copies the mods (claudeCodeMods, DRY_RUN skip, engine types
 #      excluded) and home/claude-code.nix hands it the source folder.
-# Canaries: the M5 scan must flag `$.audio.speak`, M5b a `{ decision: 'deny' }`
-# and a bare `deny: reason`, M5c a one-byte change, M4 a .js name, and M1 an
-# extra name, or the check fails: a scan that stopped matching would
-# otherwise be green forever.
+# Canaries: the M5 scan must flag `$.audio.speak`, and a `deny` and a
+# `permissionDecision` in the deck mod's hooks, M4 a .js name, and M1 an extra name, or the check fails: a
+# scan that stopped matching would otherwise be green forever.
 { pkgs }:
 
 let
@@ -111,81 +106,22 @@ let
     "toast"
   ];
   isHooksModule = f: hasInfix "/hooks/" f && (hasSuffix ".ts" f || hasSuffix ".tsx" f);
-  # Flightdeck (vendored, byte-identical to upstream) counts permission
-  # verdicts, so `deny` is data there (`verdict.decision === 'deny'`, a
-  # `deny` tally field). Only that noun, only that mod, is exempt; M5b bans a
-  # returned refusal in its hooks instead.
-  isFlightdeckHooks = f: lib.hasPrefix "flightdeck/hooks/" f && isHooksModule f;
+  # Refusal and rewrite spellings of the hook results, barred from every hooks module.
+  hookResultNouns = [
+    "deny"
+    "permissionDecision"
+    "decision:"
+    "updatedToolOutput"
+    "preventContinuation"
+  ];
   nounsIn =
     path: text:
     builtins.filter (n: hasInfix n text) (
-      forbidden ++ lib.optional (isHooksModule path && !(isFlightdeckHooks path)) "deny"
+      forbidden ++ lib.optionals (isHooksModule path) hookResultNouns
     );
   scan = lib.concatMap (
     f: map (n: "${f}: ${n}") (nounsIn f (builtins.readFile (root + "/${f}")))
   ) files;
-
-  # --- M5b
-  # Allow-list: the only `deny`/`decision` keys flightdeck's hooks hold today
-  # are its verdict tally (hooks/core.ts). They are stripped, verbatim; any
-  # refusal-shaped key left is a finding. POSIX regexes, `[[:space:]]` spans
-  # newlines, so a multiline `return {\n deny:` is caught too.
-  fdDataSpellings = [
-    "cleared: 0, deny: 0 }"
-    "deny: s.deny + g.totals[k].deny,"
-  ];
-  refusalPatterns = [
-    "deny[\"'`]?[]]?[[:space:]]*:"
-    "[dD]ecision[\"'`]?[]]?[[:space:]]*:"
-    "permissionDecision"
-    "[{,][[:space:]]*deny[[:space:]]*[,}]"
-    "[(][[:space:]]*[{][[:space:]]*deny"
-  ];
-  stripData = builtins.replaceStrings fdDataSpellings (map (_: "") fdDataSpellings);
-  refusalsIn =
-    text:
-    let
-      t = stripData text;
-    in
-    builtins.filter (re: builtins.length (builtins.split re t) > 1) refusalPatterns;
-  fdHooks = nonEmpty "the flightdeck hooks files" (builtins.filter isFlightdeckHooks files);
-  fdHooksText = lib.concatMapStrings (f: builtins.readFile (root + "/${f}")) fdHooks;
-  refusalScan = lib.concatMap (
-    f: map (n: "${f}: ${n}") (refusalsIn (builtins.readFile (root + "/${f}")))
-  ) fdHooks;
-  # A stale allow-list entry would allow a future match for nothing.
-  staleSpellings = builtins.filter (d: !(hasInfix d fdHooksText)) fdDataSpellings;
-
-  # --- M5c
-  # sha256 of the vendored code at upstream tag v0.3.2 (commit b8d6d26).
-  # Changing a hash here means re-auditing upstream first: the update
-  # procedure in home/claude-code/mods/flightdeck/VENDORED.md.
-  fdPins = {
-    ".claude-plugin/plugin.json" = "70ab346401dea3e1cae77ee2bde2aaebc37afc9594461efce44609e4d137c77d";
-    "hooks/core.ts" = "ac1415c8d5bdf82e56c5a10ff438f2054a34654e930db869da1c45b732aa98a6";
-    "hooks/elapsed.tsx" = "212ec2954e7d41ffff139791702be8a402eba57b2d9c1119f440a0ebd154c73e";
-    "hooks/hooks.json" = "d842d789476d67282d0f04b7e5fdc68a3d981ccec65dd79cfa2d11eed13fb828";
-    "hooks/rail.tsx" = "6875743b9efb1847f317d96c961000eba658183ab64e8cfc82c344359881ff49";
-    "hooks/register.tsx" = "4a7238ecfb040de3afc2370c3787d7a083b13476cba6838813e7ff603c1d39b0";
-    "types/index.d.ts" = "4b7c330ef5fc570cb12219d909f5cb9bea4a9e274e0750b3e29dcc7d503cbc52";
-  };
-  isPinScope =
-    f:
-    lib.any (d: lib.hasPrefix "flightdeck/${d}/" f) [
-      "hooks"
-      "types"
-      ".claude-plugin"
-    ];
-  fdPinned = nonEmpty "the flightdeck pinned files" (
-    map (lib.removePrefix "flightdeck/") (builtins.filter isPinScope files)
-  );
-  pinMatches = f: hash: (fdPins.${f} or null) == hash;
-  pinDrift = builtins.filter (
-    f: !(pinMatches f (builtins.hashFile "sha256" (root + "/flightdeck/${f}")))
-  ) fdPinned;
-  pinMissing = builtins.filter (f: !(builtins.elem f fdPinned)) (builtins.attrNames fdPins);
-  pinText = builtins.readFile (root + "/flightdeck/hooks/hooks.json");
-  pinOneByte = "X" + builtins.substring 1 (builtins.stringLength pinText) pinText;
 
   # --- M6
   parsed = builtins.tryEval (builtins.fromJSON settings.settingsJson);
@@ -233,16 +169,6 @@ let
       msg = "found ${builtins.toJSON scan}";
     }
     {
-      name = "M5b no flightdeck hooks file returns a refusal";
-      ok = refusalScan == [ ] && staleSpellings == [ ];
-      msg = "found ${builtins.toJSON refusalScan}, or allow-listed spelling(s) gone: ${builtins.toJSON staleSpellings}";
-    }
-    {
-      name = "M5c flightdeck code matches the sha256 pinned at v0.3.2";
-      ok = pinDrift == [ ] && pinMissing == [ ];
-      msg = "changed or unpinned: ${builtins.toJSON pinDrift}; pinned but gone: ${builtins.toJSON pinMissing} (re-audit upstream, then update fdPins)";
-    }
-    {
       name = "M6 settings env CLAUDE_CODE_PLUGIN_DIRS = the mods folders";
       ok = pluginDirs == expectedDirs;
       msg = "got ${builtins.toJSON pluginDirs}, expected ${builtins.toJSON expectedDirs}";
@@ -259,41 +185,16 @@ let
       msg = "the forbidden-noun scan no longer detects anything";
     }
     {
-      name = "C4 the M5 scan still flags deny outside flightdeck, not inside";
+      name = "C4 the M5 scan flags deny in the deck mod's hooks";
       ok =
-        nounsIn "apex-band/hooks/index.tsx" "return { deny: 'no' }" == [ "deny" ]
-        && nounsIn "flightdeck/hooks/core.ts" "s.deny + 1" == [ ]
-        && nounsIn "flightdeck/hooks/core.ts" "$.http.get(u)" == [ "$.http" ];
-      msg = "the deny exemption leaks to other mods, or drops other nouns for flightdeck";
-    }
-    {
-      name = "C5 the M5b scan flags a returned refusal";
-      ok =
-        refusalsIn "return { deny: 'no' }" != [ ]
-        && refusalsIn "return {deny: true}" != [ ]
-        && refusalsIn "{ deny: \"x\" }" != [ ]
-        && refusalsIn "{ decision: 'deny' }" != [ ]
-        && refusalsIn "deny: reason" != [ ]
-        && refusalsIn "return {\n    deny:\n      reason,\n  }" != [ ]
-        && refusalsIn "{ permissionDecision: 'deny' }" != [ ]
-        && refusalsIn "return ({ deny })" != [ ]
-        && refusalsIn "cleared: 0, deny: 0 }; return { deny: r }" != [ ]
-        && refusalsIn "s.deny > 0" == [ ]
-        && refusalsIn "c.verdict === 'deny' ? 'x' : 'y'" == [ ]
-        && refusalsIn "const ZERO: Tally = { rule: 0, ask: 0, cleared: 0, deny: 0 }" == [ ];
-      msg = "the refusal scan no longer detects anything, or flags verdict data";
-    }
-    {
-      name = "C6 the M5c pin flags a one-byte change";
-      ok =
-        pinMatches "hooks/hooks.json" (builtins.hashString "sha256" pinText)
-        && pinOneByte != pinText
-        && !(pinMatches "hooks/hooks.json" (builtins.hashString "sha256" pinOneByte));
-      msg = "the sha256 pin no longer detects a changed file";
+        nounsIn "deck/hooks/register.tsx" "return { deny: 'no' }" == [ "deny" ]
+        && nounsIn "deck/hooks/register.tsx" "{ permissionDecision: 'ask' }" == [ "permissionDecision" ]
+        && nounsIn "deck/hooks/core.ts" "$.http.get(u)" == [ "$.http" ];
+      msg = "the refusal-token scan no longer covers the deck mod";
     }
     {
       name = "C2 the M4 filter flags a .js file";
-      ok = jsFiles [ "task-board/hooks/index.js" ] != [ ];
+      ok = jsFiles [ "deck/hooks/register.js" ] != [ ];
       msg = "the .js filter no longer detects anything";
     }
     {

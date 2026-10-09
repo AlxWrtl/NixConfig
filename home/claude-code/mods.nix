@@ -9,8 +9,7 @@
 # checks/claude-mods.nix.
 let
   names = [
-    "apex-band"
-    "flightdeck"
+    "deck"
     "status-bar"
   ];
 in

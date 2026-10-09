@@ -2,7 +2,7 @@
 // verification, a spent correction budget).
 // No `$`, no clock, no I/O: the hooks module lists and reads, this decides.
 
-import type { ApexBandAlert, ApexBandBudget, ApexBandRun, ApexBandVerdict } from '../types'
+import type { DeckApexAlert, DeckApexBudget, DeckApexRun, DeckApexVerdict } from '../types'
 
 // Rounds every run gets before the user must grant one more
 // (hooks/correction-budget.js MAX_ROUNDS).
@@ -15,7 +15,7 @@ const GRANT = /^(.+)\.grant([1-9][0-9]*)$/
 // one `<dir>.round<n>` file per round used, one `<dir>.grant<n>` per round
 // the user granted. Another run's files (even a longer name sharing the
 // prefix) are not counted; null when the run has none.
-export function budgetOf(names: readonly string[], dir: string): ApexBandBudget | null {
+export function budgetOf(names: readonly string[], dir: string): DeckApexBudget | null {
   let rounds = 0
   let grants = 0
   for (const name of names) {
@@ -25,10 +25,10 @@ export function budgetOf(names: readonly string[], dir: string): ApexBandBudget 
   return rounds === 0 && grants === 0 ? null : { dir, rounds, grants }
 }
 
-export const budgetCap = (b: ApexBandBudget): number => MAX_ROUNDS + b.grants
+export const budgetCap = (b: DeckApexBudget): number => MAX_ROUNDS + b.grants
 
 // True once every round the run may take is used.
-export function isBudgetSpent(b: ApexBandBudget | null): boolean {
+export function isBudgetSpent(b: DeckApexBudget | null): boolean {
   return b !== null && b.rounds >= budgetCap(b)
 }
 
@@ -52,12 +52,12 @@ function redVerdict(word: string): RedVerdict | undefined {
 // then a red external verification, then a spent correction budget. A
 // verdict or budget of another run directory is ignored; no run, no alert.
 export function alertsOf(
-  run: ApexBandRun | null,
-  verdict: ApexBandVerdict | null,
-  budget: ApexBandBudget | null,
-): ApexBandAlert[] {
+  run: DeckApexRun | null,
+  verdict: DeckApexVerdict | null,
+  budget: DeckApexBudget | null,
+): DeckApexAlert[] {
   if (run === null) return []
-  const alerts: ApexBandAlert[] = run.steps.filter(s => s.kind === 'failed').map((s): ApexBandAlert => ({ kind: 'step', step: s.step }))
+  const alerts: DeckApexAlert[] = run.steps.filter(s => s.kind === 'failed').map((s): DeckApexAlert => ({ kind: 'step', step: s.step }))
   const red = verdict !== null && verdict.dir === run.dir ? redVerdict(verdict.verdict) : undefined
   if (red !== undefined && verdict !== null) alerts.push({ kind: 'verify', verdict: red, findings: verdict.findings })
   if (budget !== null && budget.dir === run.dir && isBudgetSpent(budget)) {

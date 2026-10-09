@@ -628,9 +628,10 @@ in
     Files known (01-analyze skipped, not High-stakes): the COORDINATOR writes 02-plan.md itself, short: Files:, ordered steps, command-verifiable ACs, Docs: line, Style: line. No plan subagent.
 
     Per ORCHESTRATION.md: the coordinator, when 01-analyze ran or on
-    High-stakes, spawns this as a fresh planner agent (`model: opus`) whose input is the analyze phase summary (not
-    the raw transcript). Return the plan phase summary schema and persist the
-    plan. The coordinator (Opus 5.5) then reviews the plan and approves or
+    High-stakes, spawns this as a fresh planner agent (`subagent_type: Plan`, `model: opus`) whose input is the analyze phase summary (not
+    the raw transcript). Return the plan phase summary schema with the full plan
+    in it: the Plan agent is read-only (no Write tool), so the coordinator
+    persists it as 02-plan.md. The coordinator (Opus 5.5) then reviews the plan and approves or
     re-briefs before execute — execute never starts on an unapproved plan.
 
     ## Clarify first (`-q`)
@@ -1896,7 +1897,7 @@ in
     |-------|-------|-------|
     | Analyze fan-out | Explore / codebase-navigator | haiku — read-only search only |
     | Analyze synthesis | analyzer phase agent | `opus` (effort high) |
-    | Plan | coordinator inline when 01-analyze was skipped (Standard); plan phase agent only after 01-analyze or on High-stakes | `opus` (effort high/max) |
+    | Plan | coordinator inline when 01-analyze was skipped (Standard); plan phase agent (`subagent_type: Plan`, read-only — the coordinator writes 02-plan.md) only after 01-analyze or on High-stakes | `opus` (effort high/max) |
     | Execute (parallel waves under `-k`, coordinator's call) | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `opus` (low effort mechanical) |
     | Bulk / large-context execute | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `sonnet` |
     | Direct (edit + self-check, DIRECT.md) | coordinator inline | none |

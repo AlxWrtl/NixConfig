@@ -19,6 +19,9 @@ import {
   tallyTotal,
   countedTotal,
   subagentsRunning,
+  noteAnswer,
+  noteSpawn,
+  toolTarget,
 } from '../hooks/stats.ts'
 import type { Usage } from '../hooks/stats.ts'
 
@@ -344,5 +347,110 @@ describe('endedOwners', () => {
     const after = endLoop(mate, 't1', 'answer', 1, 1)
     expect(subagentsRunning(after)).toBe(false)
     expect(subagentsRunning(launchLoop(after, { id: 'a1' }, 2))).toBe(true)
+  })
+})
+
+describe('step context and effort', () => {
+  test('each step sets the context it sent (input + cache), the latest wins', () => {
+    const one = addStep([], { agentId: 'a1', model: 'm', usage: USAGE }, 0)
+    expect(one[0]?.context).toBe(314)
+    const two = addStep(one, { agentId: 'a1', model: 'm', usage: { ...USAGE, input_tokens: 1, cache_read_input_tokens: 2, cache_creation_input_tokens: 3 } }, 1)
+    expect(two[0]?.context).toBe(6)
+    const none = addStep(two, { agentId: 'a1', model: 'm', usage: null }, 2)
+    expect(none[0]?.context).toBe(6)
+  })
+
+  test('the effort a step asks is kept, a budget as digits; absent keeps the last', () => {
+    const high = addStep([], { model: 'm', usage: null, effort: 'high' }, 0)
+    expect(high[0]?.effort).toBe('high')
+    expect(addStep(high, { model: 'm', usage: null }, 1)[0]?.effort).toBe('high')
+    expect(addStep(high, { model: 'm', usage: null, effort: 12000 }, 1)[0]?.effort).toBe('12000')
+    expect(addStep([], { model: 'm', usage: null, effort: Number.NaN }, 1)[0]?.effort).toBeUndefined()
+  })
+})
+
+describe('recent tools', () => {
+  test('the last 3 calls are kept oldest first, with their targets', () => {
+    let loops = startTool([], { tool: 'Read', target: 'hooks/a.ts' }, 0)
+    loops = startTool(loops, { tool: 'Bash', target: 'run tests' }, 1)
+    loops = startTool(loops, { tool: 'Grep' }, 2)
+    expect(loops[0]?.recent).toEqual([{ tool: 'Read', target: 'hooks/a.ts' }, { tool: 'Bash', target: 'run tests' }, { tool: 'Grep' }])
+    loops = startTool(loops, { tool: 'Edit', target: 'b.ts', toolUseId: 'u4' }, 3)
+    expect(loops[0]?.recent).toEqual([{ tool: 'Bash', target: 'run tests' }, { tool: 'Grep' }, { tool: 'Edit', target: 'b.ts' }])
+    expect(loops[0]?.calls).toBe(4)
+    expect(loops[0]?.tool).toBe('Edit')
+  })
+})
+
+describe('toolTarget', () => {
+  test('a path keeps its last two segments', () => {
+    expect(toolTarget('Read', { file_path: '/Users/x/repo/hooks/stats.ts' })).toBe('hooks/stats.ts')
+    expect(toolTarget('NotebookEdit', { notebook_path: '/a/b/c.ipynb', new_source: '' })).toBe('b/c.ipynb')
+    expect(toolTarget('Write', { file_path: 'top.md' })).toBe('top.md')
+  })
+
+  test('a command: its description, else its first line', () => {
+    expect(toolTarget('Bash', { command: 'pnpm test', description: 'Run tests' })).toBe('Run tests')
+    expect(toolTarget('Bash', { command: '\n  cd x && make\nmore' })).toBe('cd x && make')
+  })
+
+  test('a pattern, a url; nothing readable gives undefined; cut at 60', () => {
+    expect(toolTarget('Grep', { pattern: 'foo.*bar' })).toBe('foo.*bar')
+    expect(toolTarget('WebFetch', { url: 'https://example.com/x', prompt: 'p' })).toBe('https://example.com/x')
+    expect(toolTarget('Poll', {})).toBeUndefined()
+    expect(toolTarget('Poll', null)).toBeUndefined()
+    expect(toolTarget('Bash', { command: 42 })).toBeUndefined()
+    const long = toolTarget('Bash', { command: 'x'.repeat(100) })
+    expect(Array.from(long ?? '')).toHaveLength(60)
+    expect(long?.endsWith('…')).toBe(true)
+  })
+})
+
+describe('noteSpawn', () => {
+  test('a fork or workflow spawn keeps listed and status: never at work', () => {
+    const fork = addStep([], { agentId: 'f1', model: 'm', usage: null }, 0)
+    const noted = noteSpawn(fork, { id: 'f1', label: 'fork', type: 'fork', model: 'claude-haiku-4-5', task: 'do it' }, 1)
+    expect(noted[0]?.listed).toBeUndefined()
+    expect(noted[0]?.status).toBe('running')
+    expect(subagentsRunning(noted)).toBe(false)
+    expect(noted[0]?.task).toBe('do it')
+    expect(noted[0]?.label).toBe('fork')
+    expect(noted[0]?.model).toBe('m')
+  })
+
+  test('an ended loop stays ended; an unknown one is added unlisted', () => {
+    const done = endLoop(launchLoop([], { id: 'a1' }, 0), 'a1', 'answer', 5, 5)
+    const noted = noteSpawn(done, { id: 'a1', task: 'x' }, 6)
+    expect(noted[0]?.status).toBe('done')
+    expect(noted[0]?.listed).toBe(true)
+    const fresh = noteSpawn([], { id: 'b1', model: 'claude-opus-5-5[1m]', task: 't' }, 0)
+    expect(fresh[0]?.listed).toBeUndefined()
+    expect(fresh[0]?.model).toBe('opus-5.5')
+  })
+
+  test('the task is cut at 2000; nothing new keeps the reference', () => {
+    const noted = noteSpawn([], { id: 'a1', task: 'y'.repeat(3000) }, 0)
+    expect(Array.from(noted[0]?.task ?? '')).toHaveLength(2000)
+    expect(noteSpawn(noted, { id: 'a1', task: 'other' }, 1)).toBe(noted)
+  })
+})
+
+describe('noteAnswer', () => {
+  test('keeps the head on one line, cut at 400', () => {
+    const loops = launchLoop([], { id: 'a1' }, 0)
+    const noted = noteAnswer(loops, 'a1', '  Found it:\n\n  the   bug  ')
+    expect(noted[0]?.answer).toBe('Found it: the bug')
+    const long = noteAnswer(loops, 'a1', 'z'.repeat(500))
+    expect(Array.from(long[0]?.answer ?? '')).toHaveLength(400)
+  })
+
+  test('main, unknown, empty or same answer: the same reference', () => {
+    const loops = addStep(launchLoop([], { id: 'a1' }, 0), { model: 'm', usage: null }, 0)
+    expect(noteAnswer(loops, undefined, 'x')).toBe(loops)
+    expect(noteAnswer(loops, MAIN, 'x')).toBe(loops)
+    expect(noteAnswer(loops, 'zz', 'x')).toBe(loops)
+    expect(noteAnswer(loops, 'a1', '   ')).toBe(loops)
+    const once = noteAnswer(loops, 'a1', 'ok')
+    expect(noteAnswer(once, 'a1', ' ok ')).toBe(once)
   })
 })

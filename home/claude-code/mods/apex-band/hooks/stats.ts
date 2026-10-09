@@ -3,7 +3,7 @@
 // external verdict read from the run's verify file. Every function returns
 // the same reference when nothing changed, so a caller can skip the write.
 
-import type { ApexBandLoop, ApexBandLoopStatus, ApexBandPhases, ApexBandTally } from '../types'
+import type { ApexBandLoop, ApexBandLoopStatus, ApexBandPhases, ApexBandTally, ApexBandToolUse } from '../types'
 
 // The loop id of the main conversation (events without an agentId).
 export const MAIN = 'main'
@@ -88,40 +88,147 @@ function wake(loop: ApexBandLoop, at: number): ApexBandLoop {
   return { ...rest, status: 'running', since: at }
 }
 
+// The context one response sent: its input plus cache reads and writes.
+export const contextOf = (usage: Usage): number =>
+  count(usage.input_tokens) + count(usage.cache_read_input_tokens) + count(usage.cache_creation_input_tokens)
+
+// A step's effort as the loop keeps it: a level as is, a budget as digits;
+// undefined when absent or not a finite budget.
+function effortText(effort: string | number | undefined): string | undefined {
+  if (typeof effort === 'string') return effort === '' ? undefined : effort
+  if (typeof effort === 'number' && Number.isFinite(effort)) return String(effort)
+  return undefined
+}
+
 // One model response of loop `agentId` (main when absent): a step more,
-// its model and usage counted.
+// its model and usage counted, its context and effort kept as the latest.
 export function addStep(
   loops: readonly ApexBandLoop[],
-  step: { agentId?: string; model: string; usage: Usage | null },
+  step: { agentId?: string; model: string; usage: Usage | null; effort?: string | number },
   at: number,
 ): ApexBandLoop[] {
   return withLoop(loops, step.agentId ?? MAIN, at, loop => {
     const woken = wake(loop, at)
     const model = shortModel(step.usage?.model ?? step.model)
+    const effort = effortText(step.effort)
     return {
       ...woken,
       steps: woken.steps + 1,
       ...(model === '' ? {} : { model }),
       tally: step.usage === null ? woken.tally : addUsage(woken.tally, step.usage),
+      ...(step.usage === null ? {} : { context: contextOf(step.usage) }),
+      ...(effort === undefined ? {} : { effort }),
     }
   })
 }
 
-// A tool call starting in loop `agentId`: a call more, shown as current.
+// How many tool calls a loop keeps as its recent ones.
+export const RECENT_CAP = 3
+
+// A tool call starting in loop `agentId`: a call more, shown as current,
+// pushed on its recent calls (the last RECENT_CAP, oldest first).
 export function startTool(
   loops: readonly ApexBandLoop[],
-  call: { agentId?: string; tool: string; toolUseId?: string },
+  call: { agentId?: string; tool: string; toolUseId?: string; target?: string },
   at: number,
 ): ApexBandLoop[] {
   return withLoop(loops, call.agentId ?? MAIN, at, loop => {
     const { toolUseId: _old, ...woken } = wake(loop, at)
+    const use: ApexBandToolUse = call.target === undefined || call.target === '' ? { tool: call.tool } : { tool: call.tool, target: call.target }
     return {
       ...woken,
       calls: woken.calls + 1,
       tool: call.tool,
       ...(call.toolUseId === undefined ? {} : { toolUseId: call.toolUseId }),
+      recent: [...(woken.recent ?? []), use].slice(-RECENT_CAP),
     }
   })
+}
+
+// Text on one line: runs of whitespace made one space, ends trimmed.
+export const oneLine = (text: string): string => text.replace(/\s+/g, ' ').trim()
+
+// Text cut to `max` code points, the last one an ellipsis when cut.
+export function cutText(text: string, max: number): string {
+  const points = Array.from(text)
+  if (points.length <= max) return text
+  return max <= 0 ? '' : `${points.slice(0, max - 1).join('')}…`
+}
+
+// The longest launch prompt a loop keeps.
+export const TASK_CAP = 2000
+
+// A subagent launch read by agent.spawn: its loop named, its asked model and
+// its prompt kept where it has none yet. Never marks it listed nor changes
+// its status (a fork or a workflow agent spawned so stays not at work); a
+// loop not seen yet is added running, unlisted.
+export function noteSpawn(
+  loops: ApexBandLoop[],
+  agent: { id: string; label?: string; type?: string; model?: string; task?: string },
+  at: number,
+): ApexBandLoop[] {
+  const asked = agent.model === undefined ? '' : shortModel(agent.model)
+  const task = agent.task === undefined ? '' : cutText(agent.task.trim(), TASK_CAP)
+  const mark = (loop: ApexBandLoop): ApexBandLoop => {
+    let next = named(loop, agent.label, agent.type)
+    if (next.model === undefined && asked !== '') next = { ...next, model: asked }
+    if (next.task === undefined && task !== '') next = { ...next, task }
+    return next
+  }
+  const i = loops.findIndex(l => l.id === agent.id)
+  const loop = loops[i]
+  if (loop === undefined) return [...loops, mark(freshLoop(agent.id, at))]
+  const next = mark(loop)
+  if (next === loop) return loops
+  const out = [...loops]
+  out[i] = next
+  return out
+}
+
+// The longest answer head a loop keeps.
+export const ANSWER_CAP = 400
+
+// Subagent `agentId`'s final answer: its head kept on one line (cut at
+// ANSWER_CAP). The main loop, an unknown loop, an empty or same answer: the
+// same reference.
+export function noteAnswer(loops: ApexBandLoop[], agentId: string | undefined, text: string): ApexBandLoop[] {
+  if (agentId === undefined || agentId === MAIN) return loops
+  const answer = cutText(oneLine(text), ANSWER_CAP)
+  const i = loops.findIndex(l => l.id === agentId)
+  const loop = loops[i]
+  if (loop === undefined || answer === '' || loop.answer === answer) return loops
+  const out = [...loops]
+  out[i] = { ...loop, answer }
+  return out
+}
+
+// The longest tool target kept.
+export const TARGET_CAP = 60
+
+// A string field of an unknown input, else undefined.
+function field(input: unknown, key: string): string | undefined {
+  if (typeof input !== 'object' || input === null) return undefined
+  const value: unknown = Reflect.get(input, key)
+  return typeof value === 'string' && value.trim() !== '' ? value : undefined
+}
+
+// A path's last two segments (a/b/c.ts → b/c.ts).
+export const pathTail = (path: string): string => path.split('/').filter(s => s !== '').slice(-2).join('/')
+
+// What a tool call aims at, on one line, cut at TARGET_CAP: a file's last two
+// path segments, a shell command's description (else its first line), a
+// search pattern, a URL; undefined when none.
+export function toolTarget(tool: string, input: unknown): string | undefined {
+  const path = field(input, 'file_path') ?? field(input, 'notebook_path') ?? field(input, 'path')
+  const command = field(input, 'command')
+  let target: string | undefined
+  if (path !== undefined) target = pathTail(path)
+  else if (command !== undefined || tool === 'Bash')
+    target = field(input, 'description') ?? command?.split('\n').find(l => l.trim() !== '')
+  else target = field(input, 'pattern') ?? field(input, 'url')
+  if (target === undefined) return undefined
+  const line = oneLine(target)
+  return line === '' ? undefined : cutText(line, TARGET_CAP)
 }
 
 // A tool call ended: the current tool cleared when it is still that call.

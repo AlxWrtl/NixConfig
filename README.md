@@ -257,19 +257,28 @@ list, deliberately not duplicated here.
 dependency, no sound). Activation copies them into `~/.claude/mods` as real
 writable files — that folder is nix-owned, a hand-placed mod there is deleted
 on the next rebuild — and `env.CLAUDE_CODE_PLUGIN_DIRS` loads them.
-`apex-band`: a calm band above the prompt, three rows at most. The first
-shows the live APEX run of the working directory (title, five phase dots,
-current phase, elapsed time, cost); the second, only while subagents or
-background shells run, groups them by model with a discreet spinner and
-counts the finished ones; the third, only when you must act, names a failed
-step, a red external verification or a spent correction budget. No live run
-and nothing running: no band at all. `/apex-pane` (alias `/task-board`) opens
-the one detail pane on demand, never by itself: run, phases, subagents,
-background shells, totals and cost, external verdict. A subagent's still
-running shells close as arrêtée when it is killed, fails, or leaves the agent
-list (a teammate's: only when it leaves the list), since their notification
-would never reach the main loop; a shell also closes on its own notification
-row and on a TaskStop.
+`apex-band`: a calm band above the prompt, eight rows at most (fewer when
+the prompt area allows fewer). The first row shows the live APEX run of the
+working directory (title, five phase dots, current phase, elapsed time,
+cost). While subagents work, the main loop's rail follows, a line with a
+moving head and a drop under each subagent, then the subagents as cards
+(type, model, context and output tokens, steps, a running clock), as lanes
+on a shared time axis when more than three run or the room is short, or as
+one summary line. Background shells get a row when one is left, and a last
+row, only when you must act, names a failed step, a red external
+verification or a spent correction budget. The rail head and the clocks run
+on their own timers (terminal and desktop); elsewhere, or after a drawing
+failure, they show as static text. No live run and nothing running: no band
+at all, no timer. `/apex-pane` (alias `/task-board`) opens the one detail
+pane on demand, never by itself: action, main loop (model, effort, context
+gauge, compactions, cost, 5h and 7d quotas), run and phases, agents (keys 1
+to 6 expand an agent's task, last tools and answer), other loops, the turn's
+receipt (duration, agents, edits, errors, added cost), a journal of the last
+events, shells, totals and external verdict. A subagent's still running
+shells close as arrêtée when it is killed, fails, or leaves the agent list (a
+teammate's: only when it leaves the list), since their notification would
+never reach the main loop; a shell also closes on its own notification row
+and on a TaskStop.
 `status-bar`: replaces the command status line. Drawn on the hint line under
 the prompt, it shows the model, folder, git branch, the last response's tokens
 in/out, the context bar with its percentage, and the 5h and 7d quota bars with
@@ -278,8 +287,8 @@ two, with the engine's own hint line still beneath. Read-only: the branch is
 read from `.git/HEAD`, no process is spawned. Run yourself after a rebuild, in
 a new session: `/task-board` opening the APEX pane, a background `sleep 5`
 going from en cours to fini, a failing background command shown échoué, the
-band present during an APEX run (with a spinner row only while a subagent
-works) and absent elsewhere, the status bar under the prompt on one row and
+band present during an APEX run (with the rail and cards only while a
+subagent works) and absent elsewhere, the status bar under the prompt on one row and
 on two in a narrow window.
 
 ## Codex Hooks — Trusting Them After a Rebuild

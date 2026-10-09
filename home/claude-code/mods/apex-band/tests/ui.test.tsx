@@ -102,6 +102,14 @@ const RUNNING: Agent = { id: 'a1', description: 'scan engine types', type: 'Expl
 
 type Mounted = { findAll: (q: ElementQuery) => Promise<FoundElement[]> }
 
+// Room for the agents block as cards (L1, the rail, a 4-row card).
+const TALL = { ...BAND, props: { ...BAND.props, maxRows: 8, scroll: { offset: 0, bodyRows: 8 } } } as const
+
+// What a Client's surface module drew, as text.
+async function drawn(ui: Mounted, key: string): Promise<string> {
+  return (await ui.findAll({ type: 'Text', in: key })).map(t => t.text).join('')
+}
+
 // The band's rows, as shown text.
 async function rows(ui: Mounted): Promise<string[]> {
   const boxes = await ui.findAll({ type: 'Box' })
@@ -248,24 +256,38 @@ for (const [name, verify, alert] of VERIFY_CASES) {
   })
 }
 
-test('the spinner turns only while a subagent runs, one frame per second', async ($, on) => {
+test('a running subagent: the rail and its card, the rail and the clock moving on their own timers', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, { agents: [RUNNING] })
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   await clock.settle()
-  let ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
-  const first = (await rows(ui))[1] ?? ''
-  expect(first).toMatch(/^[◐◓◑◒] agent ×1$/)
-  await ui.unmount()
-  await clock.advance(1000)
-  ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
-  const second = (await rows(ui))[1] ?? ''
-  expect(second).toMatch(/^[◐◓◑◒] agent ×1$/)
-  expect(second).not.toBe(first)
-  await ui.unmount()
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const ui = await $.ui.mount({ plugin: 'apex-band', surface, ...TALL })
+    const shown = await rows(ui)
+    expect(shown).toHaveLength(6)
+    expect(shown[1]).toBe('◆ main ')
+    expect(shown[2]).toMatch(/^╭─ ● scan engine types ─+╮$/)
+    expect(shown[3]).toMatch(/^│ Explore +│$/)
+    expect(shown[5]).toMatch(/^╰─ 0 step ─+ +─╯$/)
+    expect(await ui.find({ type: 'Client', key: 'rail' })).toBeDefined()
+    expect(await ui.find({ type: 'Client', key: 'clock:a1' })).toBeDefined()
+    const rail = await drawn(ui, 'rail')
+    expect(rail.startsWith('●─')).toBe(true)
+    expect(rail).toContain('┬')
+    expect(await drawn(ui, 'clock:a1')).toBe(' 0:00')
+    // One rail step: the head moves on, a trail behind it.
+    await ui.advance(110)
+    const moved = await drawn(ui, 'rail')
+    expect(moved).not.toBe(rail)
+    expect(moved.startsWith('•●')).toBe(true)
+    // One second: the clock counts on, the host clock untouched.
+    await ui.advance(890)
+    expect(await drawn(ui, 'clock:a1')).toBe(' 0:01')
+    await ui.unmount()
+  }
 })
 
-test('idle: no activity row, no spinner, and no 1 s tick', async ($, on) => {
+test('idle: no agents block, no Client, and no 1 s tick', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const reads = { agents: 0 }
   world(on, { reads })
@@ -275,9 +297,10 @@ test('idle: no activity row, no spinner, and no 1 s tick', async ($, on) => {
   // Short of the 5 s poll: only a 1 s tick could read the agent list again.
   await clock.advance(3000)
   expect(reads.agents).toBe(atStart)
-  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
+  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...TALL })
   expect(await rows(ui)).toHaveLength(1)
-  expect(await ui.find({ type: 'Text', text: /×/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /◆ main/ })).toBeUndefined()
+  expect(await ui.findAll({ type: 'Client' })).toEqual([])
   await ui.unmount()
 })
 
@@ -301,30 +324,39 @@ test('an unknown agent listed idle: nothing at work, no 1 s tick', async ($, on)
   const atStart = reads.agents
   await clock.advance(3000)
   expect(reads.agents).toBe(atStart)
-  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /×/ })).toBeUndefined()
+  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...TALL })
+  expect(await ui.find({ type: 'Text', text: /◆ main/ })).toBeUndefined()
+  expect(await ui.findAll({ type: 'Client' })).toEqual([])
   await ui.unmount()
 })
 
-test('an agent already finished when first listed is counted « terminé » beside one at work', async ($, on) => {
+test('an agent already finished when first listed is « terminé », never a card beside the one at work', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, { agents: [RUNNING, { id: 'a9', description: 'déjà fini', type: 'Explore', status: 'completed' }] })
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   await clock.settle()
-  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
-  expect((await rows(ui))[1] ?? '').toMatch(/^[◐◓◑◒] agent ×1  ✓ 1 terminé$/)
+  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...TALL })
+  const shown = await rows(ui)
+  expect(shown.filter(r => r.startsWith('╭─ '))).toEqual([expect.stringMatching(/^╭─ ● scan engine types ─+╮$/)])
+  expect(await ui.find({ type: 'Text', text: /déjà fini/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Client', key: 'clock:a9' })).toBeUndefined()
   await ui.unmount()
 })
 
-test('an Agent launched with model haiku is grouped haiku before its first step', async ($, on) => {
+test('an Agent launched with model haiku shows haiku before its first step', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, { files: null })
   on('tool.call', { tool: 'Agent' }, () => ({ result: { status: 'async_launched', agentId: 'a1', description: 'scan' } }))
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   await clock.settle()
   await $.tool.call({ tool: 'Agent', description: 'scan', prompt: 'go', subagent_type: 'Explore', model: 'haiku' })
-  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
-  expect(await rows(ui)).toEqual([expect.stringMatching(/^[◐◓◑◒] haiku ×1$/)])
+  // Four rows: the rail and one lane.
+  let ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
+  expect(await rows(ui)).toEqual(['◆ main ', expect.stringMatching(/^● scan +haiku /)])
+  await ui.unmount()
+  // Eight rows: the rail and one card.
+  ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...TALL })
+  expect((await rows(ui))[2]).toMatch(/^│ Explore · haiku +│$/)
   await ui.unmount()
 })
 
@@ -341,20 +373,22 @@ test('a fork loop (steps under an id no agent list names) is not grouped', async
     // Drained: the step's chunks are not under test.
   }
   await clock.advance(1000)
-  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
-  expect(await ui.find({ type: 'Text', text: /×/ })).toBeUndefined()
+  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...TALL })
+  expect(await rows(ui)).toEqual([])
+  expect(await ui.findAll({ type: 'Client' })).toEqual([])
   await ui.unmount()
 })
 
-test('no run and a subagent running: the activity row alone', async ($, on) => {
+test('no run and a subagent running: the agents block alone', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, { files: null, agents: [RUNNING] })
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...BAND })
   const shown = await rows(ui)
-  expect(shown).toHaveLength(1)
-  expect(shown[0]).toMatch(/^[◐◓◑◒] agent ×1$/)
+  expect(shown).toHaveLength(2)
+  expect(shown[0]).toBe('◆ main ')
+  expect(shown[1]).toMatch(/^● scan engine t… agent /)
   expect(await ui.find({ type: 'Text', text: /APEX/ })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: 'other band' })).toBeDefined()
   await ui.unmount()
@@ -392,7 +426,8 @@ test('a survey takes the band: ours passes, the one beneath is drawn', async ($,
     ...BAND,
     props: { ...BAND.props, hasSurvey: true },
   })
-  expect(await ui.find({ type: 'Text', text: /APEX|Budget|×/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /APEX|Budget|◆ main/ })).toBeUndefined()
+  expect(await ui.findAll({ type: 'Client' })).toEqual([])
   expect(await ui.find({ type: 'Text', text: 'other band' })).toBeDefined()
   await ui.unmount()
 })
@@ -464,4 +499,33 @@ test('no live run and nothing at work: the clock is never written', { plugins: [
   await clock.settle()
   await clock.advance(3 * 60_000)
   expect((await $.command.run(PROBE_NOW)).text).toBe('0')
+})
+
+test('busy with the pane closed: the host clock moves at most once per 5 s', { plugins: [CLOCK_PROBE] }, async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { files: null, agents: [RUNNING] })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const values: number[] = []
+  for (let i = 0; i < 15; i++) {
+    await clock.advance(1000)
+    const value = Number((await $.command.run(PROBE_NOW)).text)
+    if (values[values.length - 1] !== value) values.push(value)
+  }
+  // It does move (the check can fail), never twice within 5 s.
+  expect(values.length >= 2).toBe(true)
+  for (let i = 1; i < values.length; i++) expect((values[i] ?? 0) - (values[i - 1] ?? 0) >= 5000).toBe(true)
+})
+
+test('vscode: the rail and the clock as static text, no Client', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { agents: [RUNNING] })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'vscode', ...TALL })
+  const shown = await rows(ui)
+  expect(shown[1]).toMatch(/^◆ main ─+┬─+$/)
+  expect(shown[5]).toMatch(/^╰─ 0 step ─+  0:00 ─╯$/)
+  expect(await ui.findAll({ type: 'Client' })).toEqual([])
+  await ui.unmount()
 })

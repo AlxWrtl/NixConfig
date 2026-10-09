@@ -1908,7 +1908,8 @@ in
 
     Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
     models — a model switch pays the ~15× subagent/context tax. Switch model only
-    when the tier gap is real (sonnet for mechanical and bulk work).
+    when the tier gap is real (sonnet for mechanical and bulk work, haiku for
+    read-only search on agents without Write, Edit or Bash).
 
     Plan approval: when the coordinator wrote the plan itself, approval is its own
     Files:/ACs/Docs:/Style: check; the planner/premises rules below apply when a

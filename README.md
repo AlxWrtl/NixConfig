@@ -108,7 +108,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── claude-code.nix          # Claude Code entrypoint — imports claude-code/
 │   ├── claude-code/             # settings, hooks, agents, skills, commands, rules…
 │   │                            #   incl. skills-manifest.nix (Claude skills)
-│   │                            #   and mods/ (task-board, apex-band) via mods.nix
+│   │                            #   and mods/ (task-board, apex-band, status-bar) via mods.nix
 │   ├── codex.nix                # Codex CLI entrypoint — imports codex/
 │   └── codex/                   # hooks.json generator, activation, hook & merge scripts
 ├── checks/                      # Flake checks (see Quality Gates)
@@ -195,7 +195,7 @@ system.
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
 | `apex-plan-provenance` | Every premise in an APEX plan carries `[M]` or `[I]` as its first token: the clause still stands in step-02-plan, and the line detector is run against two inline fixtures — one correctly tagged, one identical but for a stripped tag — so a detector that stopped detecting fails instead of passing. Presence is not truth: it proves the tag is THERE, never that it is earned; falsifying a tag is the examine reviewer's job and the Fable premises pass |
 | `apex-tier` | The built `apex-tier` classifier against throwaway git repos: a `matcher` added under `hooks.Notification` is direct, an entry added inside a `deny = [ ... ]` list is high, a `permissionDecision` branch in `hooks/x.js` is high, a 40-line README change is standard, a new `.env.example` is high. Canary M1 (the permission regex replaced by one that never matches) must turn the deny-list case away from high, proving that assertion rests on the permission class |
-| `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, rules declare paths |
+| `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, haiku only on read-only agents, rules declare paths |
 | `claude-mods` | Claude Code mods (`home/claude-code/mods.nix`), offline structure only: `names` equal the folders under `home/claude-code/mods/` both ways, each `plugin.json` parses and names its folder, each `hooks.json` names one existing module, no `.js` there, no sound / host process / network / file write / dynamic import / toast in any source and no `deny` in a hooks module, settings `env.CLAUDE_CODE_PLUGIN_DIRS` equal to the `~/.claude/mods/<name>` folders, activation copying them with the DRY_RUN skip and the engine's types excluded. Canaries: the scan must flag `$.audio.speak`, the filter a `.js` name, the comparison an extra name. `claude plugin validate --strict` and `claude plugin test` on each mod folder are the code gate and run in the session (`claude` is not in the build sandbox) |
 | `codex-config` | Codex hook invariants: every `command` in the generated `hooks.json` names a script the module installs, both scripts pass `node --check`, hook order and matcher, registered timeouts above each script's own watchdog |
 | `hook-wiring` | Claude Code hook wiring, from the evaluated module rather than from text: every hook file `home/claude-code.nix` installs is named by a `command` in `home/claude-code/settings.nix` and every such command names a file that exists, both senses reported apart; `additionalContext` emitted only inside `hookSpecificOutput`, the one shape the reference documents; the `hookEventName` a hook writes equal to the event registering it. Each direction is guarded by a corpus-non-empty assertion first, because an extractor that stops matching would otherwise be green forever. The branch guards are also RUN against fixture repos, each under the timeout its registration gives the host: `protect-main.js` and `block-main-bash.js` must deny on malformed input and on a missing or hung git and stay silent off a protected branch, `format-typescript.js` must hand a `$(…)` file path to prettier unexpanded and must not call `prettier --write` when `--find-config-path` finds no prettier config. Canary mutants, which must turn their case red by a missed deny or a PWNED file and not by a crash, cover these branches only: malformed JSON, a missing git and the time budget in `protect-main.js`; malformed JSON, a broken git in the cwd or in a `cd` target, and the linear executor scan on a newline flood in `block-main-bash.js`; each of the two argv calls and the prettier-config gate in `format-typescript.js`. The other cases are graded without a mutant |
@@ -265,10 +265,17 @@ their notification would never reach the main loop; a shell also closes on its
 subagent's own notification row and on a TaskStop.
 `apex-band`: a band above the prompt shows the live APEX run of the working
 directory (title, mode, current step, branch, baseline) and nothing
-otherwise. Run yourself after a rebuild, in a new session: `/task-board`, a
-background `sleep 5` going from en cours to fini, a failing background
-command shown échoué, the band present during an APEX run and absent
-elsewhere.
+otherwise.
+`status-bar`: replaces the command status line. Drawn on the hint line under
+the prompt, it shows the model, folder, git branch, the last response's tokens
+in/out, the context bar with its percentage, and the 5h and 7d quota bars with
+their percentage and reset countdown: one row when it fits the width, else
+two, with the engine's own hint line still beneath. Read-only: the branch is
+read from `.git/HEAD`, no process is spawned. Run yourself after a rebuild, in
+a new session: `/task-board`, a background `sleep 5` going from en cours to
+fini, a failing background command shown échoué, the band present during an
+APEX run and absent elsewhere, the status bar under the prompt on one row and
+on two in a narrow window.
 
 ## Codex Hooks — Trusting Them After a Rebuild
 

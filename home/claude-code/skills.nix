@@ -317,7 +317,7 @@ in
     - **Patterns**: existing conventions to follow?
     - **Uncertainty**: unclear requirements?
 
-    The coordinator launches parallel Explore agents, count scaled to scope:
+    The coordinator launches parallel Explore agents (`model: haiku`, enforced by the research-model hook), count scaled to scope:
     - 1-2 files: 1-2 agents
     - 3-5 files: 3-5 agents
     - 6+ files: 5-10 agents
@@ -1896,7 +1896,7 @@ in
     | Phase | Agent | model |
     |-------|-------|-------|
     | Analyze fan-out | Explore / codebase-navigator | haiku — read-only search only |
-    | Analyze synthesis | analyzer phase agent | `opus` (effort high) |
+    | Analyze synthesis | analyzer phase agent (`subagent_type: Plan`, read-only — the coordinator writes 01-analyze.md) | `opus` (effort high) |
     | Plan | coordinator inline when 01-analyze was skipped (Standard); plan phase agent (`subagent_type: Plan`, read-only — the coordinator writes 02-plan.md) only after 01-analyze or on High-stakes | `opus` (effort high/max) |
     | Execute (parallel waves under `-k`, coordinator's call) | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `opus` (low effort mechanical) |
     | Bulk / large-context execute | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `sonnet` |
@@ -1906,6 +1906,10 @@ in
     | High-stakes fallback verify (no usable external verdict) / premises (`-p`) | fable verifier subagent | `fable` — READ-ONLY, bounded verdict |
     | Long test suites needing diagnosis | gate runner subagent | `sonnet` — never haiku; verdict quotes exit code + last failing lines |
     | External verify (`-e`, default high-stakes) | codex CLI subprocess, not an Agent spawn | `gpt-6-astra` → `gpt-5.6-terra` — READ-ONLY, bounded verdict |
+
+    The Analyze fan-out row is enforced by the research-model hook (PreToolUse
+    on Agent): an Explore or codebase-navigator spawn whose `model` is not
+    `haiku`, absent included, is denied.
 
     Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
     models — a model switch pays the ~15× subagent/context tax. Switch model only
@@ -2004,7 +2008,7 @@ in
 
     Because a phase agent cannot itself spawn (depth=1), any parallel fan-out is
     done by the coordinator, which then hands the synthesis to the phase agent:
-    - **Analyze**: coordinator spawns the parallel Explore agents, collects their
+    - **Analyze**: coordinator spawns the parallel Explore agents (`model: haiku`), collects their
       bounded summaries, THEN spawns the analyzer agent with those summaries as
       input. The analyzer produces the Conflicts & Constraints synthesis.
     - **Execute (parallel waves)**: when `-k` produced independent waves, the coordinator spawns the implementer agents per wave

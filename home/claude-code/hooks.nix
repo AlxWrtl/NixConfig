@@ -40,6 +40,14 @@ in
   # barrier: `none` is a visible claim.
   hookCorrectionBudget = builtins.readFile ./hooks/correction-budget.js;
 
+  # PreToolUse on Agent: research agents run on haiku (ORCHESTRATION, Analyze
+  # fan-out row). An Explore or codebase-navigator spawn whose `model` is not
+  # exactly "haiku", absent included, is denied; the reason names the
+  # re-spawn. Every other subagent type passes untouched. SendMessage carries
+  # no model field and is not matched. Fail-open: a cost guard, not a
+  # barrier — unreadable input, a throw or the watchdog let the spawn through.
+  hookResearchModel = builtins.readFile ./hooks/research-model.js;
+
   # Turns the APEX routing rule from advice into enforcement. The
   # UserPromptSubmit reminder is text: it is read and then skipped. Measured on
   # 2026-08-08 — 6 file-modifying tasks in one session, APEX invoked on 2.

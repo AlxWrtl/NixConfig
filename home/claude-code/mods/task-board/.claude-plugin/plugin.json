@@ -1,7 +1,0 @@
-{
-  "name": "task-board",
-  "version": "0.1.0",
-  "description": "Tableau des tâches en arrière-plan (/task-board) : shells et sous-agents, durée, état.",
-  "author": { "name": "alx" },
-  "types": "./types/index.d.ts"
-}

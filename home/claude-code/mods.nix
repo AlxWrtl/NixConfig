@@ -9,7 +9,6 @@
 # checks/claude-mods.nix.
 let
   names = [
-    "task-board"
     "apex-band"
     "status-bar"
   ];

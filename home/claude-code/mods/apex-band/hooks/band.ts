@@ -1,6 +1,13 @@
-// Pure layout of the band: at most two lines of styled segments, each line
-// fitting `cols` cells. Line 1 is the head (`APEX · <title>`) and the step
-// bar; mode, branch and baseline follow it when they fit, else go to line 2.
+// Pure layout of the band: at most three calm rows of styled segments, each
+// fitting `cols` cells.
+// L1, the run: `APEX · <title>  ●●●◐○  <phase> · <elapsed> · $<cost>`.
+// L2, the work in flight, only while a subagent or a background shell runs:
+// `◐ opus ×3  ◑ haiku ×2  ⧗ shell ×1  ✓ 9 terminés`.
+// L3, what asks the user to act, only when something does (a failed step, a
+// red external verification, a spent correction budget).
+// Rows kept by priority L1 > L3 > L2, drawn in the order L1, L2, L3; on a
+// single row an alert prefixes L1 with ⚠. Every meaning reads from a glyph
+// or a word, never from the colour alone.
 // Widths are counted in terminal cells by an approximation (cellWidth): CJK,
 // pictographs and BMP default-emoji symbols (⌚ ✅ ⭐) count 2, joiners, VS16
 // and combining accents 0, the rest 1. Still an approximation: a text symbol
@@ -9,15 +16,27 @@
 
 import type { ThemeKey } from 'claude-code'
 
-import type { ApexBandRun, ApexBandStep, ApexBandStepKind } from '../types'
+import type {
+  ApexBandAlert,
+  ApexBandLoop,
+  ApexBandRun,
+  ApexBandShell,
+  ApexBandStepKind,
+} from '../types'
+import { phaseBuckets } from './signals.ts'
+import type { PhaseState } from './signals.ts'
+import { MAIN, isWorking, shortModel } from './stats.ts'
 
 // One run of text drawn with one style; index.tsx maps it to a Text.
 export type Seg = { text: string; tone?: ThemeKey; dim?: boolean; bold?: boolean }
 
 const SEP = ' · '
 const HEAD = `APEX${SEP}`
-// A truncated title keeps at least this many cells before the bar shrinks.
+const GAP = '  '
+// A truncated title keeps at least this many cells before anything is dropped.
 const MIN_TITLE = 8
+// The spinner's four frames; each model group starts one frame further.
+const SPIN = ['◐', '◓', '◑', '◒'] as const
 
 // Code points of `text`, so a surrogate pair is never split.
 const points = (text: string): string[] => Array.from(text)
@@ -180,79 +199,12 @@ export function hardCut(line: readonly Seg[], cols: number): Seg[] {
   return out
 }
 
-// One chip: the glyph, then the label (bold while running, plain when
-// failed, dim otherwise) unless `withLabel` is false.
-function chip(step: ApexBandStep, withLabel: boolean): Seg[] {
-  const mark = stepMark(step.kind)
-  if (!withLabel) return [mark]
-  const text = ` ${stepLabel(step.step)}`
-  if (step.kind === 'running') return [mark, { text, bold: true }]
-  if (step.kind === 'failed') return [mark, { text }]
-  return [mark, { text, dim: true }]
-}
-
-// The step bar at a degradation level: 0 every label, 1 done chips
-// glyph-only, 2 only running/failed chips keep a label, 3 as 2 with the
-// ` › ` separators turned to single spaces.
-function bar(steps: readonly ApexBandStep[], level: 0 | 1 | 2 | 3): Seg[] {
-  const out: Seg[] = []
-  steps.forEach((step, i) => {
-    if (i > 0) out.push({ text: level >= 3 ? ' ' : ' › ', dim: true })
-    const live = step.kind === 'running' || step.kind === 'failed'
-    const withLabel = level === 0 || live || (level === 1 && step.kind !== 'done')
-    out.push(...chip(step, withLabel))
-  })
-  return out
-}
-
-// The compact bar: one chip with its dim `k/n` position, the running step
-// (else the last failed one, else the next pending one); a ✓ and `n/n`
-// when none of these is left.
-function compactBar(steps: readonly ApexBandStep[]): Seg[] {
-  let at = steps.findIndex(s => s.kind === 'running')
-  if (at < 0) {
-    for (let i = 0; i < steps.length; i++) if (steps[i]?.kind === 'failed') at = i
-  }
-  if (at < 0) at = steps.findIndex(s => s.kind === 'pending')
-  const step = steps[at]
-  const n = steps.length
-  if (step === undefined) return [stepMark('done'), { text: ` ${n}/${n}`, dim: true }]
-  return [...chip(step, true), { text: ` ${at + 1}/${n}`, dim: true }]
-}
-
-// The head, one dim segment so it reads as a single Text.
-const head = (title: string): Seg[] => [{ text: `${HEAD}${title}`, dim: true }]
-
-// Head and bar within `cols`: labels dropped (done, then the rest), then
-// separators to spaces, then the title truncated (≥ MIN_TITLE cells), then
-// the compact bar when narrower than the spaced bar, then a hard cut of the
-// narrowest of the two.
-function fitBar(run: ApexBandRun, cols: number): Seg[] {
-  const { steps, title } = run
-  const bars = steps.length === 0 ? [[]] : [bar(steps, 0), bar(steps, 1), bar(steps, 2), bar(steps, 3)]
-  for (const b of bars) {
-    const line = join([head(title), b])
-    if (width(line) <= cols) return line
-  }
-  const minTitle = Math.min(MIN_TITLE, textCells(title))
-  const last: Seg[][] = steps.length === 0 ? [[]] : [bar(steps, 3)]
-  if (steps.length > 0) {
-    // With few steps the compact bar can be wider than the spaced one.
-    const compact = compactBar(steps)
-    if (width(compact) < width(bar(steps, 3))) last.push(compact)
-  }
-  for (const b of last) {
-    const room = cols - width(join([head(''), b]))
-    if (room >= minTitle) return join([head(truncate(title, room)), b])
-  }
-  const narrowest = last[last.length - 1] ?? []
-  return hardCut(join([head(truncate(title, minTitle)), narrowest]), cols)
-}
 
 type MetaKey = 'mode' | 'branch' | 'baseline'
 type Meta = { key: MetaKey; segs: Seg[] }
 
-// Mode, branch and `baseline <word>`, the fields the run has, in that order.
+// Mode, branch and `baseline <word>`, the fields the run has, in that order
+// (the pane's second line).
 export function meta(run: ApexBandRun): Meta[] {
   const items: Meta[] = []
   if (run.mode !== undefined && run.mode !== '') items.push({ key: 'mode', segs: [{ text: run.mode, dim: true }] })
@@ -265,32 +217,182 @@ export function meta(run: ApexBandRun): Meta[] {
   return items
 }
 
-// Line 2 within `cols`: branch dropped, then mode, then a hard cut.
-function fitMeta(items: readonly Meta[], cols: number): Seg[] {
-  let kept = [...items]
-  for (const drop of ['branch', 'mode'] as const) {
-    const line = join(kept.map(m => m.segs))
-    if (width(line) <= cols) return line
-    if (kept.length > 1) kept = kept.filter(m => m.key !== drop)
-  }
-  return hardCut(join(kept.map(m => m.segs)), cols)
+export type BandInput = {
+  run: ApexBandRun | null
+  loops: readonly ApexBandLoop[]
+  shells: readonly ApexBandShell[]
+  now: number
+  cost: number | null
+  frame: number
+  alerts: readonly ApexBandAlert[]
+  // When this session first saw the run (its own start is not readable).
+  seenAt: number | null
 }
 
-// The band as at most min(2, maxRows) lines (at least one), each fitting
-// max(1, cols) cells. One line when all fits; else meta on line 2 when two
-// rows are free; else one line dropping branch, mode, baseline before the
-// bar degrades.
-export function layoutBand(run: ApexBandRun, cols: number, maxRows: number): Seg[][] {
-  const w = Math.max(1, cols)
-  const full = run.steps.length === 0 ? [] : bar(run.steps, 0)
-  let items = meta(run)
-  const whole = join([head(run.title), full, ...items.map(m => m.segs)])
-  if (width(whole) <= w) return [whole]
-  if (maxRows >= 2 && items.length > 0) return [fitBar(run, w), fitMeta(items, w)]
-  for (const drop of ['branch', 'mode', 'baseline'] as const) {
-    items = items.filter(m => m.key !== drop)
-    const line = join([head(run.title), full, ...items.map(m => m.segs)])
-    if (width(line) <= w) return [line]
+const pad2 = (n: number): string => String(n).padStart(2, '0')
+
+// Minutes since the run was first seen: 12m, 1h05.
+export function elapsed(ms: number): string {
+  const minutes = Math.floor(Math.max(0, ms) / 60_000)
+  if (minutes < 60) return `${minutes}m`
+  return `${Math.floor(minutes / 60)}h${pad2(minutes % 60)}`
+}
+
+// A phase dot: ● done, ◐ running, ✗ failed, ○ waiting.
+export function phaseDot(state: PhaseState): Seg {
+  if (state === 'done') return { text: '●', tone: 'success' }
+  if (state === 'running') return { text: '◐', tone: 'warning' }
+  if (state === 'failed') return { text: '✗', tone: 'error' }
+  return { text: '○', dim: true }
+}
+
+const head = (title: string): Seg => ({ text: `${HEAD}${title}`, dim: true })
+
+type Tail = { phase: Seg[]; elapsed: Seg[]; cost: Seg[] }
+
+// L1 with `title` and the tail groups kept, ` · ` between them.
+function runLine(prefix: Seg[], title: string, dots: Seg[], tail: Tail): Seg[] {
+  const line: Seg[] = [...prefix, head(title)]
+  if (dots.length > 0) line.push({ text: GAP }, ...dots)
+  const rest = join([tail.phase, tail.elapsed, tail.cost])
+  if (rest.length > 0) line.push({ text: GAP }, ...rest)
+  return line
+}
+
+// L1 within `cols`: the title cut down to MIN_TITLE cells, then elapsed,
+// cost and the phase word dropped in that order, then a hard cut.
+function fitRun(run: ApexBandRun, input: BandInput, prefix: Seg[], cols: number): Seg[] {
+  const buckets = run.steps.length === 0 ? [] : phaseBuckets(run.steps)
+  const dots = buckets.map(b => phaseDot(b.state))
+  const current = buckets.find(b => b.isCurrent)
+  const full: Tail = {
+    phase:
+      current === undefined
+        ? []
+        : [{ text: current.label, bold: true, ...(current.state === 'failed' ? { tone: 'error' as const } : {}) }],
+    elapsed: input.seenAt === null ? [] : [{ text: elapsed(input.now - input.seenAt), dim: true }],
+    cost: input.cost === null ? [] : [{ text: `$${input.cost.toFixed(2)}`, dim: true }],
   }
-  return [fitBar(run, w)]
+  const tails: Tail[] = [
+    full,
+    { ...full, elapsed: [] },
+    { ...full, elapsed: [], cost: [] },
+    { phase: [], elapsed: [], cost: [] },
+  ]
+  const minTitle = Math.min(MIN_TITLE, textCells(run.title))
+  for (const tail of tails) {
+    const room = cols - width(runLine(prefix, '', dots, tail))
+    if (room >= minTitle) return runLine(prefix, truncate(run.title, room), dots, tail)
+  }
+  const last = tails[tails.length - 1] ?? full
+  return hardCut(runLine(prefix, truncate(run.title, minTitle), dots, last), cols)
+}
+
+// A model's family: the first word of its short id (opus-5.5 → opus).
+export function family(model: string | undefined): string {
+  const word = shortModel(model ?? '').split('-')[0] ?? ''
+  return word === '' ? 'agent' : word
+}
+
+// The spinner's tone per family; a background shell is drawn inactive.
+export function familyTone(name: string): ThemeKey {
+  if (name === 'opus') return 'claude'
+  if (name === 'sonnet') return 'suggestion'
+  if (name === 'haiku') return 'planMode'
+  return 'text'
+}
+
+type Group = { label: string; count: number; glyph: string; tone: ThemeKey }
+
+// The running subagents (teammates aside, see isWorking) grouped by model
+// family (first seen first), then the running shells; each group's spinner one frame ahead of the previous.
+function groups(input: BandInput): Group[] {
+  const running = input.loops
+    .filter(isWorking)
+    .sort((a, b) => a.startedAt - b.startedAt)
+  const counts = new Map<string, number>()
+  for (const loop of running) {
+    const name = family(loop.model)
+    counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  const out: Group[] = [...counts].map(([label, count], i) => ({
+    label,
+    count,
+    glyph: SPIN[(((input.frame + i) % SPIN.length) + SPIN.length) % SPIN.length] ?? '◐',
+    tone: familyTone(label),
+  }))
+  const shells = input.shells.filter(s => s.status === 'running').length
+  if (shells > 0) out.push({ label: 'shell', count: shells, glyph: '⧗', tone: 'inactive' })
+  return out
+}
+
+// True while a subagent (teammates aside) or a background shell works.
+export function isBusy(loops: readonly ApexBandLoop[], shells: readonly ApexBandShell[]): boolean {
+  return loops.some(isWorking) || shells.some(s => s.status === 'running')
+}
+
+// L2 within `cols`: the « terminés » count dropped, then the spacing
+// tightened, then a hard cut.
+function fitActivity(input: BandInput, cols: number): Seg[] {
+  const list = groups(input)
+  const done =
+    input.loops.filter(l => l.id !== MAIN && l.status !== 'running').length +
+    input.shells.filter(s => s.status !== 'running').length
+  const spaced = (gap: string, inner: string): Seg[] =>
+    list.flatMap((g, i): Seg[] => [
+      ...(i > 0 ? [{ text: gap }] : []),
+      { text: g.glyph, tone: g.tone },
+      { text: ` ${g.label}${inner}×${g.count}` },
+    ])
+  const full = spaced(GAP, ' ')
+  if (done > 0) {
+    const withDone = [...full, { text: GAP }, { text: `✓ ${done} ${done > 1 ? 'terminés' : 'terminé'}`, dim: true }]
+    if (width(withDone) <= cols) return withDone
+  }
+  if (width(full) <= cols) return full
+  return hardCut(spaced(' ', ''), cols)
+}
+
+const plural = (n: number, word: string): string => `${n} ${word}${n > 1 ? 's' : ''}`
+
+const BUDGET_LONG = 'Budget de correction épuisé — tape « apex: +1 tour » ou livre avec les résiduels'
+const BUDGET_SHORT = 'Budget épuisé — « apex: +1 tour »'
+
+// One alert as a line within `cols`: its glyph (✗ or ⚠, toned) and words;
+// the budget's long wording when it fits, else its short one; then a hard
+// cut. `more` alerts left unshown add a dim ` (+k)`.
+export function alertLine(alert: ApexBandAlert, cols: number, more = 0): Seg[] {
+  const suffix: Seg[] = more > 0 ? [{ text: ` (+${more})`, dim: true }] : []
+  const words: string[] =
+    alert.kind === 'step'
+      ? [`Étape ${stepLabel(alert.step)} en échec`]
+      : alert.kind === 'verify'
+        ? [`Vérif externe ${alert.verdict}${SEP}${plural(alert.findings, 'constat')}`]
+        : [BUDGET_LONG, BUDGET_SHORT]
+  const mark: Seg = alert.kind === 'budget' ? { text: '⚠', tone: 'warning' } : { text: '✗', tone: 'error' }
+  const lines = words.map(w => [mark, { text: ` ${w}` }, ...suffix])
+  const fits = lines.find(l => width(l) <= cols)
+  return fits ?? hardCut(lines[lines.length - 1] ?? [mark], cols)
+}
+
+// The band as at most min(3, maxRows) lines (at least one when anything is
+// drawn), each within max(1, cols) cells; no line at all when no run is
+// live and nothing runs.
+export function layoutBand(input: BandInput, cols: number, maxRows: number): Seg[][] {
+  const w = Math.max(1, cols)
+  const rows = Math.max(1, Math.min(3, maxRows))
+  const busy = isBusy(input.loops, input.shells)
+  const { run } = input
+  if (run === null) return busy ? [fitActivity(input, w)] : []
+  const alert = input.alerts[0]
+  if (rows === 1) {
+    const prefix: Seg[] = alert === undefined ? [] : [{ text: '⚠ ', tone: 'warning' }]
+    return [fitRun(run, input, prefix, w)]
+  }
+  const showAlert = alert !== undefined
+  const showActivity = busy && (rows >= 3 || !showAlert)
+  const lines: Seg[][] = [fitRun(run, input, [], w)]
+  if (showActivity) lines.push(fitActivity(input, w))
+  if (alert !== undefined) lines.push(alertLine(alert, w, input.alerts.length - 1))
+  return lines
 }

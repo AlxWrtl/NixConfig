@@ -47,7 +47,6 @@ let
   inherit (vaultSnapshot) vaultSnapshotPkg;
   inherit (settings)
     settingsJson
-    statuslineScript
     mcpServersJson
     keybindingsJson
     ;
@@ -260,12 +259,6 @@ let
     };
     "${claudeDir}/hooks/null-result-gate.js" = {
       text = hookNullResultGate;
-      executable = true;
-    };
-
-    # Statusline script
-    "${claudeDir}/statusline.sh" = {
-      text = statuslineScript;
       executable = true;
     };
   };

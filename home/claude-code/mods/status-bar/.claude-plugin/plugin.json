@@ -1,0 +1,7 @@
+{
+  "name": "status-bar",
+  "version": "0.1.0",
+  "description": "Ligne d'état sous le prompt : modèle, dossier, branche, tokens, contexte et quotas 5 h / 7 j (barres colorées, reset).",
+  "author": { "name": "alx" },
+  "types": "./types/index.d.ts"
+}

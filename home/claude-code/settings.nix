@@ -1,4 +1,4 @@
-# Claude Code settings and statusline script
+# Claude Code settings
 { homeDirectory }:
 let
   # Absolute path to node — /bin/sh can't find nix-installed node in PATH
@@ -73,11 +73,6 @@ in
     };
 
     includeCoAuthoredBy = false;
-
-    statusLine = {
-      type = "command";
-      command = "$HOME/.claude/statusline.sh";
-    };
 
     # Thinking adaptatif actif par défaut (Opus 4.8+ : profondeur pilotée par
     # effortLevel). Force-overridden par le merge activation.
@@ -927,128 +922,4 @@ in
       args = [ "${homeDirectory}/GraphVault/graphify-out/graph.json" ];
     };
   };
-
-  statuslineScript = ''
-    #!/usr/bin/env bash
-    # Statusline: model, dir, branch, tokens, context bar, 5h + 7d rate-limit bars.
-    # Rate-limit data comes straight from Claude Code's JSON (rate_limits.*), the
-    # same source as the official usage screen — no ccusage, no transcript parsing.
-
-    INPUT=$(cat)
-
-    # Colors — use $'...' so bash expands \033 at assignment time. This avoids
-    # printf "%b", which mangles the UTF-8 bytes of █/░ under a UTF-8 locale.
-    RED=$'\033[91m'
-    ORANGE=$'\033[38;5;208m'
-    YELLOW=$'\033[93m'
-    GREEN=$'\033[92m'
-    CYAN=$'\033[96m'
-    BLUE=$'\033[94m'
-    GREY=$'\033[90m'
-    RESET=$'\033[0m'
-
-    # Glyphs built from explicit UTF-8 bytes via printf, so no literal multibyte
-    # char lives in the source (avoids byte truncation through the nix/CC pipeline).
-    FULL_CH=$(printf '\xe2\x96\x88')        # █ U+2588 full block
-    EMPTY_CH=$(printf '\xe2\x96\x91')       # ░ U+2591 light shade
-
-    # Render a 10-cell progress bar: filled colored by threshold (green<60,
-    # orange<85, red>=85), empty in neutral grey so it stays visible.
-    make_bar() {
-      local pct=$1
-      [ -z "$pct" ] && pct=0
-      pct=''${pct%.*}                       # strip decimals
-      [ "$pct" -gt 100 ] 2>/dev/null && pct=100
-      [ "$pct" -lt 0 ] 2>/dev/null && pct=0
-      local filled=$((pct / 10))
-      local empty=$((10 - filled))
-      local color=$GREEN
-      [ "$pct" -ge 60 ] && color=$ORANGE
-      [ "$pct" -ge 85 ] && color=$RED
-      local full="" rest=""
-      local i
-      for ((i=0; i<filled; i++)); do full="$full$FULL_CH"; done
-      for ((i=0; i<empty;  i++)); do rest="$rest$EMPTY_CH"; done
-      printf '%s%s%s%s%s' "$color" "$full" "$GREY" "$rest" "$RESET"
-    }
-
-    if command -v jq >/dev/null 2>&1; then
-      MODEL=$(echo "$INPUT" | jq -r '.model.display_name // "opus"' | sed -E 's/ *\(.*\)//')
-      TOKENS_IN=$(echo "$INPUT" | jq -r '.context_window.total_input_tokens // 0')
-      TOKENS_OUT=$(echo "$INPUT" | jq -r '.context_window.total_output_tokens // 0')
-      CONTEXT_PCT=$(echo "$INPUT" | jq -r '(.context_window.used_percentage // 0) | round')
-
-      WORKSPACE_DIR=$(echo "$INPUT" | jq -r '.workspace.current_dir // "."')
-      # Strip trailing slashes before taking the basename, else "/" and "/a/b/"
-      # both yield "". Nothing left (the root itself) falls back to "/".
-      CWD=''${WORKSPACE_DIR%"''${WORKSPACE_DIR##*[!/]}"}
-      CWD=''${CWD##*/}
-      CWD=''${CWD:-/}
-      GIT_BRANCH=$(git -C "$WORKSPACE_DIR" branch --show-current 2>/dev/null || echo "")
-
-      # Rate limits straight from Claude Code JSON (Pro/Max only; absent before the
-      # first API call). used_percentage = quota consumed; resets_at = unix epoch.
-      NOW=$(date +%s)
-      H5_PCT=$(echo "$INPUT" | jq -r '(.rate_limits.five_hour.used_percentage // empty) | round')
-      H5_RESET=$(echo "$INPUT" | jq -r '.rate_limits.five_hour.resets_at // empty')
-      D7_PCT=$(echo "$INPUT" | jq -r '(.rate_limits.seven_day.used_percentage // empty) | round')
-      D7_RESET=$(echo "$INPUT" | jq -r '.rate_limits.seven_day.resets_at // empty')
-    else
-      MODEL="opus"
-      CWD=$(basename "$(pwd)")
-      GIT_BRANCH=$(git branch --show-current 2>/dev/null)
-      TOKENS_IN="0"; TOKENS_OUT="0"; CONTEXT_PCT="0"
-      H5_PCT=""; H5_RESET=""; D7_PCT=""; D7_RESET=""
-    fi
-
-    TOKENS_IN_FMT=$(printf "%'d" $TOKENS_IN 2>/dev/null || echo $TOKENS_IN)
-    TOKENS_OUT_FMT=$(printf "%'d" $TOKENS_OUT 2>/dev/null || echo $TOKENS_OUT)
-
-    CTX_BAR=$(make_bar "$CONTEXT_PCT")
-
-    # Time until an epoch reset:
-    #   < 1h   -> "42min"
-    #   < 24h  -> "H.MMh" where digits after the dot are literal minutes (00-59), e.g. "5.07h"
-    #   >= 24h -> "Xj Yh" days + remaining whole hours, e.g. 120h52min -> "5j 0h"
-    fmt_reset() {
-      local s=$(( $1 - NOW )); [ $s -lt 0 ] && s=0
-      local mins=$(( s / 60 ))
-      if [ $mins -lt 60 ]; then
-        printf '%dmin' "$mins"
-      elif [ $mins -lt 1440 ]; then
-        printf '%d.%02dh' $(( mins / 60 )) $(( mins % 60 ))
-      else
-        printf '%dj %dh' $(( mins / 1440 )) $(( (mins % 1440) / 60 ))
-      fi
-    }
-
-    # Visible width of a string, ignoring ANSI color codes (strips ESC[...m).
-    vis_width() {
-      local stripped
-      stripped=$(printf '%s' "$1" | sed $'s/\033\\[[0-9;]*m//g')
-      printf '%s' "''${#stripped}"
-    }
-
-    # Group 1 — session info; Group 2 — context + quota bars.
-    G1="''${RED}🤖 $MODEL''${RESET} | ''${ORANGE}📁 $CWD''${RESET}"
-    [ -n "$GIT_BRANCH" ] && G1="$G1 | ''${YELLOW}⎇ $GIT_BRANCH''${RESET}"
-    G1="$G1 | ''${GREEN}📊 $TOKENS_IN_FMT/$TOKENS_OUT_FMT''${RESET}"
-
-    G2="🧠 $CTX_BAR ''${CYAN}$CONTEXT_PCT%''${RESET}"
-    [ -n "$H5_PCT" ] && G2="$G2 | ⏳ $(make_bar "$H5_PCT") ''${CYAN}$H5_PCT% · $(fmt_reset "$H5_RESET")''${RESET}"
-    [ -n "$D7_PCT" ] && G2="$G2 | 📆 $(make_bar "$D7_PCT") ''${CYAN}$D7_PCT% · $(fmt_reset "$D7_RESET")''${RESET}"
-
-    # Single line if it fits the terminal width (COLUMNS, set by Claude Code
-    # v2.1.153+); otherwise wrap onto two lines. Emoji count as width 2, so add
-    # a small margin. Fall back to one line when COLUMNS is unknown.
-    ONE="$G1 | $G2"
-    COLS=''${COLUMNS:-0}
-    if [ "$COLS" -gt 0 ] && [ "$(vis_width "$ONE")" -ge $((COLS - 8)) ]; then
-      OUT="$G1"$'\n'"$G2"
-    else
-      OUT="$ONE"
-    fi
-
-    printf '%s\n' "$OUT"
-  '';
 }

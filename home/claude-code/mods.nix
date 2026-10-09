@@ -11,6 +11,7 @@ let
   names = [
     "task-board"
     "apex-band"
+    "status-bar"
   ];
 in
 {

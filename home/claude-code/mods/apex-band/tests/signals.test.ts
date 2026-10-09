@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import type { ApexBandRun, ApexBandStep, ApexBandStepKind, ApexBandVerdict } from '../types'
-import { alertsOf, budgetOf, isBudgetSpent, phaseBuckets, phaseOf, pickVerdict } from '../hooks/signals.ts'
+import { alertsOf, budgetOf, isBudgetSpent, pickVerdict } from '../hooks/signals.ts'
 
 const step = (name: string, kind: ApexBandStepKind): ApexBandStep => ({ step: name, status: kind, kind })
 
@@ -73,63 +73,5 @@ describe('alertsOf', () => {
 
   test("another run's verdict or budget is ignored", () => {
     expect(alertsOf(RUN, verdict('FAIL', 'other'), { dir: 'other', rounds: 9, grants: 0 })).toEqual([])
-  })
-})
-
-describe('phases', () => {
-  test('bucket mapping by prefix, "07/08-tests" and "external-verify" included', () => {
-    expect(phaseOf('00-init')).toBe('init')
-    expect(phaseOf('01-analyze')).toBe('analyze')
-    expect(phaseOf('01b-obsidian')).toBe('analyze')
-    expect(phaseOf('02-plan')).toBe('plan')
-    expect(phaseOf('03-execute')).toBe('exec')
-    expect(phaseOf('04-validate')).toBe('valid')
-    expect(phaseOf('05-examine')).toBe('valid')
-    expect(phaseOf('07/08-tests')).toBe('valid')
-    expect(phaseOf('external-verify')).toBe('valid')
-    expect(phaseOf('09-finish')).toBeUndefined()
-  })
-
-  test('states: done, running, waiting, and the current phase', () => {
-    const buckets = phaseBuckets([
-      step('00-init', 'done'),
-      step('01-analyze', 'done'),
-      step('01b-obsidian', 'skipped'),
-      step('02-plan', 'done'),
-      step('03-execute', 'running'),
-      step('04-validate', 'pending'),
-      step('external-verify', 'pending'),
-      step('09-finish', 'failed'),
-    ])
-    expect(buckets.map(b => b.state)).toEqual(['done', 'done', 'done', 'running', 'pending'])
-    expect(buckets.map(b => b.key)).toEqual(['init', 'analyze', 'plan', 'exec', 'valid'])
-    expect(buckets.find(b => b.isCurrent)?.key).toBe('exec')
-    expect(buckets.filter(b => b.isCurrent)).toHaveLength(1)
-  })
-
-  test('a failed step marks its phase failed and current', () => {
-    const buckets = phaseBuckets([step('00-init', 'done'), step('03-execute', 'done'), step('04-validate', 'failed')])
-    expect(buckets.map(b => b.state)).toEqual(['done', 'done', 'done', 'done', 'failed'])
-    expect(buckets.find(b => b.isCurrent)?.key).toBe('valid')
-  })
-
-  test('an empty phase is done before the current one, waiting after it', () => {
-    const buckets = phaseBuckets([step('00-init', 'done'), step('02-plan', 'running')])
-    expect(buckets.map(b => b.state)).toEqual(['done', 'done', 'running', 'pending', 'pending'])
-  })
-
-  test('a phase with done and waiting steps waits; all done: the last is current', () => {
-    const mixed = phaseBuckets([step('01-analyze', 'done'), step('01b-obsidian', 'pending')])
-    expect(mixed[1]?.state).toBe('pending')
-    expect(mixed[1]?.isCurrent).toBe(true)
-    const all = phaseBuckets([step('00-init', 'done'), step('04-validate', 'done')])
-    expect(all.map(b => b.state)).toEqual(['done', 'done', 'done', 'done', 'done'])
-    expect(all.find(b => b.isCurrent)?.key).toBe('valid')
-  })
-
-  test('no step: five waiting phases, none current', () => {
-    const none = phaseBuckets([])
-    expect(none.map(b => b.state)).toEqual(['pending', 'pending', 'pending', 'pending', 'pending'])
-    expect(none.some(b => b.isCurrent)).toBe(false)
   })
 })

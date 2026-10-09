@@ -1,4 +1,4 @@
-// apex-band state contract: the live APEX run the band draws, or null; the
+// apex-band state contract: the live APEX run the pane shows, or null; the
 // session's model loops and background shells; the signals asking the user
 // to act. Self-contained (no import), as the plugin-authoring reference asks.
 
@@ -126,10 +126,6 @@ export type ApexBandVerdict = { dir: string; verdict: string; findings: number; 
 // Tokens per APEX step of the run in `dir` (approximate: polled step).
 export type ApexBandPhases = { dir: string | null; byStep: Record<string, ApexBandTally> }
 
-// When this session first saw the run in `dir` (the run's own start is not
-// readable): the band's elapsed time counts from it.
-export type ApexBandSeen = { dir: string; at: number }
-
 declare module 'claude-code' {
   interface PluginState {
     'apex-band': {
@@ -149,7 +145,6 @@ declare module 'claude-code' {
       compactions: Record<string, number>
       // The loop id whose block the pane shows expanded, or null.
       expanded: string | null
-      seen: ApexBandSeen | null
       isOpen: boolean
       showAll: boolean
     }

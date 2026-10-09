@@ -33,7 +33,7 @@ let
 in
 {
   # =========================================================================
-  # APEX Workflow — Orchestrator + 16 Step Files
+  # APEX Workflow — Orchestrator + 15 step files + 5 reference steps
   # Progressive disclosure: each step is loaded conditionally by flag/task, not
   # read linearly. Splitting keeps the context window lean (a public good), it is
   # NOT about "recency". Effort is set per-step, not globally.

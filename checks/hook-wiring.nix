@@ -37,7 +37,9 @@
 #      the marker a brief naming 06-resolve.md or a correction round must
 #      carry. Run 64 adds format-typescript's prettier-config gate: a file
 #      whose project has no prettier config is never written. Run 65 adds
-#      the linear `git` prefix: 1000 `-C` before a commit on master. Every other
+#      the linear `git` prefix: 1000 `-C` before a commit on master. Run 66
+#      adds research-model: an Explore or codebase-navigator spawn whose
+#      model is not haiku, absent included, is denied. Every other
 #      case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -352,6 +354,14 @@ let
       hook = "correction-budget.js";
       text = "if (data.tool_name !== \"Agent\" && data.tool_name !== \"Task\" && data.tool_name !== \"SendMessage\") { allow(); return; }";
     };
+    A-rm-haiku = {
+      hook = "research-model.js";
+      text = "if (ti.model === \"haiku\") { allow(); return; }";
+    };
+    A-rm-types = {
+      hook = "research-model.js";
+      text = "const RESEARCH = [\"Explore\", \"codebase-navigator\"];";
+    };
   };
 
   # The M5 mutants name their shell: execSync's default /bin/sh dispatches
@@ -607,6 +617,31 @@ let
         }
       ];
     }
+    # Run 66. An absent model let through: the spawn falls back to whatever
+    # the agent definition names, and the explicit-model rule is not held.
+    {
+      id = "M-rm-absent";
+      hook = "research-model.js";
+      kills = "rm-navigator-nomodel-deny";
+      swaps = [
+        {
+          anchor = "A-rm-haiku";
+          to = "if (ti.model === \"haiku\" || ti.model === undefined) { allow(); return; }";
+        }
+      ];
+    }
+    # Explore alone: a codebase-navigator spawn on opus goes through.
+    {
+      id = "M-rm-types";
+      hook = "research-model.js";
+      kills = "rm-navigator-opus-deny";
+      swaps = [
+        {
+          anchor = "A-rm-types";
+          to = "const RESEARCH = [\"Explore\"];";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -660,6 +695,12 @@ let
     "cb-plain-allow"
     "cb-none-allow"
     "cb-state-unwritable-deny"
+    "rm-explore-sonnet-deny"
+    "rm-navigator-opus-deny"
+    "rm-navigator-nomodel-deny"
+    "rm-explore-haiku-allow"
+    "rm-plan-opus-allow"
+    "rm-malformed-allow"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -703,6 +744,7 @@ let
     "block-main-bash.js"
     "format-typescript.js"
     "correction-budget.js"
+    "research-model.js"
   ];
   timeoutsOf =
     n:
@@ -813,6 +855,9 @@ let
       is_allow || { why="round $3 on $2: $why"; return 1; }
     }
 
+    # research-model: $1 subagent_type, $2 model (absent when empty or unset).
+    rm_in() { ${jq} -cn --arg t "$1" --arg m "''${2-}" '{hook_event_name:"PreToolUse",tool_name:"Agent",session_id:"probe",tool_input:({description:"probe",subagent_type:$t,prompt:"Find the hook wiring."} + (if $m == "" then {} else {model:$m} end))}'; }
+
     # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
     # $tmo is the host's timeout for the hook under test (probe_case sets it);
     # 124 is `timeout` killing it, which the host reads as no decision.
@@ -881,6 +926,7 @@ let
         pm-*) tmo=${hostTimeout "protect-main.js"} ;;
         bb-*) tmo=${hostTimeout "block-main-bash.js"} ;;
         cb-*) tmo=${hostTimeout "correction-budget.js"} ;;
+        rm-*) tmo=${hostTimeout "research-model.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -1042,6 +1088,19 @@ let
             return 0
           fi
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "BLOCKED: budget state unwritable" ;;
+        # Run 66: research agents on haiku, the model named explicitly.
+        rm-explore-sonnet-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Explore sonnet)"; is_deny 'model "sonnet"' ;;
+        rm-navigator-opus-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in codebase-navigator opus)"; is_deny 'model "opus"' ;;
+        rm-navigator-nomodel-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in codebase-navigator)"; is_deny 'model absent; re-spawn it with model: "haiku"' ;;
+        rm-explore-haiku-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Explore haiku)"; is_allow ;;
+        rm-plan-opus-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Plan opus)"; is_allow ;;
+        rm-malformed-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -1053,6 +1112,7 @@ let
         bb-*) echo ${hookFile "block-main-bash.js"} ;;
         fmt-*) echo ${hookFile "format-typescript.js"} ;;
         cb-*) echo ${hookFile "correction-budget.js"} ;;
+        rm-*) echo ${hookFile "research-model.js"} ;;
       esac
     }
 

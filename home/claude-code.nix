@@ -79,6 +79,7 @@ let
     hookQualityGate
     hookGovernanceAudit
     hookCorrectionBudget
+    hookResearchModel
     hookReactDocsGate
     hookNullResultGate
     ;
@@ -251,6 +252,10 @@ let
     };
     "${claudeDir}/hooks/correction-budget.js" = {
       text = hookCorrectionBudget;
+      executable = true;
+    };
+    "${claudeDir}/hooks/research-model.js" = {
+      text = hookResearchModel;
       executable = true;
     };
     "${claudeDir}/hooks/react-docs-gate.js" = {

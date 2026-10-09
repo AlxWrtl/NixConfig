@@ -638,6 +638,20 @@ in
           ];
         }
         {
+          matcher = "Agent";
+          hooks = [
+            {
+              type = "command";
+              # Research agents on haiku: denies an Explore or
+              # codebase-navigator spawn whose model is not "haiku" (absent
+              # included). NOT async — a deny must land before the spawn.
+              # Fail-open on unreadable input.
+              command = "${node} ~/.claude/hooks/research-model.js";
+              timeout = 5;
+            }
+          ];
+        }
+        {
           matcher = "Edit|Write";
           hooks = [
             {

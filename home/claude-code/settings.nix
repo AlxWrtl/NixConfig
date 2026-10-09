@@ -348,6 +348,18 @@ in
     enabledPlugins = {
       "codex@openai-codex" = true;
     };
+    # Options of the mods' plugin.json userConfig, read from user settings
+    # only (`pluginConfigs[<name>].options`). Flightdeck (vendored mod) drawn
+    # inline sits above the prompt: closed at start, opened by `/flightdeck`.
+    # Its own status line is off: it would sit under the prompt next to the
+    # status-bar mod's. Not force-overridden: the deep merge seeds them, a
+    # /config change survives.
+    pluginConfigs = {
+      flightdeck.options = {
+        openOnStart = false;
+        statusLine = false;
+      };
+    };
 
     permissions = {
       # `auto` délègue chaque décision de permission à un classifieur de sûreté

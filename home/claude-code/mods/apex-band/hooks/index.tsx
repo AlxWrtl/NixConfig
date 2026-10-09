@@ -1,15 +1,11 @@
-// apex-band: a calm band above the prompt (at most eight rows) and one
-// detail pane on demand.
-// Band: the live APEX run of the session's working directory (title, five
-// phase dots, current phase, elapsed, cost), read from
-// <cwd>/.claude/output/apex/*/00-context.md; while a subagent works, the
-// main loop's rail and its subagents as cards, lanes or one line by the room
-// left; the background shells when a row is left; one row of what asks the
-// user to act (a failed step, a red external verification, a spent
-// correction budget), only when there is one. Draws nothing of its own when
-// no run is live and nothing runs; the bands of the mods beneath are always
-// kept. /apex-pane (and its alias /task-board) opens the detail pane; it
-// never opens by itself.
+// apex-band: one detail pane on demand, fed by observers.
+// /apex-pane (and its alias /task-board) opens the pane; it never opens by
+// itself. It shows the live APEX run of the session's working directory
+// (title, phases, cost), read from <cwd>/.claude/output/apex/*/00-context.md;
+// the main loop and its subagents; the background shells; the receipt, the
+// journal and the gauge; what asks the user to act (a failed step, a red
+// external verification, a spent correction budget). Nothing is drawn above
+// the prompt: that band belongs to another mod.
 // Motion: the rail's head and the agents' clocks are surface modules
 // (./rail.ts, ./elapsed.ts) drawn as Clients where the surface has them
 // (terminal, desktop), each on its own timer; elsewhere, or once a Client
@@ -17,10 +13,8 @@
 // Observes only: every hook but the commands and the renders returns
 // next(e)'s result unchanged. Read-only: it never writes a file.
 // Calm: the 1 s tick (agent list) runs only while a subagent or a shell
-// works or the pane is open; the host clock moves at most every LANE_MS
-// while busy with the pane closed (each second with it open); idle, the
-// 5 s poll writes nothing that did not change, but the clock once a minute
-// while a live run is shown (elapsed).
+// works or the pane is open; the host clock moves only while the pane is
+// open (each second); the 5 s poll writes nothing that did not change.
 
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, Register, RenderNode, RenderSurface, TextProps, Timer } from 'claude-code'
@@ -33,12 +27,11 @@ import type {
   ApexBandPhases,
   ApexBandReceipts,
   ApexBandRun,
-  ApexBandSeen,
   ApexBandShell,
   ApexBandVerdict,
 } from '../types'
 import { blockLoops } from './agents.ts'
-import { clientProps, layoutBand, textCells } from './band.ts'
+import { clientProps, textCells } from './band.ts'
 import type { Seg } from './band.ts'
 import { headBranch, isLive, onBranch, parseContext } from './context.ts'
 import {
@@ -92,10 +85,6 @@ import type { Usage } from './stats.ts'
 
 const POLL_MS = 5000
 const TICK_MS = 1000
-// The host clock's slowest pace while something works and the pane is
-// closed: the Clients count the seconds in between on their own.
-const LANE_MS = 5000
-const MINUTE_MS = 60_000
 const PANE = 'apex'
 const TITLE = 'APEX'
 // What the pane asks for: rows inline, columns docked (requests only).
@@ -117,7 +106,6 @@ const receipts = atom({ plugin: 'apex-band', key: 'receipts' } as const, NO_RECE
 const gauge = atom({ plugin: 'apex-band', key: 'gauge' } as const, null)
 const compactions = atom({ plugin: 'apex-band', key: 'compactions' } as const, {})
 const expanded = atom({ plugin: 'apex-band', key: 'expanded' } as const, null)
-const seen = atom({ plugin: 'apex-band', key: 'seen' } as const, null)
 const isOpen = atom({ plugin: 'apex-band', key: 'isOpen' } as const, false)
 const showAll = atom({ plugin: 'apex-band', key: 'showAll' } as const, false)
 
@@ -262,11 +250,6 @@ async function putVerdict($: EngineInterface, value: ApexBandVerdict | null): Pr
 async function putBudget($: EngineInterface, value: ApexBandBudget | null): Promise<void> {
   if (JSON.stringify(await read($, budget)) === JSON.stringify(value)) return
   await update($, budget, () => value)
-}
-
-async function putSeen($: EngineInterface, value: ApexBandSeen | null): Promise<void> {
-  if (JSON.stringify(await read($, seen)) === JSON.stringify(value)) return
-  await update($, seen, () => value)
 }
 
 async function putCost($: EngineInterface, value: number | null): Promise<void> {
@@ -417,33 +400,23 @@ function drawLines(lines: readonly Seg[][], table: Table, clients: boolean): Ren
   return lines.map(line => <Box flexDirection="row">{line.map(seg => drawSeg(seg, table, clients))}</Box>)
 }
 
-// The 5 s poll: run, seen, phases, verdict, budget, agents, cost, gauge; the
-// clock while the main loop works (at most every LANE_MS), or each minute
-// while a live run is shown. Arms the 1 s tick when something runs.
+// The 5 s poll: run, phases, verdict, budget, agents, cost, gauge. Arms the
+// 1 s tick when something runs. The clock is the pane's: never written here.
 async function refresh($: EngineInterface): Promise<void> {
   const at = await $.clock.now()
   const found = await scan($)
   await putRun($, found)
   const dir = found?.dir ?? null
-  // Elapsed counts from the first poll that saw this run directory.
-  const was = await read($, seen)
-  if (dir !== null && was?.dir !== dir) await putSeen($, { dir, at })
   // Another run (or none): its buckets start over, never restored later.
   await changePhases($, value => syncPhases(value, dir))
   await refreshVerdict($, found)
   await refreshBudget($, found)
   await snapshot($, at)
   await refreshUsage($)
-  // No live run and nothing at work: never written.
-  const last = await read($, now)
-  if ((await read($, loops)).some(l => l.id === MAIN && l.status === 'running')) {
-    if (at - last >= LANE_MS) await putNow($, at)
-  } else if (found !== null && at - last >= MINUTE_MS) await putNow($, at)
   if (await isBusy($)) armFast($)
 }
 
-// The 1 s tick: agents; the clock each second with the pane open, at most
-// every LANE_MS while something runs; the cost and gauge while the pane is
+// The 1 s tick: agents; the clock, the cost and the gauge while the pane is
 // open. Cancels itself once idle and closed.
 async function fastTick($: EngineInterface): Promise<void> {
   const at = await $.clock.now()
@@ -451,7 +424,6 @@ async function fastTick($: EngineInterface): Promise<void> {
   const busy = await isBusy($)
   const open = await read($, isOpen)
   if (open) await putNow($, at)
-  else if (busy && at - (await read($, now)) >= LANE_MS) await putNow($, at)
   if (open) await refreshUsage($)
   if (!busy && !open) {
     fastTimer?.cancel()
@@ -461,7 +433,7 @@ async function fastTick($: EngineInterface): Promise<void> {
 
 function onFastTick($: EngineInterface): void {
   fastTick($).catch(() => {
-    // Agent list, usage or state refused: the band keeps its figures; the
+    // Agent list, usage or state refused: the figures stay as they were; the
     // next tick (TICK_MS later) tries again.
   })
 }
@@ -483,7 +455,7 @@ async function record(write: () => Promise<void>): Promise<void> {
 
 function onTick($: EngineInterface): void {
   refresh($).catch(() => {
-    // A failed scan or a refused write leaves the band as it was; the next
+    // A failed scan or a refused write leaves the figures as they were; the next
     // tick (POLL_MS later) tries again.
   })
 }
@@ -571,7 +543,7 @@ export const register: Register = on => {
         immediate: true,
       })
     } catch {
-      // Refused registration: no command this session, the band still runs.
+      // Refused registration: no command this session, the observers still run.
     }
     return next(e)
   })
@@ -889,7 +861,6 @@ export const register: Register = on => {
       await update($, gauge, () => null)
       await update($, compactions, () => ({}))
       await update($, expanded, () => null)
-      await update($, seen, () => null)
       await update($, showAll, () => false)
     } else {
       // No session.start follows a /clear: the timers are kept for it.
@@ -941,38 +912,6 @@ export const register: Register = on => {
             {buttons}
           </Box>,
         ] : []}
-      </Box>
-    )
-  })
-
-  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey) return next(e)
-    const live = await read($, run)
-    const at = await read($, now)
-    const since = await read($, seen)
-    const lines = layoutBand(
-      {
-        run: live,
-        loops: await read($, loops),
-        shells: await read($, shells),
-        now: at,
-        cost: await read($, cost),
-        alerts: alertsOf(live, await read($, verdict), await read($, budget)),
-        seenAt: live !== null && since !== null && since.dir === live.dir ? since.at : null,
-      },
-      e.props.bodyColumns,
-      e.props.maxRows,
-    )
-    if (lines.length === 0) return next(e)
-
-    const table = $.ui.resolve(e)
-    const { Box } = table
-    // The later mods' band, kept under ours (a tree replaces it otherwise).
-    const theirs = await next(e)
-    return (
-      <Box flexDirection="column">
-        {drawLines(lines, table, drawsClients(e.surface))}
-        {theirs}
       </Box>
     )
   })

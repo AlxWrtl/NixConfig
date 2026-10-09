@@ -1,13 +1,5 @@
-// Pure layout of the band: at most min(8, maxRows) rows of styled segments,
-// each fitting `cols` cells.
-// L1, the run: `APEX · <title>  ●●●◐○  <phase> · <elapsed> · $<cost>`.
-// The agents block, only while a subagent works (agents.ts): the main
-// loop's rail, then cards, lanes or one line by the room left.
-// The shells row, when a row is left: `⧗ 2 shells · npm test 1:12 · …`.
-// The alert, what asks the user to act, only when something does (a failed
-// step, a red external verification, a spent correction budget).
-// Rows kept by priority L1 > alert > agents > shells, drawn in the order
-// L1, agents, shells, alert; on a single row an alert prefixes L1 with ⚠.
+// Shared segment helpers of the pane and the agents block (pane.ts,
+// agents.ts): styled segments, cell widths, cuts, step and alert lines.
 // Every meaning reads from a glyph or a word, never from the colour alone.
 // Widths are counted in terminal cells by an approximation (cellWidth): CJK,
 // pictographs and BMP default-emoji symbols (⌚ ✅ ⭐) count 2, joiners, VS16
@@ -17,20 +9,10 @@
 
 import type { ThemeKey } from 'claude-code'
 
-import type {
-  ApexBandAlert,
-  ApexBandLoop,
-  ApexBandRun,
-  ApexBandShell,
-  ApexBandStepKind,
-} from '../types'
-import { layoutAgents } from './agents.ts'
-import { clockText } from './elapsed.ts'
+import type { ApexBandAlert, ApexBandRun, ApexBandStepKind } from '../types'
 import type { ElapsedProps } from './elapsed.ts'
 import type { RailProps } from './rail.ts'
-import { phaseBuckets } from './signals.ts'
-import type { PhaseState } from './signals.ts'
-import { isWorking, shortModel } from './stats.ts'
+import { shortModel } from './stats.ts'
 
 // What a live segment's Client draws in place of its static text: a clock
 // counting on from `ms`, or the main loop's rail.
@@ -51,14 +33,6 @@ export function clientProps(seg: Seg): ElapsedProps | RailProps | null {
 }
 
 const SEP = ' · '
-const HEAD = `APEX${SEP}`
-const GAP = '  '
-// A truncated title keeps at least this many cells before anything is dropped.
-const MIN_TITLE = 8
-// The band's rows at most, whatever maxRows allows.
-export const MAX_ROWS = 8
-// Cells of the ` · …` closing a cut shells row.
-const ELLIPSIS = 4
 
 // Code points of `text`, so a surrogate pair is never split.
 const points = (text: string): string[] => Array.from(text)
@@ -223,7 +197,6 @@ export function hardCut(line: readonly Seg[], cols: number): Seg[] {
   return out
 }
 
-
 type MetaKey = 'mode' | 'branch' | 'baseline'
 type Meta = { key: MetaKey; segs: Seg[] }
 
@@ -241,76 +214,6 @@ export function meta(run: ApexBandRun): Meta[] {
   return items
 }
 
-export type BandInput = {
-  run: ApexBandRun | null
-  loops: readonly ApexBandLoop[]
-  shells: readonly ApexBandShell[]
-  now: number
-  cost: number | null
-  alerts: readonly ApexBandAlert[]
-  // When this session first saw the run (its own start is not readable).
-  seenAt: number | null
-}
-
-const pad2 = (n: number): string => String(n).padStart(2, '0')
-
-// Minutes since the run was first seen: 12m, 1h05.
-export function elapsed(ms: number): string {
-  const minutes = Math.floor(Math.max(0, ms) / 60_000)
-  if (minutes < 60) return `${minutes}m`
-  return `${Math.floor(minutes / 60)}h${pad2(minutes % 60)}`
-}
-
-// A phase dot: ● done, ◐ running, ✗ failed, ○ waiting.
-export function phaseDot(state: PhaseState): Seg {
-  if (state === 'done') return { text: '●', tone: 'success' }
-  if (state === 'running') return { text: '◐', tone: 'warning' }
-  if (state === 'failed') return { text: '✗', tone: 'error' }
-  return { text: '○', dim: true }
-}
-
-const head = (title: string): Seg => ({ text: `${HEAD}${title}`, dim: true })
-
-type Tail = { phase: Seg[]; elapsed: Seg[]; cost: Seg[] }
-
-// L1 with `title` and the tail groups kept, ` · ` between them.
-function runLine(prefix: Seg[], title: string, dots: Seg[], tail: Tail): Seg[] {
-  const line: Seg[] = [...prefix, head(title)]
-  if (dots.length > 0) line.push({ text: GAP }, ...dots)
-  const rest = join([tail.phase, tail.elapsed, tail.cost])
-  if (rest.length > 0) line.push({ text: GAP }, ...rest)
-  return line
-}
-
-// L1 within `cols`: the title cut down to MIN_TITLE cells, then elapsed,
-// cost and the phase word dropped in that order, then a hard cut.
-function fitRun(run: ApexBandRun, input: BandInput, prefix: Seg[], cols: number): Seg[] {
-  const buckets = run.steps.length === 0 ? [] : phaseBuckets(run.steps)
-  const dots = buckets.map(b => phaseDot(b.state))
-  const current = buckets.find(b => b.isCurrent)
-  const full: Tail = {
-    phase:
-      current === undefined
-        ? []
-        : [{ text: current.label, bold: true, ...(current.state === 'failed' ? { tone: 'error' as const } : {}) }],
-    elapsed: input.seenAt === null ? [] : [{ text: elapsed(input.now - input.seenAt), dim: true }],
-    cost: input.cost === null ? [] : [{ text: `$${input.cost.toFixed(2)}`, dim: true }],
-  }
-  const tails: Tail[] = [
-    full,
-    { ...full, elapsed: [] },
-    { ...full, elapsed: [], cost: [] },
-    { phase: [], elapsed: [], cost: [] },
-  ]
-  const minTitle = Math.min(MIN_TITLE, textCells(run.title))
-  for (const tail of tails) {
-    const room = cols - width(runLine(prefix, '', dots, tail))
-    if (room >= minTitle) return runLine(prefix, truncate(run.title, room), dots, tail)
-  }
-  const last = tails[tails.length - 1] ?? full
-  return hardCut(runLine(prefix, truncate(run.title, minTitle), dots, last), cols)
-}
-
 // A model's family: the first word of its short id (opus-5.5 → opus).
 export function family(model: string | undefined): string {
   const word = shortModel(model ?? '').split('-')[0] ?? ''
@@ -323,35 +226,6 @@ export function familyTone(name: string): ThemeKey {
   if (name === 'sonnet') return 'suggestion'
   if (name === 'haiku') return 'planMode'
   return 'text'
-}
-
-// True while a subagent (teammates aside) or a background shell works.
-export function isBusy(loops: readonly ApexBandLoop[], shells: readonly ApexBandShell[]): boolean {
-  return loops.some(isWorking) || shells.some(s => s.status === 'running')
-}
-
-// The running shells within `cols`: `⧗ 2 shells`, then each label and its
-// clock while they fit, `· …` when some are left out; then a hard cut.
-export function shellsLine(shells: readonly ApexBandShell[], now: number, cols: number): Seg[] {
-  const running = shells.filter(s => s.status === 'running').sort((a, b) => a.startedAt - b.startedAt)
-  if (running.length === 0) return []
-  const line: Seg[] = [{ text: '⧗', tone: 'inactive' }, { text: ` ${plural(running.length, 'shell')}` }]
-  if (width(line) > cols) return hardCut(line, cols)
-  for (const [i, shell] of running.entries()) {
-    const item: Seg[] = [
-      { text: SEP, dim: true },
-      { text: truncate(shell.label, 24) },
-      { text: ` ${clockText(now - shell.startedAt).trimStart()}`, dim: true },
-    ]
-    // Room for a closing ` · …` while more shells follow.
-    const rest = i < running.length - 1 ? ELLIPSIS : 0
-    if (width(line) + width(item) + rest > cols) {
-      if (width(line) + ELLIPSIS <= cols) line.push({ text: `${SEP}…`, dim: true })
-      break
-    }
-    line.push(...item)
-  }
-  return line
 }
 
 const plural = (n: number, word: string): string => `${n} ${word}${n > 1 ? 's' : ''}`
@@ -376,31 +250,3 @@ export function alertLine(alert: ApexBandAlert, cols: number, more = 0): Seg[] {
   return fits ?? hardCut(lines[lines.length - 1] ?? [mark], cols)
 }
 
-// The band as at most min(MAX_ROWS, maxRows) lines (at least one when
-// anything is drawn), each within max(1, cols) cells; no line at all when no
-// run is live and nothing runs. Without a run: the agents block and the
-// shells row only. A single row: L1 (⚠ before it on an alert), or without a
-// run the agents line, the shells joined when they fit.
-export function layoutBand(input: BandInput, cols: number, maxRows: number): Seg[][] {
-  const w = Math.max(1, cols)
-  const rows = Math.max(1, Math.min(MAX_ROWS, maxRows))
-  const { run } = input
-  if (run === null && !isBusy(input.loops, input.shells)) return []
-  const alert = run === null ? undefined : input.alerts[0]
-  if (run !== null && rows === 1) {
-    const prefix: Seg[] = alert === undefined ? [] : [{ text: '⚠ ', tone: 'warning' }]
-    return [fitRun(run, input, prefix, w)]
-  }
-  const head: Seg[][] = run === null ? [] : [fitRun(run, input, [], w)]
-  const tail: Seg[][] = alert === undefined ? [] : [alertLine(alert, w, input.alerts.length - 1)]
-  const left = rows - head.length - tail.length
-  const block = layoutAgents(input, w, left, { numbered: false, includeDone: false })
-  const shells = shellsLine(input.shells, input.now, w)
-  const middle: Seg[][] = [...block.lines]
-  if (shells.length > 0 && left - middle.length >= 1) middle.push(shells)
-  else if (shells.length > 0 && block.mode === 'line' && middle.length === 1) {
-    const both = join([middle[0] ?? [], shells.slice(0, 2)])
-    if (width(both) <= w) middle[0] = both
-  }
-  return [...head, ...middle, ...tail]
-}

@@ -10,6 +10,7 @@
 let
   names = [
     "apex-band"
+    "flightdeck"
     "status-bar"
   ];
 in

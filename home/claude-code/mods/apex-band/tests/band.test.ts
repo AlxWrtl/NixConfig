@@ -4,11 +4,15 @@ import {
   alertLine,
   baselineWord,
   cellWidth,
+  clientProps,
+  familyTone,
+  hardCut,
   elapsed,
   family,
   isBusy,
   layoutBand,
   phaseDot,
+  shellsLine,
   stepLabel,
   stepMark,
   truncate,
@@ -76,7 +80,6 @@ const IDLE: BandInput = {
   shells: [],
   now: 12 * 60_000,
   cost: 1.234,
-  frame: 0,
   alerts: [],
   seenAt: 0,
 }
@@ -87,7 +90,8 @@ const textOf = (line: readonly Seg[] | undefined): string => (line ?? []).map(s 
 const texts = (lines: readonly (readonly Seg[])[]): string[] => lines.map(textOf)
 
 const L1 = 'APEX · calm apex band  ●●●◐○  exécution · 12m · $1.23'
-const L2 = '◐ opus ×3  ◓ haiku ×2  ⧗ shell ×1  ✓ 9 terminés'
+// The agents line (one row left): 5 at work by family, the shell joined.
+const L2 = '● 5 agents · opus×3 haiku×2 · ⧗ 1 shell'
 const LONG = '⚠ Budget de correction épuisé — tape « apex: +1 tour » ou livre avec les résiduels'
 const SHORT = '⚠ Budget épuisé — « apex: +1 tour »'
 
@@ -98,10 +102,16 @@ describe('layoutBand: what is drawn', () => {
     expect(layoutBand({ ...IDLE, run: null, alerts: [BUDGET] }, 80, 3)).toEqual([])
   })
 
-  test('no run, a subagent or a shell running: the activity row only', () => {
-    expect(texts(layoutBand({ ...BUSY, run: null }, 120, 3))).toEqual([L2])
+  test('no run, a subagent or a shell running: the agents block and shells only', () => {
+    // Three rows: the rail and two lanes, the last counting the three others.
+    const lines = texts(layoutBand({ ...BUSY, run: null }, 120, 3))
+    expect(lines).toHaveLength(3)
+    expect(lines[0]?.startsWith('◆ main ')).toBe(true)
+    expect(lines[2]?.endsWith(' +3')).toBe(true)
+    // One row: the agents line, the shells joined.
+    expect(texts(layoutBand({ ...BUSY, run: null }, 120, 1))).toEqual([L2])
     const shellOnly = { ...IDLE, run: null, shells: [shell('s1', 'running')] }
-    expect(texts(layoutBand(shellOnly, 80, 3))).toEqual(['⧗ shell ×1'])
+    expect(texts(layoutBand(shellOnly, 80, 3))).toEqual(['⧗ 1 shell · s1 12:00'])
   })
 
   test('a teammate stays listed as running but never counts as at work', () => {
@@ -110,21 +120,24 @@ describe('layoutBand: what is drawn', () => {
     expect(isBusy(withMate.loops, [])).toBe(false)
     expect(texts(layoutBand(withMate, 80, 3))).toEqual([L1])
     expect(layoutBand({ ...withMate, run: null }, 80, 3)).toEqual([])
-    // Beside a working subagent, only that one is grouped.
+    // Beside a working subagent, only that one is drawn.
     const both = { ...withMate, loops: [...withMate.loops, loop('o1', 'haiku-4.5', 'running', 2)] }
-    expect(texts(layoutBand(both, 80, 3))).toEqual([L1, '◐ haiku ×1'])
+    expect(texts(layoutBand(both, 80, 2))).toEqual([L1, '● 1 agent · haiku×1'])
+    const lanes = texts(layoutBand(both, 80, 3))
+    expect(lanes).toHaveLength(3)
+    expect(lanes[2]?.startsWith('● o1 ')).toBe(true)
   })
 
-  test('a fork loop (steps under an id no agent list named) is never grouped', () => {
+  test('a fork loop (steps under an id no agent list named) is never drawn', () => {
     const { listed: _listed, ...fork } = loop('f1', 'opus-5.5', 'running', 1)
     const withFork = { ...IDLE, loops: [...IDLE.loops, fork] }
     expect(isBusy(withFork.loops, [])).toBe(false)
     expect(texts(layoutBand(withFork, 80, 3))).toEqual([L1])
     const both = { ...withFork, loops: [...withFork.loops, loop('o1', 'haiku-4.5', 'running', 2)] }
-    expect(texts(layoutBand(both, 80, 3))).toEqual([L1, '◐ haiku ×1'])
+    expect(texts(layoutBand(both, 80, 2))).toEqual([L1, '● 1 agent · haiku×1'])
   })
 
-  test('a listed subagent the agent list reads idle is not grouped', () => {
+  test('a listed subagent the agent list reads idle is not drawn', () => {
     const idle: ApexBandLoop = { ...loop('i1', 'opus-5.5', 'running', 1), idle: true }
     expect(isBusy([...IDLE.loops, idle], [])).toBe(false)
     expect(texts(layoutBand({ ...IDLE, loops: [...IDLE.loops, idle] }, 80, 3))).toEqual([L1])
@@ -139,6 +152,10 @@ describe('layoutBand: what is drawn', () => {
 
   test('a live run, work in flight and a budget alert: three rows at 120', () => {
     expect(texts(layoutBand(BUSY, 120, 3))).toEqual([L1, L2, LONG])
+  })
+
+  test('an idle run keeps its alert', () => {
+    expect(texts(layoutBand({ ...IDLE, alerts: [BUDGET] }, 120, 3))).toEqual([L1, LONG])
   })
 
   test('a run without steps, seen time or cost is its head alone', () => {
@@ -168,14 +185,34 @@ describe('layoutBand: rows by priority', () => {
     expect(texts(layoutBand({ ...BUSY, alerts: [] }, 120, 1))).toEqual([L1])
   })
 
-  test('maxRows 2: the alert wins over the activity row', () => {
+  test('maxRows 2: the alert wins over the agents block', () => {
     expect(texts(layoutBand(BUSY, 120, 2))).toEqual([L1, LONG])
     expect(texts(layoutBand({ ...BUSY, alerts: [] }, 120, 2))).toEqual([L1, L2])
   })
 
-  test('maxRows 3 (or more): L1, L2, L3 in that order', () => {
+  test('maxRows 3: L1, the agents line, the alert in that order', () => {
     expect(texts(layoutBand(BUSY, 120, 3))).toEqual([L1, L2, LONG])
-    expect(texts(layoutBand(BUSY, 120, 9))).toEqual([L1, L2, LONG])
+  })
+
+  test('maxRows 8 (or more): L1, rail and five lanes, the alert; no row left for shells', () => {
+    for (const maxRows of [8, 9]) {
+      const lines = texts(layoutBand(BUSY, 120, maxRows))
+      expect(lines).toHaveLength(8)
+      expect(lines[0]).toBe(L1)
+      expect(lines[1]?.startsWith('◆ main ')).toBe(true)
+      expect(lines[7]).toBe(LONG)
+      expect(lines.some(l => l.startsWith('⧗'))).toBe(false)
+    }
+  })
+
+  test('cards when three agents fit, then the shells row when a row is left', () => {
+    const three = { ...BUSY, loops: LOOPS.slice(0, 4), alerts: [] }
+    const lines = texts(layoutBand(three, 80, 8))
+    expect(lines).toHaveLength(7)
+    expect(lines[0]).toBe(L1)
+    expect(lines[2]?.startsWith('╭─ ')).toBe(true)
+    expect(lines[5]?.startsWith('╰─ ')).toBe(true)
+    expect(lines[6]).toBe('⧗ 1 shell · s1 12:00')
   })
 
   test('the first alert by priority, the others counted', () => {
@@ -188,7 +225,7 @@ describe('layoutBand: fitting', () => {
   for (const cols of [40, 80, 120]) {
     test(`widths ${cols}: every line within the columns`, () => {
       for (const input of [IDLE, BUSY, { ...BUSY, run: { ...RUN, title: 'x'.repeat(200) } }, { ...BUSY, run: null }])
-        for (let maxRows = 1; maxRows <= 3; maxRows++)
+        for (let maxRows = 1; maxRows <= 8; maxRows++)
           for (const line of layoutBand(input, cols, maxRows)) expect(width(line) <= cols).toBe(true)
     })
   }
@@ -207,14 +244,22 @@ describe('layoutBand: fitting', () => {
     expect(Array.from(cut).length).toBe(12)
   })
 
-  test('the activity row drops « terminés », then tightens, then cuts', () => {
+  test('the agents line drops the families, then the shells, then cuts', () => {
     const busy = { ...BUSY, run: null }
-    expect(texts(layoutBand(busy, 47, 3))).toEqual([L2])
-    expect(texts(layoutBand(busy, 46, 3))).toEqual(['◐ opus ×3  ◓ haiku ×2  ⧗ shell ×1'])
-    expect(texts(layoutBand(busy, 30, 3))).toEqual(['◐ opus×3 ◓ haiku×2 ⧗ shell×1'])
-    const cut = texts(layoutBand(busy, 15, 3))[0] ?? ''
+    expect(texts(layoutBand(busy, 39, 1))).toEqual([L2])
+    expect(texts(layoutBand(busy, 38, 1))).toEqual(['● 5 agents · opus×3 haiku×2'])
+    expect(texts(layoutBand(busy, 26, 1))).toEqual(['● 5 agents · ⧗ 1 shell'])
+    expect(texts(layoutBand(busy, 21, 1))).toEqual(['● 5 agents'])
+    const cut = texts(layoutBand(busy, 6, 1))[0] ?? ''
     expect(cut.endsWith('…')).toBe(true)
-    expect(Array.from(cut).length <= 15).toBe(true)
+    expect(Array.from(cut).length <= 6).toBe(true)
+  })
+
+  test('the shells row lists each running shell while it fits, then …', () => {
+    const shells = [shell('s1', 'running'), shell('npm test', 'running'), shell('s3', 'completed')]
+    expect(textOf(shellsLine(shells, 72_000, 80))).toBe('⧗ 2 shells · s1 1:12 · npm test 1:12')
+    expect(textOf(shellsLine(shells, 72_000, 25))).toBe('⧗ 2 shells · s1 1:12 · …')
+    expect(shellsLine([shell('s3', 'killed')], 0, 80)).toEqual([])
   })
 
   test('budget: the long wording when it fits, else the short one', () => {
@@ -235,7 +280,7 @@ describe('layoutBand: fitting', () => {
         for (let cols = 1; cols <= 120; cols++)
           for (let maxRows = 0; maxRows <= 3; maxRows++) {
             const lines = layoutBand({ ...input, run: { ...RUN, title } }, cols, maxRows)
-            expect(lines.length >= 1 && lines.length <= Math.max(1, Math.min(3, maxRows))).toBe(true)
+            expect(lines.length >= 1 && lines.length <= Math.max(1, Math.min(8, maxRows))).toBe(true)
             for (const line of lines) {
               expect(width(line) <= cols).toBe(true)
               for (const seg of line) expect(lone.test(seg.text)).toBe(false)
@@ -244,23 +289,77 @@ describe('layoutBand: fitting', () => {
   })
 })
 
+describe('layoutBand: fit sweep', () => {
+  // 0-7 agents (models in turn), with and without a running shell and an alert.
+  const models = ['opus-5.5', 'sonnet-5', 'haiku-4.5']
+  const fixtures: BandInput[] = []
+  for (let n = 0; n <= 7; n++)
+    for (const withShell of [false, true])
+      for (const withAlert of [false, true])
+        for (const run of [RUN, null])
+          fixtures.push({
+            ...IDLE,
+            run,
+            loops: [IDLE.loops[0] ?? loop('main', 'opus-5.5', 'done', 0), ...Array.from({ length: n }, (_, i) => loop(`a${i}`, models[i % 3], 'running', 60_000 * i))],
+            shells: withShell ? [shell('npm run a long test suite', 'running')] : [],
+            alerts: withAlert ? [RED] : [],
+          })
+
+  // One test per agent count; misfits collected, then checked once.
+  for (let n = 0; n <= 7; n++)
+    test(`${n} agent(s), cols 1..120 × maxRows 0..10: every line within cols, at most min(8, maxRows) rows`, { timeoutMs: 20_000 }, () => {
+      const misfits: string[] = []
+      for (const input of fixtures.filter(f => f.loops.length === n + 1))
+        for (let cols = 1; cols <= 120; cols++)
+          for (let maxRows = 0; maxRows <= 10; maxRows++) {
+            const lines = layoutBand(input, cols, maxRows)
+            const at = `${cols}×${maxRows} run=${input.run !== null} shells=${input.shells.length} alerts=${input.alerts.length}`
+            if (lines.length > Math.max(1, Math.min(8, maxRows))) misfits.push(`${at}: ${lines.length} rows`)
+            if (input.run !== null && lines.length < 1) misfits.push(`${at}: no row`)
+            for (const line of lines) {
+              if (width(line) > cols) misfits.push(`${at}: ${textOf(line)}`)
+              // A live segment is never cut: its Client draws its text's width.
+              for (const seg of line)
+                if (seg.live?.kind === 'rail' && seg.text.length !== seg.live.cells) misfits.push(`${at}: rail ${seg.text}`)
+            }
+          }
+      expect(misfits).toEqual([])
+    })
+
+  test('idle with no run: nothing at all', () => {
+    for (let maxRows = 0; maxRows <= 10; maxRows++) expect(layoutBand({ ...IDLE, run: null }, 80, maxRows)).toEqual([])
+  })
+})
+
 describe('layoutBand: calm and readable', () => {
-  test('the spinner frame changes only the glyphs', () => {
-    const strip = (s: string): string => s.replace(/[◐◓◑◒]/g, '*')
-    const a = texts(layoutBand(BUSY, 120, 3))
-    const b = texts(layoutBand({ ...BUSY, frame: 1 }, 120, 3))
-    expect(a).not.toEqual(b)
-    expect(a.map(strip)).toEqual(b.map(strip))
-    expect(b[1]?.startsWith('◓ opus ×3  ◑ haiku ×2')).toBe(true)
-    // L1's running phase dot does not spin.
-    expect(a[0]).toBe(b[0])
+  test('the rail and the clocks are live segments, the rest static', () => {
+    const lines = layoutBand({ ...BUSY, alerts: [] }, 120, 8)
+    const live = lines.flat().filter(seg => seg.live !== undefined)
+    expect(live[0]?.live?.kind).toBe('rail')
+    expect(live.filter(seg => seg.live?.kind === 'clock')).toHaveLength(5)
+    expect(new Set(live.map(seg => seg.live?.key)).size).toBe(live.length)
+    // The static text of the rail has no head: it moves only in its Client.
+    expect(live[0]?.text.includes('●')).toBe(false)
+    expect(clientProps(live[0] ?? { text: '' })).toEqual({ cells: 113, drops: [17, 17, 17, 17, 17], active: true, tone: 'claude' })
+    const clock = live.find(seg => seg.live?.kind === 'clock') ?? { text: '' }
+    expect(clientProps(clock)).toEqual({ ms: 12 * 60_000 - 1, running: true, tone: null, dim: true })
+    expect(clientProps({ text: 'x' })).toBeNull()
   })
 
-  test('spinner tones follow the model family; a shell is inactive', () => {
-    const l2 = layoutBand({ ...BUSY, run: null }, 120, 3)[0] ?? []
-    expect(l2[0]).toEqual({ text: '◐', tone: 'claude' })
-    expect(l2.find(s => s.text === '◓')?.tone).toBe('planMode')
-    expect(l2.find(s => s.text === '⧗')?.tone).toBe('inactive')
+  test('a cut live segment loses its Client, keeps its text', () => {
+    const seg: Seg = { text: '─'.repeat(10), live: { kind: 'rail', key: 'rail', cells: 10, drops: [], active: true, tone: 'claude' } }
+    const cut = hardCut([seg], 5)
+    expect(cut[0]?.live).toBeUndefined()
+    expect(textOf(cut)).toBe('────…')
+    expect(hardCut([seg], 10)[0]?.live).toBeDefined()
+  })
+
+  test('tones follow the model family; a shell is inactive', () => {
+    const line = layoutBand({ ...BUSY, run: null }, 120, 1)[0] ?? []
+    expect(line.find(s => s.text === 'opus×3')?.tone).toBe('claude')
+    expect(line.find(s => s.text === 'haiku×2')?.tone).toBe('planMode')
+    expect(line.find(s => s.text === '⧗')?.tone).toBe('inactive')
+    expect(familyTone('sonnet')).toBe('suggestion')
     expect(family('opus-5.5')).toBe('opus')
     expect(family('claude-haiku-4-5-20251001')).toBe('haiku')
     expect(family(undefined)).toBe('agent')

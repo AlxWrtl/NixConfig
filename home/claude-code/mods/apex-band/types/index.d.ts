@@ -49,7 +49,51 @@ export type ApexBandLoop = {
   listed?: boolean
   // The agent list reads this listed subagent idle: kept, not at work.
   idle?: boolean
+  // The context its last step sent: input plus cache reads and writes.
+  context?: number
+  // Its last tool calls (at most 3), oldest first.
+  recent?: ApexBandToolUse[]
+  // The prompt it was launched with (cut at 2000 characters).
+  task?: string
+  // The head of its final answer, on one line (cut at 400 characters).
+  answer?: string
+  // The thinking effort its last step asked for (a level, or a budget).
+  effort?: string
 }
+
+// One tool call of a loop and what it aimed at (a path, a command, a URL).
+export type ApexBandToolUse = { tool: string; target?: string }
+
+export type ApexBandLogKind = 'prompt' | 'spawn' | 'done' | 'edit' | 'error' | 'compact'
+
+// One journal line: when, what kind, its text on one line.
+export type ApexBandLogEntry = { at: number; kind: ApexBandLogKind; text: string }
+
+// One main-loop turn's receipt: its subagents, the files it edited, the tool
+// errors, its cost (the session's cost when it began, and what it added).
+export type ApexBandReceipt = {
+  turnId: string
+  startedAt: number
+  endedAt?: number
+  durationMs?: number
+  reason?: string
+  // The subagents it launched, each id once.
+  agents: string[]
+  // The files it edited, each path once.
+  edits: string[]
+  errors: number
+  costAtStart: number | null
+  costDelta?: number
+}
+
+// The turn under way (null between turns) and the last one ended.
+export type ApexBandReceipts = { current: ApexBandReceipt | null; last: ApexBandReceipt | null }
+
+// One rate-limit window: percent used, when it resets (ms; absent unknown).
+export type ApexBandLimit = { kind: string; percent: number; resetsAt?: number }
+
+// The main context window and the rate-limit windows, as session.usage reads them.
+export type ApexBandGauge = { percent: number | null; tokens: number | null; window: number; limits: ApexBandLimit[] }
 
 // `killed` is its own word (stopped, drawn ■), not a failure.
 export type ApexBandShellStatus = 'running' | 'completed' | 'failed' | 'killed'
@@ -97,8 +141,14 @@ declare module 'claude-code' {
       verdict: ApexBandVerdict | null
       shells: ApexBandShell[]
       budget: ApexBandBudget | null
-      // The spinner's frame (0-3), advanced only while something runs.
-      frame: number
+      // The journal, newest last (at most LOG_CAP entries).
+      log: ApexBandLogEntry[]
+      receipts: ApexBandReceipts
+      gauge: ApexBandGauge | null
+      // Compactions this session, per trigger (manual, auto, plugin).
+      compactions: Record<string, number>
+      // The loop id whose block the pane shows expanded, or null.
+      expanded: string | null
       seen: ApexBandSeen | null
       isOpen: boolean
       showAll: boolean

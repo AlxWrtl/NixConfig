@@ -1,7 +1,9 @@
 {
   "name": "apex-band",
-  "version": "0.2.0",
-  "description": "Bande calme au-dessus du prompt (3 lignes max) : run APEX (phases, durée, coût), sous-agents et shells actifs par modèle, et seulement ce qui demande d'agir ; /apex-pane (alias /task-board) ouvre le détail (phases, sous-agents, shells, totaux, vérif externe).",
-  "author": { "name": "alx" },
+  "version": "0.3.0",
+  "description": "Bande calme au-dessus du prompt (8 lignes max) : run APEX (phases, durée, coût), rail du loop principal et sous-agents en cartes ou couloirs avec horloges vivantes, shells actifs, et seulement ce qui demande d'agir ; /apex-pane (alias /task-board) ouvre le détail (principal, jauge de contexte, agents dépliables 1-6, reçu du tour, journal, shells, vérif externe).",
+  "author": {
+    "name": "alx"
+  },
   "types": "./types/index.d.ts"
 }

@@ -1,36 +1,62 @@
-// apex-band: a calm band above the prompt (at most three rows) and one detail
-// pane on demand.
+// apex-band: a calm band above the prompt (at most eight rows) and one
+// detail pane on demand.
 // Band: the live APEX run of the session's working directory (title, five
 // phase dots, current phase, elapsed, cost), read from
-// <cwd>/.claude/output/apex/*/00-context.md; the subagents and background
-// shells at work, grouped by model, only while one runs; one row of what
-// asks the user to act (a failed step, a red external verification, a spent
+// <cwd>/.claude/output/apex/*/00-context.md; while a subagent works, the
+// main loop's rail and its subagents as cards, lanes or one line by the room
+// left; the background shells when a row is left; one row of what asks the
+// user to act (a failed step, a red external verification, a spent
 // correction budget), only when there is one. Draws nothing of its own when
 // no run is live and nothing runs; the bands of the mods beneath are always
 // kept. /apex-pane (and its alias /task-board) opens the detail pane; it
 // never opens by itself.
-// Observes only: turn.step, tool.call, turn.complete and session.append
-// hooks return next(e)'s result unchanged. Read-only: it never writes a file.
-// Calm: the 1 s tick (spinner, clock) runs only while a subagent or a shell
-// works or the pane is open; idle, the 5 s poll writes nothing that did not
-// change, but the clock once a minute while a live run is shown (elapsed).
+// Motion: the rail's head and the agents' clocks are surface modules
+// (./rail.ts, ./elapsed.ts) drawn as Clients where the surface has them
+// (terminal, desktop), each on its own timer; elsewhere, or once a Client
+// failed (ui.fault), the same frame as static text.
+// Observes only: every hook but the commands and the renders returns
+// next(e)'s result unchanged. Read-only: it never writes a file.
+// Calm: the 1 s tick (agent list) runs only while a subagent or a shell
+// works or the pane is open; the host clock moves at most every LANE_MS
+// while busy with the pane closed (each second with it open); idle, the
+// 5 s poll writes nothing that did not change, but the clock once a minute
+// while a live run is shown (elapsed).
 
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, TextProps, Timer } from 'claude-code'
+import type { Elements, EngineInterface, Register, RenderNode, RenderSurface, TextProps, Timer } from 'claude-code'
 
 import type {
   ApexBandBudget,
+  ApexBandGauge,
+  ApexBandLogEntry,
   ApexBandLoop,
   ApexBandPhases,
+  ApexBandReceipts,
   ApexBandRun,
   ApexBandSeen,
   ApexBandShell,
   ApexBandVerdict,
 } from '../types'
-import { layoutBand } from './band.ts'
+import { blockLoops } from './agents.ts'
+import { clientProps, layoutBand, textCells } from './band.ts'
 import type { Seg } from './band.ts'
 import { headBranch, isLive, onBranch, parseContext } from './context.ts'
-import { MAX_DONE, layoutPane } from './pane.ts'
+import {
+  NO_RECEIPTS,
+  addCompaction,
+  editPath,
+  endReceipt,
+  gaugeOf,
+  isEditTool,
+  pushLog,
+  receiptAgent,
+  receiptEdit,
+  receiptError,
+  startReceipt,
+} from './journal.ts'
+import type { UsageReading } from './journal.ts'
+import { MAX_DONE, layoutPane, paneHotkeys } from './pane.ts'
+import type { PaneInput } from './pane.ts'
 import {
   addShell,
   closeBySnapshot,
@@ -52,19 +78,29 @@ import {
   endedOwners,
   launchLoop,
   listedIds,
+  noteAnswer,
+  noteSpawn,
   parseVerdict,
+  pathTail,
+  reasonStatus,
   startTool,
   subagentsRunning,
   syncPhases,
+  toolTarget,
 } from './stats.ts'
 import type { Usage } from './stats.ts'
 
 const POLL_MS = 5000
 const TICK_MS = 1000
+// The host clock's slowest pace while something works and the pane is
+// closed: the Clients count the seconds in between on their own.
+const LANE_MS = 5000
 const MINUTE_MS = 60_000
-const FRAMES = 4
 const PANE = 'apex'
 const TITLE = 'APEX'
+// What the pane asks for: rows inline, columns docked (requests only).
+const PANE_ROWS = 30
+const PANE_COLUMNS = 100
 // The two names the external verification is written under, in a run dir.
 const VERIFY_NAMES = ['04-external-verify.json', 'external-verify.json']
 
@@ -76,7 +112,11 @@ const cost = atom({ plugin: 'apex-band', key: 'cost' } as const, null)
 const verdict = atom({ plugin: 'apex-band', key: 'verdict' } as const, null)
 const shells = atom({ plugin: 'apex-band', key: 'shells' } as const, [])
 const budget = atom({ plugin: 'apex-band', key: 'budget' } as const, null)
-const frame = atom({ plugin: 'apex-band', key: 'frame' } as const, 0)
+const log = atom({ plugin: 'apex-band', key: 'log' } as const, [])
+const receipts = atom({ plugin: 'apex-band', key: 'receipts' } as const, NO_RECEIPTS)
+const gauge = atom({ plugin: 'apex-band', key: 'gauge' } as const, null)
+const compactions = atom({ plugin: 'apex-band', key: 'compactions' } as const, {})
+const expanded = atom({ plugin: 'apex-band', key: 'expanded' } as const, null)
 const seen = atom({ plugin: 'apex-band', key: 'seen' } as const, null)
 const isOpen = atom({ plugin: 'apex-band', key: 'isOpen' } as const, false)
 const showAll = atom({ plugin: 'apex-band', key: 'showAll' } as const, false)
@@ -85,8 +125,13 @@ const showAll = atom({ plugin: 'apex-band', key: 'showAll' } as const, false)
 let timer: Timer | undefined
 // The 1 s tick, alive only while something runs or the pane is open.
 let fastTimer: Timer | undefined
+// Set once a Client of ours failed (ui.fault): static text from then on.
+let clientsOff = false
 
-// Reads a field of an engine record whose shape varies per tool; anything
+// The element table of one surface, as $.ui.resolve(e) hands it.
+type Table = Elements[keyof Elements]
+
+// Reads a field of an engine record whose shape varies per tool; a value
 // that is not a non-empty string reads as undefined.
 function stringField(record: unknown, key: string): string | undefined {
   if (typeof record !== 'object' || record === null) return undefined
@@ -101,7 +146,7 @@ function numberField(record: unknown, key: string): number | undefined {
 }
 
 // A row's text: a string as is, else its text blocks joined (every other
-// block skipped); anything else reads as empty.
+// block skipped); a value of another shape reads as empty.
 function rowText(content: unknown): string {
   if (typeof content === 'string') return content
   if (!Array.isArray(content)) return ''
@@ -182,6 +227,27 @@ async function changePhases($: EngineInterface, fn: (value: ApexBandPhases) => A
   await update($, phases, fn)
 }
 
+async function changeLog($: EngineInterface, fn: (value: ApexBandLogEntry[]) => ApexBandLogEntry[]): Promise<void> {
+  const current = await read($, log)
+  if (fn(current) === current) return
+  await update($, log, fn)
+}
+
+async function changeReceipts($: EngineInterface, fn: (value: ApexBandReceipts) => ApexBandReceipts): Promise<void> {
+  const current = await read($, receipts)
+  if (fn(current) === current) return
+  await update($, receipts, fn)
+}
+
+async function changeCompactions(
+  $: EngineInterface,
+  fn: (value: Record<string, number>) => Record<string, number>,
+): Promise<void> {
+  const current = await read($, compactions)
+  if (fn(current) === current) return
+  await update($, compactions, fn)
+}
+
 // Writes each value unless the atom already holds an equal one.
 async function putRun($: EngineInterface, value: ApexBandRun | null): Promise<void> {
   if (JSON.stringify(await read($, run)) === JSON.stringify(value)) return
@@ -211,6 +277,27 @@ async function putCost($: EngineInterface, value: number | null): Promise<void> 
 async function putNow($: EngineInterface, value: number): Promise<void> {
   if ((await read($, now)) === value) return
   await update($, now, () => value)
+}
+
+// The gauge session.usage gives, written only when gaugeOf hands a new one.
+async function putGauge($: EngineInterface, usage: UsageReading): Promise<void> {
+  const prev: ApexBandGauge | null = await read($, gauge)
+  const next = gaugeOf(usage, prev)
+  if (next === prev) return
+  await update($, gauge, () => next)
+}
+
+// The session's cost and gauge, one usage read.
+async function refreshUsage($: EngineInterface): Promise<void> {
+  const usage = await $.session.usage()
+  await putCost($, usage.cost?.usd ?? null)
+  await putGauge($, usage)
+}
+
+// The session's cost so far, null when unread.
+async function costNow($: EngineInterface): Promise<number | null> {
+  const usage = await $.session.usage()
+  return usage.cost?.usd ?? null
 }
 
 // The run's external verification, from whichever of its two names was
@@ -285,7 +372,7 @@ async function snapshot($: EngineInterface, at: number): Promise<void> {
   )
 }
 
-// True while a subagent or a background shell works: the spinner turns.
+// True while a subagent or a background shell works: the 1 s tick runs.
 async function isBusy($: EngineInterface): Promise<boolean> {
   return subagentsRunning(await read($, loops)) || runningShells(await read($, shells)) > 0
 }
@@ -299,9 +386,40 @@ function segProps(seg: Seg): TextProps {
   }
 }
 
-// The 5 s poll: run, seen, phases, verdict, budget, agents, cost; the clock
-// while the main loop works, or each minute while a live run is shown. Arms
-// the 1 s tick when something runs.
+// True where the surface draws Clients (terminal, desktop) and none of
+// ours failed yet.
+const drawsClients = (surface: RenderSurface): boolean => !clientsOff && (surface === 'terminal' || surface === 'desktop')
+
+// One segment: a live one as its Client (as wide as its static text) where
+// `clients` holds, else its text.
+function drawSeg(seg: Seg, table: Table, clients: boolean): RenderNode {
+  const live = seg.live
+  const props = clientProps(seg)
+  if (live !== undefined && props !== null && clients && 'Client' in table) {
+    const { Client } = table
+    const cells = textCells(seg.text)
+    return live.kind === 'rail' ? (
+      <Client key={live.key} module="./rail.ts" width={cells} props={props} />
+    ) : (
+      <Client key={live.key} module="./elapsed.ts" width={cells} props={props} />
+    )
+  }
+  const { Text } = table
+  return (
+    <Text {...segProps(seg)} wrap="truncate-end">
+      {seg.text}
+    </Text>
+  )
+}
+
+function drawLines(lines: readonly Seg[][], table: Table, clients: boolean): RenderNode[] {
+  const { Box } = table
+  return lines.map(line => <Box flexDirection="row">{line.map(seg => drawSeg(seg, table, clients))}</Box>)
+}
+
+// The 5 s poll: run, seen, phases, verdict, budget, agents, cost, gauge; the
+// clock while the main loop works (at most every LANE_MS), or each minute
+// while a live run is shown. Arms the 1 s tick when something runs.
 async function refresh($: EngineInterface): Promise<void> {
   const at = await $.clock.now()
   const found = await scan($)
@@ -315,31 +433,26 @@ async function refresh($: EngineInterface): Promise<void> {
   await refreshVerdict($, found)
   await refreshBudget($, found)
   await snapshot($, at)
-  const usage = await $.session.usage()
-  await putCost($, usage.cost?.usd ?? null)
-  // The clock: each poll while the main loop works; else once a minute while
-  // a live run is shown, so L1's elapsed (minutes) still advances when idle.
+  await refreshUsage($)
   // No live run and nothing at work: never written.
-  if ((await read($, loops)).some(l => l.id === MAIN && l.status === 'running')) await putNow($, at)
-  else if (found !== null && at - (await read($, now)) >= MINUTE_MS) await putNow($, at)
+  const last = await read($, now)
+  if ((await read($, loops)).some(l => l.id === MAIN && l.status === 'running')) {
+    if (at - last >= LANE_MS) await putNow($, at)
+  } else if (found !== null && at - last >= MINUTE_MS) await putNow($, at)
   if (await isBusy($)) armFast($)
 }
 
-// The 1 s tick: agents; spinner frame and clock while something runs; the
-// cost while the pane is open. Cancels itself once idle and closed.
+// The 1 s tick: agents; the clock each second with the pane open, at most
+// every LANE_MS while something runs; the cost and gauge while the pane is
+// open. Cancels itself once idle and closed.
 async function fastTick($: EngineInterface): Promise<void> {
   const at = await $.clock.now()
   await snapshot($, at)
   const busy = await isBusy($)
   const open = await read($, isOpen)
-  if (busy) {
-    await putNow($, at)
-    await update($, frame, value => (value + 1) % FRAMES)
-  }
-  if (open) {
-    const usage = await $.session.usage()
-    await putCost($, usage.cost?.usd ?? null)
-  }
+  if (open) await putNow($, at)
+  else if (busy && at - (await read($, now)) >= LANE_MS) await putNow($, at)
+  if (open) await refreshUsage($)
   if (!busy && !open) {
     fastTimer?.cancel()
     fastTimer = undefined
@@ -390,11 +503,57 @@ async function openPane($: EngineInterface): Promise<{ text: string }> {
   await update($, now, () => at)
   // Opened first: a refused open throws before a tick is armed. An
   // unplaced pane is still open (seated once a surface places it): ticked.
-  await $.ui.open({ id: PANE, title: TITLE })
+  await $.ui.open({ id: PANE, title: TITLE, rows: PANE_ROWS, columns: PANE_COLUMNS })
   await update($, isOpen, () => true)
   onFastTick($)
   armFast($)
   return { text: 'Détail du run APEX ouvert.' }
+}
+
+// The session's model, null when unreadable.
+async function sessionModel($: EngineInterface): Promise<string | null> {
+  try {
+    const model = await $.session.model()
+    return model === '' ? null : model
+  } catch {
+    // Unreadable here: the pane falls back to the main loop's last model.
+    return null
+  }
+}
+
+// Everything the pane reads, from state (and the session's model).
+async function paneInput($: EngineInterface): Promise<PaneInput> {
+  const live = await read($, run)
+  const found = await read($, verdict)
+  return {
+    run: live,
+    loops: await read($, loops),
+    phases: await read($, phases),
+    now: await read($, now),
+    cost: await read($, cost),
+    verdict: found,
+    shells: await read($, shells),
+    alerts: alertsOf(live, found, await read($, budget)),
+    showAll: await read($, showAll),
+    model: await sessionModel($),
+    gauge: await read($, gauge),
+    receipts: await read($, receipts),
+    log: await read($, log),
+    compactions: await read($, compactions),
+    expanded: await read($, expanded),
+  }
+}
+
+// True when a section folds finished items away (or shows them all):
+// the agents, the other loops and the shells, each past MAX_DONE.
+function canFold(input: PaneInput): boolean {
+  if (input.showAll) return true
+  const agents = blockLoops(input.loops, true)
+  const named = new Set(agents.map(l => l.id))
+  const doneAgents = agents.filter(l => l.status !== 'running').length
+  const doneOthers = input.loops.filter(l => l.id !== MAIN && !named.has(l.id) && l.status !== 'running').length
+  const doneShells = input.shells.filter(s => s.status !== 'running').length
+  return doneAgents > MAX_DONE || doneOthers > MAX_DONE || doneShells > MAX_DONE
 }
 
 export const register: Register = on => {
@@ -433,14 +592,89 @@ export const register: Register = on => {
     return closed
   }).catch(($, e, next) => next(e))
 
-  // Each model response: a step and its usage for its loop, and the usage
-  // for the run's current step (approximate: the step as last polled).
+  // A Client of ours failed on a surface: static text from now on, every
+  // site drawn again.
+  on('ui.fault', ($, e, next) => {
+    clientsOff = true
+    $.ui.invalidate('ui.render')
+    return next(e)
+  })
+
+  // A main-loop turn begins: the prompt in the journal, its receipt opened
+  // with the session's cost so far.
+  on('turn.start', async ($, e, next) => {
+    const started = await next(e)
+    await record(async () => {
+      const at = await $.clock.now()
+      const spent = await costNow($)
+      await changeLog($, current => pushLog(current, { at, kind: 'prompt', text: e.text }))
+      await changeReceipts($, current => startReceipt(current, { turnId: e.turnId, at, cost: spent }))
+    })
+    return started
+  }).catch(($, e, next) => next(e))
+
+  // A subagent started (foreground, background, fork or workflow): its
+  // label, type, model and task kept, never marked at work by this alone.
+  on('agent.spawn', async ($, e, next) => {
+    const spawned = await next(e)
+    const id = spawned.agentId
+    if (id !== undefined && id !== '') {
+      await record(async () => {
+        const at = await $.clock.now()
+        const label = e.description === '' ? undefined : e.description
+        const model = spawned.model !== '' ? spawned.model : e.model
+        await changeLoops($, current =>
+          noteSpawn(
+            current,
+            {
+              id,
+              ...(label === undefined ? {} : { label }),
+              ...(e.subagentType === '' ? {} : { type: e.subagentType }),
+              ...(model === undefined || model === '' ? {} : { model }),
+              task: e.prompt,
+            },
+            at,
+          ),
+        )
+        await changeLog($, current => pushLog(current, { at, kind: 'spawn', text: label ?? e.subagentType }))
+        await changeReceipts($, current => receiptAgent(current, id))
+      })
+    }
+    return spawned
+  }).catch(($, e, next) => next(e))
+
+  // A compaction that stood (not skipped, not a precompute): counted under
+  // its trigger, its sizes in the journal.
+  on('session.compact', async ($, e, next) => {
+    const compacted = await next(e)
+    if (compacted.skip === undefined && e.trigger !== 'precompute') {
+      await record(async () => {
+        const at = await $.clock.now()
+        const before = compacted.tokensBefore
+        const after = compacted.tokensAfter
+        const sizes =
+          before === undefined ? '' : ` · ${Math.round(before / 1000)}k${after === undefined ? '' : ` → ${Math.round(after / 1000)}k`}`
+        await changeCompactions($, current => addCompaction(current, e.trigger))
+        await changeLog($, current => pushLog(current, { at, kind: 'compact', text: `compaction ${e.trigger}${sizes}` }))
+      })
+    }
+    return compacted
+  }).catch(($, e, next) => next(e))
+
+  // Each model response: a step, its usage and effort for its loop, and the
+  // usage for the run's current step (approximate: the step as last polled).
   on('turn.step', async function* ($, e, next) {
     const result = yield* next(e)
     const usage: Usage | null = result.usage
     await record(async () => {
       const at = await $.clock.now()
-      await changeLoops($, current => addStep(current, { agentId: e.agentId, model: e.model, usage }, at))
+      const step = {
+        ...(e.agentId === undefined ? {} : { agentId: e.agentId }),
+        model: e.model,
+        usage,
+        ...(e.effort === undefined ? {} : { effort: e.effort }),
+      }
+      await changeLoops($, current => addStep(current, step, at))
       const live = await read($, run)
       const dir = live?.dir
       if (dir !== undefined) await changePhases($, current => addPhase(current, dir, live?.currentStep, usage))
@@ -451,16 +685,36 @@ export const register: Register = on => {
     return yield* next(e)
   })
 
-  // Each tool call: counted and shown as its loop's current tool while it runs.
+  // Each tool call: counted and shown as its loop's current tool (and what
+  // it aims at) while it runs; an edit or a failure goes on the receipt and
+  // in the journal.
   on('tool.call', async ($, e, next) => {
     const { agentId, tool, tool_use_id: toolUseId } = e
+    const target = toolTarget(tool, e)
     await record(async () => {
       const at = await $.clock.now()
-      await changeLoops($, current => startTool(current, { agentId, tool, toolUseId }, at))
+      await changeLoops($, current =>
+        startTool(current, { agentId, tool, toolUseId, ...(target === undefined ? {} : { target }) }, at),
+      )
     })
     if (agentId !== undefined) armFast($)
     const ran = await next(e)
-    await record(() => changeLoops($, current => endTool(current, agentId, toolUseId)))
+    await record(async () => {
+      await changeLoops($, current => endTool(current, agentId, toolUseId))
+      const at = await $.clock.now()
+      if (ran.isError === true) {
+        await changeReceipts($, current => receiptError(current))
+        await changeLog($, current =>
+          pushLog(current, { at, kind: 'error', text: target === undefined ? tool : `${tool} · ${target}` }),
+        )
+        return
+      }
+      const path = isEditTool(tool) ? editPath(tool, e) : undefined
+      if (path !== undefined) {
+        await changeReceipts($, current => receiptEdit(current, path))
+        await changeLog($, current => pushLog(current, { at, kind: 'edit', text: pathTail(path) }))
+      }
+    })
     return ran
   }).catch(($, e, next) => next(e))
 
@@ -584,18 +838,31 @@ export const register: Register = on => {
     return next(e)
   }).catch(($, e, next) => next(e))
 
-  // A loop's turn ended: its status and the turn's duration; a subagent
-  // ended failed or stopped closes its still running shells.
+  // A loop's turn ended: its status, the turn's duration and the head of
+  // its answer; a subagent ended failed or stopped closes its still running
+  // shells; the main loop's end closes its receipt with the cost it added.
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
     await record(async () => {
       const at = await $.clock.now()
       const before = await read($, loops)
-      const after = endLoop(before, e.agentId, e.reason, e.durationMs, at)
-      if (after === before) return
-      await update($, loops, () => after)
-      const ended = endedOwners(before, after)
-      await changeShells($, current => ended.reduce((list, id) => closeOrphanShells(list, id, at), current))
+      const ended = endLoop(before, e.agentId, e.reason, e.durationMs, at)
+      const after = noteAnswer(ended, e.agentId, e.answer)
+      if (after !== before) await update($, loops, () => after)
+      const gone = endedOwners(before, after)
+      await changeShells($, current => gone.reduce((list, id) => closeOrphanShells(list, id, at), current))
+      const kind = reasonStatus(e.reason) === 'failed' ? 'error' : 'done'
+      const isMain = e.agentId === undefined || e.agentId === MAIN
+      const label = isMain ? 'fin du tour' : (after.find(l => l.id === e.agentId)?.label ?? e.agentId ?? '')
+      // The reason is said only for a failure (a plain answer is the norm).
+      const text = kind === 'error' ? `${label} · ${e.reason}` : label
+      await changeLog($, current => pushLog(current, { at, kind, text }))
+      if (isMain) {
+        const spent = await costNow($)
+        await changeReceipts($, current =>
+          endReceipt(current, { at, durationMs: e.durationMs, reason: e.reason, cost: spent }),
+        )
+      }
     })
     return done
   }).catch(($, e, next) => next(e))
@@ -617,7 +884,11 @@ export const register: Register = on => {
       await update($, verdict, () => null)
       await update($, shells, () => [])
       await update($, budget, () => null)
-      await update($, frame, () => 0)
+      await update($, log, () => [])
+      await update($, receipts, () => NO_RECEIPTS)
+      await update($, gauge, () => null)
+      await update($, compactions, () => ({}))
+      await update($, expanded, () => null)
       await update($, seen, () => null)
       await update($, showAll, () => false)
     } else {
@@ -630,50 +901,45 @@ export const register: Register = on => {
     return next(e)
   })
 
-  // The pane: reads state only, every line within the body's columns; [t]
-  // shows every finished subagent and shell, or folds them again.
+  // The pane: reads state only, every line within the body's columns;
+  // [1]-[6] expand an agent's block (or fold it again); [t] shows every
+  // finished agent, loop and shell, or folds them again.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Button, Text } = $.ui.resolve(e)
-    const live = await read($, run)
-    const ledger = await read($, loops)
-    const background = await read($, shells)
-    const found = await read($, verdict)
-    const isAll = await read($, showAll)
-    const lines = layoutPane(
-      {
-        run: live,
-        loops: ledger,
-        phases: await read($, phases),
-        now: await read($, now),
-        cost: await read($, cost),
-        verdict: found,
-        shells: background,
-        alerts: alertsOf(live, found, await read($, budget)),
-        showAll: isAll,
-      },
-      e.props.bodyColumns,
-    )
-    const doneLoops = ledger.filter(l => l.id !== MAIN && l.status !== 'running').length
-    const doneShells = background.filter(s => s.status !== 'running').length
-    const canFold = isAll || doneLoops > MAX_DONE || doneShells > MAX_DONE
+    const table = $.ui.resolve(e)
+    const { Box, Button } = table
+    const input = await paneInput($)
+    const lines = layoutPane(input, e.props.bodyColumns)
     const toggle = (): void => {
       update($, showAll, value => !value).catch(() => {
         // State refused: the pane stays as drawn; a later press retries.
       })
     }
+    const expand = (id: string): void => {
+      update($, expanded, value => (value === id ? null : id)).catch(() => {
+        // State refused: the block stays as drawn; a later press retries.
+      })
+    }
+    const keys = paneHotkeys(input).map(({ n, id }) => (
+      <Button
+        key={`agent-${n}`}
+        hotkey={String(n)}
+        label={input.expanded === id ? `replier ${n}` : `détail ${n}`}
+        plain
+        dimColor
+        onPress={() => expand(id)}
+      />
+    ))
+    const fold = canFold(input)
+      ? [<Button key="toggle" hotkey="t" label={input.showAll ? 'replier' : 'tout afficher'} plain dimColor onPress={toggle} />]
+      : []
+    const buttons = [...keys, ...fold]
     return (
       <Box flexDirection="column">
-        {lines.map(line => (
-          <Box flexDirection="row">
-            {line.map(seg => (
-              <Text {...segProps(seg)} wrap="truncate-end">
-                {seg.text}
-              </Text>
-            ))}
-          </Box>
-        ))}
-        {canFold ? [
-          <Button key="toggle" hotkey="t" label={isAll ? 'replier' : 'tout afficher'} plain dimColor onPress={toggle} />,
+        {drawLines(lines, table, drawsClients(e.surface))}
+        {buttons.length > 0 ? [
+          <Box key="keys" flexDirection="row" flexWrap="wrap" columnGap={2}>
+            {buttons}
+          </Box>,
         ] : []}
       </Box>
     )
@@ -691,7 +957,6 @@ export const register: Register = on => {
         shells: await read($, shells),
         now: at,
         cost: await read($, cost),
-        frame: await read($, frame),
         alerts: alertsOf(live, await read($, verdict), await read($, budget)),
         seenAt: live !== null && since !== null && since.dir === live.dir ? since.at : null,
       },
@@ -700,20 +965,13 @@ export const register: Register = on => {
     )
     if (lines.length === 0) return next(e)
 
-    const { Box, Text } = $.ui.resolve(e)
+    const table = $.ui.resolve(e)
+    const { Box } = table
     // The later mods' band, kept under ours (a tree replaces it otherwise).
     const theirs = await next(e)
     return (
       <Box flexDirection="column">
-        {lines.map(line => (
-          <Box flexDirection="row">
-            {line.map(seg => (
-              <Text {...segProps(seg)} wrap="truncate-end">
-                {seg.text}
-              </Text>
-            ))}
-          </Box>
-        ))}
+        {drawLines(lines, table, drawsClients(e.surface))}
         {theirs}
       </Box>
     )

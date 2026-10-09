@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { ElementQuery, FoundElement, Plugin, TestBody } from 'claude-code/testing'
-import type { AgentInfo, On } from 'claude-code'
+import type { AgentInfo, On, SessionCompacted, SessionMessage } from 'claude-code'
 
 const NOW = 1_000_000_000
 
@@ -92,6 +92,14 @@ async function rows(ui: Mounted): Promise<string[]> {
   const boxes = await ui.findAll({ type: 'Box' })
   return boxes.filter(b => b.props.flexDirection === 'row').map(b => b.text)
 }
+
+// What a Client's surface module drew, as text (an agent's clock).
+async function drawn(ui: Mounted, key: string): Promise<string> {
+  return (await ui.findAll({ type: 'Text', in: key })).map(t => t.text).join('')
+}
+
+// True when a row of the pane matches `pattern`.
+const hasRow = async (ui: Mounted, pattern: RegExp): Promise<boolean> => (await rows(ui)).some(r => pattern.test(r))
 
 // The shown text of the pane's row for phase `label` (its glyph, label,
 // token cell and share bar), or undefined when no such row is drawn.
@@ -255,16 +263,18 @@ test('steps, tool calls and turn ends fill the pane; every result passes through
   for (const surface of ['terminal', 'desktop'] as const) {
     const ui = await $.ui.mount({ plugin: 'apex-band', surface, ...PANE })
     expect((await ui.find({ type: 'Text', text: exact('APEX · run under test') }))?.props.bold).toBe(true)
-    expect((await ui.find({ type: 'Text', text: exact(' scan engine types') }))?.props.bold).toBe(true)
-    expect((await rows(ui)).includes('● scan engine types · opus-5.5 · 4.4k · 0s')).toBe(true)
-    expect((await ui.find({ type: 'Text', text: exact(' · opus-5\\.5 · 4\\.4k · 0s') }))?.props.dimColor).toBe(true)
+    expect((await ui.find({ type: 'Text', text: exact('1 scan engine types') }))?.props.bold).toBe(true)
+    expect(await hasRow(ui, /^╭─ ● 1 scan engine types ─+╮$/)).toBe(true)
+    expect(await hasRow(ui, /^│ Explore · opus-5\.5 +│$/)).toBe(true)
+    expect(await hasRow(ui, /^│ ctx 1\.0k · out 3\.4k +│$/)).toBe(true)
+    expect(await drawn(ui, 'clock:a1')).toBe(' 0:00')
     expect(await phaseRow(ui, 'exec')).toMatch(/^● exec +8\.8k +━{10}$/)
     expect(await ui.find({ type: 'Text', text: exact('Vérif externe') })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: exact('✗ FAIL') }))?.props.color).toBe('error')
     expect(await ui.find({ type: 'Text', text: exact('2 constats') })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^\$1\.50$/ })).toBeDefined()
     // The red verdict is asked of the user first.
-    expect((await rows(ui))[0]).toBe('Action')
+    expect((await rows(ui))[0]).toMatch(/^── Action ─+$/)
     expect((await rows(ui))[1]).toBe('✗ Vérif externe FAIL · 2 constats')
     await ui.unmount()
   }
@@ -280,8 +290,8 @@ test('steps, tool calls and turn ends fill the pane; every result passes through
   expect(done).toEqual({ text: 'fini' })
   const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
   expect((await ui.find({ type: 'Text', text: exact('✓') }))?.props.color).toBe('success')
-  expect((await ui.find({ type: 'Text', text: exact(' scan engine types') }))?.props.dimColor).toBe(true)
-  expect((await rows(ui)).includes('✓ scan engine types · opus-5.5 · 4.4k · 5s')).toBe(true)
+  expect(await hasRow(ui, /^╭─ ✓ 1 scan engine types ─+╮$/)).toBe(true)
+  expect(await drawn(ui, 'clock:a1')).toBe(' 0:05')
   await ui.unmount()
 })
 
@@ -368,11 +378,12 @@ test('a running subagent’s time advances with the clock while the pane is open
   await $.command.run(RUN_COMMAND)
   await clock.settle()
   let ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
-  expect((await rows(ui)).includes('● scan engine types · opus-5.5 · 4.4k · 0s')).toBe(true)
+  expect(await hasRow(ui, /^╭─ ● 1 scan engine types ─+╮$/)).toBe(true)
+  expect(await drawn(ui, 'clock:a1')).toBe(' 0:00')
   await ui.unmount()
   await clock.advance(3000)
   ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
-  expect((await rows(ui)).includes('● scan engine types · opus-5.5 · 4.4k · 3s')).toBe(true)
+  expect(await drawn(ui, 'clock:a1')).toBe(' 0:03')
   await ui.unmount()
 })
 
@@ -585,8 +596,7 @@ test('an agent already finished when first listed shows in the pane as finished'
   await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
   await clock.settle()
   const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
-  expect((await rows(ui)).includes('✓ déjà fini · 0s')).toBe(true)
-  expect((await ui.find({ type: 'Text', text: exact(' déjà fini') }))?.props.dimColor).toBe(true)
+  expect(await hasRow(ui, /^╭─ ✓ 1 déjà fini ─+╮$/)).toBe(true)
   await ui.unmount()
 })
 
@@ -656,5 +666,108 @@ test('[t] shows every finished shell then folds them again', async ($, on) => {
   ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
   expect(await ui.find({ type: 'Text', text: exact(' fini 1') })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: exact('\\+2 terminés') })).toBeDefined()
+  await ui.unmount()
+})
+
+// What agent.spawn carries beside the Agent tool's own parameters.
+const SPAWN = {
+  tool_use_id: 'u0',
+  provider: { plugin: 'engine', tier: 'core' },
+  parentModel: 'claude-opus-5-5',
+  background: false,
+  fork: false,
+} as const
+
+const TWO_AGENTS: AgentInfo[] = [
+  { id: 'a1', description: 'scan engine types', type: 'Explore', status: 'running' },
+  { id: 'a2', description: 'write the docs', type: 'general-purpose', status: 'running' },
+]
+
+test('agent.spawn keeps a foreground task, its result unchanged; [2] expands that agent, again folds it', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { agents: 0 }, [], { agents: TWO_AGENTS })
+  const spawned = (id: string) => ({ model: 'claude-haiku-4-5', agentId: id })
+  on('agent.spawn', ($, e) => spawned(e.description === 'write the docs' ? 'a2' : 'a1'))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(await $.agent.spawn({ ...SPAWN, prompt: 'List the Client types.', description: 'scan engine types', subagentType: 'Explore' })).toEqual(
+    spawned('a1'),
+  )
+  expect(
+    await $.agent.spawn({ ...SPAWN, prompt: 'Write the README paragraph.', description: 'write the docs', subagentType: 'general-purpose' }),
+  ).toEqual(spawned('a2'))
+  await $.command.run(RUN_COMMAND)
+  await clock.settle()
+  let ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
+  // Two cards side by side on each row.
+  expect(await hasRow(ui, /^│ Explore · haiku-4\.5 +│ │ general-purpose · haiku-4\.5 +│$/)).toBe(true)
+  expect((await ui.find({ key: 'agent-1' }))?.props.hotkey).toBe('1')
+  expect((await ui.find({ key: 'agent-2' }))?.props.hotkey).toBe('2')
+  expect(await ui.find({ type: 'Text', text: /Write the README/ })).toBeUndefined()
+  await ui.press({ key: 'agent-2' })
+  await ui.unmount()
+  ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
+  expect(await hasRow(ui, /^▾ 2 write the docs · general-purpose · haiku-4\.5$/)).toBe(true)
+  expect(await hasRow(ui, /^ +tâche +Write the README paragraph\.$/)).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /List the Client types/ })).toBeUndefined()
+  expect((await ui.find({ key: 'agent-2' }))?.props.label).toBe('replier 2')
+  await ui.press({ key: 'agent-2' })
+  await ui.unmount()
+  ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
+  expect(await hasRow(ui, /^▾ /)).toBe(false)
+  expect((await ui.find({ key: 'agent-2' }))?.props.label).toBe('détail 2')
+  await ui.unmount()
+})
+
+test('a turn: its edits and errors on the receipt and in the journal; every result unchanged', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { agents: 0 }, [], { idle: true })
+  on('turn.start', ($, e) => ({ turnId: e.turnId }))
+  on('tool.call', ($, e) => (e.tool === 'Bash' ? { result: 'boom', isError: true } : { result: { ok: true } }))
+  on('turn.complete', () => ({ text: 'fini' }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  expect(await $.turn.start({ text: 'fix the band please', turnId: 't1' })).toEqual({ turnId: 't1' })
+  const edit = { tool: 'Edit', file_path: '/work/src/deep/a.ts', old_string: 'a', new_string: 'b', tool_use_id: 'u1' } as const
+  expect(await $.tool.call(edit)).toEqual({ result: { ok: true } })
+  expect(await $.tool.call(edit)).toEqual({ result: { ok: true } })
+  expect(await $.tool.call({ tool: 'Bash', command: 'npm test', description: 'run tests', tool_use_id: 'u2' })).toEqual({
+    result: 'boom',
+    isError: true,
+  })
+  await $.command.run(RUN_COMMAND)
+  await clock.settle()
+  let ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
+  // The same file twice: one edit.
+  expect(await hasRow(ui, /^● en cours .*· 1 édition · 1 erreur/)).toBe(true)
+  expect(await hasRow(ui, /^ *0s › fix the band please$/)).toBe(true)
+  expect(await hasRow(ui, /^ *0s ✎ deep\/a\.ts$/)).toBe(true)
+  expect(await hasRow(ui, /^ *0s ✗ Bash · run tests$/)).toBe(true)
+  await ui.unmount()
+  await clock.advance(4000)
+  const done = { answer: 'ok', durationMs: 4_000, isAborted: false, turnId: 't1', reason: 'answer' } as const
+  expect(await $.turn.complete(done)).toEqual({ text: 'fini' })
+  ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
+  expect(await hasRow(ui, /^✓ dernier tour 4s .*· 1 édition · 1 erreur/)).toBe(true)
+  expect(await hasRow(ui, /^ *0s ✓ fin du tour$/)).toBe(true)
+  await ui.unmount()
+})
+
+test('a compaction counts ⟲1 on the gauge and in the journal, a precompute one not; results unchanged', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { agents: 0 }, [], { idle: true })
+  const compacted: SessionCompacted = { messages: [{ role: 'user', text: 'summary', toolUses: [] }], tokensBefore: 150_000, tokensAfter: 20_000 }
+  on('session.compact', () => compacted)
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  const messages: SessionMessage[] = [{ role: 'user', text: 'hi', toolUses: [] }]
+  expect(await $.session.compact({ trigger: 'manual', messages })).toEqual(compacted)
+  expect(await $.session.compact({ trigger: 'precompute', messages })).toEqual(compacted)
+  await $.command.run(RUN_COMMAND)
+  await clock.settle()
+  const ui = await $.ui.mount({ plugin: 'apex-band', surface: 'terminal', ...PANE })
+  expect(await hasRow(ui, /^ctx .* ⟲1$/)).toBe(true)
+  expect(await hasRow(ui, /^ *0s ⟲ compaction manual · 150k → 20k$/)).toBe(true)
+  expect(await hasRow(ui, /precompute/)).toBe(false)
   await ui.unmount()
 })

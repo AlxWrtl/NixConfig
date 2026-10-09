@@ -1894,7 +1894,7 @@ in
 
     | Phase | Agent | model |
     |-------|-------|-------|
-    | Analyze fan-out | Explore / codebase-navigator | sonnet |
+    | Analyze fan-out | Explore / codebase-navigator | haiku — read-only search only |
     | Analyze synthesis | analyzer phase agent | `opus` (effort high) |
     | Plan | coordinator inline when 01-analyze was skipped (Standard); plan phase agent only after 01-analyze or on High-stakes | `opus` (effort high/max) |
     | Execute (parallel waves under `-k`, coordinator's call) | typed implementer (quick-fix / nix-expert / frontend-expert / backend-expert / debugger), never general-purpose | `opus` (low effort mechanical) |

@@ -393,6 +393,10 @@ let
       hook = "research-model.js";
       text = "const RESEARCH = [\"Explore\", \"codebase-navigator\"];";
     };
+    A-rm-overflow = {
+      hook = "research-model.js";
+      text = "if (input.length + c.length > MAX_INPUT) { overflow = true; input = \"\"; return; }";
+    };
   };
 
   # The M5 mutants name their shell: execSync's default /bin/sh dispatches
@@ -759,6 +763,20 @@ let
         }
       ];
     }
+    # The pre-#219 reader: past 4 MiB it drops the tail and keeps the
+    # prefix, so a valid object padded past the cap is parsed and denied
+    # although the whole input is malformed.
+    {
+      id = "M-rm-overflow";
+      hook = "research-model.js";
+      kills = "rm-oversize-allow";
+      swaps = [
+        {
+          anchor = "A-rm-overflow";
+          to = "if (input.length + c.length > MAX_INPUT) return;";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -841,6 +859,7 @@ let
     "rm-explore-haiku-allow"
     "rm-plan-opus-allow"
     "rm-malformed-allow"
+    "rm-oversize-allow"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -1408,6 +1427,11 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Plan opus)"; is_allow ;;
         rm-malformed-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
+        # A deny-worthy object padded past the 4 MiB cap, then a malformed
+        # tail: the input is never read whole, so it must be let through.
+        rm-oversize-allow)
+          { rm_in Explore sonnet; ${pkgs.coreutils}/bin/head -c 4400000 /dev/zero | ${pkgs.coreutils}/bin/tr '\0' ' '; printf '}garbage'; } > "$d/$lbl.big"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(${pkgs.coreutils}/bin/cat "$d/$lbl.big")"; is_allow ;;
         *)
           why="no such case"; return 2 ;;
       esac

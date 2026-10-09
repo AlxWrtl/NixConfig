@@ -3,7 +3,8 @@
 # Domain knowledge stays in project SKILL.md files — agents stay generic
 # Models — Opus 5.5 is the workhorse (coordinates, plans, codes, self-verifies);
 #          Fable is an independent read-only verifier on high-stakes diffs only:
-#         Sonnet (quick-fix, git-ship, codebase-navigator, test-runner, security-auditor)
+#         Haiku  (codebase-navigator — read-only search: no Write, Edit or Bash)
+#         Sonnet (quick-fix, git-ship, test-runner, security-auditor)
 #         Opus  (frontend-expert, backend-expert, nix-expert, debugger — executors)
 #         Fable (code-reviewer — spec compliance + critical security, pre-merge only)
 # Removed in f98ef95 (do not reference): architecture-expert, performance-expert, team-lead

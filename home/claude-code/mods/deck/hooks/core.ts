@@ -1,32 +1,25 @@
 // Pure data: defaults, reducers, formatting and layout math. Nothing here touches `$`, so every
-// behaviour is testable directly (the test kit cannot raise a subagent's tool call or a
-// permission check inside a call; these functions are what the hooks apply).
+// behaviour is testable directly (the test kit cannot raise a subagent's tool call; these
+// functions are what the hooks apply). From Flightdeck v0.3.2 (MIT, Stephen Casella).
 import type {
-  AgentCard,
-  Architect,
-  Bucket,
-  Check,
-  Gate,
-  Layout,
-  LogLine,
-  Loop,
-  Main,
-  Moment,
-  Receipt,
-  Roster,
-  Tally,
-  ToolNote,
-  Turn,
-  Usage,
-  View,
+  DeckAgentCard,
+  DeckArchitect,
+  DeckLayout,
+  DeckLogLine,
+  DeckMain,
+  DeckMoment,
+  DeckReceipt,
+  DeckRoster,
+  DeckToolNote,
+  DeckTurn,
+  DeckUsage,
+  DeckView,
 } from '../types'
-
-export const SCHEMA_VERSION = 2
 
 // ---------------------------------------------------------------- defaults
 
-export const DEFAULT_MAIN: Main = { model: '', effort: '', mode: '', steps: 0, isRunning: false }
-export const DEFAULT_USAGE: Usage = {
+export const DEFAULT_MAIN: DeckMain = { model: '', effort: '', mode: '', steps: 0, isRunning: false }
+export const DEFAULT_USAGE: DeckUsage = {
   pct: null,
   tokens: null,
   window: 0,
@@ -35,12 +28,10 @@ export const DEFAULT_USAGE: Usage = {
   compactions: 0,
   lastCompactAt: null,
 }
-export const DEFAULT_ARCHITECT: Architect = { consults: [], ids: [], seen: [], lastAdvice: '' }
-const ZERO: Tally = { rule: 0, ask: 0, cleared: 0, deny: 0 }
-export const DEFAULT_GATE: Gate = { recent: [], totals: { file: ZERO, shell: ZERO, other: ZERO } }
-export const DEFAULT_TURN: Turn = { edits: 0, errorStreak: 0, errors: 0, isReviewing: false, startedAt: 0, costAtStart: null }
-export const DEFAULT_VIEW: View = { expanded: null, gateOpen: null, layout: null }
-export const DEFAULT_ROSTER: Roster = { architectTypes: [] }
+export const DEFAULT_ARCHITECT: DeckArchitect = { consults: [], ids: [], seen: [], lastAdvice: '' }
+export const DEFAULT_TURN: DeckTurn = { edits: 0, errorStreak: 0, errors: 0, isReviewing: false, startedAt: 0, costAtStart: null }
+export const DEFAULT_VIEW: DeckView = { expanded: null, layout: null }
+export const DEFAULT_ROSTER: DeckRoster = { architectTypes: [] }
 
 const isObject = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
@@ -51,17 +42,8 @@ export const normalize = <T extends object>(def: T, stored: unknown): T =>
 /** A stored list, or empty when what is stored is not a list. */
 export const listOf = <T>(stored: unknown): T[] => (Array.isArray(stored) ? (stored as T[]) : [])
 
-export const normalizeGate = (stored: unknown): Gate => {
-  const g = normalize(DEFAULT_GATE, stored)
-  const totals = normalize(DEFAULT_GATE.totals, g.totals)
-  return {
-    recent: listOf<Check>(g.recent),
-    totals: { file: normalize(ZERO, totals.file), shell: normalize(ZERO, totals.shell), other: normalize(ZERO, totals.other) },
-  }
-}
-
-export const normalizeCard = (stored: unknown): AgentCard =>
-  normalize<AgentCard>(
+export const normalizeCard = (stored: unknown): DeckAgentCard =>
+  normalize<DeckAgentCard>(
     {
       id: '',
       type: 'agent',
@@ -80,7 +62,7 @@ export const normalizeCard = (stored: unknown): AgentCard =>
     stored,
   )
 
-export const normalizeLog = (stored: unknown): LogLine[] =>
+export const normalizeLog = (stored: unknown): DeckLogLine[] =>
   listOf<Record<string, unknown>>(stored).map(l => ({
     at: typeof l.at === 'number' ? l.at : 0,
     who: String(l.who ?? ''),
@@ -91,22 +73,19 @@ export const normalizeLog = (stored: unknown): LogLine[] =>
 
 // ---------------------------------------------------------------- config
 
-export type Panel = 'main' | 'architect' | 'gate' | 'agents' | 'loops' | 'receipt' | 'log'
-const PANELS: readonly Panel[] = ['main', 'architect', 'gate', 'agents', 'loops', 'receipt', 'log']
+export type Panel = 'main' | 'architect' | 'agents' | 'receipt' | 'log'
+const PANELS: readonly Panel[] = ['main', 'architect', 'agents', 'receipt', 'log']
 
 export type Config = {
   architect: RegExp
   architectLabel: string
-  gateLabel: string
   panels: Panel[]
   motion: boolean
   moments: boolean
   matchDescriptions: boolean
   maxCards: number
-  layout: Layout
+  layout: DeckLayout
   palette: Palette
-  openOnStart: boolean
-  statusLine: boolean
 }
 
 const safeRegExp = (source: string, fallback: string) => {
@@ -130,7 +109,6 @@ export const parseConfig = (o: Readonly<Record<string, unknown>>): Config => {
   return {
     architect: safeRegExp(str('architectPattern', ''), 'advisor|architect'),
     architectLabel: str('architectLabel', 'ARCHITECT'),
-    gateLabel: str('gateLabel', 'GATE'),
     panels: panels.length > 0 ? [...new Set(panels)] : [...PANELS],
     motion: str('motion', 'while-active') !== 'off',
     moments: bool('moments', true),
@@ -138,15 +116,13 @@ export const parseConfig = (o: Readonly<Record<string, unknown>>): Config => {
     maxCards: Math.min(6, Math.max(1, max)),
     layout: layout === 'compact' || layout === 'wide' || layout === 'mini' ? layout : 'auto',
     palette: str('palette', 'theme') === 'pastel' ? 'pastel' : 'theme',
-    openOnStart: bool('openOnStart', true),
-    statusLine: bool('statusLine', true),
   }
 }
 
 // ---------------------------------------------------------------- palette
 
 export type Palette = 'theme' | 'pastel'
-export type Colors = Record<'main' | 'agent' | 'gate' | 'cleared' | 'arch' | 'amber' | 'warn' | 'dim' | 'faint' | 'text', string>
+export type Colors = Record<'main' | 'agent' | 'ok' | 'arch' | 'apex' | 'amber' | 'warn' | 'dim' | 'faint' | 'text', string>
 
 /**
  * `theme` names the person's own theme colours (they follow light, dark and colour-blind themes);
@@ -156,9 +132,9 @@ export const PALETTES: Record<Palette, Colors> = {
   theme: {
     main: 'claude',
     agent: 'suggestion',
-    gate: 'success',
-    cleared: 'permission',
+    ok: 'success',
     arch: 'merged',
+    apex: 'planMode',
     amber: 'warning',
     warn: 'error',
     dim: 'inactive',
@@ -168,9 +144,9 @@ export const PALETTES: Record<Palette, Colors> = {
   pastel: {
     main: '#7dd3fc',
     agent: '#93c5fd',
-    gate: '#86efac',
-    cleared: '#5eead4',
+    ok: '#86efac',
     arch: '#c4b5fd',
+    apex: '#fdba74',
     amber: '#fcd34d',
     warn: '#fca5a5',
     dim: '#6b7280',
@@ -184,7 +160,6 @@ export const SVG_COLORS = { running: '#3b82f6', done: '#16a34a', failed: '#dc262
 
 // ---------------------------------------------------------------- formatting
 
-/** `claude-opus-5-5` → `Opus 5.5`; anything else is shown as given. */
 /**
  * A model id as people say it, from any provider's spelling: `claude-opus-5-5[1m]` → `Opus 5.5 1M`,
  * `us.anthropic.claude-sonnet-4-5-20250929-v1:0` → `Sonnet 4.5`, `claude-3-5-haiku-20241022` →
@@ -256,17 +231,12 @@ const SECRETS: [RegExp, string][] = [
   [/(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@]+:)[^\s@]+@/gi, '$1•••@'],
 ]
 
-/** What the gate drill-down may store: credentials masked before anything is written to state. */
+/** What the log and the cards may store: credentials masked before anything is written to state. */
 export const redact = (s: string) => SECRETS.reduce((t, [re, to]) => t.replace(re, to), s)
 
-// ---------------------------------------------------------------- tools and gate
+// ---------------------------------------------------------------- tools
 
-const FILE_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'Glob', 'Grep'])
-const SHELL_TOOLS = new Set(['Bash', 'PowerShell'])
 export const EDIT_TOOLS = new Set(['Edit', 'Write', 'NotebookEdit'])
-
-export const bucketOf = (tool: string): Bucket =>
-  FILE_TOOLS.has(tool) ? 'file' : SHELL_TOOLS.has(tool) ? 'shell' : 'other'
 
 /** One line saying what a call was about: its command, path or pattern; redacted. */
 export const describeInput = (tool: string, input: unknown) => {
@@ -279,61 +249,13 @@ export const describeInput = (tool: string, input: unknown) => {
   return redact(what ? `${tool} → ${what}` : tool)
 }
 
-/** Keeps the last `max` checks, but never drops a pending ask: its settle must still find it. */
-export const trimRecent = (list: Check[], max: number): Check[] => {
-  let extra = list.length - max
-  if (extra <= 0) return list
-  const out: Check[] = []
-  for (const c of list) {
-    if (extra > 0 && c.verdict !== 'ask') {
-      extra -= 1
-      continue
-    }
-    out.push(c)
-  }
-  return out.slice(-max * 2)
-}
-
-export const recordCheck = (g: Gate, c: Check): Gate => {
-  const t = g.totals[c.bucket]
-  return {
-    recent: trimRecent([...g.recent, c], 80),
-    totals: { ...g.totals, [c.bucket]: { ...t, [c.verdict]: t[c.verdict] + 1 } },
-  }
-}
-
-/** An `ask` settled by the call that followed it: it ran (cleared) or was refused (deny). */
-export const settleCheck = (g: Gate, id: string, didRun: boolean): Gate => {
-  const c = g.recent.find(r => r.id === id && r.verdict === 'ask')
-  if (!c) return g
-  const verdict = didRun ? 'cleared' : 'deny'
-  const t = g.totals[c.bucket]
-  return {
-    recent: g.recent.map(r => (r === c ? { ...r, verdict } : r)),
-    totals: { ...g.totals, [c.bucket]: { ...t, ask: Math.max(0, t.ask - 1), [verdict]: t[verdict] + 1 } },
-  }
-}
-
-export const gateSummary = (g: Gate) => {
-  const all = (['file', 'shell', 'other'] as const).reduce(
-    (s, k) => ({
-      rule: s.rule + g.totals[k].rule,
-      ask: s.ask + g.totals[k].ask,
-      cleared: s.cleared + g.totals[k].cleared,
-      deny: s.deny + g.totals[k].deny,
-    }),
-    { ...ZERO },
-  )
-  return { ...all, total: all.rule + all.ask + all.cleared + all.deny }
-}
-
 // ---------------------------------------------------------------- turn and architect
 
 /**
  * The turn after one tool call. Errors count in the main loop only (a subagent's failure is its
  * own); edits count from every loop, so delegated work still reaches "before done".
  */
-export const afterCall = (t: Turn, c: { inSubagent: boolean; hasFailed: boolean; isEdit: boolean }): Turn => ({
+export const afterCall = (t: DeckTurn, c: { inSubagent: boolean; hasFailed: boolean; isEdit: boolean }): DeckTurn => ({
   ...t,
   errorStreak: c.inSubagent ? t.errorStreak : c.hasFailed ? t.errorStreak + 1 : 0,
   errors: t.errors + (!c.inSubagent && c.hasFailed ? 1 : 0),
@@ -341,14 +263,14 @@ export const afterCall = (t: Turn, c: { inSubagent: boolean; hasFailed: boolean;
 })
 
 /** Which of the architect's three moments a consult falls at: an inference over this turn so far. */
-export const momentOf = (t: Pick<Turn, 'edits' | 'errorStreak'>): Moment =>
+export const momentOf = (t: Pick<DeckTurn, 'edits' | 'errorStreak'>): DeckMoment =>
   t.errorStreak >= 2 ? 'error repeats' : t.edits === 0 ? 'before a plan' : 'before done'
 
-export const startConsult = (a: Architect, c: { id: string; at: number; moment: Moment; via: string }): Architect =>
+export const startConsult = (a: DeckArchitect, c: { id: string; at: number; moment: DeckMoment; via: string }): DeckArchitect =>
   a.consults.some(x => x.id === c.id) ? a : { ...a, consults: [...a.consults, { ...c, endAt: null }].slice(-40) }
 
 /** Ends the open consult (the latest without an end), or the one named. */
-export const endConsult = (a: Architect, at: number, advice: string | null, id?: string): Architect => {
+export const endConsult = (a: DeckArchitect, at: number, advice: string | null, id?: string): DeckArchitect => {
   const open = [...a.consults].reverse().find(c => c.endAt === null && (id === undefined || c.id === id))
   return {
     ...a,
@@ -357,10 +279,10 @@ export const endConsult = (a: Architect, at: number, advice: string | null, id?:
   }
 }
 
-export const isAdvising = (a: Architect) => a.consults.some(c => c.endAt === null)
+export const isAdvising = (a: DeckArchitect) => a.consults.some(c => c.endAt === null)
 
 /** A one-row timeline of consults across `width` cells: ◆ a consult, ━ while it ran. */
-export const consultTimeline = (a: Architect, now: number, width: number) => {
+export const consultTimeline = (a: DeckArchitect, now: number, width: number) => {
   if (a.consults.length === 0 || width < 4) return '─'.repeat(Math.max(0, width))
   const first = a.consults[0]?.at ?? now
   const span = Math.max(1, now - first)
@@ -374,7 +296,7 @@ export const consultTimeline = (a: Architect, now: number, width: number) => {
   return cells.join('')
 }
 
-export const receiptOf = (t: Turn, o: { durationMs: number; agentsSince: number; costNow: number | null; reason: string }): Receipt => ({
+export const receiptOf = (t: DeckTurn, o: { durationMs: number; agentsSince: number; costNow: number | null; reason: string }): DeckReceipt => ({
   durationMs: o.durationMs,
   agents: o.agentsSince,
   edits: t.edits,
@@ -383,12 +305,12 @@ export const receiptOf = (t: Turn, o: { durationMs: number; agentsSince: number;
   reason: o.reason,
 })
 
-// ---------------------------------------------------------------- agents and loops
+// ---------------------------------------------------------------- agents
 
 type StepUsage = { input_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number; output_tokens?: number } | null
 
 /** A card after one of its model requests: its context is the latest step's whole input; output adds up. */
-export const applyStep = (c: AgentCard, s: { model: string; usage: StepUsage; stopReason: string | null }): AgentCard => {
+export const applyStep = (c: DeckAgentCard, s: { model: string; usage: StepUsage; stopReason: string | null }): DeckAgentCard => {
   const u = s.usage ?? {}
   const ctx = (u.input_tokens ?? 0) + (u.cache_read_input_tokens ?? 0) + (u.cache_creation_input_tokens ?? 0)
   return {
@@ -401,21 +323,10 @@ export const applyStep = (c: AgentCard, s: { model: string; usage: StepUsage; st
   }
 }
 
-export const noteTool = (c: AgentCard, n: ToolNote): AgentCard => ({ ...c, tools: [...c.tools, n].slice(-3) })
-
-export const stepLoop = (loops: Loop[], id: string, at: number): Loop[] => {
-  const found = loops.find(l => l.id === id)
-  const next = found
-    ? loops.map(l => (l === found ? { ...l, steps: l.steps + 1, lastAt: at } : l))
-    : [...loops, { id, steps: 1, firstAt: at, lastAt: at, isDone: false }]
-  return next.slice(-60)
-}
-
-export const LOOP_ACTIVE_MS = 15_000
-export const isLoopActive = (l: Loop, now: number) => !l.isDone && now - l.lastAt < LOOP_ACTIVE_MS
+export const noteTool = (c: DeckAgentCard, n: DeckToolNote): DeckAgentCard => ({ ...c, tools: [...c.tools, n].slice(-3) })
 
 /** Swimlane geometry: each agent's bar on one shared axis from the first spawn to now. */
-export const lanes = (cards: AgentCard[], now: number, width: number) => {
+export const lanes = (cards: DeckAgentCard[], now: number, width: number) => {
   const start = Math.min(...cards.map(c => c.spawnedAt).filter(n => n > 0), now)
   const span = Math.max(1, now - start)
   return cards.map(c => {
@@ -444,7 +355,7 @@ export const fitLegend = <T extends { label: string }>(items: T[], width: number
 }
 
 /** A card's title row: the task in the agent's own words, the type only when there is none. */
-export const cardTitle = (c: AgentCard) => c.description || c.type
+export const cardTitle = (c: DeckAgentCard) => c.description || c.type
 
 /** A title split over two rows at a word boundary: `first` cells on row one, `rest` on row two. */
 export const titleLines = (title: string, first: number, rest: number): [string, string] => {
@@ -489,4 +400,4 @@ export const adviceLine = (report: string) => {
   return shorten(first.replace(/\*\*|__/g, '').replace(/^[#>*\s-]+/, ''), 160)
 }
 
-export const elapsedOf = (c: AgentCard, now: number) => (c.endedAt ?? now) - c.spawnedAt
+export const elapsedOf = (c: DeckAgentCard, now: number) => (c.endedAt ?? now) - c.spawnedAt

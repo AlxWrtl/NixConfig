@@ -2,9 +2,9 @@
 // Every function returns the SAME array reference when nothing changed, so a
 // caller can skip the state write (and the redraw it causes).
 
-import type { ApexBandShell, ApexBandShellStatus } from '../types'
+import type { DeckApexShell, DeckApexShellStatus } from '../types'
 
-export type Shell = ApexBandShell
+export type Shell = DeckApexShell
 
 export const CAP = 50
 
@@ -23,7 +23,7 @@ const TEAMMATE = 'teammate'
 
 // An ended status word, or undefined for anything else (still running, or a
 // word this build does not name: the shell keeps `running`).
-export type EndedStatus = Exclude<ApexBandShellStatus, 'running'>
+export type EndedStatus = Exclude<DeckApexShellStatus, 'running'>
 
 function endedStatus(word: string | undefined): EndedStatus | undefined {
   if (word === 'completed' || word === 'failed' || word === 'killed') return word
@@ -140,4 +140,10 @@ export function closeBySnapshot(
 
 export function runningShells(shells: readonly Shell[]): number {
   return shells.filter(t => t.status === 'running').length
+}
+
+// A subagent's turn ended with `reason`: unless it answered, its still running shells close as
+// killed (their notification could only ever reach that loop). Any subagent, the architect too.
+export function shellsAfterTurn(shells: Shell[], agentId: string, reason: string, at: number): Shell[] {
+  return reason === 'answer' ? shells : closeOrphanShells(shells, agentId, at)
 }

@@ -1,13 +1,13 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { ApexBandRun, ApexBandStep, ApexBandStepKind, ApexBandVerdict } from '../types'
-import { alertsOf, budgetOf, isBudgetSpent, pickVerdict } from '../hooks/signals.ts'
+import type { DeckApexRun, DeckApexStep, DeckApexStepKind, DeckApexVerdict } from '../types'
+import { alertsOf, budgetOf, isBudgetSpent, pickVerdict } from '../hooks/signals'
 
-const step = (name: string, kind: ApexBandStepKind): ApexBandStep => ({ step: name, status: kind, kind })
+const step = (name: string, kind: DeckApexStepKind): DeckApexStep => ({ step: name, status: kind, kind })
 
-const RUN: ApexBandRun = { title: 't', steps: [step('03-execute', 'running')], dir: '42-x' }
+const RUN: DeckApexRun = { title: 't', steps: [step('03-execute', 'running')], dir: '42-x' }
 
-const verdict = (word: string, dir = '42-x'): ApexBandVerdict => ({ dir, verdict: word, findings: 3, mtimeMs: 1 })
+const verdict = (word: string, dir = '42-x'): DeckApexVerdict => ({ dir, verdict: word, findings: 3, mtimeMs: 1 })
 
 describe('correction budget', () => {
   test('budget spent: two rounds and no grant', () => {
@@ -56,7 +56,7 @@ describe('alertsOf', () => {
   })
 
   test('priority: failed step, then red verify, then spent budget', () => {
-    const run: ApexBandRun = { ...RUN, steps: [step('04-validate', 'failed'), step('05-examine', 'failed')] }
+    const run: DeckApexRun = { ...RUN, steps: [step('04-validate', 'failed'), step('05-examine', 'failed')] }
     expect(alertsOf(run, verdict('BLOCKED'), { dir: '42-x', rounds: 2, grants: 0 })).toEqual([
       { kind: 'step', step: '04-validate' },
       { kind: 'step', step: '05-examine' },

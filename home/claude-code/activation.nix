@@ -145,7 +145,9 @@
 
       # Intelligent merge: base provides defaults, existing preserves user changes
       # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox,
-      # effortLevel, alwaysThinkingEnabled, skillOverrides, autoMode. NEVER force .model:
+      # effortLevel, alwaysThinkingEnabled, skillOverrides, autoMode. Base without
+      # statusLine (the status bar is a mod): the live key is REMOVED, not kept.
+      # NEVER force .model:
       # /model and /fast are deliberate session choices that must survive rebuilds.
       # `.skillOverrides` est dans la liste par nécessité : sans force-override,
       # il n'arriverait que par le deep merge `.[0] * .[1]`, où le live gagne sur
@@ -183,7 +185,7 @@
         BASE_AM=$(jq -c '.autoMode' "$BASE")
         jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
           | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" --argjson so "$BASE_SKILLOV" --argjson am "$BASE_AM" \
-            '.statusLine = $sl | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th | .skillOverrides = $so
+            '(if $sl == null then del(.statusLine) else .statusLine = $sl end) | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th | .skillOverrides = $so
              | (if $am == null then . else .autoMode = $am end)
              # legacy: `voiceEnabled` (clé plate) est encore lue par le binaire
              # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas

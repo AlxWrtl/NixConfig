@@ -241,7 +241,20 @@ let
   excludedCommands = pkgs.lib.attrByPath [ "sandbox" "excludedCommands" ] [ ] settingsAttrs;
   preToolUse = pkgs.lib.attrByPath [ "hooks" "PreToolUse" ] [ ] settingsAttrs;
 
-  agentsOnHaiku = builtins.filter (n: agentField "model" n == "haiku") agentNames;
+  # Haiku is allowed on read-only agents only: an explicit `tools:` line with
+  # no write-capable tool. No `tools:` line means every tool, so it counts.
+  writeTools = [
+    "Write"
+    "Edit"
+    "Bash"
+  ];
+  canWrite =
+    n:
+    let
+      tools = agentField "tools" n;
+    in
+    tools == null || builtins.any (w: hasInfix w tools) writeTools;
+  agentsOnHaiku = builtins.filter (n: agentField "model" n == "haiku" && canWrite n) agentNames;
 
   webFetchScoped = builtins.filter (e: builtins.isString e && hasPrefix "WebFetch(" e) allow;
   # Bare or scoped: any WebFetch in deny/ask blocks or prompts the run's fetches.
@@ -515,12 +528,12 @@ let
         + " — a skill that ships without its footer ships without a contract: the model gets no statement of what the skill expects and produces, no boundary saying when NOT to use it, and no routing to the skill that should take over, so it improvises all three. The mechanism is nix again: a `''` block closed too early ends the attribute mid-document and the trailing sections land inside the NEXT attribute — it parses, A10 still sees a frontmatter at column 0, the 500-line ceiling is still met, and the text is simply deployed to the wrong file. That is how scrapling lost its guardrails and its contract with an all-green build. A DEAD exemption is the same failure one level up: a hand-maintained list cannot fail loudly, only be silently wrong";
     }
     {
-      name = "A12 agents: no agent runs on haiku";
+      name = "A12 agents: haiku runs read-only agents only";
       ok = agentsOnHaiku == [ ];
       msg =
-        "agent(s) with `model: haiku`: "
+        "write-capable agent(s) with `model: haiku`: "
         + builtins.concatStringsSep ", " agentsOnHaiku
-        + " — the mechanical tier moved to sonnet; a haiku agent reintroduces a tier the routing table (ORCHESTRATION) no longer knows, so the table and the agent disagree on what that agent costs and can do";
+        + " — haiku holds the read-only search tier (ORCHESTRATION, measured 2026-10-09: same files found as sonnet); an agent that can Write, Edit or run Bash stays on sonnet or opus";
     }
     {
       name = "A13 settings: WebFetch is allowed on every domain";

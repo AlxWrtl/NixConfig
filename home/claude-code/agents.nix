@@ -101,7 +101,7 @@
   agentNavigator = ''
     ---
     name: codebase-navigator
-    model: sonnet
+    model: haiku
     effort: low
     description: "Explores and maps codebases without modifying files. Use proactively when tasks say where is, find, locate, how does X work, trace, entrypoint, audit, or when understanding structure before delegating."
     tools: Grep, Glob, Read, WebFetch

@@ -358,6 +358,8 @@ in
       flightdeck.options = {
         openOnStart = false;
         statusLine = false;
+        # Gate panel hidden: in auto mode it only counts allowed checks.
+        panels = "main,architect,agents,loops,receipt,log";
       };
     };
 

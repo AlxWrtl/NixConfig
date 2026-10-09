@@ -38,7 +38,26 @@ in
   # from normal Agent use. Once a marker names a run, every failure denies:
   # fail-open is the unbounded loop this hook exists to stop. Guardrail, not
   # barrier: `none` is a visible claim.
+  # A marked Agent brief must name model "opus" (absent denied), checked
+  # before any slot is claimed; SendMessage carries no model. The cap is
+  # MAX_ROUNDS plus one per <run-id>.grant<n> file correction-grant.js wrote.
+  # Also on CronCreate/ScheduleWakeup: a scheduled prompt comes back as a user
+  # turn, so one with an `apex: +1 tour` line is denied (same TOKEN line as
+  # correction-grant.js); any other scheduler call passes, uncounted.
   hookCorrectionBudget = builtins.readFile ./hooks/correction-budget.js;
+
+  # UserPromptSubmit: the user's grant of one more correction round. A prompt
+  # whose FIRST non-empty line is exactly `apex: +1 tour` (case and spacing
+  # free) grants the live run of this project — the one with the newest
+  # round among runs with a dir under the prompt's (absolute) cwd — one
+  # round, only if its budget is spent (rounds >= MAX_ROUNDS + grants); one
+  # <run-id>.grant<n> per prompt (O_EXCL). Task notifications and agent
+  # hand-backs also fire this event, without agent_id: a prompt carrying a
+  # harness wrapper marker (<task-notification, <agent-message, …) grants
+  # nothing, nor does any agent_id key, a "continue", the token below the
+  # first line, a round file that cannot be stat'ed or a tie. Fail-open:
+  # unreadable input, a throw or the watchdog grant nothing and say nothing.
+  hookCorrectionGrant = builtins.readFile ./hooks/correction-grant.js;
 
   # PreToolUse on Agent: research agents run on haiku (ORCHESTRATION, Analyze
   # fan-out row). An Explore or codebase-navigator spawn whose `model` is not

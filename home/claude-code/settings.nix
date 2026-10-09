@@ -625,13 +625,15 @@ in
           ];
         }
         {
-          matcher = "Agent|SendMessage";
+          matcher = "Agent|SendMessage|CronCreate|ScheduleWakeup";
           hooks = [
             {
               type = "command";
               # APEX correction-round budget: denies the 3rd marked round of a
-              # run, spawned or re-briefed by SendMessage. NOT async — a deny
-              # must land before the spawn.
+              # run, spawned or re-briefed by SendMessage, and a CronCreate or
+              # ScheduleWakeup prompt carrying the `apex: +1 tour` grant line
+              # (it would come back as a user turn). NOT async — a deny must
+              # land before the spawn.
               command = "${node} ~/.claude/hooks/correction-budget.js";
               timeout = 5;
             }
@@ -745,6 +747,14 @@ in
               type = "command";
               command = "bash ~/.claude/hooks/apex-reminder.sh";
               timeout = 3;
+            }
+            {
+              type = "command";
+              # Correction-round grant: a prompt line `apex: +1 tour` gives
+              # the spent run one more round. NOT async — the grant must be
+              # on disk before the coordinator re-spawns.
+              command = "${node} ~/.claude/hooks/correction-grant.js";
+              timeout = 5;
             }
           ];
         }

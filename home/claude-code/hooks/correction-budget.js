@@ -9,6 +9,11 @@ const BUDGET_MS = 3000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MARKER = /^[\s>*`-]*APEX-CORRECTION-ROUND:\s*([^\s`]*)[\s`]*$/;
 const MENTIONS = /06-resolve\.md|correction round/i;
+const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
+// Same line as correction-grant.js: a scheduled prompt comes back as a user
+// turn, so the model may not schedule the user's grant.
+const TOKEN = /^\s*apex\s*:\s*\+1\s+tour\s*$/i;
+const SCHEDULERS = ["CronCreate", "ScheduleWakeup"];
 
 let settled = false;
 let marked = null;
@@ -68,6 +73,17 @@ function failed(why) {
   allow();
 }
 
+// Rounds the user granted this run past MAX_ROUNDS: one <run>.grant<n> file
+// each, written by correction-grant.js from the user's own prompt.
+function grantsOf(dir, run) {
+  let n = 0;
+  for (const f of fs.readdirSync(dir)) {
+    const m = GRANT.exec(f);
+    if (m && m[1] === run) n++;
+  }
+  return n;
+}
+
 let input = "";
 let ran = false;
 
@@ -75,6 +91,15 @@ function main() {
   let data;
   try { data = JSON.parse(input); } catch { allow(); return; }
   if (!data || typeof data !== "object" || Array.isArray(data)) { allow(); return; }
+  if (SCHEDULERS.includes(data.tool_name)) {
+    const sp = data.tool_input && typeof data.tool_input === "object" ? data.tool_input.prompt : undefined;
+    if (typeof sp === "string" && sp.split(/\r?\n/).some((l) => TOKEN.test(l))) {
+      deny("BLOCKED: a scheduled prompt may not carry the correction-grant token; only the user types it.");
+      return;
+    }
+    allow();
+    return;
+  }
   if (data.tool_name !== "Agent" && data.tool_name !== "Task" && data.tool_name !== "SendMessage") { allow(); return; }
   const ti = data.tool_input;
   if (!ti || typeof ti !== "object" || Array.isArray(ti)) { allow(); return; }
@@ -110,6 +135,10 @@ function main() {
     return;
   }
 
+  // A correction round runs on opus, checked before any slot is claimed:
+  // a denied brief spends nothing. SendMessage carries no model.
+  if (data.tool_name !== "SendMessage" && ti.model !== "opus") { const asked = ti.model === undefined || ti.model === null || ti.model === "" ? "absent" : "\"" + safe(ti.model) + "\""; deny("BLOCKED: correction rounds run on opus. This correction brief for run " + marker + " has model " + asked + "; re-spawn it with model: \"opus\". No round was counted."); return; }
+
   const home = process.env.HOME || os.homedir();
   const dir = path.join(home, ".claude", "apex-correction-budget");
   const stamp = JSON.stringify({
@@ -121,7 +150,8 @@ function main() {
   try { fs.mkdirSync(dir, { recursive: true }); } catch { denyState("unwritable", dir); return; }
 
   // Claim a slot by exclusive create: of two racing rounds, one wins.
-  for (let n = 1; n <= MAX_ROUNDS; n++) {
+  const cap = MAX_ROUNDS + grantsOf(dir, marker);
+  for (let n = 1; n <= cap; n++) {
     const slot = path.join(dir, marker + ".round" + n);
     try {
       fs.writeFileSync(slot, stamp, { flag: "wx" });
@@ -133,7 +163,7 @@ function main() {
     allow();
     return;
   }
-  deny("budget de correction épuisé (" + MAX_ROUNDS + "/" + MAX_ROUNDS + ") : livrer avec la liste des résiduels, ou demander à l'utilisateur (run " + marker + ")");
+  deny("budget de correction épuisé (" + cap + "/" + cap + ") pour le run " + marker + " : STOP. Livrer avec la liste des résiduels, ou demander à l'utilisateur de taper `apex: +1 tour` seul sur une ligne (une ronde de plus, sur opus) ; un « continue » n'accorde rien. Ne jamais faire la ronde soi-même inline : le coordinateur ne corrige pas son propre travail.");
 }
 
 function start() {

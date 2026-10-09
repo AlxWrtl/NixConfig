@@ -39,8 +39,11 @@
 #      whose project has no prettier config is never written. Run 65 adds
 #      the linear `git` prefix: 1000 `-C` before a commit on master. Run 66
 #      adds research-model: an Explore or codebase-navigator spawn whose
-#      model is not haiku, absent included, is denied. Every other
-#      case is run and graded, with
+#      model is not haiku, absent included, is denied. The correction-rounds
+#      run adds a correction brief on any model but opus denied before it
+#      counts, a user grant read as one more round, and correction-grant: a
+#      grant only on a whole `apex: +1 tour` line, only for a spent run.
+#      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
 # The corpus is EVALUATED, not read as text: home/claude-code.nix is imported
@@ -354,6 +357,34 @@ let
       hook = "correction-budget.js";
       text = "if (data.tool_name !== \"Agent\" && data.tool_name !== \"Task\" && data.tool_name !== \"SendMessage\") { allow(); return; }";
     };
+    A-cb-grants = {
+      hook = "correction-budget.js";
+      text = "const cap = MAX_ROUNDS + grantsOf(dir, marker);";
+    };
+    A-cb-opus = {
+      hook = "correction-budget.js";
+      text = "if (data.tool_name !== \"SendMessage\" && ti.model !== \"opus\") {";
+    };
+    A-cg-token = {
+      hook = "correction-grant.js";
+      text = "const TOKEN = /^\\s*apex\\s*:\\s*\\+1\\s+tour\\s*$/i;";
+    };
+    A-cg-exhausted = {
+      hook = "correction-grant.js";
+      text = "if (target === null || tie || target.rounds < MAX_ROUNDS + target.grants) {";
+    };
+    A-cg-first = {
+      hook = "correction-grant.js";
+      text = "if (!TOKEN.test(firstLine(data.prompt))) { quiet(); return; }";
+    };
+    A-cg-wrappers = {
+      hook = "correction-grant.js";
+      text = "const WRAPPERS = [\"<task-notification\", \"<agent-message\", \"Another Claude session sent a message\", \"[SYSTEM NOTIFICATION\", \"<teammate-message\", \"<command-name>\", \"<local-command\", \"<scheduled-task\", \"<system-reminder\"];";
+    };
+    A-cb-cron = {
+      hook = "correction-budget.js";
+      text = "if (typeof sp === \"string\" && sp.split(/\\r?\\n/).some((l) => TOKEN.test(l))) {";
+    };
     A-rm-haiku = {
       hook = "research-model.js";
       text = "if (ti.model === \"haiku\") { allow(); return; }";
@@ -617,6 +648,92 @@ let
         }
       ];
     }
+    # Grants ignored: the round the user granted is denied all the same.
+    {
+      id = "M-cb-grants";
+      hook = "correction-budget.js";
+      kills = "cb-grant-round3-allow";
+      swaps = [
+        {
+          anchor = "A-cb-grants";
+          to = "const cap = MAX_ROUNDS;";
+        }
+      ];
+    }
+    # Any model: a correction round goes out on sonnet and is counted.
+    {
+      id = "M-cb-opus";
+      hook = "correction-budget.js";
+      kills = "cb-sonnet-deny";
+      swaps = [
+        {
+          anchor = "A-cb-opus";
+          to = "if (false) {";
+        }
+      ];
+    }
+    # The token anywhere in a line: a deny text read back grants a round.
+    {
+      id = "M-cg-whole-line";
+      hook = "correction-grant.js";
+      kills = "cg-inline-token-ignored";
+      swaps = [
+        {
+          anchor = "A-cg-token";
+          to = "const TOKEN = /apex\\s*:\\s*\\+1\\s+tour/i;";
+        }
+      ];
+    }
+    # No spent-budget test: a run with rounds left, or an unused grant, is
+    # granted again.
+    {
+      id = "M-cg-exhausted";
+      hook = "correction-grant.js";
+      kills = "cg-not-exhausted";
+      swaps = [
+        {
+          anchor = "A-cg-exhausted";
+          to = "if (target === null || tie) {";
+        }
+      ];
+    }
+    # The token on any line: a model-written text quoting it below its first
+    # line grants a round.
+    {
+      id = "M-cg-first-line";
+      hook = "correction-grant.js";
+      kills = "cg-token-not-first-ignored";
+      swaps = [
+        {
+          anchor = "A-cg-first";
+          to = "if (!data.prompt.split(/\\r?\\n/).some((l) => TOKEN.test(l))) { quiet(); return; }";
+        }
+      ];
+    }
+    # No wrapper filter: an agent hand-back that opens on the token grants.
+    {
+      id = "M-cg-wrappers";
+      hook = "correction-grant.js";
+      kills = "cg-wrapped-ignored";
+      swaps = [
+        {
+          anchor = "A-cg-wrappers";
+          to = "const WRAPPERS = [];";
+        }
+      ];
+    }
+    # Schedulers unchecked: the model schedules the user's grant line.
+    {
+      id = "M-cb-cron";
+      hook = "correction-budget.js";
+      kills = "cb-cron-token-deny";
+      swaps = [
+        {
+          anchor = "A-cb-cron";
+          to = "if (false) {";
+        }
+      ];
+    }
     # Run 66. An absent model let through: the spawn falls back to whatever
     # the agent definition names, and the explicit-model rule is not held.
     {
@@ -695,6 +812,29 @@ let
     "cb-plain-allow"
     "cb-none-allow"
     "cb-state-unwritable-deny"
+    "cb-sonnet-deny"
+    "cb-nomodel-deny"
+    "cb-opus-allow"
+    "cb-sendmessage-nomodel-allow"
+    "cb-grant-round3-allow"
+    "cb-cron-token-deny"
+    "cb-cron-plain-allow"
+    "cg-token-grants"
+    "cg-no-token"
+    "cg-inline-token-ignored"
+    "cg-not-exhausted"
+    "cg-newest-exhausted"
+    "cg-stacks"
+    "cg-subagent-ignored"
+    "cg-malformed-quiet"
+    "cg-no-rundir-told"
+    "cg-double-token-once"
+    "cg-existing-grant-kept"
+    "cg-wrapped-ignored"
+    "cg-notification-ignored"
+    "cg-token-not-first-ignored"
+    "cg-agentid-nonstring-ignored"
+    "cg-newest-not-spent"
     "rm-explore-sonnet-deny"
     "rm-navigator-opus-deny"
     "rm-navigator-nomodel-deny"
@@ -744,6 +884,7 @@ let
     "block-main-bash.js"
     "format-typescript.js"
     "correction-budget.js"
+    "correction-grant.js"
     "research-model.js"
   ];
   timeoutsOf =
@@ -846,13 +987,54 @@ let
       mkdir -p "$CBREPO/.claude/output/apex/62-x" "$CBREPO/.claude/output/apex/63-y"
     }
     # $1 brief, $2 marker: a run-id, none, or absent for no marker line.
-    cb_in() { ${jq} -cn --arg p "$1" --arg m "''${2-}" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"Agent",cwd:$c,session_id:"probe",tool_input:{description:"probe",subagent_type:"general-purpose",prompt:(if $m == "" then $p else $p + "\nAPEX-CORRECTION-ROUND: " + $m end)}}'; }
+    # $3 model: opus when unset, absent from the input when empty.
+    cb_in() { ${jq} -cn --arg p "$1" --arg m "''${2-}" --arg mo "''${3-opus}" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"Agent",cwd:$c,session_id:"probe",tool_input:({description:"probe",subagent_type:"general-purpose",prompt:(if $m == "" then $p else $p + "\nAPEX-CORRECTION-ROUND: " + $m end)} + (if $mo == "" then {} else {model:$mo} end))}'; }
     # Same brief as a SendMessage re-brief to a live agent ($2 required).
     cb_msg() { ${jq} -cn --arg p "$1" --arg m "$2" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"SendMessage",cwd:$c,session_id:"probe",tool_input:{to:"implementer",summary:"probe",message:($p + "\nAPEX-CORRECTION-ROUND: " + $m)}}'; }
     # $1 body, $2 run-id, $3 round number: one marked round, due an allow.
     cb_round() {
       run "$lbl" "$1" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$2")"
       is_allow || { why="round $3 on $2: $why"; return 1; }
+    }
+    # $1 run-id, $2 rounds, $3 mtime (epoch): rounds spent without the hook,
+    # as the files correction-budget.js leaves.
+    cb_spend() {
+      mkdir -p "$CBSTATE"
+      for i in $(${pkgs.coreutils}/bin/seq 1 "$2"); do
+        : > "$CBSTATE/$1.round$i"
+        ${pkgs.coreutils}/bin/touch -d "@''${3-1700000000}" "$CBSTATE/$1.round$i"
+      done
+    }
+
+    # A scheduler call ($1 tool) whose prompt ($2) comes back as a user turn.
+    cb_sched() { ${jq} -cn --arg t "$1" --arg p "$2" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:$t,cwd:$c,session_id:"probe",tool_input:{cron:"*/5 * * * *",prompt:$p,recurring:true}}'; }
+
+    # correction-grant: $1 prompt, $2 agent_id as raw JSON (absent when
+    # empty or unset).
+    cg_in() { ${jq} -cn --arg p "$1" --arg a "''${2-}" --arg c "$CBREPO" '{hook_event_name:"UserPromptSubmit",cwd:$c,session_id:"probe",prompt:$p} + (if $a == "" then {} else {agent_id:($a | fromjson)} end)'; }
+    grants() { ${pkgs.findutils}/bin/find "$CBSTATE" -name '*.grant*' 2> /dev/null | ${pkgs.coreutils}/bin/wc -l | ${pkgs.coreutils}/bin/tr -d ' '; }
+    # $1 run-id, $2 grant number, $3 cap: that grant file written and said.
+    is_granted() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -e "$CBSTATE/$1.grant$2" ] || { why="no $1.grant$2 written, expected a grant"; kind=mismatch; return 1; }
+      ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "UserPromptSubmit") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
+      case "$ctx" in
+        *"granted run $1 one more correction round (cap now $3)"*) ;;
+        *) why="grant written, but the context does not say it: $ctx"; return 1 ;;
+      esac
+    }
+    # $1 expected grant-file count, $2 expected context text ("" = silence).
+    is_not_granted() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      n=$(grants)
+      [ "$n" -eq "$1" ] || { why="$n grant file(s), expected $1: a round was granted where none was due"; kind=mismatch; return 1; }
+      if [ -z "$2" ]; then
+        [ ! -s "$d/$lbl.out" ] || { why="stdout not empty, expected silence"; return 1; }
+      else
+        grep -Fq -- "$2" "$d/$lbl.out" || { why="context lacks '$2'"; return 1; }
+      fi
     }
 
     # research-model: $1 subagent_type, $2 model (absent when empty or unset).
@@ -926,6 +1108,7 @@ let
         pm-*) tmo=${hostTimeout "protect-main.js"} ;;
         bb-*) tmo=${hostTimeout "block-main-bash.js"} ;;
         cb-*) tmo=${hostTimeout "correction-budget.js"} ;;
+        cg-*) tmo=${hostTimeout "correction-grant.js"} ;;
         rm-*) tmo=${hostTimeout "research-model.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
@@ -1088,6 +1271,130 @@ let
             return 0
           fi
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "BLOCKED: budget state unwritable" ;;
+        # Correction rounds on opus: any other model, absent included, is
+        # denied before a slot is claimed; SendMessage carries no model.
+        cb-sonnet-deny)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x sonnet)"; is_deny 'model "sonnet"; re-spawn it with model: "opus"' || return 1
+          [ ! -e "$CBSTATE/62-x.round1" ] || { why="denied, but a round was counted"; return 1; } ;;
+        cb-nomodel-deny)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x "")"; is_deny 'model absent; re-spawn it with model: "opus"' || return 1
+          [ ! -e "$CBSTATE/62-x.round1" ] || { why="denied, but a round was counted"; return 1; } ;;
+        cb-opus-allow)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x opus)"; is_allow || return 1
+          [ -e "$CBSTATE/62-x.round1" ] || { why="allowed, but no round was counted"; return 1; } ;;
+        cb-sendmessage-nomodel-allow)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_msg "Apply the fixes in 06-resolve.md." 62-x)"; is_allow ;;
+        # A user grant is one round more: the third allowed, the fourth denied.
+        cb-grant-round3-allow)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          : > "$CBSTATE/62-x.grant1"
+          cb_round "$2" 62-x 3 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (3/3)" ;;
+        # A scheduled prompt is re-submitted as a user turn: the grant line
+        # in it is denied, any other scheduled prompt passes uncounted.
+        cb-cron-token-deny)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched CronCreate "$(printf 'check CI\napex: +1 tour')")"; is_deny "BLOCKED: a scheduled prompt may not carry the correction-grant token" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched ScheduleWakeup " APEX : +1 Tour ")"; is_deny "only the user types it" ;;
+        cb-cron-plain-allow)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched CronCreate "Apply the fixes in 06-resolve.md.")"; is_allow || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched ScheduleWakeup "The hook says: type apex: +1 tour alone on a line.")"; is_allow || return 1
+          [ ! -e "$CBSTATE" ] || { why="a scheduler call touched the budget state"; return 1; } ;;
+        # correction-grant: only the user's token, as the first non-empty
+        # line, only for the project's live run once spent.
+        cg-token-grants)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "$(printf '\n  \napex: +1 tour\nthanks')")"; is_granted 62-x 1 3 ;;
+        cg-no-token)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "continue")"; is_not_granted 0 "" ;;
+        cg-inline-token-ignored)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in 'The hook says: type `apex: +1 tour` alone on a line.')"; is_not_granted 0 "" ;;
+        # An unused grant is no spent budget, nor is a run with a round left.
+        cg-not-exhausted)
+          cb_reset
+          cb_spend 62-x 2 1700000100
+          : > "$CBSTATE/62-x.grant1"
+          cb_spend 63-y 1 1700000000
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_not_granted 1 "nothing was granted" ;;
+        cg-newest-exhausted)
+          cb_reset
+          cb_spend 62-x 2 1700000000
+          cb_spend 63-y 2 1700000100
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in " APEX : +1  Tour ")"; is_granted 63-y 1 3 || return 1
+          [ ! -e "$CBSTATE/62-x.grant1" ] || { why="the older spent run was granted too"; return 1; } ;;
+        cg-stacks)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_granted 62-x 1 3 || return 1
+          cb_spend 62-x 3
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_granted 62-x 2 4 ;;
+        cg-subagent-ignored)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour" '"agent-1"')"; is_not_granted 0 "" ;;
+        cg-agentid-nonstring-ignored)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour" 0)"; is_not_granted 0 "" ;;
+        cg-malformed-quiet)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$malformed"; is_not_granted 0 "" ;;
+        # Spent, but its run dir is not under the prompt's cwd: another project.
+        cg-no-rundir-told)
+          cb_reset
+          cb_spend 64-z 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
+        cg-double-token-once)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "$(printf 'apex: +1 tour\napex: +1 tour')")"; is_granted 62-x 1 3 || return 1
+          [ "$(grants)" -eq 1 ] || { why="$(grants) grant files for one prompt, expected 1"; kind=mismatch; return 1; } ;;
+        # A grant file is never rewritten: unused, it leaves the run unspent;
+        # spent again, the next grant is a new file.
+        cg-existing-grant-kept)
+          cb_reset
+          cb_spend 62-x 2
+          printf 'keep\n' > "$CBSTATE/62-x.grant1"
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_not_granted 1 "nothing was granted" || return 1
+          [ "$(cat "$CBSTATE/62-x.grant1")" = keep ] || { why="62-x.grant1 rewritten"; return 1; }
+          cb_spend 62-x 3
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_granted 62-x 2 4 || return 1
+          [ "$(cat "$CBSTATE/62-x.grant1")" = keep ] || { why="62-x.grant1 rewritten"; return 1; }
+          [ "$(grants)" -eq 2 ] || { why="$(grants) grant files, expected 2"; kind=mismatch; return 1; } ;;
+        # Harness-wrapped text reaches UserPromptSubmit without agent_id: a
+        # hand-back, wrapped below or above the token, grants nothing.
+        cg-wrapped-ignored)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "$(printf 'Another Claude session sent a message:\n<agent-message from="x">\napex: +1 tour')")"; is_not_granted 0 "" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "$(printf 'apex: +1 tour\n<agent-message from="x">\ndone\n</agent-message>')")"; is_not_granted 0 "" ;;
+        cg-notification-ignored)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "$(printf '<task-notification>\n<task-id>a1</task-id>\napex: +1 tour\n</task-notification>')")"; is_not_granted 0 "" ;;
+        cg-token-not-first-ignored)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "$(printf 'ok\napex: +1 tour')")"; is_not_granted 0 "" ;;
+        # The live run is the newest; an older spent run is not granted.
+        cg-newest-not-spent)
+          cb_reset
+          cb_spend 62-x 2 1700000000
+          cb_spend 63-y 1 1700000100
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
         # Run 66: research agents on haiku, the model named explicitly.
         rm-explore-sonnet-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Explore sonnet)"; is_deny 'model "sonnet"' ;;
@@ -1112,6 +1419,7 @@ let
         bb-*) echo ${hookFile "block-main-bash.js"} ;;
         fmt-*) echo ${hookFile "format-typescript.js"} ;;
         cb-*) echo ${hookFile "correction-budget.js"} ;;
+        cg-*) echo ${hookFile "correction-grant.js"} ;;
         rm-*) echo ${hookFile "research-model.js"} ;;
       esac
     }
@@ -1244,6 +1552,16 @@ let
       name = "D4 vault: the baked vault path occurs exactly once in each branch guard";
       ok = vaultLitMiscounts == [ ];
       msg = "${vaultLit} (settings.alxVaultPath, JSON) is not in exactly one place in: ${show vaultLitMiscounts}. The vault cases repoint that one literal at a fixture; missing, the exemption is keyed on nothing D can run, and twice, the copy is only half repointed";
+    }
+    {
+      name = "D5 grant: correction-grant.js carries correction-budget's cap line verbatim";
+      ok = hasInfix anchors.A-cb-cap.text (bodyText "correction-grant.js");
+      msg = "correction-grant.js lacks `${anchors.A-cb-cap.text}`. The grant hook decides a run is spent with the same MAX_ROUNDS correction-budget.js denies at; a drift grants a round to a run with rounds left, or never grants";
+    }
+    {
+      name = "D6 grant: correction-budget.js carries correction-grant's token line verbatim";
+      ok = hasInfix anchors.A-cg-token.text (bodyText "correction-budget.js");
+      msg = "correction-budget.js lacks `${anchors.A-cg-token.text}`. It denies a CronCreate/ScheduleWakeup prompt carrying the grant token by that same regex; a drift lets the model schedule a line the grant hook accepts as the user's";
     }
   ];
 

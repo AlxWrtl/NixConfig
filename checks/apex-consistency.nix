@@ -71,6 +71,16 @@ let
       scope = skills.apexOrchestration;
     }
     {
+      name = "verify: correction rounds run on opus";
+      needle = "Correction rounds always run on `model: opus`";
+      scope = skills.apexOrchestration;
+    }
+    {
+      name = "verify: a spent budget is extended by the user's grant token only";
+      needle = "ask the user to type `apex: +1 tour`";
+      scope = skills.apexOrchestration;
+    }
+    {
       name = "verify: checks are never weakened to pass";
       needle = "Never weaken a check";
     }

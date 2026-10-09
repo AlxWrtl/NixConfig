@@ -30,7 +30,7 @@ in
       CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
       CLAUDE_STREAM_IDLE_TIMEOUT_MS = "600000";
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
-      # Mods (task-board, apex-band) copied to ~/.claude/mods by activation.
+      # Every mod named in mods.nix, copied to ~/.claude/mods by activation.
       CLAUDE_CODE_PLUGIN_DIRS = mods.pluginDirs homeDirectory;
     };
 

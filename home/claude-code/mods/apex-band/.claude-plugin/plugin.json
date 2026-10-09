@@ -1,7 +1,7 @@
 {
   "name": "apex-band",
-  "version": "0.1.0",
-  "description": "Bande au-dessus du prompt : run APEX en cours (titre, mode, étape, branche, baseline) ; /apex-pane ouvre le détail (phases ≈ tokens, sous-agents, totaux, vérif externe).",
+  "version": "0.2.0",
+  "description": "Bande calme au-dessus du prompt (3 lignes max) : run APEX (phases, durée, coût), sous-agents et shells actifs par modèle, et seulement ce qui demande d'agir ; /apex-pane (alias /task-board) ouvre le détail (phases, sous-agents, shells, totaux, vérif externe).",
   "author": { "name": "alx" },
   "types": "./types/index.d.ts"
 }

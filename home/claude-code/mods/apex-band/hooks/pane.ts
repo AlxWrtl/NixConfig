@@ -1,13 +1,24 @@
-// Pure layout of the /apex-pane pane: the run's header, its phases with
-// approximate token counts, one three-line card per subagent, the totals and
-// the external verdict once there is one. Every line fits `cols` cells (hard
-// cut otherwise); below 40 columns the share bar and the card's type and
-// model are dropped.
+// Pure layout of the APEX detail pane (/apex-pane, alias /task-board): what
+// asks the user to act, the run's header and its phases with approximate
+// token counts, one line per subagent, one line per background shell, the
+// totals and the external verdict once there is one. Finished subagents and
+// shells past MAX_DONE fold into a « +N terminés » line unless `showAll`.
+// Every line fits `cols` cells (hard cut otherwise); below 40 columns the
+// share bar and the subagent's model are dropped.
 
 import type { ThemeKey } from 'claude-code'
 
-import type { ApexBandLoop, ApexBandLoopStatus, ApexBandPhases, ApexBandRun, ApexBandVerdict } from '../types'
-import { hardCut, join, meta, stepLabel, stepMark, width } from './band.ts'
+import type {
+  ApexBandAlert,
+  ApexBandLoop,
+  ApexBandLoopStatus,
+  ApexBandPhases,
+  ApexBandRun,
+  ApexBandShell,
+  ApexBandShellStatus,
+  ApexBandVerdict,
+} from '../types'
+import { alertLine, hardCut, join, meta, stepLabel, stepMark, textCells, truncate, width } from './band.ts'
 import type { Seg } from './band.ts'
 import { MAIN, countedTotal, loopDuration, splitTotals } from './stats.ts'
 
@@ -18,15 +29,20 @@ export type PaneInput = {
   now: number
   cost: number | null
   verdict: ApexBandVerdict | null
+  shells: readonly ApexBandShell[]
+  alerts: readonly ApexBandAlert[]
+  showAll: boolean
 }
 
-// Columns under which the bar and the card's type and model are dropped.
+// Columns under which the bar and the subagent's model are dropped.
 export const NARROW = 40
-// Finished cards shown before the « +N terminés » line.
+// Finished subagents (and, apart, finished shells) shown before the fold.
 export const MAX_DONE = 6
 const BAR_CELLS = 10
 const TOKEN_CELLS = 6
 const MAX_LABEL = 12
+// A cut label keeps at least this many cells before the detail shrinks.
+const MIN_LABEL = 10
 
 const pad2 = (n: number): string => String(n).padStart(2, '0')
 
@@ -62,6 +78,32 @@ export function loopMark(status: ApexBandLoopStatus): Seg {
   if (status === 'done') return { text: '✓', tone: 'success' }
   if (status === 'failed') return { text: '✗', tone: 'error' }
   return { text: '■', tone: 'inactive' }
+}
+
+// The glyph of a shell status and its tone: killed (■) apart from failed.
+export function shellMark(status: ApexBandShellStatus): Seg {
+  if (status === 'running') return { text: '●', tone: 'warning' }
+  if (status === 'completed') return { text: '✓', tone: 'success' }
+  if (status === 'failed') return { text: '✗', tone: 'error' }
+  return { text: '■', tone: 'inactive' }
+}
+
+// The shells' counts by status, non-zero only, in a fixed order (« shell »
+// is masculine: finis, échoués, arrêtés).
+export function shellSummary(shells: readonly ApexBandShell[]): Seg[] {
+  const n = (status: ApexBandShellStatus): number => shells.filter(s => s.status === status).length
+  const parts: Seg[][] = []
+  const running = n('running')
+  if (running > 0) parts.push([{ text: `${running} en cours`, tone: 'warning', bold: true }])
+  for (const [status, word] of [
+    ['completed', 'fini'],
+    ['failed', 'échoué'],
+    ['killed', 'arrêté'],
+  ] as const) {
+    const count = n(status)
+    if (count > 0) parts.push([{ text: plural(count, word), tone: shellMark(status).tone }])
+  }
+  return join(parts)
 }
 
 // The glyph and tone of an external verdict word.
@@ -103,49 +145,84 @@ function phaseRows(run: ApexBandRun, phases: ApexBandPhases, cols: number): Seg[
   return rows
 }
 
-// A card's detail lines. From NARROW: line A model · duration · in X · out Y
-// (in = input + cache writes), line B type · tool · N appels · cache X (when
-// any cache read); below NARROW one line tool · duration.
-function cardDetail(loop: ApexBandLoop, now: number, cols: number): string[] {
-  const dur = formatDuration(loopDuration(loop, now))
-  const parts = (list: readonly (string | undefined)[]): string =>
-    list.filter((p): p is string => p !== undefined && p !== '').join(' · ')
-  if (cols < NARROW) return [parts([loop.tool, dur])]
-  const { input, output, cacheRead, cacheWrite } = loop.tally
-  return [
-    parts([loop.model, dur, `in ${fmtTokens(input + cacheWrite)}`, `out ${fmtTokens(output)}`]),
-    parts([loop.type, loop.tool, plural(loop.calls, 'appel'), cacheRead > 0 ? `cache ${fmtTokens(cacheRead)}` : undefined]),
+// One row: glyph, label (bold while running, dim once finished), then the
+// dim ` · `-joined details; the label is cut first (down to MIN_LABEL
+// cells), then the details are dropped from the first, then a hard cut.
+function row(mark: Seg, raw: string, isRunning: boolean, details: readonly string[], cols: number): Seg[] {
+  // One line: a multiline command or description collapsed before measuring.
+  const label = raw.replace(/\s+/g, ' ').trim()
+  const style = isRunning ? { bold: true } : { dim: true }
+  const build = (text: string, kept: readonly string[]): Seg[] => [
+    mark,
+    { text: ` ${text}`, ...style },
+    ...(kept.length > 0 ? [{ text: ` · ${kept.join(' · ')}`, dim: true }] : []),
   ]
+  const minLabel = Math.min(MIN_LABEL, textCells(label))
+  for (let drop = 0; drop <= details.length; drop++) {
+    const kept = details.slice(drop)
+    const room = cols - width(build('', kept))
+    if (room >= minLabel) return build(truncate(label, room), kept)
+  }
+  return hardCut(build(label, []), cols)
 }
 
-// One subagent's card: glyph and label (bold while running), then its dim
-// detail lines; a finished card is dim throughout.
-function card(loop: ApexBandLoop, now: number, cols: number): Seg[][] {
-  const running = loop.status === 'running'
-  const label = loop.label ?? loop.type ?? loop.id
-  const head: Seg[] = [loopMark(loop.status), running ? { text: ` ${label}`, bold: true } : { text: ` ${label}`, dim: true }]
-  return [head, ...cardDetail(loop, now, cols).map(detail => [{ text: `  ${detail}`, dim: true }])]
+// A subagent's row: label · model · tokens (counted, cache reads aside;
+// none while 0) · time. Below NARROW the model is left out.
+function agentRow(loop: ApexBandLoop, now: number, cols: number): Seg[] {
+  const tokens = countedTotal(loop.tally)
+  const details = [
+    ...(cols >= NARROW && loop.model !== undefined && loop.model !== '' ? [loop.model] : []),
+    ...(tokens > 0 ? [fmtTokens(tokens)] : []),
+    formatDuration(loopDuration(loop, now)),
+  ]
+  return row(loopMark(loop.status), loop.label ?? loop.type ?? loop.id, loop.status === 'running', details, cols)
 }
 
-// The « Sous-agents » block: running cards (oldest first), then finished
-// ones (most recent first), at most MAX_DONE of them, the rest counted.
-function cards(loops: readonly ApexBandLoop[], now: number, cols: number): Seg[][] {
-  const subs = loops.filter(l => l.id !== MAIN)
+// A shell's row: label · time (frozen once it ended).
+function shellRow(shell: ApexBandShell, now: number, cols: number): Seg[] {
+  const time = formatDuration((shell.endedAt ?? now) - shell.startedAt)
+  return row(shellMark(shell.status), shell.label, shell.status === 'running', [time], cols)
+}
+
+// Running items first (oldest first), then finished ones (most recent
+// first), at most MAX_DONE of them unless `showAll`, the rest counted.
+function folded<T extends { startedAt: number; endedAt?: number }>(
+  items: readonly T[],
+  isRunning: (item: T) => boolean,
+  showAll: boolean,
+): { shown: T[]; hidden: number } {
+  const running = items.filter(isRunning).sort((a, b) => a.startedAt - b.startedAt)
+  const done = items
+    .filter(i => !isRunning(i))
+    .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))
+  const keep = showAll ? done.length : MAX_DONE
+  return { shown: [...running, ...done.slice(0, keep)], hidden: Math.max(0, done.length - keep) }
+}
+
+const foldLine = (hidden: number): Seg[] => [{ text: `+${hidden} terminés`, dim: true }]
+
+// The « Sous-agents » block, one line each.
+function agentRows(subs: readonly ApexBandLoop[], now: number, showAll: boolean, cols: number): Seg[][] {
   const rows: Seg[][] = [[{ text: 'Sous-agents', bold: true }]]
   if (subs.length === 0) return [...rows, [{ text: 'aucun pour l’instant', dim: true }]]
-  const running = subs.filter(l => l.status === 'running').sort((a, b) => a.startedAt - b.startedAt)
-  const done = subs
-    .filter(l => l.status !== 'running')
-    .sort((a, b) => (b.endedAt ?? b.startedAt) - (a.endedAt ?? a.startedAt))
-  for (const loop of running) rows.push(...card(loop, now, cols))
-  for (const loop of done.slice(0, MAX_DONE)) rows.push(...card(loop, now, cols))
-  if (done.length > MAX_DONE) rows.push([{ text: `+${done.length - MAX_DONE} terminés`, dim: true }])
+  const { shown, hidden } = folded(subs, l => l.status === 'running', showAll)
+  for (const loop of shown) rows.push(agentRow(loop, now, cols))
+  if (hidden > 0) rows.push(foldLine(hidden))
+  return rows
+}
+
+// The « Shells en arrière-plan » block: the counts, then one line each.
+function shellRows(shells: readonly ApexBandShell[], now: number, showAll: boolean, cols: number): Seg[][] {
+  const rows: Seg[][] = [[{ text: 'Shells en arrière-plan', bold: true }], shellSummary(shells)]
+  const { shown, hidden } = folded(shells, s => s.status === 'running', showAll)
+  for (const shell of shown) rows.push(shellRow(shell, now, cols))
+  if (hidden > 0) rows.push(foldLine(hidden))
   return rows
 }
 
 // The « Totaux » block: main loop vs subagents (counted tokens, cache reads
-// excluded), the cache reads apart (dim, when any), then the session's cost;
-// groups that do not fit `cols` wrap onto a next line.
+// excluded), the cache reads apart (dim, when there are some), then the
+// session's cost; groups that do not fit `cols` wrap onto a next line.
 function totals(loops: readonly ApexBandLoop[], cost: number | null, cols: number): Seg[][] {
   const { main, sub } = splitTotals(loops)
   const cache = main.cacheRead + sub.cacheRead
@@ -176,26 +253,35 @@ function verdictRows(verdict: ApexBandVerdict | null, run: ApexBandRun): Seg[][]
   ]
 }
 
-// The pane as lines of segments, each within max(1, cols) cells.
+// The pane as lines of segments, each within max(1, cols) cells. Sections:
+// Action (alerts, when there are some) · the run or its absence ·
+// Sous-agents (with a run, or once one was seen) · Shells en arrière-plan
+// (once one was seen) · Totaux (as Sous-agents) · Vérif externe (once the run
+// has one).
 export function layoutPane(input: PaneInput, cols: number): Seg[][] {
   const w = Math.max(1, cols)
   const { run } = input
+  const lines: Seg[][] = []
+  if (input.alerts.length > 0) {
+    lines.push([{ text: 'Action', bold: true }], ...input.alerts.map(a => alertLine(a, w)), BLANK)
+  }
   if (run === null) {
-    return [
+    lines.push(
       [{ text: 'Aucun run APEX en cours.', dim: true }],
       [{ text: 'Lancez /apex ; le détail s’affiche ici.', dim: true }],
-    ].map(line => hardCut(line, w))
+    )
+  } else {
+    const metaLine = join(meta(run).map(m => m.segs))
+    lines.push([{ text: `APEX · ${run.title}`, bold: true }], ...(metaLine.length > 0 ? [metaLine] : []))
+    const phases = phaseRows(run, input.phases, w)
+    if (phases.length > 0) lines.push(BLANK, ...phases)
   }
-  const metaLine = join(meta(run).map(m => m.segs))
-  const lines: Seg[][] = [
-    [{ text: `APEX · ${run.title}`, bold: true }],
-    ...(metaLine.length > 0 ? [metaLine] : []),
-  ]
-  const phases = phaseRows(run, input.phases, w)
-  if (phases.length > 0) lines.push(BLANK, ...phases)
-  lines.push(BLANK, ...cards(input.loops, input.now, w))
-  lines.push(BLANK, ...totals(input.loops, input.cost, w))
-  const verdict = verdictRows(input.verdict, run)
+  const subs = input.loops.filter(l => l.id !== MAIN)
+  const withAgents = run !== null || subs.length > 0
+  if (withAgents) lines.push(BLANK, ...agentRows(subs, input.now, input.showAll, w))
+  if (input.shells.length > 0) lines.push(BLANK, ...shellRows(input.shells, input.now, input.showAll, w))
+  if (withAgents) lines.push(BLANK, ...totals(input.loops, input.cost, w))
+  const verdict = run === null ? [] : verdictRows(input.verdict, run)
   if (verdict.length > 0) lines.push(BLANK, ...verdict)
   return lines.map(line => hardCut(line, w))
 }

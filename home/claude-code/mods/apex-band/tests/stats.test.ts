@@ -7,6 +7,9 @@ import {
   applySnapshot,
   endLoop,
   endTool,
+  endedOwners,
+  launchLoop,
+  listedIds,
   loopDuration,
   parseVerdict,
   shortModel,
@@ -15,6 +18,7 @@ import {
   syncPhases,
   tallyTotal,
   countedTotal,
+  subagentsRunning,
 } from '../hooks/stats.ts'
 import type { Usage } from '../hooks/stats.ts'
 
@@ -173,8 +177,11 @@ describe('reconciliation', () => {
     expect(ended[0]?.endedBy).toBe('turn')
     expect(ended[0]?.durationMs).toBe(5_000)
     const snap = [{ id: 'a1', description: '', type: '', status: 'failed' }]
-    expect(applySnapshot(ended, snap, 10_000)).toBe(ended)
-    expect(endLoop(ended, 'a1', 'error', 1, 11_000)).toBe(ended)
+    // Only marked listed: status, duration and end kept.
+    const snapped = applySnapshot(ended, snap, 10_000)
+    expect(snapped[0]).toEqual({ ...ended[0], listed: true })
+    expect(applySnapshot(snapped, snap, 11_000)).toBe(snapped)
+    expect(endLoop(snapped, 'a1', 'error', 1, 11_000)).toBe(snapped)
   })
 })
 
@@ -187,5 +194,155 @@ describe('syncPhases', () => {
     const back = syncPhases(b, 'run-a')
     expect(back).toEqual({ dir: 'run-a', byStep: {} })
     expect(syncPhases(a, null)).toEqual({ dir: null, byStep: {} })
+  })
+})
+
+// Ported from task-board's board.test (agent cases): the ledger is now the
+// one list of subagents.
+describe('agent snapshot', () => {
+  const explore = { id: 'a1', description: 'explore', type: 'Explore', status: 'running' }
+
+  test('agent snapshot adds unknown agents and finishes ended ones', () => {
+    const added = applySnapshot([], [explore], 10)
+    expect(added).toHaveLength(1)
+    expect(added[0]?.status).toBe('running')
+    expect(added[0]?.label).toBe('explore')
+    expect(added[0]?.type).toBe('Explore')
+    expect(added[0]?.startedAt).toBe(10)
+    const ended = applySnapshot(added, [{ ...explore, status: 'failed' }], 20)
+    expect(ended[0]?.status).toBe('failed')
+    expect(applySnapshot(ended, [{ ...explore, status: 'failed' }], 30)).toBe(ended)
+  })
+
+  test('an unknown agent already ended is added with its final status, never running', () => {
+    for (const [word, status] of [['completed', 'done'], ['failed', 'failed'], ['killed', 'stopped']] as const) {
+      const added = applySnapshot([], [{ ...explore, status: word }], 10)
+      expect(added[0]?.status).toBe(status)
+      expect(added[0]?.endedAt).toBe(10)
+      expect(added[0]?.listed).toBe(true)
+      expect(subagentsRunning(added)).toBe(false)
+      expect(applySnapshot(added, [{ ...explore, status: word }], 20)).toBe(added)
+    }
+  })
+
+  test('an unknown idle agent is added listed and idle: nothing at work', () => {
+    const added = applySnapshot([], [{ ...explore, status: 'idle' }], 10)
+    expect(added[0]?.idle).toBe(true)
+    expect(subagentsRunning(added)).toBe(false)
+    // Back at work: counted again; idle once more: not.
+    const busy = applySnapshot(added, [explore], 20)
+    expect(busy[0]?.idle).toBeUndefined()
+    expect(subagentsRunning(busy)).toBe(true)
+    expect(subagentsRunning(applySnapshot(busy, [{ ...explore, status: 'idle' }], 30))).toBe(false)
+    for (const word of ['pending', 'waiting'] as const) {
+      expect(subagentsRunning(applySnapshot([], [{ ...explore, status: word }], 10))).toBe(true)
+    }
+  })
+
+  test('a fork (steps under an id never listed) is not at work and orphans nothing', () => {
+    const fork = addStep([], { agentId: 'f1', model: 'm', usage: null }, 0)
+    expect(subagentsRunning(fork)).toBe(false)
+    expect(listedIds(fork)).toEqual([])
+    expect(endedOwners(fork, endLoop(fork, 'f1', 'aborted', 1, 1))).toEqual([])
+    expect(endedOwners(fork, endLoop(fork, 'f1', 'error', 1, 1))).toEqual([])
+    const named = applySnapshot(fork, [{ id: 'f1', description: 'now listed', type: 'Explore', status: 'running' }], 2)
+    expect(listedIds(named)).toEqual(['f1'])
+    expect(subagentsRunning(named)).toBe(true)
+  })
+
+  test('a teammate is never finished by a snapshot or a turn', () => {
+    const list = applySnapshot([], [{ id: 't1', description: 'mate', type: 'teammate', status: 'idle' }], 0)
+    expect(list[0]?.status).toBe('running')
+    expect(applySnapshot(list, [{ id: 't1', description: 'mate', type: 'teammate', status: 'completed' }], 1)).toBe(list)
+    expect(endLoop(list, 't1', 'answer', 5, 2)).toBe(list)
+  })
+
+  test("a teammate's turn ending only clears its tool", () => {
+    const mate = applySnapshot([], [{ id: 't1', description: 'mate', type: 'teammate', status: 'running' }], 0)
+    const busy = startTool(mate, { agentId: 't1', tool: 'Bash', toolUseId: 'u1' }, 1)
+    const idle = endLoop(busy, 't1', 'answer', 5, 9)
+    expect(idle[0]?.status).toBe('running')
+    expect(idle[0]?.tool).toBeUndefined()
+    expect(idle[0]?.toolUseId).toBeUndefined()
+    expect(endLoop(idle, 't1', 'answer', 5, 10)).toBe(idle)
+  })
+
+  test('turn.complete maps answer / aborted / error / refusal', () => {
+    const one = launchLoop([], { id: 'a1', label: 'x', type: 'Explore' }, 0)
+    expect(endLoop(one, 'a1', 'answer', 1, 1)[0]?.status).toBe('done')
+    expect(endLoop(one, 'a1', 'aborted', 1, 1)[0]?.status).toBe('stopped')
+    expect(endLoop(one, 'a1', 'error', 1, 1)[0]?.status).toBe('failed')
+    expect(endLoop(one, 'a1', 'refusal', 1, 1)[0]?.status).toBe('failed')
+    expect(endLoop(one, 'nope', 'answer', 1, 1)).toBe(one)
+  })
+
+  test('the turn ending clears the tool, keeps the tokens', () => {
+    let loops = launchLoop([], { id: 'a1', label: 'x', type: 'Explore' }, 0)
+    loops = startTool(loops, { agentId: 'a1', tool: 'Grep', toolUseId: 'g1' }, 1)
+    loops = addStep(loops, { agentId: 'a1', model: 'm', usage: { ...USAGE, cache_read_input_tokens: 900_000 } }, 2)
+    const done = endLoop(loops, 'a1', 'answer', 9, 9)
+    expect(done[0]?.status).toBe('done')
+    expect(done[0]?.tool).toBeUndefined()
+    // Counted tokens leave the cache reads out (task-board's noteStep rule).
+    expect(countedTotal(done[0]?.tally ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(34)
+  })
+})
+
+describe('launchLoop', () => {
+  test('a background launch adds a running named loop; a known one only gets its missing names', () => {
+    const one = launchLoop([], { id: 'a1', label: 'scan', type: 'Explore' }, 5)
+    expect(one[0]?.status).toBe('running')
+    expect(one[0]?.label).toBe('scan')
+    expect(one[0]?.since).toBe(5)
+    expect(launchLoop(one, { id: 'a1', label: 'other', type: 'Plan' }, 6)).toBe(one)
+    const stepped = addStep([], { agentId: 'a2', model: 'm', usage: null }, 0)
+    const named = launchLoop(stepped, { id: 'a2', label: 'late' }, 1)
+    expect(named[0]?.label).toBe('late')
+    expect(named[0]?.steps).toBe(1)
+  })
+
+  test('the model asked at launch is shown until a step reports its own', () => {
+    const one = launchLoop([], { id: 'a1', label: 'scan', type: 'Explore', model: 'haiku' }, 5)
+    expect(one[0]?.model).toBe('haiku')
+    expect(one[0]?.listed).toBe(true)
+    const stepped = addStep(one, { agentId: 'a1', model: 'claude-sonnet-5', usage: null }, 6)
+    expect(stepped[0]?.model).toBe('sonnet-5')
+    // A launch seen after the first step keeps the step's model.
+    const late = launchLoop(addStep([], { agentId: 'a2', model: 'claude-opus-5-5', usage: null }, 0), { id: 'a2', model: 'haiku' }, 1)
+    expect(late[0]?.model).toBe('opus-5.5')
+  })
+})
+
+describe('endedOwners', () => {
+  test('a subagent ended failed or stopped is named; done, main and teammates are not', () => {
+    let before = launchLoop([], { id: 'a1', type: 'Explore' }, 0)
+    before = launchLoop(before, { id: 'a2', type: 'Explore' }, 0)
+    before = launchLoop(before, { id: 'a3', type: 'Explore' }, 0)
+    before = addStep(before, { model: 'm', usage: null }, 0)
+    let after = endLoop(before, 'a1', 'error', 1, 1)
+    after = endLoop(after, 'a2', 'aborted', 1, 1)
+    after = endLoop(after, 'a3', 'answer', 1, 1)
+    after = endLoop(after, undefined, 'error', 1, 1)
+    expect(endedOwners(before, after)).toEqual(['a1', 'a2'])
+    expect(endedOwners(after, after)).toEqual([])
+    const snapped = applySnapshot(before, [{ id: 'a3', description: '', type: 'Explore', status: 'killed' }], 2)
+    expect(endedOwners(before, snapped)).toEqual(['a3'])
+  })
+
+  test('subagentsRunning ignores the main loop', () => {
+    const main = addStep([], { model: 'm', usage: null }, 0)
+    expect(subagentsRunning(main)).toBe(false)
+    const sub = launchLoop(main, { id: 'a1' }, 0)
+    expect(subagentsRunning(sub)).toBe(true)
+    expect(subagentsRunning(endLoop(sub, 'a1', 'answer', 1, 1))).toBe(false)
+  })
+
+  test('a teammate never counts as running (it is never ended), a subagent beside it does', () => {
+    const mate = applySnapshot([], [{ id: 't1', description: 'mate', type: 'teammate', status: 'running' }], 0)
+    expect(mate[0]?.status).toBe('running')
+    expect(subagentsRunning(mate)).toBe(false)
+    const after = endLoop(mate, 't1', 'answer', 1, 1)
+    expect(subagentsRunning(after)).toBe(false)
+    expect(subagentsRunning(launchLoop(after, { id: 'a1' }, 2))).toBe(true)
   })
 })

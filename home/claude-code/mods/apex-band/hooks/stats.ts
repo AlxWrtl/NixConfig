@@ -1,6 +1,6 @@
-// Pure bookkeeping of the pane: per-loop counters (steps, tool calls, token
-// counts, running time), per-phase token buckets and the external verdict
-// read from external-verify.json. Every function returns
+// Pure bookkeeping of the band and pane: per-loop counters (steps, tool
+// calls, token counts, running time), per-phase token buckets and the
+// external verdict read from the run's verify file. Every function returns
 // the same reference when nothing changed, so a caller can skip the write.
 
 import type { ApexBandLoop, ApexBandLoopStatus, ApexBandPhases, ApexBandTally } from '../types'
@@ -150,6 +150,9 @@ export function reasonStatus(reason: string): ApexBandLoopStatus {
   return 'failed'
 }
 
+// The agent type of a teammate: it goes `idle` between turns, never ends here.
+export const TEAMMATE = 'teammate'
+
 // Loop `agentId`'s turn completed after `durationMs`. A running loop ends;
 // a loop the agent snapshot ended first is reconciled once (the turn's
 // duration and reason replace the snapshot's estimate); an unknown loop or
@@ -165,8 +168,16 @@ export function endLoop(
   const i = loops.findIndex(l => l.id === id)
   const loop = loops[i]
   if (loop === undefined) return loops
-  const given = Number.isFinite(durationMs) && durationMs > 0
   const out = [...loops]
+  // A teammate's turn ending is not the teammate ending: only its current
+  // tool is cleared (it waits for its next message).
+  if (loop.type === TEAMMATE) {
+    if (loop.tool === undefined) return loops
+    const { tool: _tool, toolUseId: _use, ...rest } = loop
+    out[i] = rest
+    return out
+  }
+  const given = Number.isFinite(durationMs) && durationMs > 0
   if (loop.status === 'running') {
     const spent = given ? durationMs : at - (loop.since ?? at)
     out[i] = { ...finish(loop, reasonStatus(reason), spent, at), endedBy: 'turn' }
@@ -190,18 +201,34 @@ function snapStatus(status: string): ApexBandLoopStatus | undefined {
   return undefined
 }
 
-// The agent list applied to the known loops: description and type filled
-// in, a running loop whose agent ended is ended. Never reopens a loop.
+// A listed loop's idle mark as the agent list reads it (a teammate's never
+// set: it is never counted at work anyway).
+function withIdle(loop: ApexBandLoop, status: string): ApexBandLoop {
+  const idle = status === 'idle' && loop.type !== TEAMMATE
+  if (idle === (loop.idle === true)) return loop
+  if (idle) return { ...loop, idle: true }
+  const { idle: _idle, ...rest } = loop
+  return rest
+}
+
+// The agent list applied to the loops: each listed loop marked listed (and
+// idle while the list reads it so), description and type filled in, a
+// running loop whose agent ended is ended (never a teammate's: it goes idle
+// between turns). A listed agent not known yet is added: running while at
+// work (idle: marked so), with its final status when already ended (a
+// teammate always running). Never reopens a loop.
 export function applySnapshot(loops: ApexBandLoop[], agents: readonly AgentSnap[], at: number): ApexBandLoop[] {
   let out: ApexBandLoop[] | undefined
   loops.forEach((loop, i) => {
     const agent = agents.find(a => a.id === loop.id)
     if (agent === undefined) return
-    let next = loop
+    let next = loop.listed === true ? loop : { ...loop, listed: true }
     if (next.label === undefined && agent.description !== '') next = { ...next, label: agent.description }
     if (next.type === undefined && agent.type !== '') next = { ...next, type: agent.type }
+    next = withIdle(next, agent.status)
     const ended = snapStatus(agent.status)
-    if (ended !== undefined && next.status === 'running') {
+    const isMate = next.type === TEAMMATE || agent.type === TEAMMATE
+    if (ended !== undefined && next.status === 'running' && !isMate) {
       // Kept: `since` lets the turn's own end replace this estimate (endLoop).
       const since = next.since
       next = { ...finish(next, ended, at - (since ?? at), at), ...(since === undefined ? {} : { since }), endedBy: 'snapshot' }
@@ -210,8 +237,79 @@ export function applySnapshot(loops: ApexBandLoop[], agents: readonly AgentSnap[
     out ??= [...loops]
     out[i] = next
   })
+  for (const agent of agents) {
+    if (agent.id === MAIN || (out ?? loops).some(l => l.id === agent.id)) continue
+    const fresh = withIdle({ ...named(freshLoop(agent.id, at), agent.description, agent.type), listed: true }, agent.status)
+    const ended = snapStatus(agent.status)
+    const added =
+      ended === undefined || fresh.type === TEAMMATE ? fresh : { ...finish(fresh, ended, 0, at), since: at, endedBy: 'snapshot' as const }
+    out = [...(out ?? loops), added]
+  }
   return out ?? loops
 }
+
+// The subagent loops the agent list named or an Agent call launched: the
+// owners whose leaving the list orphans their shells (closeBySnapshot).
+export function listedIds(loops: readonly ApexBandLoop[]): string[] {
+  return loops.filter(l => l.id !== MAIN && l.listed === true).map(l => l.id)
+}
+
+// A loop with its label and type filled in where it has none yet.
+function named(loop: ApexBandLoop, label: string | undefined, type: string | undefined): ApexBandLoop {
+  let next = loop
+  if (next.label === undefined && label !== undefined && label !== '') next = { ...next, label }
+  if (next.type === undefined && type !== undefined && type !== '') next = { ...next, type }
+  return next
+}
+
+// A background subagent launched (Agent answered async_launched): its loop
+// added as running and listed, or named when its first step came first.
+// The model asked at launch is shown until a step reports the one it ran.
+export function launchLoop(
+  loops: ApexBandLoop[],
+  agent: { id: string; label?: string; type?: string; model?: string },
+  at: number,
+): ApexBandLoop[] {
+  const asked = agent.model === undefined ? '' : shortModel(agent.model)
+  const mark = (loop: ApexBandLoop): ApexBandLoop => {
+    const withNames = named(loop, agent.label, agent.type)
+    const listed = withNames.listed === true ? withNames : { ...withNames, listed: true }
+    return listed.model === undefined && asked !== '' ? { ...listed, model: asked } : listed
+  }
+  const i = loops.findIndex(l => l.id === agent.id)
+  const loop = loops[i]
+  if (loop === undefined) return [...loops, mark(freshLoop(agent.id, at))]
+  const next = mark(loop)
+  if (next === loop) return loops
+  const out = [...loops]
+  out[i] = next
+  return out
+}
+
+// The listed subagents that went from running (or unknown) to failed or
+// stopped between `before` and `after`, teammates aside: their background
+// shells can no longer notify anyone (shells.ts closeOrphanShells). A loop
+// never listed is left out: its type (a teammate?) is not known yet.
+export function endedOwners(before: readonly ApexBandLoop[], after: readonly ApexBandLoop[]): string[] {
+  const ids: string[] = []
+  for (const loop of after) {
+    if (loop.id === MAIN || loop.listed !== true || loop.type === TEAMMATE) continue
+    if (loop.status !== 'failed' && loop.status !== 'stopped') continue
+    const was = before.find(l => l.id === loop.id)
+    if (was === undefined || was.status === 'running') ids.push(loop.id)
+  }
+  return ids
+}
+
+// A subagent loop at work: listed (a fork or a workflow agent seen by its
+// steps alone is not one), not idle, running; the main loop aside, and a
+// teammate aside (it is never ended here, so it would read as running for as
+// long as it lives; the pane still lists it).
+export const isWorking = (loop: ApexBandLoop): boolean =>
+  loop.id !== MAIN && loop.listed === true && loop.idle !== true && loop.type !== TEAMMATE && loop.status === 'running'
+
+// True while a subagent loop works (see isWorking).
+export const subagentsRunning = (loops: readonly ApexBandLoop[]): boolean => loops.some(isWorking)
 
 // The buckets kept for run `dir` (null: no live run), started over when the
 // polled run's directory is another one; the same reference when equal.

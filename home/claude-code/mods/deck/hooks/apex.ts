@@ -2,7 +2,7 @@
 // spelling tolerated), its liveness rule, the per-phase token buckets, the external verdict
 // file, and what the block and the log show of it. No `$`, no clock, no I/O.
 
-import type { DeckApexPhases, DeckApexRun, DeckApexStep, DeckApexStepKind, DeckApexTally } from '../types'
+import type { DeckApexPhases, DeckApexRun, DeckApexSessionRun, DeckApexStep, DeckApexStepKind, DeckApexTally } from '../types'
 
 // ---------------------------------------------------------------- context file
 
@@ -140,11 +140,45 @@ export function bareShown(run: DeckApexRun, stepMs: number, head: string | undef
 /**
  * The run dir a poll found against the last one seen this session: new only when a previous run
  * was seen and the dir differs. `last` survives a poll with no run (a miss, an ended run), so the
- * same run coming back is not new.
+ * same run coming back is not new. From a session key the poll never finds a new run: the call
+ * that set it already counted (callSwitch), and the folder it then writes is that same run.
  */
 export function runSwitch(last: string | null, dir: string | null): { isNew: boolean; last: string | null } {
   if (dir === null) return { isNew: false, last }
-  return { isNew: last !== null && last !== dir, last: dir }
+  return { isNew: last !== null && last !== dir && !isSessionDir(last), last: dir }
+}
+
+// ---------------------------------------------------------------- session run
+
+// A session run's key, in the run dir's place: never a folder name (a folder holds no colon here).
+const SESSION_PREFIX = 'session:'
+
+/** The run key of the main-loop Skill(apex) call started at `startedAt`. */
+export const sessionKey = (startedAt: number): string => `${SESSION_PREFIX}${startedAt}`
+
+/** A run key set by a Skill(apex) call rather than by a folder under .claude/output/apex. */
+export const isSessionDir = (dir: string): boolean => dir.startsWith(SESSION_PREFIX)
+
+/** A main-loop Skill(apex) call: a new run once any run was seen this session. */
+export function callSwitch(last: string | null, key: string): { isNew: boolean; last: string } {
+  return { isNew: last !== null, last: key }
+}
+
+/**
+ * The run a main-loop Skill(apex) call stands for while no run folder is live: shown off the
+ * trunk (HEAD neither master nor main) and under BARE_STALE_MS after the last call; HEAD as
+ * header, no tier, one current `apex` row.
+ */
+export function sessionRunOf(at: DeckApexSessionRun | null, head: string | undefined, now: number): DeckApexRun | null {
+  if (at === null || head === 'master' || head === 'main' || now - at.lastAt >= BARE_STALE_MS) return null
+  const run: DeckApexRun = {
+    title: 'apex',
+    steps: [{ step: 'apex', status: 'in progress', kind: 'running' }],
+    currentStep: 'apex',
+    dir: sessionKey(at.startedAt),
+  }
+  if (head !== undefined) run.branch = head
+  return run
 }
 
 /**

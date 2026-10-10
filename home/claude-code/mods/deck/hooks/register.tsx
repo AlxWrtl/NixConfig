@@ -18,6 +18,7 @@ import type {
   DeckApexBudget,
   DeckApexPhases,
   DeckApexRun,
+  DeckApexSessionRun,
   DeckApexShell,
   DeckApexVerdict,
   DeckArchitect,
@@ -79,6 +80,7 @@ import {
   addPhase,
   apexHeader,
   bareShown,
+  callSwitch,
   countedTotal,
   headBranch,
   isLive,
@@ -90,6 +92,9 @@ import {
   phaseNote,
   runFromFiles,
   runSwitch,
+  isSessionDir,
+  sessionKey,
+  sessionRunOf,
   settleRun,
   syncPhases,
 } from './apex'
@@ -132,6 +137,7 @@ const phases = atom({ plugin: 'deck', key: 'phases' } as const, { dir: null, byS
 const verdict = atom({ plugin: 'deck', key: 'verdict' } as const, null)
 const budget = atom({ plugin: 'deck', key: 'budget' } as const, null)
 const shells = atom({ plugin: 'deck', key: 'shells' } as const, [])
+const sessionRun = atom({ plugin: 'deck', key: 'sessionRun' } as const, null)
 
 // Module-level: a hot reload drops the environment and its timer with it.
 let timer: Timer | undefined
@@ -245,6 +251,7 @@ async function resetAll($: EngineInterface) {
   await update($, verdict, () => null)
   await update($, budget, () => null)
   await update($, shells, () => [])
+  await update($, sessionRun, () => null)
 }
 
 /** The session's cost read fresh, not from the last measurement: the receipt subtracts two of these. */
@@ -348,8 +355,36 @@ async function newestRun($: EngineInterface, root: string): Promise<RunDir | und
   return best
 }
 
+// HEAD's branch, or undefined: no repo here, or a worktree whose .git is a file.
+async function readHead($: EngineInterface, cwd: string): Promise<string | undefined> {
+  try {
+    return headBranch(await $.fs.read(`${cwd}/.git/HEAD`))
+  } catch {
+    // Unreadable HEAD: branch unknown, shown.
+    return undefined
+  }
+}
+
+// The session's last main-loop Skill(apex) call, or null (an older shape reads as none).
+async function getSessionRun($: EngineInterface): Promise<DeckApexSessionRun | null> {
+  const value: unknown = await read($, sessionRun)
+  const startedAt = numberField(value, 'startedAt')
+  const lastAt = numberField(value, 'lastAt')
+  if (startedAt === undefined || lastAt === undefined) return null
+  return { startedAt, lastAt, args: stringField(value, 'args') ?? '' }
+}
+
+// The live run folder, else the session's Skill(apex) call (HEAD read only when there is one).
 async function scan($: EngineInterface): Promise<DeckApexRun | null> {
   const cwd = await $.session.cwd()
+  const folder = await scanFolder($, cwd)
+  if (folder !== null) return folder
+  const at = await getSessionRun($)
+  if (at === null) return null
+  return sessionRunOf(at, await readHead($, cwd), await $.clock.now())
+}
+
+async function scanFolder($: EngineInterface, cwd: string): Promise<DeckApexRun | null> {
   const root = `${cwd}/.claude/output/apex`
   const newest = await newestRun($, root)
   if (newest === undefined) return null
@@ -373,13 +408,7 @@ async function scan($: EngineInterface): Promise<DeckApexRun | null> {
   }
   const now = await $.clock.now()
   if (!isLive(parsed, liveMs, now)) return null
-  let head: string | undefined
-  try {
-    head = headBranch(await $.fs.read(`${cwd}/.git/HEAD`))
-  } catch {
-    // No repo here, or a worktree whose .git is a file: branch unknown, shown.
-    head = undefined
-  }
+  const head = await readHead($, cwd)
   // Without a context file the header names the folder (no branch); hidden on the trunk, live 1 h.
   if (newest.context === undefined && !bareShown(parsed, liveMs, head, now)) return null
   return onBranch(parsed, head) ? { ...parsed, dir: newest.dir } : null
@@ -413,7 +442,8 @@ async function changeShells($: EngineInterface, fn: (value: DeckApexShell[]) => 
 // re-read only when that file's mtime moved.
 async function refreshVerdict($: EngineInterface, found: DeckApexRun | null): Promise<void> {
   const dir = found?.dir
-  if (dir === undefined) return putVerdict($, null)
+  // A session run has no folder: nothing to list.
+  if (dir === undefined || isSessionDir(dir)) return putVerdict($, null)
   const runDir = `${await $.session.cwd()}/.claude/output/apex/${dir}`
   let newest: { name: string; mtimeMs: number } | null = null
   try {
@@ -444,7 +474,7 @@ async function refreshVerdict($: EngineInterface, found: DeckApexRun | null): Pr
 async function refreshBudget($: EngineInterface, found: DeckApexRun | null): Promise<void> {
   const dir = found?.dir
   const home = await $.env.get('HOME')
-  if (dir === undefined || home === undefined || home === '') return putBudget($, null)
+  if (dir === undefined || isSessionDir(dir) || home === undefined || home === '') return putBudget($, null)
   let names: string[]
   try {
     names = (await $.fs.list(`${home}/.claude/apex-correction-budget`)).map(entry => entry.name)
@@ -796,6 +826,23 @@ export const register: Register = (on, options) => {
           }),
         )
       })
+    }
+    return ran
+  }).catch(($, e, next) => next(e))
+
+  // A main-loop Skill(apex) call that ran: a run without a folder (yet), a new run once any run
+  // was seen. A subagent's call, another skill, a failed or refused call: nothing.
+  on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
+    const ran = await next(e)
+    if (stringField(e, 'skill') === 'apex' && !e.agentId && ran.isError !== true && ran.result !== undefined) {
+      await record(async () => {
+        const now = await $.clock.now()
+        const sw = callSwitch(lastRunDir, sessionKey(now))
+        lastRunDir = sw.last
+        if (sw.isNew) await clearForNewRun($)
+        await update($, sessionRun, () => ({ startedAt: now, lastAt: now, args: shorten(stringField(e, 'args') ?? '', 40) }))
+      })
+      pollOnce($)
     }
     return ran
   }).catch(($, e, next) => next(e))

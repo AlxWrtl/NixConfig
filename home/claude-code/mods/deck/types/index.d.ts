@@ -120,6 +120,9 @@ export type DeckApexAlert =
   | { kind: 'verify'; verdict: 'FAIL' | 'BLOCKED' | 'ERROR'; findings: number }
   | { kind: 'budget'; rounds: number; cap: number }
 
+/** The session's last main-loop Skill(apex) call: a run without a folder (yet). */
+export type DeckApexSessionRun = { startedAt: number; lastAt: number; args: string }
+
 /** The run's external verification file, as far as the block shows it. */
 export type DeckApexVerdict = { dir: string; verdict: string; findings: number; mtimeMs: number }
 
@@ -140,6 +143,7 @@ declare module 'claude-code' {
       verdict: DeckApexVerdict | null
       budget: DeckApexBudget | null
       shells: DeckApexShell[]
+      sessionRun: DeckApexSessionRun | null
     }
   }
 }

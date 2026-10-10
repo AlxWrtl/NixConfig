@@ -637,3 +637,168 @@ test('a new run clears the finished cards and shells; the running ones stay', as
   expect(await next.find({ text: exact('stop me') })).toBeUndefined()
   await next.unmount()
 })
+
+// ---------------------------------------------------------------- session run (Skill(apex), no folder)
+
+const skill = (name: string, n: number) => ({ tool: 'Skill', skill: name, args: `brief ${n}`, tool_use_id: `tu-skill-${n}` }) as const
+
+// The Skill tool beneath deck: answers as the engine does, records what reached it.
+function skillTool(on: On, seen: unknown[]): void {
+  on('tool.call', { tool: 'Skill' }, (_$, e) => {
+    seen.push(e)
+    return { result: { success: true, commandName: e.skill } }
+  })
+}
+
+const sessionHeader = { type: 'Text' as const, text: /^APEX ·[^◐●○✗]*$/ }
+
+test('a main-loop Skill(apex) call without a run folder draws HEAD as header and ◐ apex; the call passes unchanged', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w = fresh()
+  world(on, w)
+  const seen: unknown[] = []
+  skillTool(on, seen)
+  await $.session.start(START)
+  await openDeck($, clock)
+  const before = await $.ui.mount(pane(120))
+  expect(await before.find({ text: /^APEX/ })).toBeUndefined()
+  await before.unmount()
+
+  const call = skill('apex', 1)
+  expect(await $.tool.call(call)).toEqual({ result: { success: true, commandName: 'apex' } })
+  expect(seen[0]).toEqual(call)
+  await clock.advance(5000)
+  const ui = await $.ui.mount(pane(120))
+  expect((await ui.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  expect(await ui.find({ text: exact('◐ apex') })).toBeDefined()
+  await ui.unmount()
+})
+
+test('the session run hides on master or main, 1 h after the last call, and on /clear or /deck reset', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w = fresh()
+  world(on, w)
+  skillTool(on, [])
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.tool.call(skill('apex', 1))
+  for (const head of ['master', 'main', 'feat/x']) {
+    w.head = head
+    await clock.advance(5000)
+    const ui = await $.ui.mount(pane(120))
+    expect((await ui.find(sessionHeader))?.text).toBe(head === 'feat/x' ? 'APEX · feat/x' : undefined)
+    await ui.unmount()
+  }
+  // 1 h after the last call: gone.
+  await clock.advance(60 * 60 * 1000)
+  const late = await $.ui.mount(pane(120))
+  expect(await late.find(sessionHeader)).toBeUndefined()
+  await late.unmount()
+
+  // A new call brings it back; /clear drops it.
+  await $.tool.call(skill('apex', 2))
+  await clock.advance(5000)
+  const back = await $.ui.mount(pane(120))
+  expect((await back.find(sessionHeader))?.text).toBe('APEX · feat/x')
+  await back.unmount()
+  await $.session.end({ reason: 'clear', sessionId: 's1' } as never)
+  await clock.advance(5000)
+  const cleared = await $.ui.mount(pane(120))
+  expect(await cleared.find(sessionHeader)).toBeUndefined()
+  await cleared.unmount()
+
+  // /deck reset drops it too.
+  await $.tool.call(skill('apex', 3))
+  await clock.advance(5000)
+  expect(await $.command.run({ ...command('deck'), args: 'reset' })).toEqual({ text: 'Deck reset.' })
+  await clock.advance(5000)
+  const reset = await $.ui.mount(pane(120))
+  expect(await reset.find(sessionHeader)).toBeUndefined()
+  await reset.unmount()
+})
+
+test('a live run folder wins over the session run', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh({ current: '03-execute' }))
+  skillTool(on, [])
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.tool.call(skill('apex', 1))
+  await clock.advance(5000)
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.find({ text: exact('APEX · feat/test · Standard') })).toBeDefined()
+  expect(await ui.find({ text: exact('◐ apex') })).toBeUndefined()
+  await ui.unmount()
+})
+
+test("a subagent's Skill(apex), another skill or a failed call draws no session run", async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh())
+  on('tool.call', { tool: 'Skill' }, (_$, e) =>
+    e.args === 'brief 3' ? { result: undefined, isError: true } : { result: { success: true, commandName: e.skill } },
+  )
+  await $.session.start(START)
+  await openDeck($, clock)
+  // The kit types no agentId on a call; the hooks read it at run time.
+  await $.tool.call({ ...skill('apex', 1), agentId: 'sub1' } as never)
+  await $.tool.call(skill('commit', 2))
+  await $.tool.call(skill('apex', 3))
+  await clock.advance(5000)
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.find({ text: /^APEX/ })).toBeUndefined()
+  await ui.unmount()
+  // Positive control: the same call on the main loop draws.
+  await $.tool.call(skill('apex', 4))
+  await clock.advance(5000)
+  const live = await $.ui.mount(pane(120))
+  expect((await live.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  await live.unmount()
+})
+
+test('a second Skill(apex) is a new run: finished cards and shells go, running ones stay; the first clears nothing', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh())
+  skillTool(on, [])
+  let shellN = 0
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { backgroundTaskId: `b${++shellN}` } }))
+  on('tool.call', { tool: 'TaskStop' }, (_$, e) => ({ result: { task_id: e.task_id } }))
+  let agentN = 0
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: `ag${++agentN}` }))
+  await $.session.start(START)
+  await openDeck($, clock)
+  const agent = (description: string) => ({
+    prompt: description,
+    description,
+    subagentType: 'Explore',
+    tool_use_id: `tu-${description}`,
+    provider: { plugin: 'engine', tier: 'core' as const },
+    parentModel: 'claude-opus-5-5',
+    background: true,
+    fork: false,
+  })
+  await $.agent.spawn(agent('still going'))
+  await $.agent.spawn(agent('all done'))
+  await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 'A2', agentId: 'ag2', reason: 'answer' })
+  await $.tool.call({ tool: 'Bash', command: 'sleep 600', description: 'keep running', run_in_background: true, tool_use_id: 'tu-1' })
+  await $.tool.call({ tool: 'Bash', command: 'sleep 9', description: 'stop me', run_in_background: true, tool_use_id: 'tu-2' })
+  await $.tool.call({ tool: 'TaskStop', task_id: 'b2', tool_use_id: 'tu-3' })
+
+  // The session's first apex call: nothing cleared.
+  await $.tool.call(skill('apex', 1))
+  await clock.advance(5000)
+  const first = await $.ui.mount(pane(120))
+  expect((await first.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  expect(await first.find({ text: exact('agents · 1 running · 2 total') })).toBeDefined()
+  expect(await first.find({ text: exact('stop me') })).toBeDefined()
+  await first.unmount()
+
+  // A second call: a new run.
+  await clock.advance(5000)
+  await $.tool.call(skill('apex', 2))
+  await clock.advance(5000)
+  const next = await $.ui.mount(pane(120))
+  expect(await next.find({ text: exact('agents · 1 running · 1 total') })).toBeDefined()
+  expect(await next.find({ text: exact('keep running') })).toBeDefined()
+  expect(await next.find({ text: exact('stop me') })).toBeUndefined()
+  await next.unmount()
+})

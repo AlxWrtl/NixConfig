@@ -1,5 +1,5 @@
 // deck state contract: Flightdeck's panels (main, architect, agents, receipt,
-// log) and the APEX block (the live run, its phases, alerts and background
+// log) and the APEX block (the live run, its live steps, alerts and background
 // shells). Self-contained (no import), as the plugin-authoring reference asks.
 
 export type DeckMoment = 'before a plan' | 'error repeats' | 'before done'
@@ -90,11 +90,26 @@ export type DeckApexRun = {
   dir?: string
 }
 
-/** Token counts of one or more model responses, as the API reports them. */
-export type DeckApexTally = { input: number; output: number; cacheRead: number; cacheWrite: number }
+/** A live step of an APEX run, read from the run's tool calls. */
+export type DeckApexStepName = 'plan' | 'edit' | 'implement' | 'tests' | 'gate' | 'Codex' | 'review' | 'ship'
 
-/** Tokens per APEX step of the run in `dir` (approximate: the polled step). */
-export type DeckApexPhases = { dir: string | null; byStep: Record<string, DeckApexTally> }
+export type DeckApexLiveStep = {
+  name: DeckApexStepName
+  status: 'seen'
+  /** When it was last seen. */
+  at: number
+  /** An agent step's description and model family. */
+  detail?: string
+  /** Codex's PASS/FAIL/BLOCKED or a reviewer's APPROVED/NEEDS_FIXES/BLOCKED. */
+  verdict?: string
+  findings?: number
+  /** The agent this step started, and when it ended. */
+  agentId?: string
+  endedAt?: number
+}
+
+/** The live steps of the run `runKey` (a session key, else the run dir); `current` was seen last. */
+export type DeckApexSteps = { runKey: string | null; steps: DeckApexLiveStep[]; current: DeckApexStepName | null }
 
 /** `killed` is its own word (stopped, drawn ■), not a failure. */
 export type DeckApexShellStatus = 'running' | 'completed' | 'failed' | 'killed'
@@ -139,7 +154,7 @@ declare module 'claude-code' {
       view: DeckView
       roster: DeckRoster
       run: DeckApexRun | null
-      phases: DeckApexPhases
+      apexSteps: DeckApexSteps
       verdict: DeckApexVerdict | null
       budget: DeckApexBudget | null
       shells: DeckApexShell[]

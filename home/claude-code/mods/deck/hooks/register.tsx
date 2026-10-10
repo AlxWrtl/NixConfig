@@ -16,10 +16,10 @@ import type {
   DeckAgentCard,
   DeckApexAlert,
   DeckApexBudget,
-  DeckApexPhases,
   DeckApexRun,
   DeckApexSessionRun,
   DeckApexShell,
+  DeckApexSteps,
   DeckApexVerdict,
   DeckArchitect,
   DeckLayout,
@@ -76,29 +76,36 @@ import {
 } from './core'
 import type { Config, Panel } from './core'
 import {
+  NO_STEPS,
   PHASE_GLYPH,
-  addPhase,
   apexHeader,
   bareShown,
   callSwitch,
-  countedTotal,
+  classifyAgent,
+  classifyCall,
+  endAgent,
   headBranch,
   isLive,
+  modelFamily,
   newestStep,
   onBranch,
+  parseCodex,
   parseContext,
+  parseReview,
   parseVerdict,
-  phaseMark,
   phaseNote,
   runFromFiles,
   runSwitch,
   isSessionDir,
+  seeStep,
   sessionKey,
   sessionRunOf,
   settleRun,
-  syncPhases,
+  startSteps,
+  stepCells,
+  stepDetail,
 } from './apex'
-import type { PhaseMark, Usage as PhaseUsage } from './apex'
+import type { StepCell, StepMark } from './apex'
 import {
   addShell,
   clearFinished,
@@ -133,7 +140,7 @@ const receipt = atom({ plugin: 'deck', key: 'receipt' } as const, null)
 const view = atom({ plugin: 'deck', key: 'view' } as const, DEFAULT_VIEW)
 const roster = atom({ plugin: 'deck', key: 'roster' } as const, DEFAULT_ROSTER)
 const run = atom({ plugin: 'deck', key: 'run' } as const, null)
-const phases = atom({ plugin: 'deck', key: 'phases' } as const, { dir: null, byStep: {} })
+const apexSteps = atom({ plugin: 'deck', key: 'apexSteps' } as const, NO_STEPS)
 const verdict = atom({ plugin: 'deck', key: 'verdict' } as const, null)
 const budget = atom({ plugin: 'deck', key: 'budget' } as const, null)
 const shells = atom({ plugin: 'deck', key: 'shells' } as const, [])
@@ -245,9 +252,9 @@ async function resetAll($: EngineInterface) {
   await update($, view, () => DEFAULT_VIEW)
   // The context gauge waits for the next measurement rather than showing the pre-clear fill.
   await update($, usage, x => ({ ...normalize(DEFAULT_USAGE, x), pct: null, tokens: null }))
-  // The run comes back on the next poll; its phase buckets start over.
+  // The run comes back on the next poll; its live steps start over.
   await update($, run, () => null)
-  await update($, phases, () => ({ dir: null, byStep: {} }))
+  await update($, apexSteps, () => NO_STEPS)
   await update($, verdict, () => null)
   await update($, budget, () => null)
   await update($, shells, () => [])
@@ -426,10 +433,22 @@ async function putBudget($: EngineInterface, value: DeckApexBudget | null): Prom
   await update($, budget, () => value)
 }
 
-async function changePhases($: EngineInterface, fn: (value: DeckApexPhases) => DeckApexPhases): Promise<void> {
-  const current = await read($, phases)
-  if (fn(current) === current) return
-  await update($, phases, fn)
+// The live steps, or none (an older shape reads as none).
+async function getSteps($: EngineInterface): Promise<DeckApexSteps> {
+  const s = normalize(NO_STEPS, await read($, apexSteps))
+  return { runKey: typeof s.runKey === 'string' ? s.runKey : null, steps: listOf(s.steps), current: s.current ?? null }
+}
+
+// One change to the live steps, written only when it changed something. Steps count only while
+// a run is live: a Skill(apex) call set the key, else the shown run folder gives it.
+async function changeSteps($: EngineInterface, fn: (value: DeckApexSteps, runKey: string) => DeckApexSteps): Promise<void> {
+  await record(async () => {
+    const current = await getSteps($)
+    const runKey = current.runKey ?? (await read($, run))?.dir ?? null
+    if (runKey === null) return
+    const next = fn(current, runKey)
+    if (next !== current) await update($, apexSteps, () => next)
+  })
 }
 
 async function changeShells($: EngineInterface, fn: (value: DeckApexShell[]) => DeckApexShell[]): Promise<void> {
@@ -520,7 +539,6 @@ async function refresh($: EngineInterface): Promise<void> {
   const sw = runSwitch(lastRunDir, found?.dir ?? null)
   lastRunDir = sw.last
   if (sw.isNew) await clearForNewRun($)
-  await changePhases($, value => syncPhases(value, found?.dir ?? null))
   await refreshVerdict($, found)
   await refreshBudget($, found)
   await snapshotShells($)
@@ -571,13 +589,38 @@ async function record(write: () => Promise<void>): Promise<void> {
   }
 }
 
-/** One step's usage in the live run's current phase bucket (approximate: the step as last polled). */
-async function notePhase($: EngineInterface, stepUsage: PhaseUsage | null): Promise<void> {
-  await record(async () => {
-    const live = await read($, run)
-    const dir = live?.dir
-    if (dir !== undefined) await changePhases($, current => addPhase(current, dir, live?.currentStep, stepUsage))
-  })
+/**
+ * The run's live step a tool call stands for: edits from every loop, gate / Codex / ship from the
+ * main loop's Bash only. A refused call, or a failed edit, is no step. Called from the one
+ * unmatched tool.call observer (the engine allows one per event).
+ */
+async function noteCallStep($: EngineInterface, e: unknown, ran: { result?: unknown; isError?: boolean }): Promise<void> {
+  const isRefused = ran.result === undefined && ran.isError !== true
+  const tool = stringField(e, 'tool') ?? ''
+  const input = { file_path: stringField(e, 'file_path'), notebook_path: stringField(e, 'notebook_path'), command: stringField(e, 'command') }
+  const name = isRefused ? null : classifyCall(tool, input, stringField(e, 'agentId') !== undefined)
+  const isFailedEdit = (name === 'edit' || name === 'plan') && ran.isError === true
+  if (name === null || isFailedEdit) return
+  const codex = name === 'Codex' ? parseCodex(stringField(ran.result, 'stdout') ?? '') : null
+  const at = await $.clock.now()
+  await changeSteps($, (s, key) => seeStep(s, key, name, at, codex === null ? {} : codex))
+}
+
+/** An implementer, test-runner or reviewer started: its step, with what it does and on which model. */
+async function noteAgentStep($: EngineInterface, subagentType: string, description: string, agentId: string, model: string): Promise<void> {
+  const name = classifyAgent(subagentType)
+  if (name === null) return
+  const at = await $.clock.now()
+  const detail = `${description} (${modelFamily(model)})`
+  await changeSteps($, (s, key) => seeStep(s, key, name, at, { agentId, detail }))
+}
+
+/** A step's agent ended: a reviewer's verdict is the first one its final text names. */
+async function endAgentStep($: EngineInterface, agentId: string, answer: string): Promise<void> {
+  const at = await $.clock.now()
+  const isReview = (await getSteps($)).steps.some(x => x.agentId === agentId && x.name === 'review')
+  const verdict = isReview ? parseReview(answer) : null
+  await changeSteps($, s => endAgent(s, agentId, at, verdict))
 }
 
 const alertText = (a: DeckApexAlert) =>
@@ -730,7 +773,6 @@ export const register: Register = (on, options) => {
       })
     }
     const result = yield* next(e)
-    await notePhase($, result.usage)
     const id = e.agentId
     if (!id) return result
     const cards = await getCards($)
@@ -769,6 +811,7 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
+    await noteCallStep($, e, ran)
     // A refused call carries neither a result nor an error. An inference, not the refusal's own
     // field: a tool that answers with an undefined result would read as refused too (log text only).
     const isRefused = ran.result === undefined && ran.isError !== true
@@ -841,6 +884,8 @@ export const register: Register = (on, options) => {
         lastRunDir = sw.last
         if (sw.isNew) await clearForNewRun($)
         await update($, sessionRun, () => ({ startedAt: now, lastAt: now, args: shorten(stringField(e, 'args') ?? '', 40) }))
+        // Each call starts the run's live steps over, keyed as the session run.
+        await update($, apexSteps, () => startSteps(sessionKey(now)))
       })
       pollOnce($)
     }
@@ -932,6 +977,7 @@ export const register: Register = (on, options) => {
     if (!e.parentAgentId) await noteMode($, e.permissionMode)
     if (!started.agentId) return started
     const id = started.agentId
+    await noteAgentStep($, e.subagentType, e.description, id, started.model)
     if (await isArchitectType($, cfg, e.subagentType)) {
       await update($, architect, a => {
         const x = normalize(DEFAULT_ARCHITECT, a)
@@ -972,6 +1018,7 @@ export const register: Register = (on, options) => {
     }
     // Any subagent, the architect too: its still running shells could only ever notify it.
     await record(() => changeShells($, current => shellsAfterTurn(current, id, e.reason, now)))
+    await endAgentStep($, id, e.answer)
     if ((await getArchitect($)).ids.includes(id)) {
       await consultEnded($, cfg, e.answer, id)
       return done
@@ -1003,7 +1050,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     // Clients draw on terminal and desktop only; elsewhere the same frame as static text.
     const hasClient = 'Client' in els && (e.surface === 'terminal' || e.surface === 'desktop')
-    const [m, u, a, cards, lines, t, r, v, apexRun, ph, vd, bg, sh, now] = await Promise.all([
+    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now] = await Promise.all([
       getMain($),
       getUsage($),
       getArchitect($),
@@ -1013,7 +1060,8 @@ export const register: Register = (on, options) => {
       read($, receipt),
       getView($),
       read($, run),
-      read($, phases),
+      getSteps($),
+      getSessionRun($),
       read($, verdict),
       read($, budget),
       getShells($),
@@ -1069,8 +1117,7 @@ export const register: Register = (on, options) => {
     const doneShells = sh.filter(s => s.status !== 'running')
     const shownShells = [...sh.filter(s => s.status === 'running'), ...doneShells.slice(0, DONE_SHELLS)]
     const hiddenShells = sh.length - shownShells.length
-    const byStep = apexRun !== null && ph.dir !== null && ph.dir === apexRun.dir ? ph.byStep : {}
-    const markColor: Record<PhaseMark, string> = { done: C.apex, current: C.apex, pending: C.dim, failed: C.warn, skipped: C.faint }
+    const markColor: Record<StepMark, string> = { done: C.apex, current: C.apex, pending: C.dim }
     const shellMark = (s: DeckApexShell) =>
       s.status === 'running'
         ? { glyph: '◐', color: C.agent }
@@ -1094,43 +1141,56 @@ export const register: Register = (on, options) => {
         </Box>
       )
     }
-    // The phase dots on one row (a separator Text between them, so each dot reads on its own).
-    const phaseDots = (run: DeckApexRun) =>
-      run.steps.flatMap((s, i) => {
-        const mark = phaseMark(s, run.currentStep)
-        const spent = byStep[s.step]
-        const n = spent ? countedTotal(spent) : 0
-        const dot = (
-          <Text color={markColor[mark]} bold={mark === 'current'}>
-            {`${PHASE_GLYPH[mark]} ${s.step}${n > 0 ? ` ${kTokens(n)}` : ''}`}
+    // The call clock and the task belong to the run the last Skill(apex) call started.
+    const callRun = sr !== null && st.runKey === sessionKey(sr.startedAt) ? sr : null
+    const cells = stepCells(st)
+    const detail = stepDetail(st)
+    const cellText = (c: StepCell) => (
+      <Text color={c.isWarn ? C.warn : markColor[c.mark]} bold={c.mark === 'current'}>
+        {`${PHASE_GLYPH[c.mark]} ${c.label}`}
+      </Text>
+    )
+    // The live steps on one row (a separator Text between them, so each step reads on its own).
+    const stepRow = () => cells.flatMap((c, i) => (i === 0 ? [cellText(c)] : [<Text>{'  '}</Text>, cellText(c)]))
+    // `APEX · <branch> · <tier>`, then the time since the Skill(apex) call.
+    const headerRow = (run: DeckApexRun) => (
+      <Box>
+        <Box flexShrink={1}>
+          <Text color={C.apex} bold wrap="truncate">
+            {apexHeader(run)}
           </Text>
-        )
-        return i === 0 ? [dot] : [<Text>{'  '}</Text>, dot]
-      })
+        </Box>
+        {callRun !== null ? <Text color={C.apex}>{' · '}</Text> : null}
+        {callRun !== null ? <Box flexShrink={0}>{clock('apex-clock', callRun.startedAt, null, C.apex)}</Box> : null}
+      </Box>
+    )
+    const taskRow =
+      callRun !== null && callRun.args !== '' ? (
+        <Text color={C.dim} wrap="truncate">
+          {callRun.args}
+        </Text>
+      ) : null
+    // The current step's agent (with its live clock) or verdict.
+    const detailRow =
+      detail === null ? null : (
+        <Box>
+          <Text color={markColor[detail.mark]} wrap="truncate">
+            {`${PHASE_GLYPH[detail.mark]} ${detail.text}${detail.since !== undefined ? ' ' : ''}`}
+          </Text>
+          {detail.since !== undefined ? <Box flexShrink={0}>{clock('step-clock', detail.since, null, C.dim)}</Box> : null}
+        </Box>
+      )
     const apexBlock = (w: number) => {
       if (apexRun === null) return null
       return (
         <Box flexDirection="column" width={w}>
           <Box flexDirection="column" borderStyle="round" borderColor={C.apex} paddingX={1} width={w}>
-            <Text color={C.apex} bold wrap="truncate">
-              {apexHeader(apexRun)}
-            </Text>
-            {apexRun.steps.length > 0 ? (
-              <Box flexWrap="wrap" columnGap={2}>
-                {apexRun.steps.map(s => {
-                  const mark = phaseMark(s, apexRun.currentStep)
-                  const spent = byStep[s.step]
-                  const n = spent ? countedTotal(spent) : 0
-                  return (
-                    <Text color={markColor[mark]} bold={mark === 'current'}>
-                      {`${PHASE_GLYPH[mark]} ${s.step}${n > 0 ? ` ${kTokens(n)}` : ''}`}
-                    </Text>
-                  )
-                })}
-              </Box>
-            ) : (
-              <Text color={C.faint}>no progress table yet</Text>
-            )}
+            {headerRow(apexRun)}
+            {taskRow}
+            <Box flexWrap="wrap" columnGap={2}>
+              {cells.map(cellText)}
+            </Box>
+            {detailRow}
             {alerts.map(al => (
               <Text color={C.warn} bold wrap="truncate">
                 {alertText(al)}
@@ -1144,7 +1204,9 @@ export const register: Register = (on, options) => {
       )
     }
     const apexRows =
-      apexRun === null ? 0 : 2 + 1 + 1 + alerts.length + shownShells.length + (hiddenShells > 0 ? 1 : 0) + 1
+      apexRun === null
+        ? 0
+        : 2 + 1 + (taskRow === null ? 0 : 1) + 1 + (detailRow === null ? 0 : 1) + alerts.length + shownShells.length + (hiddenShells > 0 ? 1 : 0) + 1
 
     // ---- main
     const effortN = { low: 1, medium: 2, high: 3, xhigh: 4, max: 4 }[m.effort] ?? 0
@@ -1485,16 +1547,16 @@ export const register: Register = (on, options) => {
     if (isMini) {
       const MINI_ROWS = 8
       const mg = u.pct !== null ? gauge(u.pct, 6) : null
-      // While a run is live it takes its rows first: header, phase dots, each alert, the running
-      // shells; the agents and the receipt get what is left of the 8.
+      // While a run is live it takes its rows first: header, task, step row, its detail, each
+      // alert, the running shells; the agents and the receipt get what is left of the 8.
       const apexMini =
         apexRun === null
           ? []
           : [
-              <Text color={C.apex} bold wrap="truncate">
-                {apexHeader(apexRun)}
-              </Text>,
-              ...(apexRun.steps.length > 0 ? [<Text wrap="truncate">{phaseDots(apexRun)}</Text>] : []),
+              headerRow(apexRun),
+              ...(taskRow === null ? [] : [taskRow]),
+              <Text wrap="truncate">{stepRow()}</Text>,
+              ...(detailRow === null ? [] : [detailRow]),
               ...alerts.map(al => (
                 <Text color={C.warn} bold wrap="truncate">
                   {alertText(al)}

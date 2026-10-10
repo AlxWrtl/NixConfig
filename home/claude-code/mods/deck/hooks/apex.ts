@@ -1,8 +1,16 @@
 // Pure reading of an APEX run: its 00-context.md (header and Progress table, every drifted
-// spelling tolerated), its liveness rule, the per-phase token buckets, the external verdict
-// file, and what the block and the log show of it. No `$`, no clock, no I/O.
+// spelling tolerated), its liveness rule, the live steps its tool calls stand for, the external
+// verdict file, and what the block and the log show of it. No `$`, no clock, no I/O.
 
-import type { DeckApexPhases, DeckApexRun, DeckApexSessionRun, DeckApexStep, DeckApexStepKind, DeckApexTally } from '../types'
+import type {
+  DeckApexLiveStep,
+  DeckApexRun,
+  DeckApexSessionRun,
+  DeckApexStep,
+  DeckApexStepKind,
+  DeckApexStepName,
+  DeckApexSteps,
+} from '../types'
 
 // ---------------------------------------------------------------- context file
 
@@ -227,43 +235,143 @@ export function onBranch(run: DeckApexRun, head: string | undefined): boolean {
   return run.branch === undefined || head === undefined || run.branch === head
 }
 
-// ---------------------------------------------------------------- phases
+// ---------------------------------------------------------------- live steps
 
-/** What a step's usage carries: ModelUsage's four counts. */
-export type Usage = {
-  input_tokens: number
-  output_tokens: number
-  cache_read_input_tokens: number
-  cache_creation_input_tokens: number
+/** The steps in the order the row shows them; edit, gate and ship always, the rest once seen. */
+export const STEP_ORDER: readonly DeckApexStepName[] = ['plan', 'edit', 'implement', 'tests', 'gate', 'Codex', 'review', 'ship']
+const ALWAYS: ReadonlySet<DeckApexStepName> = new Set<DeckApexStepName>(['edit', 'gate', 'ship'])
+
+const EDITING = new Set(['Edit', 'Write', 'NotebookEdit'])
+const PLAN_PATH = /(^|\/)\.claude\/output\/apex\//
+const CODEX = /apex-verify-external/
+const SHIP = /\bgit\s+(commit|push)\b|\bgh\s+pr\s+(create|merge)\b/
+const GATE = /nix flake check|pnpm (verify|test|typecheck|lint)|claude plugin (test|validate)|\btsc\b|cargo (check|test)/
+
+/**
+ * The step a tool call stands for, or null. Edits count from every loop; Bash (gate, Codex, ship)
+ * from the main loop only: a reviewer's probes are no gate.
+ */
+export function classifyCall(
+  tool: string,
+  input: { file_path?: string; notebook_path?: string; command?: string },
+  inSubagent: boolean,
+): DeckApexStepName | null {
+  if (EDITING.has(tool)) {
+    const path = input.file_path ?? input.notebook_path ?? ''
+    return PLAN_PATH.test(path) ? 'plan' : 'edit'
+  }
+  if (tool !== 'Bash' || inSubagent) return null
+  const command = input.command ?? ''
+  if (CODEX.test(command)) return 'Codex'
+  if (SHIP.test(command)) return 'ship'
+  if (GATE.test(command)) return 'gate'
+  return null
 }
 
-export const ZERO: DeckApexTally = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 }
+const IMPLEMENTERS = new Set(['frontend-expert', 'backend-expert', 'nix-expert', 'debugger', 'quick-fix'])
+const REVIEWERS = new Set(['code-reviewer', 'security-auditor'])
 
-// A finite non-negative count, else 0 (usage comes from the API).
-const count = (n: number): number => (Number.isFinite(n) && n > 0 ? n : 0)
+/** The step a spawned agent stands for (its type's last `:` segment), or null. */
+export function classifyAgent(subagentType: string): 'implement' | 'tests' | 'review' | null {
+  const type = subagentType.split(':').pop() ?? subagentType
+  if (IMPLEMENTERS.has(type)) return 'implement'
+  if (type === 'test-runner') return 'tests'
+  if (REVIEWERS.has(type)) return 'review'
+  return null
+}
 
-export function addUsage(tally: DeckApexTally, usage: Usage): DeckApexTally {
+/** The external verification's verdict line in a Bash output, or null. */
+export function parseCodex(output: string): { verdict: string; findings: number } | null {
+  const match = /EXTERNAL-VERIFY (PASS|FAIL|BLOCKED)\b(?:.*?findings=(\d+))?/.exec(output)
+  const verdict = match?.[1]
+  if (verdict === undefined) return null
+  return { verdict, findings: Number(match?.[2] ?? 0) }
+}
+
+/** A reviewer's verdict: the first APPROVED, NEEDS_FIXES or BLOCKED of its final text, or null. */
+export function parseReview(answer: string): string | null {
+  return /\b(APPROVED|NEEDS_FIXES|BLOCKED)\b/.exec(answer)?.[1] ?? null
+}
+
+/** A model id's family (`Opus`), else the id itself. */
+export function modelFamily(id: string): string {
+  const family = /(opus|sonnet|haiku|fable)/i.exec(id)?.[1]
+  return family === undefined ? id : family.charAt(0).toUpperCase() + family.slice(1).toLowerCase()
+}
+
+export const NO_STEPS: DeckApexSteps = { runKey: null, steps: [], current: null }
+
+/** A run's steps, none seen yet. */
+export const startSteps = (runKey: string): DeckApexSteps => ({ runKey, steps: [], current: null })
+
+/** Step `name` seen at `at` in run `runKey` (another run's steps start over); it becomes current. */
+export function seeStep(
+  s: DeckApexSteps,
+  runKey: string,
+  name: DeckApexStepName,
+  at: number,
+  extra: Pick<DeckApexLiveStep, 'detail' | 'verdict' | 'findings' | 'agentId'> = {},
+): DeckApexSteps {
+  const base = s.runKey === runKey ? s : startSteps(runKey)
+  const step: DeckApexLiveStep = { name, status: 'seen', at, ...extra }
+  return { runKey, steps: [...base.steps.filter(x => x.name !== name), step], current: name }
+}
+
+/** Agent `agentId`'s step ended at `at`, with its verdict if any; the same reference when no step is its. */
+export function endAgent(s: DeckApexSteps, agentId: string, at: number, verdict: string | null): DeckApexSteps {
+  if (!s.steps.some(x => x.agentId === agentId && x.endedAt === undefined)) return s
   return {
-    input: tally.input + count(usage.input_tokens),
-    output: tally.output + count(usage.output_tokens),
-    cacheRead: tally.cacheRead + count(usage.cache_read_input_tokens),
-    cacheWrite: tally.cacheWrite + count(usage.cache_creation_input_tokens),
+    ...s,
+    steps: s.steps.map(x =>
+      x.agentId === agentId && x.endedAt === undefined ? { ...x, endedAt: at, ...(verdict === null ? {} : { verdict }) } : x,
+    ),
   }
 }
 
-/** A phase's work as the block shows it: input, output and cache writes (cache reads left out). */
-export const countedTotal = (t: DeckApexTally): number => t.input + t.output + t.cacheWrite
+const WARN_VERDICTS = new Set(['FAIL', 'BLOCKED', 'ERROR', 'NEEDS_FIXES'])
 
-/** The buckets kept for run `dir` (null: no live run), started over when the run changed; same reference when equal. */
-export function syncPhases(phases: DeckApexPhases, dir: string | null): DeckApexPhases {
-  return phases.dir === dir ? phases : { dir, byStep: {} }
+export type StepMark = 'done' | 'current' | 'pending'
+
+export type StepCell = { name: DeckApexStepName; label: string; mark: StepMark; isWarn: boolean }
+
+const isRunning = (x: DeckApexLiveStep): boolean => x.agentId !== undefined && x.endedAt === undefined
+
+// A step with a verdict is done; the current one, or one whose agent still runs, is ◐.
+const markOf = (s: DeckApexSteps, x: DeckApexLiveStep): StepMark =>
+  x.verdict !== undefined ? 'done' : x.name === s.current || isRunning(x) ? 'current' : 'done'
+
+/** The step row: label (with its verdict and findings), mark, warn colour. */
+export function stepCells(s: DeckApexSteps): StepCell[] {
+  const cells: StepCell[] = []
+  for (const name of STEP_ORDER) {
+    const x = s.steps.find(y => y.name === name)
+    if (x === undefined) {
+      if (ALWAYS.has(name)) cells.push({ name, label: name, mark: 'pending', isWarn: false })
+      continue
+    }
+    const findings = x.findings !== undefined && x.findings > 0 ? ` ${x.findings}` : ''
+    const label = x.verdict === undefined ? name : `${name} ${x.verdict}${findings}`
+    cells.push({ name, label, mark: markOf(s, x), isWarn: x.verdict !== undefined && WARN_VERDICTS.has(x.verdict) })
+  }
+  return cells
 }
 
-/** One response's usage added to `step`'s bucket of run `dir`; the buckets start over when the run changed. */
-export function addPhase(phases: DeckApexPhases, dir: string, step: string | undefined, usage: Usage | null): DeckApexPhases {
-  const base = phases.dir === dir ? phases : { dir, byStep: {} }
-  if (step === undefined || usage === null) return base
-  return { dir, byStep: { ...base.byStep, [step]: addUsage(base.byStep[step] ?? ZERO, usage) } }
+export type StepDetail = { name: DeckApexStepName; mark: StepMark; text: string; since?: number }
+
+const detailOf = (s: DeckApexSteps, x: DeckApexLiveStep): StepDetail | null => {
+  if (isRunning(x) && x.detail !== undefined) return { name: x.name, mark: markOf(s, x), text: `${x.name} : ${x.detail}`, since: x.at }
+  if (x.verdict === undefined) return null
+  const findings = x.findings !== undefined && x.findings > 0 ? ` · ${x.findings} findings` : ''
+  return { name: x.name, mark: markOf(s, x), text: `${x.name} : ${x.verdict}${findings}` }
+}
+
+/** The line under the row: the current step's agent (running) or verdict, else a still running agent's. */
+export function stepDetail(s: DeckApexSteps): StepDetail | null {
+  const current = s.steps.find(x => x.name === s.current)
+  const own = current === undefined ? null : detailOf(s, current)
+  if (own !== null) return own
+  const running = [...s.steps].reverse().find(x => isRunning(x) && x.detail !== undefined)
+  return running === undefined ? null : detailOf(s, running)
 }
 
 // ---------------------------------------------------------------- verdict

@@ -6,6 +6,7 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   CAP,
   addShell,
+  clearFinished,
   closeBySnapshot,
   finishByNotification,
   parseTaskNotification,
@@ -204,5 +205,28 @@ describe('shellsAfterTurn', () => {
     const list = owned()
     expect(shellsAfterTurn(list, 'a1', 'answer', 40)).toBe(list)
     expect(shellsAfterTurn(list, 'zz', 'aborted', 40)).toBe(list)
+  })
+})
+
+describe('clearFinished (a new run began)', () => {
+  const card = (id: string, status: string) => ({ id, status })
+
+  test('finished cards and ended shells go, running ones stay', () => {
+    const cards = [card('c1', 'done'), card('c2', 'running'), card('c3', 'failed'), card('c4', 'stopped')]
+    let shells = addShell(shell('b1', 1), { id: 'b2', label: 'cmd b2', startedAt: 2 })
+    shells = addShell(shells, { id: 'b3', label: 'cmd b3', startedAt: 3 })
+    shells = stopShell(shells, 'b1', 10)
+    shells = finishByNotification(shells, { id: 'b3', status: 'completed' }, 11)
+    const out = clearFinished(cards, shells)
+    expect(out.cards.map(c => c.id)).toEqual(['c2'])
+    expect(out.shells.map(s => `${s.id}:${s.status}`)).toEqual(['b2:running'])
+  })
+
+  test('nothing finished: the same references back', () => {
+    const cards = [card('c1', 'running')]
+    const shells = shell('b1', 1)
+    const out = clearFinished(cards, shells)
+    expect(out.cards).toBe(cards)
+    expect(out.shells).toBe(shells)
   })
 })

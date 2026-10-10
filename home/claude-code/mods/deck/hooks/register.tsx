@@ -78,21 +78,25 @@ import {
   PHASE_GLYPH,
   addPhase,
   apexHeader,
+  bareShown,
   countedTotal,
   headBranch,
   isLive,
+  newestStep,
   onBranch,
   parseContext,
   parseVerdict,
   phaseMark,
   phaseNote,
   runFromFiles,
+  runSwitch,
   settleRun,
   syncPhases,
 } from './apex'
 import type { PhaseMark, Usage as PhaseUsage } from './apex'
 import {
   addShell,
+  clearFinished,
   closeBySnapshot,
   shellsAfterTurn,
   finishByNotification,
@@ -135,6 +139,9 @@ let timer: Timer | undefined
 let isPaneOpen = false
 // Polls in a row that missed the run shown (settleRun).
 let misses = 0
+// The last run dir a poll found this session (kept through a miss or an ended run), or null:
+// a different one is a new run, which clears the finished cards and shells.
+let lastRunDir: string | null = null
 // The poll under way (its number), or null: a second one waits, unless the first is stuck for
 // STUCK_TICKS ticks, when it is given up and polling goes on.
 let pollCount = 0
@@ -278,15 +285,19 @@ function rowText(content: unknown): string {
   return parts.join('\n')
 }
 
-// A run folder: its name, its newest step time, its context file's mtime when it has one, its .md files.
+// A run folder: its name, its newest time (with a context file: that file's or its newest .md
+// file's; without: its newest step file's), its context file's mtime when it has one, its .md files.
 type RunDir = { dir: string; mtimeMs: number; context?: number; files: { name: string; mtimeMs: number }[] }
 
-// Folders read per poll beyond the one stat each: the 3 ranked newest are listed.
+// Folders listed per poll: the LISTED_DIRS ranked newest that are runs, plus the newest with a
+// context file wherever it ranks. Cost before that: 1 stat per folder with a context file, 2 per
+// folder without (the failed context stat, then the folder's own).
 const LISTED_DIRS = 3
 
 // The newest run folder, or undefined. Ranked by its context file's mtime, else by the folder's
-// own (adding a file moves it; editing one does not), then the top LISTED_DIRS are listed and
-// the newest .md file of each decides.
+// own (adding a file moves it; editing one does not), then listed in rank order and the newest
+// time of each decides. A folder without a context file and without a step file is no run: it
+// takes no slot and is never chosen.
 async function newestRun($: EngineInterface, root: string): Promise<RunDir | undefined> {
   let entries
   try {
@@ -312,8 +323,11 @@ async function newestRun($: EngineInterface, root: string): Promise<RunDir | und
     }
   }
   ranked.sort((a, b) => b.key - a.key)
+  const newestContext = ranked.find(r => r.context !== undefined)
   let best: RunDir | undefined
-  for (const candidate of ranked.slice(0, LISTED_DIRS)) {
+  let slots = 0
+  for (const candidate of ranked) {
+    if (slots >= LISTED_DIRS && candidate !== newestContext) continue
     let files: { name: string; mtimeMs: number }[]
     try {
       files = (await $.fs.list(`${root}/${candidate.dir}`))
@@ -323,10 +337,11 @@ async function newestRun($: EngineInterface, root: string): Promise<RunDir | und
       // Unreadable folder: its context file's time alone, if any.
       files = []
     }
-    const newestFile = Math.max(-Infinity, ...files.map(f => f.mtimeMs))
-    const mtimeMs = candidate.context === undefined ? newestFile : Math.max(candidate.context, newestFile)
-    // A folder with neither context nor .md file is not a run.
+    const mtimeMs =
+      candidate.context === undefined ? newestStep(files) : Math.max(candidate.context, ...files.map(f => f.mtimeMs))
+    // Without a context file, a folder with no step file is not a run: no slot, never chosen.
     if (mtimeMs === -Infinity) continue
+    slots += 1
     if (best !== undefined && mtimeMs <= best.mtimeMs) continue
     best = { dir: candidate.dir, mtimeMs, files, ...(candidate.context === undefined ? {} : { context: candidate.context }) }
   }
@@ -352,11 +367,12 @@ async function scan($: EngineInterface): Promise<DeckApexRun | null> {
     liveMs = newest.context
   } else {
     parsed = runFromFiles(newest.dir, newest.files)
-    // No step file (only other .md files): not a run.
+    // Only a finish step file: the run ended.
     if (parsed.currentStep === undefined) return null
     liveMs = newest.mtimeMs
   }
-  if (!isLive(parsed, liveMs, await $.clock.now())) return null
+  const now = await $.clock.now()
+  if (!isLive(parsed, liveMs, now)) return null
   let head: string | undefined
   try {
     head = headBranch(await $.fs.read(`${cwd}/.git/HEAD`))
@@ -364,8 +380,8 @@ async function scan($: EngineInterface): Promise<DeckApexRun | null> {
     // No repo here, or a worktree whose .git is a file: branch unknown, shown.
     head = undefined
   }
-  // Without a context file, the header names HEAD's branch, else the folder.
-  if (newest.context === undefined && head !== undefined) parsed = { ...parsed, branch: head }
+  // Without a context file the header names the folder (no branch); hidden on the trunk, live 1 h.
+  if (newest.context === undefined && !bareShown(parsed, liveMs, head, now)) return null
   return onBranch(parsed, head) ? { ...parsed, dir: newest.dir } : null
 }
 
@@ -452,6 +468,15 @@ async function snapshotShells($: EngineInterface): Promise<void> {
   await changeShells($, current => closeBySnapshot(current, owners, known, at))
 }
 
+// A new run: the finished cards and shells go, the running ones stay; receipt, log, main untouched.
+async function clearForNewRun($: EngineInterface): Promise<void> {
+  const cards = await getCards($)
+  if (clearFinished(cards, []).cards !== cards) {
+    await update($, agents, list => clearFinished(listOf<unknown>(list).map(normalizeCard), []).cards)
+  }
+  await changeShells($, current => clearFinished([], current).shells)
+}
+
 // One poll: run (its phase moves to the log), phases, verdict, budget, owned shells.
 async function refresh($: EngineInterface): Promise<void> {
   const scanned = await scan($)
@@ -462,6 +487,9 @@ async function refresh($: EngineInterface): Promise<void> {
   if (JSON.stringify(prev) !== JSON.stringify(found)) await update($, run, () => found)
   const note = phaseNote(prev, found)
   if (note !== null) await say($, 'apex', note)
+  const sw = runSwitch(lastRunDir, found?.dir ?? null)
+  lastRunDir = sw.last
+  if (sw.isNew) await clearForNewRun($)
   await changePhases($, value => syncPhases(value, found?.dir ?? null))
   await refreshVerdict($, found)
   await refreshBudget($, found)
@@ -597,6 +625,8 @@ export const register: Register = (on, options) => {
   })
 
   on('session.end', async ($, e, next) => {
+    // The next session's first run is no new run.
+    lastRunDir = null
     if (e.reason === 'clear') {
       // A /clear starts every figure over; the poll is kept for it.
       misses = 0

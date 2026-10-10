@@ -91,11 +91,11 @@ export function parseContext(text: string, dirName: string): DeckApexRun {
 }
 
 /**
- * Live: modified in the last STALE_MS, its 09-finish row neither done nor skipped, and, when it
- * has a Progress table, a pending or running row left.
+ * Live: modified in the last `staleMs` (STALE_MS by default), its 09-finish row neither done nor
+ * skipped, and, when it has a Progress table, a pending or running row left.
  */
-export function isLive(run: DeckApexRun, mtimeMs: number, now: number): boolean {
-  if (now - mtimeMs >= STALE_MS) return false
+export function isLive(run: DeckApexRun, mtimeMs: number, now: number, staleMs: number = STALE_MS): boolean {
+  if (now - mtimeMs >= staleMs) return false
   const finish = run.steps.find(s => /finish/i.test(s.step))
   if (finish !== undefined && (finish.kind === 'done' || finish.kind === 'skipped')) return false
   if (run.steps.length === 0) return true
@@ -116,9 +116,36 @@ export const KNOWN_STEPS: readonly string[] = [
   '09-finish',
 ]
 
-// A step file: `NN-name.md` or `NNx-name.md`.
-const STEP_FILE = /^(\d\d[a-z]?-.+)\.md$/
+// A step file: `NN-name.md` or `NNx-name.md`; 00-context.md is the run's header, not a step.
+const STEP_FILE = /^(?!00-context\.md$)(\d\d[a-z]?-.+)\.md$/
 const FINISH = /^\d\d[a-z]?-finish$/
+
+/** A run folder without 00-context.md is live only while one of its step files moved in the last hour. */
+export const BARE_STALE_MS = 60 * 60 * 1000
+
+/** The newest step file's mtime among `files`, or -Infinity when none is a step file. */
+export function newestStep(files: readonly { name: string; mtimeMs: number }[]): number {
+  return Math.max(-Infinity, ...files.filter(f => STEP_FILE.test(f.name)).map(f => f.mtimeMs))
+}
+
+/**
+ * A run folder without 00-context.md is shown only off the trunk (HEAD neither master nor main)
+ * and while its newest step file is under BARE_STALE_MS old; the rest is isLive's rule.
+ */
+export function bareShown(run: DeckApexRun, stepMs: number, head: string | undefined, now: number): boolean {
+  if (head === 'master' || head === 'main') return false
+  return isLive(run, stepMs, now, BARE_STALE_MS)
+}
+
+/**
+ * The run dir a poll found against the last one seen this session: new only when a previous run
+ * was seen and the dir differs. `last` survives a poll with no run (a miss, an ended run), so the
+ * same run coming back is not new.
+ */
+export function runSwitch(last: string | null, dir: string | null): { isNew: boolean; last: string | null } {
+  if (dir === null) return { isNew: false, last }
+  return { isNew: last !== null && last !== dir, last: dir }
+}
 
 /**
  * A run folder without 00-context.md, read from its step files: title the folder, no tier, each

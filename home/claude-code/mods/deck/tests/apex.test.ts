@@ -3,18 +3,22 @@
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
+  BARE_STALE_MS,
   STALE_MS,
   addPhase,
   apexHeader,
+  bareShown,
   countedTotal,
   headBranch,
   isLive,
+  newestStep,
   onBranch,
   parseContext,
   parseVerdict,
   phaseMark,
   phaseNote,
   runFromFiles,
+  runSwitch,
   settleRun,
   statusKind,
   syncPhases,
@@ -316,13 +320,80 @@ describe('runFromFiles (a run folder without 00-context.md)', () => {
     ])
   })
 
-  test('a 09-finish file ends the run; a stale newest file too', () => {
+  test('a 09-finish file ends the run', () => {
     const ended = runFromFiles('r', [
       { name: '02-plan.md', mtimeMs: NOW - 2000 },
       { name: '09-finish.md', mtimeMs: NOW - 1000 },
     ])
     expect(isLive(ended, NOW - 1000, NOW)).toBe(false)
-    const stale = runFromFiles('r', [{ name: '02-plan.md', mtimeMs: NOW - STALE_MS }])
-    expect(isLive(stale, NOW - STALE_MS, NOW)).toBe(false)
+  })
+})
+
+describe('a run folder without 00-context.md: step files, trunk, 1 h window', () => {
+  const plan = (at: number) => runFromFiles('04-nav', [{ name: '02-plan.md', mtimeMs: at }])
+
+  test('00-context.md and other .md files are no step file', () => {
+    const files = [
+      { name: '00-context.md', mtimeMs: NOW },
+      { name: 'notes.md', mtimeMs: NOW },
+      { name: '02-plan.md', mtimeMs: NOW - 5000 },
+    ]
+    expect(newestStep(files)).toBe(NOW - 5000)
+    expect(newestStep(files.slice(0, 2))).toBe(-Infinity)
+    expect(runFromFiles('r', files).steps.some(s => s.step === '00-context')).toBe(false)
+  })
+
+  test('hidden when HEAD is master or main; shown on another branch or HEAD unknown', () => {
+    const run = plan(NOW - 1000)
+    expect(bareShown(run, NOW - 1000, 'master', NOW)).toBe(false)
+    expect(bareShown(run, NOW - 1000, 'main', NOW)).toBe(false)
+    expect(bareShown(run, NOW - 1000, 'feat/x', NOW)).toBe(true)
+    expect(bareShown(run, NOW - 1000, undefined, NOW)).toBe(true)
+  })
+
+  test('live for 1 h from its newest step file, where a context run gets 6 h', () => {
+    expect(BARE_STALE_MS).toBe(60 * 60 * 1000)
+    const run = plan(NOW - BARE_STALE_MS + 1)
+    expect(bareShown(run, NOW - BARE_STALE_MS + 1, 'feat/x', NOW)).toBe(true)
+    expect(bareShown(run, NOW - BARE_STALE_MS, 'feat/x', NOW)).toBe(false)
+    expect(isLive(run, NOW - BARE_STALE_MS, NOW)).toBe(true)
+  })
+
+  test('its header names the folder, not a branch', () => {
+    expect(apexHeader(plan(NOW))).toBe('APEX · 04-nav')
+  })
+})
+
+describe('runSwitch (a new run clears the finished cards)', () => {
+  test('first run seen: not new; same run: not new; another dir: new', () => {
+    const first = runSwitch(null, 'a')
+    expect(first).toEqual({ isNew: false, last: 'a' })
+    expect(runSwitch(first.last, 'a')).toEqual({ isNew: false, last: 'a' })
+    expect(runSwitch(first.last, 'b')).toEqual({ isNew: true, last: 'b' })
+  })
+
+  test('no run (a miss, or the run ended) keeps the last dir: the same run back is not new', () => {
+    const gone = runSwitch('a', null)
+    expect(gone).toEqual({ isNew: false, last: 'a' })
+    expect(runSwitch(gone.last, 'a').isNew).toBe(false)
+    expect(runSwitch(gone.last, 'b').isNew).toBe(true)
+    expect(runSwitch(null, null)).toEqual({ isNew: false, last: null })
+  })
+
+  test('with settleRun: a 1-poll miss then the same run clears nothing', () => {
+    const a: DeckApexRun = { title: 't', steps: [], dir: 'a' }
+    let last: string | null = null
+    let shown: DeckApexRun | null = null
+    let misses = 0
+    const news: boolean[] = []
+    for (const found of [a, null, a, null, null, a]) {
+      const settled = settleRun(shown, found, misses)
+      shown = settled.run
+      misses = settled.misses
+      const sw = runSwitch(last, shown?.dir ?? null)
+      last = sw.last
+      news.push(sw.isNew)
+    }
+    expect(news).toEqual([false, false, false, false, false, false])
   })
 })

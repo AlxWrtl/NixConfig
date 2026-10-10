@@ -204,8 +204,9 @@ test('a live run folder without 00-context.md draws, dock and inline: the folder
   for (const mount of [pane(120), inline(80, 'terminal')]) {
     const ui = await $.ui.mount(mount)
     expect(await ui.find({ text: exact('APEX · 04-nav-flottante') })).toBeDefined()
-    expect((await ui.find({ text: exact('◐ 02-plan') }))?.props.bold).toBe(true)
-    expect(await ui.find({ text: exact('○ 03-execute') })).toBeDefined()
+    // The live step row stands where the phase dots were.
+    expect(await ui.find({ text: exact('○ edit') })).toBeDefined()
+    expect(await ui.find({ text: exact('◐ 02-plan') })).toBeUndefined()
     await ui.unmount()
   }
 
@@ -244,11 +245,11 @@ test('a newer run folder without 00-context.md beats an older live one with it',
   const ui = await $.ui.mount(pane(120))
   expect(await ui.find({ text: exact('APEX · zz-newer') })).toBeDefined()
   expect(await ui.find({ text: exact('APEX · feat/test · Standard') })).toBeUndefined()
-  expect(await ui.find({ text: exact('◐ 02-plan') })).toBeDefined()
+  expect(await ui.find({ text: exact('○ edit') })).toBeDefined()
   await ui.unmount()
 })
 
-test('a live run draws first: header with branch and tier, one dot per phase state, tokens per phase', async ($, on) => {
+test('a live run draws first: header with branch and tier, the step row in place of the phase dots, no token buckets', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh({ current: '03-execute' }))
   on('turn.step', async function* () {
@@ -256,19 +257,15 @@ test('a live run draws first: header with branch and tier, one dot per phase sta
   })
   await $.session.start(START)
   await openDeck($, clock)
-  // A main-loop step lands in the polled phase's bucket: 1.0k in + 3.4k out.
   await drain($.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 }))
   for (const cols of [64, 120]) {
     const ui = await $.ui.mount(pane(cols))
-    const header = await ui.find({ text: exact('APEX · feat/test · Standard') })
+    const header = await ui.find({ type: 'Text', text: exact('APEX · feat/test · Standard') })
     expect(header?.props.color).toBe('planMode')
     expect(header?.props.bold).toBe(true)
-    expect((await ui.find({ text: exact('● 00-init') }))?.props.color).toBe('planMode')
-    expect((await ui.find({ text: exact('· 02-plan') }))?.props.color).toBe('subtle')
-    const current = await ui.find({ text: exact('◐ 03-execute 4k') })
-    expect(current?.props.bold).toBe(true)
-    expect((await ui.find({ text: exact('○ 04-validate') }))?.props.color).toBe('inactive')
-    expect(await ui.find({ text: exact('○ 09-finish') })).toBeDefined()
+    for (const s of ['edit', 'gate', 'ship']) expect((await ui.find({ text: exact(`○ ${s}`) }))?.props.color).toBe('inactive')
+    expect(await ui.find({ text: /^[●◐○·✗] 0\d-/ })).toBeUndefined()
+    expect(await ui.find({ text: /^[●◐○] \S+ \d+k$/ })).toBeUndefined()
     // First, above every panel.
     const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
     const at = texts.findIndex(t => t === 'APEX · feat/test · Standard')
@@ -446,9 +443,9 @@ test('inline, a live run takes its rows first: dots, each alert, running shells,
     const root = (await ui.drawn()) as { children?: unknown[] }
     expect((root.children ?? []).filter(Boolean).length <= 8).toBe(true)
     expect(await ui.find({ text: exact('APEX · feat/test · Standard') })).toBeDefined()
-    expect((await ui.find({ text: exact('● 00-init') }))?.props.color).toBe('planMode')
-    expect((await ui.find({ text: exact('◐ 03-execute') }))?.props.bold).toBe(true)
-    expect(await ui.find({ text: exact('○ 09-finish') })).toBeDefined()
+    expect((await ui.find({ text: exact('○ edit') }))?.props.color).toBe('inactive')
+    expect(await ui.find({ text: exact('○ ship') })).toBeDefined()
+    expect(await ui.find({ text: exact('◐ 03-execute') })).toBeUndefined()
     expect((await ui.find({ text: exact('✗ external verify FAIL · 2 findings') }))?.props.color).toBe('error')
     expect((await ui.find({ text: exact('■ correction budget spent · 2/2 rounds') }))?.props.color).toBe('error')
     expect(await ui.find({ text: exact('long sleep') })).toBeDefined()
@@ -652,7 +649,7 @@ function skillTool(on: On, seen: unknown[]): void {
 
 const sessionHeader = { type: 'Text' as const, text: /^APEX ·[^◐●○✗]*$/ }
 
-test('a main-loop Skill(apex) call without a run folder draws HEAD as header and ◐ apex; the call passes unchanged', async ($, on) => {
+test('a main-loop Skill(apex) call without a run folder draws HEAD as header and the step row; the call passes unchanged', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w = fresh()
   world(on, w)
@@ -670,7 +667,8 @@ test('a main-loop Skill(apex) call without a run folder draws HEAD as header and
   await clock.advance(5000)
   const ui = await $.ui.mount(pane(120))
   expect((await ui.find(sessionHeader))?.text).toBe('APEX · feat/test')
-  expect(await ui.find({ text: exact('◐ apex') })).toBeDefined()
+  expect(await ui.find({ text: exact('○ edit') })).toBeDefined()
+  expect(await ui.find({ text: exact('◐ apex') })).toBeUndefined()
   await ui.unmount()
 })
 
@@ -801,4 +799,177 @@ test('a second Skill(apex) is a new run: finished cards and shells go, running o
   expect(await next.find({ text: exact('keep running') })).toBeDefined()
   expect(await next.find({ text: exact('stop me') })).toBeUndefined()
   await next.unmount()
+})
+
+// ---------------------------------------------------------------- live steps (tool calls of the run)
+
+// Every tool beneath deck: Skill answers as the engine does, Bash prints what `stdout` gives for
+// its command, the rest answers { ok: true }.
+function tools(on: On, stdout: (command: string) => string = () => ''): void {
+  on('tool.call', (_$, e) => {
+    if (e.tool === 'Skill') return { result: { success: true, commandName: 'apex' } }
+    const command: unknown = Reflect.get(e, 'command')
+    if (e.tool === 'Bash') return { result: { stdout: stdout(typeof command === 'string' ? command : ''), stderr: '', interrupted: false } }
+    return { result: { ok: true } }
+  })
+}
+
+const editCall = (file: string) => ({ tool: 'Edit', file_path: file, old_string: 'a', new_string: 'b' }) as const
+const bash = (command: string) => ({ tool: 'Bash', command }) as const
+const spawnOf = (subagentType: string, description: string) => ({
+  prompt: description,
+  description,
+  subagentType,
+  tool_use_id: `tu-${description}`,
+  provider: { plugin: 'engine', tier: 'core' as const },
+  parentModel: 'claude-opus-5-5',
+  background: true,
+  fork: false,
+})
+
+// The engine allows one unmatched tool.call observer per module: the step and the turn's edit
+// count share it, and this test sees both from one call.
+test('AC1/AC6: Skill(apex), an edit, a gate: ● edit ◐ gate ○ ship; a subagent Bash is no gate; the one call observer feeds steps and turn', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh())
+  tools(on)
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.turn.start({ text: 'go', turnId: 'S1' })
+  await $.tool.call(skill('apex', 1))
+  // The call passes unchanged through both unfiltered tool.call observers.
+  expect(await $.tool.call(editCall('/work/src/a.ts'))).toEqual({ result: { ok: true } })
+  await $.tool.call({ ...bash('pnpm test'), agentId: 'sub1' } as never)
+  await $.tool.call({ ...bash('git commit -m x'), agentId: 'sub1' } as never)
+  await clock.advance(5000)
+  // 80 columns: one column, the receipt wide enough to count the turn's edits.
+  const mid = await $.ui.mount(pane(80))
+  expect((await mid.find({ text: exact('◐ edit') }))?.props.bold).toBe(true)
+  expect(await mid.find({ text: exact('○ gate') })).toBeDefined()
+  expect(await mid.find({ text: exact('○ ship') })).toBeDefined()
+  // The turn observer counted the same edit: the two unfiltered observers both ran.
+  expect(await mid.find({ text: / · 1 edit · 0 errors$/ })).toBeDefined()
+  await mid.unmount()
+
+  expect(await $.tool.call(bash('pnpm typecheck'))).toEqual({ result: { stdout: '', stderr: '', interrupted: false } })
+  await clock.advance(5000)
+  for (const mount of [pane(120), inline(80, 'terminal')]) {
+    const ui = await $.ui.mount(mount)
+    expect((await ui.find({ text: exact('● edit') }))?.props.color).toBe('planMode')
+    expect((await ui.find({ text: exact('◐ gate') }))?.props.bold).toBe(true)
+    expect((await ui.find({ text: exact('○ ship') }))?.props.color).toBe('inactive')
+    await ui.unmount()
+  }
+  // A subagent's edit marks edit.
+  await $.tool.call({ ...editCall('/work/src/b.ts'), agentId: 'sub1' } as never)
+  const sub = await $.ui.mount(pane(120))
+  expect(await sub.find({ text: exact('◐ edit') })).toBeDefined()
+  expect(await sub.find({ text: exact('● gate') })).toBeDefined()
+  await sub.unmount()
+})
+
+test('AC2: a reviewer running shows ◐ review and its detail with a live clock; its answer sets the verdict', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh())
+  tools(on)
+  on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'r1' }))
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.tool.call(skill('apex', 1))
+  await $.agent.spawn(spawnOf('code-reviewer', 'Adversarial review'))
+  await clock.advance(7000)
+  const ui = await $.ui.mount(pane(120))
+  expect((await ui.find({ text: exact('◐ review') }))?.props.bold).toBe(true)
+  expect(await ui.find({ text: exact('◐ review : Adversarial review (Opus) ') })).toBeDefined()
+  expect(await drawn(ui, 'step-clock')).toBe('0:07')
+  await ui.unmount()
+
+  await $.turn.complete({ answer: '## Verdict\nAPPROVED', durationMs: 7000, isAborted: false, turnId: 'R1', agentId: 'r1', reason: 'answer' })
+  const done = await $.ui.mount(pane(120))
+  expect(await done.find({ text: exact('● review APPROVED') })).toBeDefined()
+  expect(await done.find({ text: exact('● review : APPROVED') })).toBeDefined()
+  await done.unmount()
+})
+
+test('AC3: apex-verify-external output: ● Codex PASS, then Codex FAIL 2 in the warning colour', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh())
+  let verdict = 'EXTERNAL-VERIFY PASS run=r findings=0'
+  tools(on, c => (c.includes('apex-verify-external') ? verdict : ''))
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.tool.call(skill('apex', 1))
+  await $.tool.call(bash('apex-verify-external .claude/output/apex/r'))
+  await clock.advance(5000)
+  const pass = await $.ui.mount(pane(120))
+  expect((await pass.find({ text: exact('● Codex PASS') }))?.props.color).toBe('planMode')
+  await pass.unmount()
+  verdict = 'EXTERNAL-VERIFY FAIL run=r findings=2'
+  await $.tool.call(bash('apex-verify-external .claude/output/apex/r'))
+  const fail = await $.ui.mount(pane(120))
+  expect((await fail.find({ text: exact('● Codex FAIL 2') }))?.props.color).toBe('error')
+  await fail.unmount()
+})
+
+test('AC4: writes under .claude/output/apex are plan, not edit; git commit and gh pr are ship', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh())
+  tools(on)
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.tool.call(skill('apex', 1))
+  await $.tool.call({ tool: 'Write', file_path: '/work/.claude/output/apex/r/02-plan.md', content: 'x' })
+  await clock.advance(5000)
+  const plan = await $.ui.mount(pane(120))
+  expect(await plan.find({ text: exact('◐ plan') })).toBeDefined()
+  expect(await plan.find({ text: exact('○ edit') })).toBeDefined()
+  await plan.unmount()
+  await $.tool.call(bash('git commit -m "feat: x"'))
+  await $.tool.call(bash('gh pr create -F body.md'))
+  const ship = await $.ui.mount(pane(120))
+  expect(await ship.find({ text: exact('● plan') })).toBeDefined()
+  expect(await ship.find({ text: exact('◐ ship') })).toBeDefined()
+  expect(await ship.find({ text: exact('○ gate') })).toBeDefined()
+  await ship.unmount()
+})
+
+test('AC5: a new Skill(apex) resets the steps; the header clock counts from that call, the task under it', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh())
+  tools(on)
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.tool.call(skill('apex', 1))
+  await $.tool.call(editCall('/work/src/a.ts'))
+  await clock.advance(65_000)
+  const first = await $.ui.mount(pane(120))
+  expect((await first.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  expect(await drawn(first, 'apex-clock')).toBe('1:05')
+  expect(await first.find({ text: exact('brief 1') })).toBeDefined()
+  expect(await first.find({ text: exact('◐ edit') })).toBeDefined()
+  await first.unmount()
+
+  await $.tool.call(skill('apex', 2))
+  await clock.advance(5000)
+  const second = await $.ui.mount(pane(120))
+  expect(await drawn(second, 'apex-clock')).toBe('0:05')
+  expect(await second.find({ text: exact('brief 2') })).toBeDefined()
+  expect(await second.find({ text: exact('○ edit') })).toBeDefined()
+  await second.unmount()
+})
+
+test('AC5: with a live run folder the header keeps its tier and gains the call clock', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh({ current: '03-execute' }))
+  tools(on)
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.tool.call(skill('apex', 1))
+  await $.tool.call(bash('nix flake check'))
+  await clock.advance(5000)
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.find({ text: exact('APEX · feat/test · Standard') })).toBeDefined()
+  expect(await drawn(ui, 'apex-clock')).toBe('0:05')
+  expect(await ui.find({ text: exact('◐ gate') })).toBeDefined()
+  await ui.unmount()
 })

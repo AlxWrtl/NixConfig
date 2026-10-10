@@ -5,11 +5,19 @@ import { describe, expect, test } from 'claude-code/testing'
 import {
   BARE_STALE_MS,
   STALE_MS,
-  addPhase,
   apexHeader,
   bareShown,
   callSwitch,
-  countedTotal,
+  classifyAgent,
+  classifyCall,
+  endAgent,
+  modelFamily,
+  parseCodex,
+  parseReview,
+  seeStep,
+  startSteps,
+  stepCells,
+  stepDetail,
   headBranch,
   isLive,
   newestStep,
@@ -24,9 +32,7 @@ import {
   sessionRunOf,
   settleRun,
   statusKind,
-  syncPhases,
 } from '../hooks/apex'
-import type { Usage } from '../hooks/apex'
 import type { DeckApexRun } from '../types'
 
 const NOW = 10 * STALE_MS
@@ -88,7 +94,6 @@ Branch: feat/x
 free text
 `
 
-const USAGE: Usage = { input_tokens: 10, output_tokens: 20, cache_read_input_tokens: 300, cache_creation_input_tokens: 4 }
 
 describe('parseContext', () => {
   test('standard header and Progress table: Mode read as the tier', () => {
@@ -197,26 +202,86 @@ describe('branch', () => {
   })
 })
 
-describe('phases', () => {
-  test('usage goes to the current step and resets on a new run dir', () => {
-    let phases = addPhase({ dir: null, byStep: {} }, 'run-a', '03-execute', USAGE)
-    phases = addPhase(phases, 'run-a', '03-execute', USAGE)
-    expect(phases.byStep['03-execute']?.output).toBe(40)
-    expect(countedTotal(phases.byStep['03-execute'] ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })).toBe(68)
-    expect(addPhase(phases, 'run-a', undefined, USAGE)).toBe(phases)
-    const fresh = addPhase(phases, 'run-b', '01-analyze', USAGE)
-    expect(fresh.dir).toBe('run-b')
-    expect(fresh.byStep['03-execute']).toBeUndefined()
-    expect(fresh.byStep['01-analyze']?.input).toBe(10)
+describe('live steps', () => {
+  const K = 'session:1'
+  const call = (tool: string, input: { file_path?: string; notebook_path?: string; command?: string }, inSubagent = false) =>
+    classifyCall(tool, input, inSubagent)
+
+  test('AC4: writes under .claude/output/apex are plan, any other edit is edit', () => {
+    expect(call('Write', { file_path: '/repo/.claude/output/apex/run/02-plan.md' })).toBe('plan')
+    expect(call('Edit', { file_path: '.claude/output/apex/run/00-context.md' })).toBe('plan')
+    expect(call('Edit', { file_path: '/repo/src/a.ts' })).toBe('edit')
+    expect(call('Write', { file_path: '/repo/src/b.ts' })).toBe('edit')
+    expect(call('NotebookEdit', { notebook_path: '/repo/n.ipynb' })).toBe('edit')
+    expect(call('Read', { file_path: '/repo/src/a.ts' })).toBeNull()
   })
 
-  test('run A, then B, then A again: A starts over, never restored', () => {
-    const a = addPhase({ dir: null, byStep: {} }, 'run-a', '03-execute', USAGE)
-    expect(syncPhases(a, 'run-a')).toBe(a)
-    const b = syncPhases(a, 'run-b')
-    expect(b).toEqual({ dir: 'run-b', byStep: {} })
-    expect(syncPhases(b, 'run-a')).toEqual({ dir: 'run-a', byStep: {} })
-    expect(syncPhases(a, null)).toEqual({ dir: null, byStep: {} })
+  test('gate, Codex and ship from the main loop Bash; AC6: never from a subagent', () => {
+    for (const c of ['nix flake check', 'pnpm test', 'pnpm typecheck && pnpm lint', 'claude plugin validate --strict x', 'npx tsc -p .', 'cargo test'])
+      expect(call('Bash', { command: c })).toBe('gate')
+    expect(call('Bash', { command: 'scripts/apex-verify-external run-x' })).toBe('Codex')
+    for (const c of ['git commit -m x', 'git push -u origin f', 'gh pr create -F b', 'gh pr merge 3 --squash'])
+      expect(call('Bash', { command: c })).toBe('ship')
+    expect(call('Bash', { command: 'ls -la' })).toBeNull()
+    expect(call('Bash', { command: 'tscx' })).toBeNull()
+    for (const c of ['pnpm test', 'apex-verify-external', 'git commit -m x']) expect(call('Bash', { command: c }, true)).toBeNull()
+    expect(call('Edit', { file_path: '/repo/src/a.ts' }, true)).toBe('edit')
+  })
+
+  test('agents: implementers, test-runner, reviewers; others none', () => {
+    for (const t of ['frontend-expert', 'backend-expert', 'nix-expert', 'debugger', 'quick-fix', 'plugin:nix-expert']) expect(classifyAgent(t)).toBe('implement')
+    expect(classifyAgent('test-runner')).toBe('tests')
+    expect(classifyAgent('code-reviewer')).toBe('review')
+    expect(classifyAgent('security-auditor')).toBe('review')
+    expect(classifyAgent('Explore')).toBeNull()
+  })
+
+  test('AC3/AC2 verdicts: Codex output and the reviewer answer, first match', () => {
+    expect(parseCodex('…\nEXTERNAL-VERIFY PASS run=x findings=0\n')).toEqual({ verdict: 'PASS', findings: 0 })
+    expect(parseCodex('EXTERNAL-VERIFY FAIL model=gpt findings=2')).toEqual({ verdict: 'FAIL', findings: 2 })
+    expect(parseCodex('nothing here')).toBeNull()
+    expect(parseReview('Verdict: NEEDS_FIXES, not APPROVED')).toBe('NEEDS_FIXES')
+    expect(parseReview('## APPROVED')).toBe('APPROVED')
+    expect(parseReview('fine')).toBeNull()
+    expect(modelFamily('claude-opus-5-5[1m]')).toBe('Opus')
+    expect(modelFamily('haiku')).toBe('Haiku')
+  })
+
+  test('AC1: edit then gate reads ● edit ◐ gate ○ ship', () => {
+    let s = startSteps(K)
+    expect(stepCells(s).map(c => `${c.mark} ${c.label}`)).toEqual(['pending edit', 'pending gate', 'pending ship'])
+    s = seeStep(s, K, 'edit', 10)
+    s = seeStep(s, K, 'gate', 20)
+    expect(stepCells(s).map(c => `${c.mark} ${c.label}`)).toEqual(['done edit', 'current gate', 'pending ship'])
+    // Optional steps appear once seen, in the fixed order.
+    s = seeStep(s, K, 'Codex', 30, { verdict: 'FAIL', findings: 2 })
+    s = seeStep(s, K, 'plan', 40)
+    const cells = stepCells(s)
+    expect(cells.map(c => c.label)).toEqual(['plan', 'edit', 'gate', 'Codex FAIL 2', 'ship'])
+    expect(cells.find(c => c.name === 'Codex')?.isWarn).toBe(true)
+    expect(cells.find(c => c.name === 'plan')?.mark).toBe('current')
+  })
+
+  test('AC2: a running agent step stays current with its detail; its end sets the verdict', () => {
+    let s = seeStep(startSteps(K), K, 'review', 100, { agentId: 'r1', detail: 'Adversarial review (Opus)' })
+    expect(stepDetail(s)).toEqual({ name: 'review', mark: 'current', text: 'review : Adversarial review (Opus)', since: 100 })
+    s = endAgent(s, 'r1', 200, 'APPROVED')
+    expect(stepCells(s).find(c => c.name === 'review')).toEqual({ name: 'review', label: 'review APPROVED', mark: 'done', isWarn: false })
+    expect(stepDetail(s)).toEqual({ name: 'review', mark: 'done', text: 'review : APPROVED' })
+    expect(endAgent(s, 'nobody', 300, null)).toBe(s)
+    // A subagent's edit while an implementer runs: edit current, the implementer still ◐ with its detail.
+    let t = seeStep(startSteps(K), K, 'implement', 10, { agentId: 'i1', detail: 'Build (Sonnet)' })
+    t = seeStep(t, K, 'edit', 20)
+    expect(stepCells(t).filter(c => c.mark === 'current').map(c => c.name)).toEqual(['edit', 'implement'])
+    expect(stepDetail(t)?.text).toBe('implement : Build (Sonnet)')
+  })
+
+  test('AC5: a new run key starts over', () => {
+    const s = seeStep(startSteps('session:1'), 'session:1', 'gate', 10)
+    const t = seeStep(s, 'session:2', 'edit', 20)
+    expect(t.runKey).toBe('session:2')
+    expect(t.steps.map(x => x.name)).toEqual(['edit'])
+    expect(startSteps('session:3')).toEqual({ runKey: 'session:3', steps: [], current: null })
   })
 })
 

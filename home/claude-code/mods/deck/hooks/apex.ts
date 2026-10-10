@@ -102,6 +102,59 @@ export function isLive(run: DeckApexRun, mtimeMs: number, now: number): boolean 
   return run.steps.some(s => s.kind === 'pending' || s.kind === 'running')
 }
 
+/** APEX's main steps in order: the pending dots of a run read from its files. */
+export const KNOWN_STEPS: readonly string[] = [
+  '00-init',
+  '01-analyze',
+  '02-plan',
+  '03-execute',
+  '04-validate',
+  '05-examine',
+  '06-resolve',
+  '07-tests',
+  '08-run-tests',
+  '09-finish',
+]
+
+// A step file: `NN-name.md` or `NNx-name.md`.
+const STEP_FILE = /^(\d\d[a-z]?-.+)\.md$/
+const FINISH = /^\d\d[a-z]?-finish$/
+
+/**
+ * A run folder without 00-context.md, read from its step files: title the folder, no tier, each
+ * present step done, the most recently modified one current (a finish file never: the run ended),
+ * the known steps after it pending.
+ */
+export function runFromFiles(dirName: string, files: readonly { name: string; mtimeMs: number }[]): DeckApexRun {
+  const present = new Map<string, number>()
+  for (const file of files) {
+    const step = STEP_FILE.exec(file.name)?.[1]
+    if (step !== undefined) present.set(step, Math.max(present.get(step) ?? 0, file.mtimeMs))
+  }
+  let current: string | undefined
+  let newest = -Infinity
+  for (const [step, mtimeMs] of present) {
+    // A finish file ends the run: done, never current.
+    if (FINISH.test(step)) continue
+    if (mtimeMs > newest || (mtimeMs === newest && current !== undefined && step > current)) {
+      current = step
+      newest = mtimeMs
+    }
+  }
+  const names = new Set(present.keys())
+  if (current !== undefined) for (const step of KNOWN_STEPS) if (step > current) names.add(step)
+  const steps: DeckApexStep[] = [...names].sort().map(step =>
+    step === current
+      ? { step, status: 'in progress', kind: 'running' }
+      : present.has(step)
+        ? { step, status: 'complete', kind: 'done' }
+        : { step, status: 'pending', kind: 'pending' },
+  )
+  const run: DeckApexRun = { title: dirName, steps }
+  if (current !== undefined) run.currentStep = current
+  return run
+}
+
 /** The branch a .git/HEAD file names, or undefined (detached HEAD, anything unrecognised). */
 export function headBranch(text: string): string | undefined {
   const name = /^ref:\s*refs\/heads\/(\S+)\s*$/.exec(text.trim())?.[1]

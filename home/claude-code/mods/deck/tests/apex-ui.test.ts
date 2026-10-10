@@ -69,6 +69,8 @@ const exact = (text: string): RegExp => new RegExp(`^${text.replace(/[.*+?^${}()
 type World = {
   // The run's files: absent → no .claude/output/apex at all.
   run?: { current: '03-execute' | '04-validate'; mtimeMs?: number; verdict?: string; rounds?: number }
+  // A second run folder, .claude/output/apex/<name>, holding these files and no 00-context.md.
+  bare?: { name: string; files: { name: string; mtimeMs: number }[] }
   opened: unknown[]
   statuses: number
   // Reads of the run folders (fs.list of .claude/output/apex): one per poll.
@@ -76,6 +78,8 @@ type World = {
 }
 
 const fresh = (run?: World['run']): World => ({ ...(run === undefined ? {} : { run }), opened: [], statuses: 0, polls: 0 })
+
+const APEX_ROOT = '/work/.claude/output/apex'
 
 // /work with (or without) a live run in .claude/output/apex/my-run, HOME at /home/u. A missing
 // path throws, so the host's read of it rejects.
@@ -89,6 +93,16 @@ function world(on: On, w: World): void {
   on('fs.list', (_$, e) => {
     if (e.path === '/work/.claude/output/apex') w.polls += 1
     const r = w.run
+    const b = w.bare
+    if (b !== undefined && e.path === APEX_ROOT)
+      return {
+        value: [
+          ...(r === undefined ? [] : [{ name: 'my-run', kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false }]),
+          { name: b.name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false },
+        ],
+      }
+    if (b !== undefined && e.path === `${APEX_ROOT}/${b.name}`)
+      return { value: b.files.map(f => ({ name: f.name, kind: 'file' as const, size: 1, mtimeMs: f.mtimeMs, isLink: false })) }
     if (r === undefined) throw new Error('ENOENT')
     if (e.path === '/work/.claude/output/apex') return { value: [{ name: 'my-run', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }
     if (e.path === '/work/.claude/output/apex/my-run' && r.verdict !== undefined)
@@ -97,11 +111,21 @@ function world(on: On, w: World): void {
       return { value: Array.from({ length: r.rounds ?? 0 }, (_, i) => ({ name: `my-run.round${i + 1}`, kind: 'file', size: 0, mtimeMs: 0, isLink: false })) }
     throw new Error('ENOENT')
   })
-  on('fs.stat', () => ({ value: { kind: 'file', size: 10, mtimeMs: w.run?.mtimeMs ?? NOW - 1000, isLink: false } }))
+  on('fs.stat', (_$, e) => {
+    const b = w.bare
+    if (b !== undefined && e.path === `${APEX_ROOT}/${b.name}`)
+      return { value: { kind: 'dir', size: 0, mtimeMs: Math.max(0, ...b.files.map(f => f.mtimeMs)), isLink: false } }
+    if (b !== undefined && e.path.startsWith(`${APEX_ROOT}/${b.name}/`)) {
+      const file = b.files.find(f => e.path === `${APEX_ROOT}/${b.name}/${f.name}`)
+      if (file === undefined) throw new Error('ENOENT')
+      return { value: { kind: 'file', size: 1, mtimeMs: file.mtimeMs, isLink: false } }
+    }
+    return { value: { kind: 'file', size: 10, mtimeMs: w.run?.mtimeMs ?? NOW - 1000, isLink: false } }
+  })
   on('fs.read', (_$, e) => {
     const r = w.run
     if (r !== undefined && e.path.endsWith('/external-verify.json') && r.verdict !== undefined) return { value: r.verdict }
-    if (r !== undefined && e.path.endsWith('/00-context.md')) return { value: context(r.current) }
+    if (r !== undefined && e.path === `${APEX_ROOT}/my-run/00-context.md`) return { value: context(r.current) }
     if (e.path === '/work/.git/HEAD') return { value: 'ref: refs/heads/feat/test\n' }
     throw new Error('ENOENT')
   })
@@ -159,6 +183,59 @@ test('without a live run there is no APEX block, no frame, no legend entry; a st
   const live = await $.ui.mount(pane(120))
   expect(await live.find({ text: exact('APEX · feat/test · Standard') })).toBeDefined()
   await live.unmount()
+})
+
+test('a live run folder without 00-context.md draws, dock and inline: no tier, its newest file current', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w: World = { ...fresh(), bare: { name: '04-nav-flottante', files: [{ name: '02-plan.md', mtimeMs: NOW - 1000 }] } }
+  world(on, w)
+  await $.session.start(START)
+  await openDeck($, clock)
+  for (const mount of [pane(120), inline(80, 'terminal')]) {
+    const ui = await $.ui.mount(mount)
+    expect(await ui.find({ text: exact('APEX · feat/test') })).toBeDefined()
+    expect((await ui.find({ text: exact('◐ 02-plan') }))?.props.bold).toBe(true)
+    expect(await ui.find({ text: exact('○ 03-execute') })).toBeDefined()
+    await ui.unmount()
+  }
+
+  // Its newest file 6 hours old: not live.
+  w.bare = { name: '04-nav-flottante', files: [{ name: '02-plan.md', mtimeMs: NOW - 7 * 60 * 60 * 1000 }] }
+  await clock.advance(5000)
+  await clock.advance(5000)
+  const stale = await $.ui.mount(pane(120))
+  expect(await stale.find({ text: /^APEX/ })).toBeUndefined()
+  await stale.unmount()
+
+  // A 09-finish file: the run ended.
+  w.bare = {
+    name: '04-nav-flottante',
+    files: [
+      { name: '02-plan.md', mtimeMs: NOW - 3000 },
+      { name: '09-finish.md', mtimeMs: NOW - 2000 },
+    ],
+  }
+  await clock.advance(5000)
+  await clock.advance(5000)
+  const ended = await $.ui.mount(pane(120))
+  expect(await ended.find({ text: /^APEX/ })).toBeUndefined()
+  await ended.unmount()
+})
+
+test('a newer run folder without 00-context.md beats an older live one with it', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w: World = {
+    ...fresh({ current: '03-execute', mtimeMs: NOW - 60_000 }),
+    bare: { name: 'zz-newer', files: [{ name: '02-plan.md', mtimeMs: NOW - 1000 }] },
+  }
+  world(on, w)
+  await $.session.start(START)
+  await openDeck($, clock)
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.find({ text: exact('APEX · feat/test') })).toBeDefined()
+  expect(await ui.find({ text: exact('APEX · feat/test · Standard') })).toBeUndefined()
+  expect(await ui.find({ text: exact('◐ 02-plan') })).toBeDefined()
+  await ui.unmount()
 })
 
 test('a live run draws first: header with branch and tier, one dot per phase state, tokens per phase', async ($, on) => {

@@ -86,6 +86,7 @@ import {
   parseVerdict,
   phaseMark,
   phaseNote,
+  runFromFiles,
   settleRun,
   syncPhases,
 } from './apex'
@@ -277,8 +278,16 @@ function rowText(content: unknown): string {
   return parts.join('\n')
 }
 
-// The newest run's context file and its mtime, or undefined.
-async function newestContext($: EngineInterface, root: string): Promise<{ path: string; dir: string; mtimeMs: number } | undefined> {
+// A run folder: its name, its newest step time, its context file's mtime when it has one, its .md files.
+type RunDir = { dir: string; mtimeMs: number; context?: number; files: { name: string; mtimeMs: number }[] }
+
+// Folders read per poll beyond the one stat each: the 3 ranked newest are listed.
+const LISTED_DIRS = 3
+
+// The newest run folder, or undefined. Ranked by its context file's mtime, else by the folder's
+// own (adding a file moves it; editing one does not), then the top LISTED_DIRS are listed and
+// the newest .md file of each decides.
+async function newestRun($: EngineInterface, root: string): Promise<RunDir | undefined> {
   let entries
   try {
     entries = await $.fs.list(root)
@@ -286,33 +295,68 @@ async function newestContext($: EngineInterface, root: string): Promise<{ path: 
     // No .claude/output/apex here (or unreadable): no run to show.
     return undefined
   }
-  let best: { path: string; dir: string; mtimeMs: number } | undefined
+  const ranked: { dir: string; key: number; context?: number }[] = []
   for (const entry of entries) {
     if (entry.kind !== 'dir') continue
-    const path = `${root}/${entry.name}/00-context.md`
     try {
-      const stat = await $.fs.stat(path)
-      if (best === undefined || stat.mtimeMs > best.mtimeMs) best = { path, dir: entry.name, mtimeMs: stat.mtimeMs }
+      const stat = await $.fs.stat(`${root}/${entry.name}/00-context.md`)
+      ranked.push({ dir: entry.name, key: stat.mtimeMs, context: stat.mtimeMs })
+      continue
     } catch {
-      // A run directory without its context file is not a run: skipped.
+      // No context file: the folder ranks by its own mtime, read below.
     }
+    try {
+      ranked.push({ dir: entry.name, key: (await $.fs.stat(`${root}/${entry.name}`)).mtimeMs })
+    } catch {
+      // Vanished between list and stat: skipped.
+    }
+  }
+  ranked.sort((a, b) => b.key - a.key)
+  let best: RunDir | undefined
+  for (const candidate of ranked.slice(0, LISTED_DIRS)) {
+    let files: { name: string; mtimeMs: number }[]
+    try {
+      files = (await $.fs.list(`${root}/${candidate.dir}`))
+        .filter(e => e.kind === 'file' && e.name.endsWith('.md'))
+        .map(e => ({ name: e.name, mtimeMs: e.mtimeMs }))
+    } catch {
+      // Unreadable folder: its context file's time alone, if any.
+      files = []
+    }
+    const newestFile = Math.max(-Infinity, ...files.map(f => f.mtimeMs))
+    const mtimeMs = candidate.context === undefined ? newestFile : Math.max(candidate.context, newestFile)
+    // A folder with neither context nor .md file is not a run.
+    if (mtimeMs === -Infinity) continue
+    if (best !== undefined && mtimeMs <= best.mtimeMs) continue
+    best = { dir: candidate.dir, mtimeMs, files, ...(candidate.context === undefined ? {} : { context: candidate.context }) }
   }
   return best
 }
 
 async function scan($: EngineInterface): Promise<DeckApexRun | null> {
   const cwd = await $.session.cwd()
-  const newest = await newestContext($, `${cwd}/.claude/output/apex`)
+  const root = `${cwd}/.claude/output/apex`
+  const newest = await newestRun($, root)
   if (newest === undefined) return null
-  let text: string
-  try {
-    text = await $.fs.read(newest.path)
-  } catch {
-    // Vanished between stat and read, or over 4 MiB: nothing shown this round.
-    return null
+  let parsed: DeckApexRun
+  let liveMs: number
+  if (newest.context !== undefined) {
+    let text: string
+    try {
+      text = await $.fs.read(`${root}/${newest.dir}/00-context.md`)
+    } catch {
+      // Vanished between stat and read, or over 4 MiB: nothing shown this round.
+      return null
+    }
+    parsed = parseContext(text, newest.dir)
+    liveMs = newest.context
+  } else {
+    parsed = runFromFiles(newest.dir, newest.files)
+    // No step file (only other .md files): not a run.
+    if (parsed.currentStep === undefined) return null
+    liveMs = newest.mtimeMs
   }
-  const parsed = parseContext(text, newest.dir)
-  if (!isLive(parsed, newest.mtimeMs, await $.clock.now())) return null
+  if (!isLive(parsed, liveMs, await $.clock.now())) return null
   let head: string | undefined
   try {
     head = headBranch(await $.fs.read(`${cwd}/.git/HEAD`))
@@ -320,6 +364,8 @@ async function scan($: EngineInterface): Promise<DeckApexRun | null> {
     // No repo here, or a worktree whose .git is a file: branch unknown, shown.
     head = undefined
   }
+  // Without a context file, the header names HEAD's branch, else the folder.
+  if (newest.context === undefined && head !== undefined) parsed = { ...parsed, branch: head }
   return onBranch(parsed, head) ? { ...parsed, dir: newest.dir } : null
 }
 

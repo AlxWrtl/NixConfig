@@ -14,6 +14,7 @@ import {
   parseVerdict,
   phaseMark,
   phaseNote,
+  runFromFiles,
   settleRun,
   statusKind,
   syncPhases,
@@ -265,5 +266,63 @@ describe('settleRun', () => {
     expect(twice).toEqual({ run: null, misses: 0 })
     expect(phaseNote(a, twice.run)).toBe('run ended')
     expect(settleRun(null, null, 5)).toEqual({ run: null, misses: 0 })
+  })
+})
+
+describe('runFromFiles (a run folder without 00-context.md)', () => {
+  test('only 02-plan.md: title the folder, no tier, 02-plan current, the known steps after it pending', () => {
+    const run = runFromFiles('04-nav-flottante', [{ name: '02-plan.md', mtimeMs: NOW - 1000 }])
+    expect(run.title).toBe('04-nav-flottante')
+    expect(run.tier).toBeUndefined()
+    expect(run.branch).toBeUndefined()
+    expect(run.currentStep).toBe('02-plan')
+    expect(run.steps.map(s => `${s.step}:${s.kind}`)).toEqual([
+      '02-plan:running',
+      '03-execute:pending',
+      '04-validate:pending',
+      '05-examine:pending',
+      '06-resolve:pending',
+      '07-tests:pending',
+      '08-run-tests:pending',
+      '09-finish:pending',
+    ])
+    expect(apexHeader({ ...run, branch: 'feat/x' })).toBe('APEX · feat/x')
+    expect(apexHeader(run)).toBe('APEX · 04-nav-flottante')
+    expect(isLive(run, NOW - 1000, NOW)).toBe(true)
+  })
+
+  test('present files done, the most recently modified current; other files and names ignored', () => {
+    const run = runFromFiles('r', [
+      { name: '00-init.md', mtimeMs: 1 },
+      { name: '01b-obsidian.md', mtimeMs: 2 },
+      { name: '02-plan.md', mtimeMs: 5 },
+      { name: '03-execute.md', mtimeMs: 4 },
+      { name: 'external-verify.json', mtimeMs: 9 },
+      { name: 'codex.log', mtimeMs: 9 },
+      { name: 'notes.md', mtimeMs: 9 },
+    ])
+    expect(run.currentStep).toBe('02-plan')
+    expect(run.steps.map(s => `${s.step}:${s.kind}`)).toEqual([
+      '00-init:done',
+      '01b-obsidian:done',
+      '02-plan:running',
+      '03-execute:done',
+      '04-validate:pending',
+      '05-examine:pending',
+      '06-resolve:pending',
+      '07-tests:pending',
+      '08-run-tests:pending',
+      '09-finish:pending',
+    ])
+  })
+
+  test('a 09-finish file ends the run; a stale newest file too', () => {
+    const ended = runFromFiles('r', [
+      { name: '02-plan.md', mtimeMs: NOW - 2000 },
+      { name: '09-finish.md', mtimeMs: NOW - 1000 },
+    ])
+    expect(isLive(ended, NOW - 1000, NOW)).toBe(false)
+    const stale = runFromFiles('r', [{ name: '02-plan.md', mtimeMs: NOW - STALE_MS }])
+    expect(isLive(stale, NOW - STALE_MS, NOW)).toBe(false)
   })
 })

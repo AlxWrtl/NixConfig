@@ -11,6 +11,7 @@ import type {
   DeckApexStepName,
   DeckApexSteps,
 } from '../types'
+import { fmtTimer, shorten } from './core'
 
 // ---------------------------------------------------------------- context file
 
@@ -288,9 +289,110 @@ export function parseCodex(output: string): { verdict: string; findings: number 
   return { verdict, findings: Number(match?.[2] ?? 0) }
 }
 
-/** A reviewer's verdict: the first APPROVED, NEEDS_FIXES or BLOCKED of its final text, or null. */
+// A report line without its markdown: `**`, heading `#`s, list bullets' leading spaces.
+const bare = (line: string): string => line.replace(/\*\*/g, '').replace(/^\s*#+\s*/, '').trim()
+const LABELLED = /^\s*verdict\s*:\s*(APPROVED|NEEDS_FIXES|BLOCKED)\b/i
+const LEADING = /^(APPROVED|NEEDS_FIXES|BLOCKED)\b/
+
+const nonEmpty = (text: string): string[] => text.replace(/\r\n?/g, '\n').split('\n').filter(l => l.trim() !== '')
+
+// The verdict and the index (among the non-empty lines) of the line that carries it.
+function reviewVerdict(lines: readonly string[]): { verdict: string; at: number } | null {
+  // A labelled `Verdict: X` line wins: a first line may open with the word as prose ("BLOCKED by X").
+  for (const [at, line] of lines.entries()) {
+    const word = LABELLED.exec(bare(line))?.[1]
+    if (word !== undefined) return { verdict: word.toUpperCase(), at }
+  }
+  const first = lines[0]
+  const word = first === undefined ? undefined : LEADING.exec(bare(first))?.[1]
+  return word === undefined ? null : { verdict: word, at: 0 }
+}
+
+/**
+ * A reviewer's verdict, anchored: a `Verdict: X` line, else a first non-empty line that is (or
+ * starts with) APPROVED, NEEDS_FIXES or BLOCKED; else null. The word in later prose is ignored.
+ */
 export function parseReview(answer: string): string | null {
-  return /\b(APPROVED|NEEDS_FIXES|BLOCKED)\b/.exec(answer)?.[1] ?? null
+  return reviewVerdict(nonEmpty(answer))?.verdict ?? null
+}
+
+/** The first 3 non-empty lines of a review after its verdict line (from the top without one), shortened. */
+export function reviewLines(answer: string): string[] {
+  const lines = nonEmpty(answer)
+  const v = reviewVerdict(lines)
+  return lines.slice(v === null ? 0 : v.at + 1, (v === null ? 0 : v.at + 1) + 3).map(l => shorten(l, 100))
+}
+
+/** The first 2 non-empty lines of an agent's final answer, shortened. */
+export function answerLines(answer: string): string[] {
+  return nonEmpty(answer)
+    .slice(0, 2)
+    .map(l => shorten(l, 100))
+}
+
+/** A path's last two segments: `hooks/apex.ts`. */
+export function pathTail(path: string): string {
+  return path.split('/').filter(p => p !== '').slice(-2).join('/')
+}
+
+type BashOutput = { stdout?: string; stderr?: string; returnCodeInterpretation?: string }
+
+const lastLineOf = (text: string): string | undefined => {
+  const last = nonEmpty(text).pop()
+  return last === undefined ? undefined : shorten(last, 100)
+}
+
+/** A gate call's evidence: its command, the exit code its output names, its error flag, its last output line. */
+export function gateEvidence(
+  command: string,
+  out: BashOutput,
+  isError: boolean,
+): Pick<DeckApexLiveStep, 'command' | 'exitCode' | 'isError' | 'lastLine'> {
+  const all = [out.stdout ?? '', out.stderr ?? '', out.returnCodeInterpretation ?? ''].join('\n')
+  const code = /\bexit(?:ed with)?(?: code| status)?[\s:]+(\d+)\b/i.exec(all)?.[1]
+  const last = lastLineOf(`${out.stdout ?? ''}\n${out.stderr ?? ''}`)
+  return {
+    command: shorten(command, 80),
+    ...(code === undefined ? {} : { exitCode: Number(code) }),
+    isError,
+    ...(last === undefined ? {} : { lastLine: last }),
+  }
+}
+
+/** A ship call's evidence: its command, the commit subject `-m` gives (a heredoc's first line too), a PR URL. */
+export function shipEvidence(command: string, stdout: string): Pick<DeckApexLiveStep, 'command' | 'subject' | 'url'> {
+  const heredoc = /\bgit\s+commit\b[\s\S]*?-m\s+["']?\$\(cat\s+<<-?\s*['"]?\w+['"]?\s*\n\s*([^\n]+)/.exec(command)?.[1]
+  const quoted = /\bgit\s+commit\b[^\n]*?\s-m\s*(?:"([^"\n]*)"|'([^'\n]*)'|([^\s"'$][^\s]*))/.exec(command)
+  const subject = heredoc ?? quoted?.[1] ?? quoted?.[2] ?? quoted?.[3]
+  const url = /https:\/\/github\.com\/[^\s/]+\/[^\s/]+\/pull\/\d+/.exec(stdout)?.[0]
+  return {
+    command: shorten(command.split('\n')[0] ?? command, 80),
+    ...(subject === undefined || subject.trim() === '' ? {} : { subject: shorten(subject, 80) }),
+    ...(url === undefined ? {} : { url }),
+  }
+}
+
+/** A `gh pr merge` call: the run is at rest once its turn completes. */
+export const isMergeCall = (command: string): boolean => /\bgh\s+pr\s+merge\b/.test(command)
+
+/**
+ * When the run came to rest, or null while it is busy: the main turn completed (`turnEndAt`) and
+ * no agent card or shell of the run (started since `startedAt`) still runs, or a merge was seen.
+ * The rest time is the latest of the turn end, an agent end, a shell end.
+ */
+export function runEndedAt(
+  run: { startedAt: number; turnEndAt?: number | null; merged?: boolean },
+  cards: readonly { spawnedAt: number; endedAt: number | null; status: string }[],
+  shells: readonly { startedAt: number; endedAt?: number; status: string }[],
+): number | null {
+  const turnEnd = run.turnEndAt
+  if (turnEnd === undefined || turnEnd === null) return null
+  const ownCards = cards.filter(c => c.spawnedAt >= run.startedAt)
+  const ownShells = shells.filter(x => x.startedAt >= run.startedAt)
+  const isBusy = ownCards.some(c => c.status === 'running') || ownShells.some(x => x.status === 'running')
+  if (isBusy && run.merged !== true) return null
+  const ends = [...ownCards.map(c => c.endedAt), ...ownShells.map(x => x.endedAt)].filter((t): t is number => typeof t === 'number')
+  return Math.max(turnEnd, ...ends)
 }
 
 /** A model id's family (`Opus`), else the id itself. */
@@ -310,20 +412,46 @@ export function seeStep(
   runKey: string,
   name: DeckApexStepName,
   at: number,
-  extra: Pick<DeckApexLiveStep, 'detail' | 'verdict' | 'findings' | 'agentId'> = {},
+  extra: Omit<DeckApexLiveStep, 'name' | 'status' | 'at'> = {},
 ): DeckApexSteps {
   const base = s.runKey === runKey ? s : startSteps(runKey)
-  const step: DeckApexLiveStep = { name, status: 'seen', at, ...extra }
+  const prev = base.steps.find(x => x.name === name)
+  // Files add up (distinct, bounded); a ship's subject and PR URL survive its later calls.
+  const files = [...new Set([...(prev?.files ?? []), ...(extra.files ?? [])])].slice(0, MAX_FILES)
+  const subject = extra.subject ?? prev?.subject
+  const url = extra.url ?? prev?.url
+  const step: DeckApexLiveStep = {
+    name,
+    status: 'seen',
+    at,
+    ...extra,
+    ...(files.length === 0 ? {} : { files }),
+    ...(subject === undefined ? {} : { subject }),
+    ...(url === undefined ? {} : { url }),
+  }
   return { runKey, steps: [...base.steps.filter(x => x.name !== name), step], current: name }
 }
 
-/** Agent `agentId`'s step ended at `at`, with its verdict if any; the same reference when no step is its. */
-export function endAgent(s: DeckApexSteps, agentId: string, at: number, verdict: string | null): DeckApexSteps {
+// Distinct files a step keeps: enough to count « +N more » past the 6 shown.
+const MAX_FILES = 40
+const SHOWN_FILES = 6
+
+/**
+ * Agent `agentId`'s step ended at `at`, with its verdict if any and what its answer said; the same
+ * reference when no step is its.
+ */
+export function endAgent(
+  s: DeckApexSteps,
+  agentId: string,
+  at: number,
+  verdict: string | null,
+  end: Pick<DeckApexLiveStep, 'lines' | 'isFailed'> = {},
+): DeckApexSteps {
   if (!s.steps.some(x => x.agentId === agentId && x.endedAt === undefined)) return s
   return {
     ...s,
     steps: s.steps.map(x =>
-      x.agentId === agentId && x.endedAt === undefined ? { ...x, endedAt: at, ...(verdict === null ? {} : { verdict }) } : x,
+      x.agentId === agentId && x.endedAt === undefined ? { ...x, endedAt: at, ...(verdict === null ? {} : { verdict }), ...end } : x,
     ),
   }
 }
@@ -372,6 +500,52 @@ export function stepDetail(s: DeckApexSteps): StepDetail | null {
   if (own !== null) return own
   const running = [...s.steps].reverse().find(x => isRunning(x) && x.detail !== undefined)
   return running === undefined ? null : detailOf(s, running)
+}
+
+/** A step's explanation box: its lines, and when a still running agent started (its live clock). */
+export type StepExplain = { lines: string[]; since?: number }
+
+// An agent step's head line: description (model), status, duration once ended.
+const agentLine = (x: DeckApexLiveStep): string => {
+  const what = x.detail ?? x.name
+  if (x.endedAt === undefined) return `${what} · running`
+  return `${what} · ${x.isFailed === true ? 'failed' : 'done'} · ${fmtTimer(x.endedAt - x.at)}`
+}
+
+/** What a step did, as its explanation box shows it; a step never seen is not reached yet. */
+export function explainStep(s: DeckApexSteps, name: DeckApexStepName): StepExplain {
+  const x = s.steps.find(y => y.name === name)
+  if (x === undefined) return { lines: ['not reached yet'] }
+  const running = x.agentId !== undefined && x.endedAt === undefined ? { since: x.at } : {}
+  switch (name) {
+    case 'plan':
+    case 'edit': {
+      const files = x.files ?? []
+      if (files.length === 0) return { lines: [name === 'plan' ? 'run files written' : 'files edited'] }
+      const more = files.length > SHOWN_FILES ? ` +${files.length - SHOWN_FILES} more` : ''
+      return { lines: [`${files.slice(0, SHOWN_FILES).join(', ')}${more}`] }
+    }
+    case 'implement':
+    case 'tests':
+      return { lines: [agentLine(x), ...(x.lines ?? []).slice(0, 2)], ...running }
+    case 'review': {
+      const head = x.endedAt === undefined ? agentLine(x) : `${x.verdict ?? 'no verdict'} · ${agentLine(x)}`
+      return { lines: [head, ...(x.lines ?? []).slice(0, 3)], ...running }
+    }
+    case 'gate': {
+      const status = x.exitCode !== undefined ? `exit ${x.exitCode}` : x.isError === true ? 'failed' : 'ok'
+      const tail = x.lastLine === undefined ? '' : ` · ${x.lastLine}`
+      return { lines: [`$ ${x.command ?? 'gate'}`, `${status}${tail}`] }
+    }
+    case 'Codex': {
+      if (x.verdict === undefined) return { lines: ['no verdict (ran in background)'] }
+      return { lines: [`${x.verdict} · ${x.findings ?? 0} findings`] }
+    }
+    case 'ship': {
+      const head = x.subject !== undefined ? `commit: ${x.subject}` : `$ ${x.command ?? 'ship'}`
+      return { lines: [head, ...(x.url === undefined ? [] : [`PR: ${x.url}`])] }
+    }
+  }
 }
 
 // ---------------------------------------------------------------- verdict

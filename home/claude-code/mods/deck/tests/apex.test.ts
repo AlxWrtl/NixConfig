@@ -10,8 +10,16 @@ import {
   callSwitch,
   classifyAgent,
   classifyCall,
+  answerLines,
   endAgent,
+  explainStep,
+  gateEvidence,
+  isMergeCall,
   modelFamily,
+  pathTail,
+  reviewLines,
+  runEndedAt,
+  shipEvidence,
   parseCodex,
   parseReview,
   seeStep,
@@ -498,5 +506,88 @@ describe('session run (a main-loop Skill(apex) call, no run folder)', () => {
     expect(runSwitch(sessionKey(3), 'b')).toEqual({ isNew: false, last: 'b' })
     expect(runSwitch(sessionKey(3), sessionKey(2)).isNew).toBe(false)
     expect(runSwitch('b', 'c').isNew).toBe(true)
+  })
+})
+
+describe('step details (clock at rest, explanations, anchored review)', () => {
+  const K = 'session:1'
+
+  test('AC4: parseReview reads the labelled verdict line, else the first line; prose is ignored', () => {
+    expect(parseReview('BLOCKED by X\n…\nVerdict: APPROVED')).toBe('APPROVED')
+    expect(parseReview('NEEDS_FIXES\n\nThe gate was not BLOCKED, it ran.')).toBe('NEEDS_FIXES')
+    expect(parseReview('Looks fine overall.\nNothing BLOCKED here, APPROVED by me.')).toBeNull()
+    expect(parseReview('\n**APPROVED** — clean')).toBe('APPROVED')
+    expect(parseReview('Summary\n**Verdict**: needs_fixes')).toBe('NEEDS_FIXES')
+    expect(reviewLines('Verdict: NEEDS_FIXES\n\n- a.ts: null deref\n- b.ts: race\n- c.ts: typo\n- d.ts: more')).toEqual([
+      '- a.ts: null deref',
+      '- b.ts: race',
+      '- c.ts: typo',
+    ])
+  })
+
+  test('AC1: the run rests once the main turn ended with no agent or shell of the run running', () => {
+    const run = { startedAt: 100, turnEndAt: 500 }
+    expect(runEndedAt({ startedAt: 100 }, [], [])).toBeNull()
+    expect(runEndedAt({ startedAt: 100, turnEndAt: null }, [], [])).toBeNull()
+    expect(runEndedAt(run, [], [])).toBe(500)
+    // A running card of this run keeps the clock going; an older run's running card does not.
+    expect(runEndedAt(run, [{ spawnedAt: 200, endedAt: null, status: 'running' }], [])).toBeNull()
+    expect(runEndedAt(run, [{ spawnedAt: 50, endedAt: null, status: 'running' }], [])).toBe(500)
+    // The latest of the turn end, an agent end, a shell end.
+    expect(runEndedAt(run, [{ spawnedAt: 200, endedAt: 900, status: 'done' }], [{ startedAt: 300, endedAt: 700, status: 'completed' }])).toBe(900)
+    expect(runEndedAt(run, [], [{ startedAt: 300, status: 'running' }])).toBeNull()
+    // Merged: at rest once the turn ended, whatever still runs.
+    expect(runEndedAt({ ...run, merged: true }, [], [{ startedAt: 300, status: 'running' }])).toBe(500)
+  })
+
+  test('AC3: edit lists distinct file tails, 6 at most, then +N more; ○ reads not reached yet', () => {
+    let s = startSteps(K)
+    expect(explainStep(s, 'edit').lines).toEqual(['not reached yet'])
+    for (const [i, f] of ['a', 'b', 'a', 'c', 'd', 'e', 'f', 'g', 'h'].entries()) s = seeStep(s, K, 'edit', i, { files: [pathTail(`/repo/src/${f}.ts`)] })
+    expect(explainStep(s, 'edit').lines).toEqual(['src/a.ts, src/b.ts, src/c.ts, src/d.ts, src/e.ts, src/f.ts +2 more'])
+    expect(pathTail('x.ts')).toBe('x.ts')
+  })
+
+  test('AC3: gate shows its command, its exit status and its last output line', () => {
+    const fail = gateEvidence('pnpm test --run', { stdout: 'ok 1\nnot ok 2\n\n', stderr: '' }, true)
+    expect(fail).toEqual({ command: 'pnpm test --run', isError: true, lastLine: 'not ok 2' })
+    const s = seeStep(startSteps(K), K, 'gate', 1, fail)
+    expect(explainStep(s, 'gate').lines).toEqual(['$ pnpm test --run', 'failed · not ok 2'])
+    const code = gateEvidence('nix flake check', { stdout: '', stderr: 'error: x\n', returnCodeInterpretation: 'Exit code 3' }, true)
+    expect(code.exitCode).toBe(3)
+    expect(explainStep(seeStep(startSteps(K), K, 'gate', 1, code), 'gate').lines).toEqual(['$ nix flake check', 'exit 3 · error: x'])
+    const ok = gateEvidence('tsc', { stdout: 'done', stderr: '' }, false)
+    expect(explainStep(seeStep(startSteps(K), K, 'gate', 1, ok), 'gate').lines).toEqual(['$ tsc', 'ok · done'])
+  })
+
+  test('AC3: Codex verdict and findings, or no verdict when it ran in background', () => {
+    const v = seeStep(startSteps(K), K, 'Codex', 1, { verdict: 'FAIL', findings: 2 })
+    expect(explainStep(v, 'Codex').lines).toEqual(['FAIL · 2 findings'])
+    expect(explainStep(seeStep(startSteps(K), K, 'Codex', 1), 'Codex').lines).toEqual(['no verdict (ran in background)'])
+  })
+
+  test('AC3: review verdict and the lines after it; implement agent, model, status, duration, answer', () => {
+    let s = seeStep(startSteps(K), K, 'review', 1000, { agentId: 'r1', detail: 'Review (Opus)' })
+    expect(explainStep(s, 'review')).toEqual({ lines: ['Review (Opus) · running'], since: 1000 })
+    s = endAgent(s, 'r1', 61_000, 'NEEDS_FIXES', { lines: reviewLines('NEEDS_FIXES\n- fix a\n- fix b') })
+    expect(explainStep(s, 'review').lines).toEqual(['NEEDS_FIXES · Review (Opus) · done · 1:00', '- fix a', '- fix b'])
+
+    let i = seeStep(startSteps(K), K, 'implement', 0, { agentId: 'i1', detail: 'Build it (Sonnet)' })
+    i = endAgent(i, 'i1', 5000, null, { lines: answerLines('\nDone: built it.\nAll green.\nMore.'), isFailed: true })
+    expect(explainStep(i, 'implement').lines).toEqual(['Build it (Sonnet) · failed · 0:05', 'Done: built it.', 'All green.'])
+  })
+
+  test('AC3: ship reads the commit subject and the PR URL, kept across its calls', () => {
+    expect(shipEvidence('git commit -m "feat: add x" -m body', '')).toEqual({ command: 'git commit -m "feat: add x" -m body', subject: 'feat: add x' })
+    expect(shipEvidence("git commit -m \"$(cat <<'EOF'\nfix: heredoc subject\n\nbody\nEOF\n)\"", '').subject).toBe('fix: heredoc subject')
+    expect(shipEvidence('git commit -F msg.txt', '').subject).toBeUndefined()
+    const pr = shipEvidence('gh pr create -F body.md', 'https://github.com/o/r/pull/42\n')
+    expect(pr.url).toBe('https://github.com/o/r/pull/42')
+    let s = seeStep(startSteps(K), K, 'ship', 1, shipEvidence('git commit -m "feat: add x"', ''))
+    s = seeStep(s, K, 'ship', 2, pr)
+    expect(explainStep(s, 'ship').lines).toEqual(['commit: feat: add x', 'PR: https://github.com/o/r/pull/42'])
+    expect(explainStep(seeStep(startSteps(K), K, 'ship', 1, shipEvidence('git push', '')), 'ship').lines).toEqual(['$ git push'])
+    expect(isMergeCall('gh pr merge 3 --squash')).toBe(true)
+    expect(isMergeCall('gh pr create')).toBe(false)
   })
 })

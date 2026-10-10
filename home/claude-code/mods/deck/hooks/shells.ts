@@ -142,6 +142,17 @@ export function runningShells(shells: readonly Shell[]): number {
   return shells.filter(t => t.status === 'running').length
 }
 
+// A new run began: finished agent cards (any status but running) and ended shells go, running
+// ones stay. Each list is the SAME reference when nothing went.
+export function clearFinished<C extends { status: string }>(cards: C[], shells: Shell[]): { cards: C[]; shells: Shell[] } {
+  const keptCards = cards.filter(c => c.status === 'running')
+  const keptShells = shells.filter(t => t.status === 'running')
+  return {
+    cards: keptCards.length === cards.length ? cards : keptCards,
+    shells: keptShells.length === shells.length ? shells : keptShells,
+  }
+}
+
 // A subagent's turn ended with `reason`: unless it answered, its still running shells close as
 // killed (their notification could only ever reach that loop). Any subagent, the architect too.
 export function shellsAfterTurn(shells: Shell[], agentId: string, reason: string, at: number): Shell[] {

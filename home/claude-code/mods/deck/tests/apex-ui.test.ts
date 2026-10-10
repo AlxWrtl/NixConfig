@@ -66,11 +66,18 @@ async function drawn(ui: Mounted, key: string): Promise<string> {
 // ui.find matches a string text by inclusion: anchor what must be exact.
 const exact = (text: string): RegExp => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
 
+// A folder without 00-context.md: its files, and its own mtime (its newest file's when absent).
+type Bare = { name: string; files: { name: string; mtimeMs: number }[]; dirMtimeMs?: number }
+
 type World = {
   // The run's files: absent → no .claude/output/apex at all.
   run?: { current: '03-execute' | '04-validate'; mtimeMs?: number; verdict?: string; rounds?: number }
   // A second run folder, .claude/output/apex/<name>, holding these files and no 00-context.md.
-  bare?: { name: string; files: { name: string; mtimeMs: number }[] }
+  bare?: Bare
+  // More folders without 00-context.md, beside `bare`.
+  others?: Bare[]
+  // HEAD's branch (feat/test when absent).
+  head?: string
   opened: unknown[]
   statuses: number
   // Reads of the run folders (fs.list of .claude/output/apex): one per poll.
@@ -80,6 +87,8 @@ type World = {
 const fresh = (run?: World['run']): World => ({ ...(run === undefined ? {} : { run }), opened: [], statuses: 0, polls: 0 })
 
 const APEX_ROOT = '/work/.claude/output/apex'
+
+const bareDirs = (w: World): Bare[] => [...(w.bare === undefined ? [] : [w.bare]), ...(w.others ?? [])]
 
 // /work with (or without) a live run in .claude/output/apex/my-run, HOME at /home/u. A missing
 // path throws, so the host's read of it rejects.
@@ -93,15 +102,16 @@ function world(on: On, w: World): void {
   on('fs.list', (_$, e) => {
     if (e.path === '/work/.claude/output/apex') w.polls += 1
     const r = w.run
-    const b = w.bare
-    if (b !== undefined && e.path === APEX_ROOT)
+    const bares = bareDirs(w)
+    if (bares.length > 0 && e.path === APEX_ROOT)
       return {
         value: [
           ...(r === undefined ? [] : [{ name: 'my-run', kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false }]),
-          { name: b.name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false },
+          ...bares.map(b => ({ name: b.name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })),
         ],
       }
-    if (b !== undefined && e.path === `${APEX_ROOT}/${b.name}`)
+    const b = bares.find(d => e.path === `${APEX_ROOT}/${d.name}`)
+    if (b !== undefined)
       return { value: b.files.map(f => ({ name: f.name, kind: 'file' as const, size: 1, mtimeMs: f.mtimeMs, isLink: false })) }
     if (r === undefined) throw new Error('ENOENT')
     if (e.path === '/work/.claude/output/apex') return { value: [{ name: 'my-run', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }
@@ -112,10 +122,10 @@ function world(on: On, w: World): void {
     throw new Error('ENOENT')
   })
   on('fs.stat', (_$, e) => {
-    const b = w.bare
-    if (b !== undefined && e.path === `${APEX_ROOT}/${b.name}`)
-      return { value: { kind: 'dir', size: 0, mtimeMs: Math.max(0, ...b.files.map(f => f.mtimeMs)), isLink: false } }
-    if (b !== undefined && e.path.startsWith(`${APEX_ROOT}/${b.name}/`)) {
+    for (const b of bareDirs(w)) {
+      if (e.path === `${APEX_ROOT}/${b.name}`)
+        return { value: { kind: 'dir', size: 0, mtimeMs: b.dirMtimeMs ?? Math.max(0, ...b.files.map(f => f.mtimeMs)), isLink: false } }
+      if (!e.path.startsWith(`${APEX_ROOT}/${b.name}/`)) continue
       const file = b.files.find(f => e.path === `${APEX_ROOT}/${b.name}/${f.name}`)
       if (file === undefined) throw new Error('ENOENT')
       return { value: { kind: 'file', size: 1, mtimeMs: file.mtimeMs, isLink: false } }
@@ -126,7 +136,7 @@ function world(on: On, w: World): void {
     const r = w.run
     if (r !== undefined && e.path.endsWith('/external-verify.json') && r.verdict !== undefined) return { value: r.verdict }
     if (r !== undefined && e.path === `${APEX_ROOT}/my-run/00-context.md`) return { value: context(r.current) }
-    if (e.path === '/work/.git/HEAD') return { value: 'ref: refs/heads/feat/test\n' }
+    if (e.path === '/work/.git/HEAD') return { value: `ref: refs/heads/${w.head ?? 'feat/test'}\n` }
     throw new Error('ENOENT')
   })
   on('ui.open', (_$, e) => {
@@ -185,7 +195,7 @@ test('without a live run there is no APEX block, no frame, no legend entry; a st
   await live.unmount()
 })
 
-test('a live run folder without 00-context.md draws, dock and inline: no tier, its newest file current', async ($, on) => {
+test('a live run folder without 00-context.md draws, dock and inline: the folder as header, no tier, its newest file current', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w: World = { ...fresh(), bare: { name: '04-nav-flottante', files: [{ name: '02-plan.md', mtimeMs: NOW - 1000 }] } }
   world(on, w)
@@ -193,14 +203,14 @@ test('a live run folder without 00-context.md draws, dock and inline: no tier, i
   await openDeck($, clock)
   for (const mount of [pane(120), inline(80, 'terminal')]) {
     const ui = await $.ui.mount(mount)
-    expect(await ui.find({ text: exact('APEX · feat/test') })).toBeDefined()
+    expect(await ui.find({ text: exact('APEX · 04-nav-flottante') })).toBeDefined()
     expect((await ui.find({ text: exact('◐ 02-plan') }))?.props.bold).toBe(true)
     expect(await ui.find({ text: exact('○ 03-execute') })).toBeDefined()
     await ui.unmount()
   }
 
-  // Its newest file 6 hours old: not live.
-  w.bare = { name: '04-nav-flottante', files: [{ name: '02-plan.md', mtimeMs: NOW - 7 * 60 * 60 * 1000 }] }
+  // Its newest step file just over an hour old: not live (a context file would be for 6 hours).
+  w.bare = { name: '04-nav-flottante', files: [{ name: '02-plan.md', mtimeMs: NOW - 61 * 60 * 1000 }] }
   await clock.advance(5000)
   await clock.advance(5000)
   const stale = await $.ui.mount(pane(120))
@@ -232,7 +242,7 @@ test('a newer run folder without 00-context.md beats an older live one with it',
   await $.session.start(START)
   await openDeck($, clock)
   const ui = await $.ui.mount(pane(120))
-  expect(await ui.find({ text: exact('APEX · feat/test') })).toBeDefined()
+  expect(await ui.find({ text: exact('APEX · zz-newer') })).toBeDefined()
   expect(await ui.find({ text: exact('APEX · feat/test · Standard') })).toBeUndefined()
   expect(await ui.find({ text: exact('◐ 02-plan') })).toBeDefined()
   await ui.unmount()
@@ -509,4 +519,121 @@ test('nothing opens at session start and no status line is drawn', async ($, on)
   await clock.advance(12_000)
   expect(w.opened).toEqual([])
   expect(w.statuses).toBe(0)
+})
+
+test('a run folder without 00-context.md is hidden while HEAD is master or main', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w: World = { ...fresh(), bare: { name: '04-nav', files: [{ name: '02-plan.md', mtimeMs: NOW - 1000 }] }, head: 'master' }
+  world(on, w)
+  await $.session.start(START)
+  await openDeck($, clock)
+  for (const head of ['master', 'main', 'feat/x']) {
+    w.head = head
+    await clock.advance(5000)
+    const ui = await $.ui.mount(pane(120))
+    const header = await ui.find({ type: 'Text', text: /^APEX ·[^◐●○✗]*$/ })
+    expect(header?.text).toBe(head === 'feat/x' ? 'APEX · 04-nav' : undefined)
+    await ui.unmount()
+  }
+})
+
+test('ranking: newest time wins, past the folders own mtime; the 3 ranked newest runs are listed, plus the newest context run', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w: World = fresh()
+  world(on, w)
+  await $.session.start(START)
+  await openDeck($, clock)
+  const step = (at: number) => [{ name: '02-plan.md', mtimeMs: at }]
+  const header = async (): Promise<string | undefined> => {
+    await clock.advance(5000)
+    const ui = await $.ui.mount(pane(120))
+    const found = await ui.find({ type: 'Text', text: /^APEX ·[^◐●○✗]*$/ })
+    await ui.unmount()
+    return found?.text
+  }
+
+  // A context run newer than a bare folder wins: its tier in the header.
+  w.run = { current: '03-execute', mtimeMs: NOW - 1000 }
+  w.bare = { name: 'zz-old', files: step(NOW - 60_000) }
+  expect(await header()).toBe('APEX · feat/test · Standard')
+
+  // A bare folder ranked first by its own mtime, its step file older: the context run wins.
+  w.run = { current: '03-execute', mtimeMs: NOW - 60_000 }
+  w.bare = { name: 'zz-moved', files: step(NOW - 90_000), dirMtimeMs: NOW + 9000 }
+  expect(await header()).toBe('APEX · feat/test · Standard')
+
+  // Four bare folders: only the 3 ranked newest are listed; the newest step among them wins.
+  w.run = undefined
+  w.bare = undefined
+  w.others = [
+    { name: 'r1', files: step(NOW - 5000), dirMtimeMs: NOW - 100 },
+    { name: 'r2', files: step(NOW - 7000), dirMtimeMs: NOW - 200 },
+    { name: 'r3', files: step(NOW - 6000), dirMtimeMs: NOW - 300 },
+    { name: 'r4', files: step(NOW + 9000), dirMtimeMs: NOW - 400 },
+  ]
+  expect(await header()).toBe('APEX · r1')
+
+  // A folder without a step file takes no slot and is never chosen.
+  w.others = [
+    { name: 'junk', files: [{ name: 'notes.md', mtimeMs: NOW + 20_000 }], dirMtimeMs: NOW - 50 },
+    { name: 'r1', files: step(NOW - 9000), dirMtimeMs: NOW - 100 },
+    { name: 'r2', files: step(NOW - 8000), dirMtimeMs: NOW - 200 },
+    { name: 'r3', files: step(NOW + 19_000), dirMtimeMs: NOW - 300 },
+  ]
+  expect(await header()).toBe('APEX · r3')
+
+  // The newest context run is listed even when 3 bare folders rank above it.
+  w.run = { current: '03-execute', mtimeMs: NOW - 60_000 }
+  w.others = [
+    { name: 'r1', files: step(NOW - 120_000), dirMtimeMs: NOW - 100 },
+    { name: 'r2', files: step(NOW - 120_000), dirMtimeMs: NOW - 200 },
+    { name: 'r3', files: step(NOW - 120_000), dirMtimeMs: NOW - 300 },
+  ]
+  expect(await header()).toBe('APEX · feat/test · Standard')
+})
+
+test('a new run clears the finished cards and shells; the running ones stay', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w: World = { ...fresh(), bare: { name: 'run-a', files: [{ name: '02-plan.md', mtimeMs: NOW - 1000 }] } }
+  world(on, w)
+  let shellN = 0
+  on('tool.call', { tool: 'Bash' }, () => ({ result: { backgroundTaskId: `b${++shellN}` } }))
+  on('tool.call', { tool: 'TaskStop' }, (_$, e) => ({ result: { task_id: e.task_id } }))
+  let agentN = 0
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: `ag${++agentN}` }))
+  await $.session.start(START)
+  await openDeck($, clock)
+  const agent = (description: string) => ({
+    prompt: description,
+    description,
+    subagentType: 'Explore',
+    tool_use_id: `tu-${description}`,
+    provider: { plugin: 'engine', tier: 'core' as const },
+    parentModel: 'claude-opus-5-5',
+    background: true,
+    fork: false,
+  })
+  await $.agent.spawn(agent('still going'))
+  await $.agent.spawn(agent('all done'))
+  await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 'A2', agentId: 'ag2', reason: 'answer' })
+  await $.tool.call({ tool: 'Bash', command: 'sleep 600', description: 'keep running', run_in_background: true, tool_use_id: 'tu-1' })
+  await $.tool.call({ tool: 'Bash', command: 'sleep 9', description: 'stop me', run_in_background: true, tool_use_id: 'tu-2' })
+  await $.tool.call({ tool: 'TaskStop', task_id: 'b2', tool_use_id: 'tu-3' })
+
+  // The same run polled again: nothing cleared.
+  await clock.advance(5000)
+  const same = await $.ui.mount(pane(120))
+  expect(await same.find({ text: exact('agents · 1 running · 2 total') })).toBeDefined()
+  expect(await same.find({ text: exact('stop me') })).toBeDefined()
+  await same.unmount()
+
+  // Another run folder: the finished card and shell go.
+  w.bare = { name: 'run-b', files: [{ name: '03-execute.md', mtimeMs: NOW + 4000 }] }
+  await clock.advance(5000)
+  const next = await $.ui.mount(pane(120))
+  expect(await next.find({ text: exact('APEX · run-b') })).toBeDefined()
+  expect(await next.find({ text: exact('agents · 1 running · 1 total') })).toBeDefined()
+  expect(await next.find({ text: exact('keep running') })).toBeDefined()
+  expect(await next.find({ text: exact('stop me') })).toBeUndefined()
+  await next.unmount()
 })

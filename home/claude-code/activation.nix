@@ -191,7 +191,10 @@
              # legacy: `voiceEnabled` (clé plate) est encore lue par le binaire
              # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas
              # garder deux sources de vérité qui peuvent diverger.
-             | del(.voiceEnabled)' \
+             | del(.voiceEnabled)
+             # legacy: le mod flightdeck est retiré (#227, remplacé par deck) ;
+             # le deep merge garde sinon son ancienne entrée pour toujours.
+             | del(.pluginConfigs.flightdeck?)' \
           > "$TMP" || exit 1
         mv "$TMP" "$TARGET"
         chmod 600 "$TARGET"

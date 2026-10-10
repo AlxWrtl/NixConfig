@@ -30,7 +30,12 @@ in
       npm_config_user_agent = "pnpm";
       BASH_DEFAULT_TIMEOUT_MS = "300000";
       BASH_MAX_TIMEOUT_MS = "600000";
-      CLAUDE_AUTOCOMPACT_PCT_OVERRIDE = "90";
+      # Compaction vers ~400k au lieu de ~900k (opus[1m]) : chaque message relit
+      # tout le contexte. Variable dédiée en tokens, prime sur /autocompact,
+      # --autocompact et autoCompactWindow ; l'ancien CLAUDE_AUTOCOMPACT_PCT_OVERRIDE
+      # est un % DE cette fenêtre, retiré pour ne pas se cumuler. 2026-10-10,
+      # https://code.claude.com/docs/en/model-config#set-the-auto-compact-window
+      CLAUDE_CODE_AUTO_COMPACT_WINDOW = "400000";
       CLAUDE_STREAM_IDLE_TIMEOUT_MS = "600000";
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
       # Every mod named in mods.nix, copied to ~/.claude/mods by activation.

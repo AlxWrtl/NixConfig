@@ -8,6 +8,7 @@ import {
   addPhase,
   apexHeader,
   bareShown,
+  callSwitch,
   countedTotal,
   headBranch,
   isLive,
@@ -19,6 +20,8 @@ import {
   phaseNote,
   runFromFiles,
   runSwitch,
+  sessionKey,
+  sessionRunOf,
   settleRun,
   statusKind,
   syncPhases,
@@ -395,5 +398,40 @@ describe('runSwitch (a new run clears the finished cards)', () => {
       news.push(sw.isNew)
     }
     expect(news).toEqual([false, false, false, false, false, false])
+  })
+})
+
+describe('session run (a main-loop Skill(apex) call, no run folder)', () => {
+  const at = { startedAt: NOW - 5000, lastAt: NOW - 5000, args: 'fix the thing' }
+
+  test('live off the trunk under 1 h from the last call: HEAD as header, no tier, one current apex row', () => {
+    const run = sessionRunOf(at, 'feat/x', NOW)
+    expect(run).toEqual({
+      title: 'apex',
+      branch: 'feat/x',
+      steps: [{ step: 'apex', status: 'in progress', kind: 'running' }],
+      currentStep: 'apex',
+      dir: sessionKey(at.startedAt),
+    })
+    expect(run === null ? '' : apexHeader(run)).toBe('APEX · feat/x')
+    expect(run === null ? undefined : phaseMark(run.steps[0] ?? { step: '', status: '', kind: 'other' }, run.currentStep)).toBe('current')
+  })
+
+  test('hidden on master or main, 1 h after the last call, and without a call', () => {
+    expect(sessionRunOf(at, 'master', NOW)).toBeNull()
+    expect(sessionRunOf(at, 'main', NOW)).toBeNull()
+    expect(sessionRunOf(null, 'feat/x', NOW)).toBeNull()
+    expect(sessionRunOf({ ...at, lastAt: NOW - BARE_STALE_MS + 1 }, 'feat/x', NOW)).not.toBeNull()
+    expect(sessionRunOf({ ...at, lastAt: NOW - BARE_STALE_MS }, 'feat/x', NOW)).toBeNull()
+  })
+
+  test('a call is a new run once any run was seen; the folder it then writes is the same run', () => {
+    expect(callSwitch(null, sessionKey(1))).toEqual({ isNew: false, last: sessionKey(1) })
+    expect(callSwitch(sessionKey(1), sessionKey(2))).toEqual({ isNew: true, last: sessionKey(2) })
+    expect(callSwitch('a', sessionKey(3))).toEqual({ isNew: true, last: sessionKey(3) })
+    // The poll that then finds the run's folder (or an older session key) clears nothing.
+    expect(runSwitch(sessionKey(3), 'b')).toEqual({ isNew: false, last: 'b' })
+    expect(runSwitch(sessionKey(3), sessionKey(2)).isNew).toBe(false)
+    expect(runSwitch('b', 'c').isNew).toBe(true)
   })
 })

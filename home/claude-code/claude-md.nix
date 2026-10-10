@@ -1,4 +1,4 @@
-# Global CLAUDE.md content (< 100 lines — every line costs context in EVERY session)
+# Global CLAUDE.md content (< 110 lines — every line costs context in EVERY session)
 #
 # Ce fichier ne porte plus QUE le delta Claude : le texte commun vit dans
 # `agent-instructions.nix` et est splicé, jamais recopié. Toute règle qui vaut
@@ -78,6 +78,15 @@ let
         - Sous-tâches indépendantes fichiers disjoints → /fork background.
         - Review routine qualité → /code-review natif (subagent background, hors
           contexte). Agent code-reviewer = spec compliance + sécu pre-merge.
+      '';
+    }
+    {
+      # Lu par l'autocompaction : https://code.claude.com/docs/en/costs
+      name = "Compact instructions";
+      body = ''
+        - Keep first: active APEX run (id, tier, step, `.claude/output/apex/<id>/`),
+          decisions + their why, files touched + gate state, explicit user asks.
+        - Drop raw tool output already summarized.
       '';
     }
   ];

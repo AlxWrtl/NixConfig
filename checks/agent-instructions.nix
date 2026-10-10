@@ -158,7 +158,9 @@ let
   confidenceScoreInCodex = lib.hasInfix "80%" codexOut;
 
   # --------------------------------------------------------------------- G6
-  lineBudget = 100;
+  # 100 → 110 le 2026-10-10 pour `# Compact instructions` (lu à la compaction,
+  # paie ses lignes en gardant le contexte court) ; doc officielle : < 200.
+  lineBudget = 110;
   overBudget = builtins.filter (o: builtins.length (splitLines o.text) >= lineBudget) outputs;
 
   # --------------------------------------------------------------------- G7

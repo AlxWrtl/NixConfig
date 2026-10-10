@@ -5,6 +5,8 @@ import {
   bar,
   basename,
   cellWidth,
+  compactWindow,
+  contextFill,
   fmtReset,
   layout,
   modelName,
@@ -37,6 +39,28 @@ describe('modelName', () => {
     expect(pickModel('claude-opus-5-5[1m]', 'claude-sonnet-4-5')).toBe('Opus 5.5')
     expect(pickModel('', 'claude-opus-5-5')).toBe('Opus 5.5')
     expect(pickModel('opus', undefined)).toBe('Opus')
+  })
+})
+
+describe('compactWindow / contextFill', () => {
+  test('the window follows the variable as the engine reads it', () => {
+    expect(compactWindow(1_000_000, undefined)).toBe(1_000_000)
+    expect(compactWindow(1_000_000, '400000')).toBe(400_000)
+    expect(compactWindow(1_000_000, '500k')).toBe(100_000)
+    expect(compactWindow(1_000_000, '2000000')).toBe(1_000_000)
+    expect(compactWindow(200_000, '400000')).toBe(200_000)
+    expect(compactWindow(1_000_000, 'abc')).toBe(1_000_000)
+  })
+
+  test('the fill is measured against that window', () => {
+    expect(contextFill({ tokens: 120_000, window: 1_000_000, percent: 12 }, '400000')).toEqual({
+      window: 400_000,
+      pct: 30,
+    })
+    expect(contextFill({ tokens: 500_000, window: 1_000_000 }, '400000').pct).toBe(100)
+    expect(contextFill({ window: 1_000_000, percent: 12 }, '400000').pct).toBe(12)
+    expect(contextFill({ window: 0 }, undefined).pct).toBe(null)
+    expect(contextFill({ window: 0, percent: 7 }, undefined).pct).toBe(7)
   })
 })
 

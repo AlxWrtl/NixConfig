@@ -135,7 +135,8 @@ let
   activationNeedles = [
     "claudeCodeMods = lib.hm.dag.entryAfter"
     "if [[ -v DRY_RUN ]]; then echo \"dry-run: skip claudeCodeMods\"; exit 0; fi"
-    "--exclude='/*/.claude-plugin/types/'"
+    "--filter='-s /*/.claude-plugin/types/'"
+    "--filter='P /\${n}/.claude-plugin/types/'"
     "--chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r"
     "\"$HOME/.claude/mods/\""
     "modsRc=$?"

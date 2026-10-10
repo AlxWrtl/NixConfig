@@ -4,6 +4,7 @@
   lib,
   scraplingShimPkg,
   modsSrc,
+  modNames,
 }:
 {
   claudeCodeDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
@@ -218,8 +219,9 @@
   # ~/.claude/mods is nix-owned: `--delete` removes whatever is not in
   # home/claude-code/mods, a hand-placed folder included. Not home.file: the
   # engine writes `.claude-plugin/types/` into every loaded mod folder, which a
-  # read-only store symlink refuses; those engine files are excluded from both
-  # the copy and the delete. Same subshell + rc-capture as
+  # read-only store symlink refuses; those engine files are never copied (`-s`)
+  # and are kept from the delete only for the mods listed in mods.nix (`P`),
+  # so a retired mod's folder goes whole. Same subshell + rc-capture as
   # claudeCodeSettingsMerge: a failure is reported, the chain goes on.
   # `--checksum`, not `-t`: every store file has mtime 1, so `-t` would give
   # an edited file of unchanged size the same size+mtime as its old copy and
@@ -233,7 +235,8 @@
       set -euo pipefail
       mkdir -p "$HOME/.claude/mods"
       ${pkgs.rsync}/bin/rsync -r --checksum --delete \
-        --exclude='/*/.claude-plugin/types/' \
+        --filter='-s /*/.claude-plugin/types/' \
+        ${lib.concatMapStringsSep " " (n: "--filter='P /${n}/.claude-plugin/types/'") modNames} \
         --chmod=Du=rwx,Dgo=rx,Fu=rw,Fgo=r \
         ${modsSrc}/ "$HOME/.claude/mods/"
     )

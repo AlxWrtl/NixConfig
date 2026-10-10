@@ -34,6 +34,7 @@ let
     inherit pkgs lib;
     inherit (scraplingShim) scraplingShimPkg;
     modsSrc = ./claude-code/mods;
+    modNames = (import ./claude-code/mods.nix).names;
   };
 
   inherit (claudeMd) claudeMdGlobal;

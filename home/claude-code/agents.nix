@@ -6,7 +6,10 @@
 #         Haiku  (codebase-navigator — read-only search: no Write, Edit or Bash)
 #         Sonnet (quick-fix, git-ship, test-runner, security-auditor)
 #         Opus  (frontend-expert, backend-expert, nix-expert, debugger — executors)
-#         Fable (code-reviewer — spec compliance + critical security, pre-merge only)
+#         Opus  (code-reviewer — spec compliance + critical security, pre-merge only)
+# code-reviewer on opus/high, not fable/max (bench 2026-10-10, blind-graded,
+# 5 subtle injected bugs + 2 clean PRs): same detection, 0 false positives on
+# both, ~5x fewer output tokens; opus/xhigh bought nothing over high.
 # Removed in f98ef95 (do not reference): architecture-expert, performance-expert, team-lead
 {
   agentFrontend = ''
@@ -135,8 +138,8 @@
   agentReviewer = ''
     ---
     name: code-reviewer
-    model: fable
-    effort: max
+    model: opus
+    effort: high
     description: "Spec-compliance review (Pass 1) + critical-security gate, pre-merge only. Use proactively for spec/plan compliance and pre-merge security blocking. Routine quality review → native /code-review (background subagent). Blocks on critical security issues."
     tools: Read, Grep, Glob, Bash, WebFetch, Write, Edit
     permissionMode: acceptEdits

@@ -17,9 +17,12 @@ in
   settingsJson = builtins.toJSON {
     "$schema" = "https://json.schemastore.org/claude-code-settings.json";
     language = "french";
-    # xhigh = reco officielle coding/agentic (max: rendements décroissants).
+    # high, pas xhigh : sur Opus 5.5 les niveaux sont recalibrés (medium >= high
+    # d'Opus 5). Banc du 2026-10-10, 3 PR réelles rejouées par /apex complet :
+    # qualité égale sur les 3, xhigh = +25-45 % de coût sur 2 d'entre elles.
+    # /effort xhigh reste dispo à la demande.
     # Force-overridden par le merge activation — la valeur live suit le nix.
-    effortLevel = "xhigh";
+    effortLevel = "high";
     showTurnDuration = true;
 
     env = {

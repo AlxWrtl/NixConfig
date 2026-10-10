@@ -335,6 +335,20 @@ in
       "keybindings-help" = "name-only";
       schedule = "name-only";
       "security-review" = "name-only";
+      # Skills synchronisées depuis claude.ai (`anthropic-skills:*`), jamais
+      # utilisées ici d'après /plugin (2026-10-11) : retirées du listing,
+      # toujours tapables. Clé = nom simple, sans préfixe : sonde `claude -p
+      # --settings` avec témoin, `morning` et `canvas-design` disparaissent du
+      # listing, `docx` reste. Sans effet sur le compte claude.ai.
+      "academic-pptx" = "user-invocable-only";
+      "brand-guidelines" = "user-invocable-only";
+      "built-in-browser" = "user-invocable-only";
+      "canvas-design" = "user-invocable-only";
+      "chrome-browser" = "user-invocable-only";
+      "computer-use" = "user-invocable-only";
+      "import-memory" = "user-invocable-only";
+      morning = "user-invocable-only";
+      "pptx-from-layouts" = "user-invocable-only";
     };
 
     # Contexte du classifieur auto mode (https://code.claude.com/docs/en/auto-mode-config).

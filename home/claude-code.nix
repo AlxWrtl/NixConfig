@@ -281,6 +281,42 @@ in
   programs.zsh.shellAliases = aliases;
   programs.zsh.sessionVariables = sessionVars;
 
+  # One-shot apex-health report, 1.5 weeks after the #235 effort/reviewer change:
+  # writes the before/after verdict into the vault Inbox. launchd repeats a
+  # Month/Day interval every year, so a marker file makes it run once.
+  launchd.agents.apex-health-report = {
+    enable = true;
+    config = {
+      ProgramArguments = [
+        "${pkgs.writeShellScript "apex-health-report" ''
+          marker="$HOME/.cache/apex-health-report.done"
+          [ -e "$marker" ] && exit 0
+          out="${settings.alxVaultPath}/01-Inbox/2026-10-21 - apex-health.md"
+          {
+            echo "# apex-health — $(date '+%F %H:%M')"
+            echo
+            echo '```'
+            for repo in "$HOME/.config/nix-darwin" "$HOME/projects/Preliz"; do
+              [ -d "$repo/.git" ] || continue
+              echo "== $repo"
+              ${apexHealthPkg}/bin/apex-health --repo "$repo"
+              echo "exit=$?"
+            done
+            echo '```'
+          } > "$out" 2>&1 && mkdir -p "$HOME/.cache" && touch "$marker"
+        ''}"
+      ];
+      StartCalendarInterval = [
+        {
+          Month = 10;
+          Day = 21;
+          Hour = 9;
+          Minute = 7;
+        }
+      ];
+    };
+  };
+
   home = {
     # npm global prefix (nix store is immutable, npm install -g needs a writable prefix)
     # ~/.local/bin = uv tool bin dir (`uv tool install` drops graphify/graphify-mcp there)

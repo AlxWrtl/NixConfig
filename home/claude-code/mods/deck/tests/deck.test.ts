@@ -8,7 +8,9 @@ import {
   DEFAULT_TURN,
   afterCall,
   applyStep,
+  compactWindow,
   consultTimeline,
+  contextFill,
   describeInput,
   endConsult,
   fitLegend,
@@ -119,6 +121,23 @@ test('layout math: lanes share one axis, the log gets 4-8 rows, the legend never
   expect(titleLines('Write tinyqueue test suite', 13, 16)).toEqual(['Write', 'tinyqueue test…'])
   expect(titleLines('Short', 13, 16)).toEqual(['Short', ''])
   expect(receiptOf({ ...DEFAULT_TURN, costAtStart: 1, edits: 2 }, { durationMs: 1000, agentsSince: 3, costNow: 1.5, reason: 'answer' }).costDelta).toBe(0.5)
+})
+
+test('the context window follows CLAUDE_CODE_AUTO_COMPACT_WINDOW as the engine reads it', () => {
+  expect(compactWindow(1_000_000, undefined)).toBe(1_000_000)
+  expect(compactWindow(1_000_000, '400000')).toBe(400_000)
+  expect(compactWindow(1_000_000, '500k')).toBe(100_000)
+  expect(compactWindow(1_000_000, '2000000')).toBe(1_000_000)
+  expect(compactWindow(200_000, '400000')).toBe(200_000)
+  expect(compactWindow(1_000_000, 'abc')).toBe(1_000_000)
+})
+
+test('the context fill is measured against that window', () => {
+  expect(contextFill({ tokens: 120_000, window: 1_000_000, percent: 12 }, '400000')).toEqual({ window: 400_000, pct: 30 })
+  expect(contextFill({ tokens: 500_000, window: 1_000_000 }, '400000').pct).toBe(100)
+  expect(contextFill({ window: 1_000_000, percent: 12 }, '400000').pct).toBe(12)
+  expect(contextFill({ window: 0 }, undefined).pct).toBe(null)
+  expect(contextFill({ window: 0, percent: 7 }, undefined).pct).toBe(7)
 })
 
 // ---------------------------------------------------------------- drawing

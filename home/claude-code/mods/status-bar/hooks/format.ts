@@ -68,6 +68,26 @@ export function roundPct(value: number): number {
   return value < 0 ? -Math.round(-value) : Math.round(value)
 }
 
+// The window context fill is measured against: CLAUDE_CODE_AUTO_COMPACT_WINDOW read as the
+// engine reads it (leading integer, clamped to 100k–1M, capped at the model's window), else the
+// model's window. Same text in the status-bar and deck mods: keep them in step.
+export function compactWindow(modelWindow: number, raw: string | undefined): number {
+  const set = raw === undefined ? Number.NaN : Number.parseInt(raw, 10)
+  if (!Number.isFinite(set)) return modelWindow
+  const clamped = Math.min(Math.max(set, 100_000), 1_000_000)
+  return modelWindow > 0 ? Math.min(clamped, modelWindow) : clamped
+}
+
+// The context fill against that window, 0 to 100; the engine's own percent when no token count.
+export function contextFill(
+  context: { tokens?: number; window: number; percent?: number },
+  raw: string | undefined,
+): { window: number; pct: number | null } {
+  const window = compactWindow(context.window, raw)
+  if (context.tokens === undefined || window <= 0) return { window, pct: context.percent ?? null }
+  return { window, pct: Math.min(100, (context.tokens / window) * 100) }
+}
+
 // A 10-cell bar: filled cells from the whole tens of `pct` (clamped 0-100),
 // green under 60, orange under 85, red from 85; empty cells grey.
 export function bar(pct: number): Seg[] {

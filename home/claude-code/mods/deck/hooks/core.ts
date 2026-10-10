@@ -42,6 +42,26 @@ export const normalize = <T extends object>(def: T, stored: unknown): T =>
 /** A stored list, or empty when what is stored is not a list. */
 export const listOf = <T>(stored: unknown): T[] => (Array.isArray(stored) ? (stored as T[]) : [])
 
+// The window context fill is measured against: CLAUDE_CODE_AUTO_COMPACT_WINDOW read as the
+// engine reads it (leading integer, clamped to 100k–1M, capped at the model's window), else the
+// model's window. Same text in the status-bar and deck mods: keep them in step.
+export function compactWindow(modelWindow: number, raw: string | undefined): number {
+  const set = raw === undefined ? Number.NaN : Number.parseInt(raw, 10)
+  if (!Number.isFinite(set)) return modelWindow
+  const clamped = Math.min(Math.max(set, 100_000), 1_000_000)
+  return modelWindow > 0 ? Math.min(clamped, modelWindow) : clamped
+}
+
+// The context fill against that window, 0 to 100; the engine's own percent when no token count.
+export function contextFill(
+  context: { tokens?: number; window: number; percent?: number },
+  raw: string | undefined,
+): { window: number; pct: number | null } {
+  const window = compactWindow(context.window, raw)
+  if (context.tokens === undefined || window <= 0) return { window, pct: context.percent ?? null }
+  return { window, pct: Math.min(100, (context.tokens / window) * 100) }
+}
+
 export const normalizeCard = (stored: unknown): DeckAgentCard =>
   normalize<DeckAgentCard>(
     {

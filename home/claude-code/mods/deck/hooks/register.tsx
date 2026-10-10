@@ -44,6 +44,7 @@ import {
   cardTitle,
   titleLines,
   consultTimeline,
+  contextFill,
   describeInput,
   endConsult,
   fitLegend,
@@ -736,11 +737,13 @@ export const register: Register = (on, options) => {
     // A host without usage (headless, an SDK host, a session not yet bound) just starts without it.
     const u = await $.session.usage().catch(() => null)
     if (u) {
+      // A refused read measures against the model's window, as an unset variable does.
+      const raw = await $.env.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW').catch(() => undefined)
+      const fill = contextFill(u.context, raw)
       await update($, usage, x => ({
         ...normalize(DEFAULT_USAGE, x),
-        pct: u.context.percent ?? null,
+        ...fill,
         tokens: u.context.tokens ?? null,
-        window: u.context.window,
         costUsd: u.cost?.usd ?? null,
         limits: u.rateLimits.map(r => ({ kind: r.kind, pct: r.percentUsed })),
       }))
@@ -837,11 +840,12 @@ export const register: Register = (on, options) => {
   })
 
   on('session.measure', async ($, e, next) => {
+    const raw = await $.env.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW').catch(() => undefined)
+    const fill = contextFill(e.context, raw)
     await update($, usage, x => ({
       ...normalize(DEFAULT_USAGE, x),
-      pct: e.context.percent ?? null,
+      ...fill,
       tokens: e.context.tokens ?? null,
-      window: e.context.window,
       costUsd: e.cost?.usd ?? null,
       limits: e.rateLimits.map(r => ({ kind: r.kind, pct: r.percentUsed })),
     }))

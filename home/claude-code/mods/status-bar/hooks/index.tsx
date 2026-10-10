@@ -1,6 +1,6 @@
 // status-bar: the session's status under the prompt, in place of the
 // command status line: model, folder, git branch, the last response's
-// tokens in/out, the context bar and the 5h / 7d quota bars with their
+// tokens in/out, the context bar (against the auto-compact window) and the 5h / 7d quota bars with their
 // reset countdowns. Drawn on the PromptHint line, one row when it fits the
 // width, else two; the engine's own hint line (`? for shortcuts`, `esc to
 // interrupt`, its pills) stays drawn beneath, live.
@@ -11,7 +11,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, TextProps, Timer } from 'claude-code'
 
 import type { StatusBarLimit, StatusBarStep, StatusBarUsage } from '../types'
-import { layout, parentDir, parseHead, pickModel, resolveGitdir } from './format.ts'
+import { contextFill, layout, parentDir, parseHead, pickModel, resolveGitdir } from './format.ts'
 import type { Seg } from './format.ts'
 
 // Reset countdowns move by the minute.
@@ -34,15 +34,16 @@ let timer: Timer | undefined
 // The engine's usage figures as the state keeps them (JSON values only:
 // no absent field, null instead).
 function toUsage(
-  context: { percent?: number; tokens?: number },
+  context: { percent?: number; tokens?: number; window: number },
   rateLimits: readonly { kind: string; percentUsed: number; resetsAt?: string }[],
+  raw: string | undefined,
 ): StatusBarUsage {
   const limits: StatusBarLimit[] = rateLimits.map(l => ({
     kind: l.kind,
     percentUsed: l.percentUsed,
     resetsAt: l.resetsAt ?? null,
   }))
-  return { contextPercent: context.percent ?? null, contextTokens: context.tokens ?? null, limits }
+  return { contextPercent: contextFill(context, raw).pct, contextTokens: context.tokens ?? null, limits }
 }
 
 // Writes only on change, so readers redraw only when a figure moved (the
@@ -123,7 +124,10 @@ async function findBranch($: EngineInterface, dir: string): Promise<string | nul
 async function refresh($: EngineInterface): Promise<void> {
   const jobs: Promise<void>[] = [
     $.clock.now().then(at => putNow($, at)),
-    $.session.usage().then(u => putUsage($, toUsage(u.context, u.rateLimits))),
+    // A refused read measures against the model's window, as an unset variable does.
+    Promise.all([$.session.usage(), $.env.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW').catch(() => undefined)]).then(([u, raw]) =>
+      putUsage($, toUsage(u.context, u.rateLimits, raw)),
+    ),
     $.session.model().then(m => putModel($, m)),
     $.session.cwd().then(async dir => {
       await putCwd($, dir)
@@ -181,7 +185,10 @@ export const register: Register = on => {
 
   // Pushed when the context fill or a quota window moves.
   on('session.measure', async ($, e, next) => {
-    await record(() => putUsage($, toUsage(e.context, e.rateLimits)))
+    await record(async () => {
+      const raw = await $.env.get('CLAUDE_CODE_AUTO_COMPACT_WINDOW').catch(() => undefined)
+      await putUsage($, toUsage(e.context, e.rateLimits, raw))
+    })
     return next(e)
   }).catch(($, e, next) => next(e))
 

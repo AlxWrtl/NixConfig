@@ -114,6 +114,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 ├── checks/                      # Flake checks (see Quality Gates)
 │   ├── agent-instructions.nix
 │   ├── apex-consistency.nix
+│   ├── apex-health.nix
 │   ├── apex-plan-provenance.nix
 │   ├── apex-tier.nix
 │   ├── audit-apex-needles.py    # Advisory, not a flake check — needle shapes
@@ -193,6 +194,7 @@ system.
 | `system-config` | The whole `alex-mbp` darwin configuration actually builds |
 | `agent-instructions` | The shared instruction trunk actually reaches both rendered outputs: every shared section body present in `CLAUDE.md` and `AGENTS.md`, each heading exactly once, headings equal the declared trunk-plus-delta list in order, no mechanism Codex lacks named to Codex or smuggled through the trunk, the nix Docs Gate divergence pinned as Codex-inline only, each output under 100 lines, `Project Map` gone from both |
 | `apex-consistency` | The APEX skill keeps its critical clauses, flag casing, subagent isolation, and step-file references |
+| `apex-health` | The built `apex-health` report against a fake `~/.claude` and a throwaway git repo, clock fixed: 6 APEX sessions each side with one correction round each is `VERDICT: ok` (exit 0), two rounds per AFTER session against none before is `DÉRIVE (rounds / run)` (exit 2), 2 AFTER sessions is `insuffisant`, a session under a `scratchpad` project dir changes nothing but the excluded count, a `fix:` touching the file of a `feat:` 2 days later scores fix-after 1/1, and one session with known usage (duplicate `message.id`, a subagent, a malformed line) prints the exact weighted mean. Canary M1 (the drift comparison returning False) must stop the drift case from saying `DÉRIVE`, proving that verdict rests on the comparison |
 | `apex-plan-provenance` | Every premise in an APEX plan carries `[M]` or `[I]` as its first token: the clause still stands in step-02-plan, and the line detector is run against two inline fixtures — one correctly tagged, one identical but for a stripped tag — so a detector that stopped detecting fails instead of passing. Presence is not truth: it proves the tag is THERE, never that it is earned; falsifying a tag is the examine reviewer's job and the Fable premises pass |
 | `apex-tier` | The built `apex-tier` classifier against throwaway git repos: a `matcher` added under `hooks.Notification` is direct, an entry added inside a `deny = [ ... ]` list is high, a `permissionDecision` branch in `hooks/x.js` is high, a 40-line README change is standard, a new `.env.example` is high. Canary M1 (the permission regex replaced by one that never matches) must turn the deny-list case away from high, proving that assertion rests on the permission class |
 | `claude-config` | Claude Code invariants: JSON parses, sandbox denies `~/.ssh` and secrets, agents declare a model, haiku only on read-only agents, rules declare paths |

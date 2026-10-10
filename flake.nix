@@ -57,6 +57,7 @@
         system-config = self.darwinConfigurations."alex-mbp".system;
         agent-instructions = import ./checks/agent-instructions.nix { inherit pkgs; };
         apex-consistency = import ./checks/apex-consistency.nix { inherit pkgs; };
+        apex-health = import ./checks/apex-health.nix { inherit pkgs; };
         apex-plan-provenance = import ./checks/apex-plan-provenance.nix { inherit pkgs; };
         apex-tier = import ./checks/apex-tier.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };

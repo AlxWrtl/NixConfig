@@ -106,6 +106,21 @@ export type DeckApexLiveStep = {
   /** The agent this step started, and when it ended. */
   agentId?: string
   endedAt?: number
+  /** plan / edit: the distinct path tails touched (bounded). */
+  files?: string[]
+  /** gate / ship: the last call's command, shortened. */
+  command?: string
+  /** gate: the exit code its output names, its error flag, its last non-empty output line. */
+  exitCode?: number
+  isError?: boolean
+  lastLine?: string
+  /** ship: the commit subject and the PR URL, kept across its calls. */
+  subject?: string
+  url?: string
+  /** An agent step: the first lines of its final answer (a reviewer's: those after its verdict). */
+  lines?: string[]
+  /** An agent step whose turn ended otherwise than with an answer. */
+  isFailed?: boolean
 }
 
 /** The live steps of the run `runKey` (a session key, else the run dir); `current` was seen last. */
@@ -136,7 +151,15 @@ export type DeckApexAlert =
   | { kind: 'budget'; rounds: number; cap: number }
 
 /** The session's last main-loop Skill(apex) call: a run without a folder (yet). */
-export type DeckApexSessionRun = { startedAt: number; lastAt: number; args: string }
+export type DeckApexSessionRun = {
+  startedAt: number
+  lastAt: number
+  args: string
+  /** When the main turn last completed; cleared by any new activity (null: the run is busy). */
+  turnEndAt?: number | null
+  /** A `gh pr merge` ship call was seen: at rest once the turn completes. */
+  merged?: boolean
+}
 
 /** The run's external verification file, as far as the block shows it. */
 export type DeckApexVerdict = { dir: string; verdict: string; findings: number; mtimeMs: number }
@@ -159,6 +182,8 @@ declare module 'claude-code' {
       budget: DeckApexBudget | null
       shells: DeckApexShell[]
       sessionRun: DeckApexSessionRun | null
+      /** The step whose explanation box is open under the step row. */
+      openStep: DeckApexStepName | null
     }
   }
 }

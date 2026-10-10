@@ -29,6 +29,7 @@ import type {
   DeckTurn,
   DeckUsage,
   DeckView,
+  DeckApexStepName,
 } from '../types'
 import {
   DEFAULT_ARCHITECT,
@@ -104,8 +105,17 @@ import {
   startSteps,
   stepCells,
   stepDetail,
+  answerLines,
+  explainStep,
+  gateEvidence,
+  isMergeCall,
+  pathTail,
+  reviewLines,
+  runEndedAt,
+  shipEvidence,
 } from './apex'
 import type { StepCell, StepMark } from './apex'
+import { STEP_ORDER as STEP_NAMES } from './apex'
 import {
   addShell,
   clearFinished,
@@ -145,6 +155,7 @@ const verdict = atom({ plugin: 'deck', key: 'verdict' } as const, null)
 const budget = atom({ plugin: 'deck', key: 'budget' } as const, null)
 const shells = atom({ plugin: 'deck', key: 'shells' } as const, [])
 const sessionRun = atom({ plugin: 'deck', key: 'sessionRun' } as const, null)
+const openStep = atom({ plugin: 'deck', key: 'openStep' } as const, null)
 
 // Module-level: a hot reload drops the environment and its timer with it.
 let timer: Timer | undefined
@@ -259,6 +270,7 @@ async function resetAll($: EngineInterface) {
   await update($, budget, () => null)
   await update($, shells, () => [])
   await update($, sessionRun, () => null)
+  await update($, openStep, () => null)
 }
 
 /** The session's cost read fresh, not from the last measurement: the receipt subtracts two of these. */
@@ -378,7 +390,29 @@ async function getSessionRun($: EngineInterface): Promise<DeckApexSessionRun | n
   const startedAt = numberField(value, 'startedAt')
   const lastAt = numberField(value, 'lastAt')
   if (startedAt === undefined || lastAt === undefined) return null
-  return { startedAt, lastAt, args: stringField(value, 'args') ?? '' }
+  const turnEndAt = numberField(value, 'turnEndAt')
+  const merged = Reflect.get(Object(value), 'merged') === true
+  return { startedAt, lastAt, args: stringField(value, 'args') ?? '', turnEndAt: turnEndAt ?? null, merged }
+}
+
+// One change to the session run, written only when there is one and the change moved something.
+async function changeSessionRun($: EngineInterface, fn: (value: DeckApexSessionRun) => DeckApexSessionRun): Promise<void> {
+  await record(async () => {
+    const current = await getSessionRun($)
+    if (current === null) return
+    const next = fn(current)
+    if (JSON.stringify(next) !== JSON.stringify(current)) await update($, sessionRun, () => next)
+  })
+}
+
+// New activity (a main turn start, a tool call, an agent spawn): the run clock runs again.
+const wakeRun = ($: EngineInterface): Promise<void> =>
+  changeSessionRun($, x => (x.turnEndAt === null || x.turnEndAt === undefined ? x : { ...x, turnEndAt: null }))
+
+// The open step, or none (an unknown name reads as none).
+async function getOpenStep($: EngineInterface): Promise<DeckApexStepName | null> {
+  const value: unknown = await read($, openStep)
+  return STEP_NAMES.find(n => n === value) ?? null
 }
 
 // The live run folder, else the session's Skill(apex) call (HEAD read only when there is one).
@@ -524,6 +558,7 @@ async function clearForNewRun($: EngineInterface): Promise<void> {
     await update($, agents, list => clearFinished(listOf<unknown>(list).map(normalizeCard), []).cards)
   }
   await changeShells($, current => clearFinished([], current).shells)
+  await update($, openStep, () => null)
 }
 
 // One poll: run (its phase moves to the log), phases, verdict, budget, owned shells.
@@ -601,9 +636,24 @@ async function noteCallStep($: EngineInterface, e: unknown, ran: { result?: unkn
   const name = isRefused ? null : classifyCall(tool, input, stringField(e, 'agentId') !== undefined)
   const isFailedEdit = (name === 'edit' || name === 'plan') && ran.isError === true
   if (name === null || isFailedEdit) return
-  const codex = name === 'Codex' ? parseCodex(stringField(ran.result, 'stdout') ?? '') : null
+  const stdout = stringField(ran.result, 'stdout') ?? ''
+  const command = input.command ?? ''
+  const path = input.file_path ?? input.notebook_path
+  const codex = name === 'Codex' ? parseCodex(stdout) : null
+  const out = { stdout, stderr: stringField(ran.result, 'stderr') ?? '', returnCodeInterpretation: stringField(ran.result, 'returnCodeInterpretation') ?? '' }
+  const evidence =
+    name === 'Codex'
+      ? (codex ?? {})
+      : name === 'gate'
+        ? gateEvidence(command, out, ran.isError === true)
+        : name === 'ship'
+          ? shipEvidence(command, stdout)
+          : path === undefined
+            ? {}
+            : { files: [pathTail(path)] }
   const at = await $.clock.now()
-  await changeSteps($, (s, key) => seeStep(s, key, name, at, codex === null ? {} : codex))
+  await changeSteps($, (s, key) => seeStep(s, key, name, at, evidence))
+  if (name === 'ship' && ran.isError !== true && isMergeCall(command)) await changeSessionRun($, x => (x.merged === true ? x : { ...x, merged: true }))
 }
 
 /** An implementer, test-runner or reviewer started: its step, with what it does and on which model. */
@@ -615,12 +665,13 @@ async function noteAgentStep($: EngineInterface, subagentType: string, descripti
   await changeSteps($, (s, key) => seeStep(s, key, name, at, { agentId, detail }))
 }
 
-/** A step's agent ended: a reviewer's verdict is the first one its final text names. */
-async function endAgentStep($: EngineInterface, agentId: string, answer: string): Promise<void> {
+/** A step's agent ended: a reviewer's verdict (anchored) and the lines after it, else its answer's first lines. */
+async function endAgentStep($: EngineInterface, agentId: string, answer: string, reason: string): Promise<void> {
   const at = await $.clock.now()
   const isReview = (await getSteps($)).steps.some(x => x.agentId === agentId && x.name === 'review')
   const verdict = isReview ? parseReview(answer) : null
-  await changeSteps($, s => endAgent(s, agentId, at, verdict))
+  const lines = isReview ? reviewLines(answer) : answerLines(answer)
+  await changeSteps($, s => endAgent(s, agentId, at, verdict, { lines, isFailed: reason !== 'answer' }))
 }
 
 const alertText = (a: DeckApexAlert) =>
@@ -750,6 +801,7 @@ export const register: Register = (on, options) => {
     const [now, cost] = await Promise.all([$.clock.now(), costNow($)])
     await update($, turn, () => ({ ...DEFAULT_TURN, startedAt: now, costAtStart: cost }))
     await update($, main, m => ({ ...normalize(DEFAULT_MAIN, m), isRunning: true }))
+    if (stringField(e, 'agentId') === undefined) await wakeRun($)
     // A background architect's report reaches the main loop as the text opening this turn. The
     // SubagentHandback tool call (in tool.call) normally carries it first; this is the fallback.
     const back = e.text ? handbackOf(e.text) : null
@@ -811,6 +863,7 @@ export const register: Register = (on, options) => {
 
   on('tool.call', async ($, e, next) => {
     const ran = await next(e)
+    await wakeRun($)
     await noteCallStep($, e, ran)
     // A refused call carries neither a result nor an error. An inference, not the refusal's own
     // field: a tool that answers with an undefined result would read as refused too (log text only).
@@ -886,6 +939,7 @@ export const register: Register = (on, options) => {
         await update($, sessionRun, () => ({ startedAt: now, lastAt: now, args: shorten(stringField(e, 'args') ?? '', 40) }))
         // Each call starts the run's live steps over, keyed as the session run.
         await update($, apexSteps, () => startSteps(sessionKey(now)))
+        await update($, openStep, () => null)
       })
       pollOnce($)
     }
@@ -977,6 +1031,7 @@ export const register: Register = (on, options) => {
     if (!e.parentAgentId) await noteMode($, e.permissionMode)
     if (!started.agentId) return started
     const id = started.agentId
+    await wakeRun($)
     await noteAgentStep($, e.subagentType, e.description, id, started.model)
     if (await isArchitectType($, cfg, e.subagentType)) {
       await update($, architect, a => {
@@ -1013,12 +1068,14 @@ export const register: Register = (on, options) => {
       })
       await update($, receipt, () => r)
       await update($, main, m => ({ ...normalize(DEFAULT_MAIN, m), isRunning: false }))
+      // The main turn's end: the run clock stops here once no agent or shell of the run runs.
+      await changeSessionRun($, x => ({ ...x, turnEndAt: now }))
       pollOnce($)
       return done
     }
     // Any subagent, the architect too: its still running shells could only ever notify it.
     await record(() => changeShells($, current => shellsAfterTurn(current, id, e.reason, now)))
-    await endAgentStep($, id, e.answer)
+    await endAgentStep($, id, e.answer, e.reason)
     if ((await getArchitect($)).ids.includes(id)) {
       await consultEnded($, cfg, e.answer, id)
       return done
@@ -1050,7 +1107,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     // Clients draw on terminal and desktop only; elsewhere the same frame as static text.
     const hasClient = 'Client' in els && (e.surface === 'terminal' || e.surface === 'desktop')
-    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now] = await Promise.all([
+    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now, open] = await Promise.all([
       getMain($),
       getUsage($),
       getArchitect($),
@@ -1066,6 +1123,7 @@ export const register: Register = (on, options) => {
       read($, budget),
       getShells($),
       $.clock.now(),
+      getOpenStep($),
     ])
     const W = Math.max(40, e.props.bodyColumns)
     const layout = v.layout ?? cfg.layout
@@ -1143,15 +1201,42 @@ export const register: Register = (on, options) => {
     }
     // The call clock and the task belong to the run the last Skill(apex) call started.
     const callRun = sr !== null && st.runKey === sessionKey(sr.startedAt) ? sr : null
+    // At rest (main turn over, nothing of the run running): the clock stops, drawn as plain dim text.
+    const restAt = callRun === null ? null : runEndedAt(callRun, cards, sh)
     const cells = stepCells(st)
     const detail = stepDetail(st)
+    // A step cell is a Button (click, or Tab + Enter in the focused pane; no hotkey): it toggles
+    // its explanation box, one open at a time. Written from the press, never from this render.
+    const togglePress = (name: DeckApexStepName) => () => update($, openStep, x => (x === name ? null : name))
     const cellText = (c: StepCell) => (
-      <Text color={c.isWarn ? C.warn : markColor[c.mark]} bold={c.mark === 'current'}>
-        {`${PHASE_GLYPH[c.mark]} ${c.label}`}
-      </Text>
+      <Button key={`step-${c.name}`} plain onPress={togglePress(c.name)}>
+        <Text color={c.isWarn ? C.warn : markColor[c.mark]} bold={c.mark === 'current' || c.name === open}>
+          {`${PHASE_GLYPH[c.mark]} ${c.label}`}
+        </Text>
+      </Button>
     )
     // The live steps on one row (a separator Text between them, so each step reads on its own).
     const stepRow = () => cells.flatMap((c, i) => (i === 0 ? [cellText(c)] : [<Text>{'  '}</Text>, cellText(c)]))
+    // The open step's explanation: its lines under the row, a running agent's with its live clock.
+    const explain = open === null || !cells.some(c => c.name === open) ? null : explainStep(st, open)
+    const explainRows = (max: number) =>
+      explain === null
+        ? []
+        : explain.lines.slice(0, Math.max(0, max)).map((line, i) =>
+            i === 0 && explain.since !== undefined ? (
+              <Box>
+                <Text color={C.dim} wrap="truncate">{`│ ${line} · `}</Text>
+                <Box flexShrink={0}>{clock('explain-clock', explain.since, null, C.dim)}</Box>
+              </Box>
+            ) : (
+              <Box>
+                <Text color={C.faint}>{'│ '}</Text>
+                <Text color={C.dim} wrap="truncate">
+                  {line}
+                </Text>
+              </Box>
+            ),
+          )
     // `APEX · <branch> · <tier>`, then the time since the Skill(apex) call.
     const headerRow = (run: DeckApexRun) => (
       <Box>
@@ -1161,7 +1246,11 @@ export const register: Register = (on, options) => {
           </Text>
         </Box>
         {callRun !== null ? <Text color={C.apex}>{' · '}</Text> : null}
-        {callRun !== null ? <Box flexShrink={0}>{clock('apex-clock', callRun.startedAt, null, C.apex)}</Box> : null}
+        {callRun !== null ? (
+          <Box flexShrink={0}>
+            {restAt !== null ? <Text color={C.dim}>{fmtTimer(restAt - callRun.startedAt)}</Text> : clock('apex-clock', callRun.startedAt, null, C.apex)}
+          </Box>
+        ) : null}
       </Box>
     )
     const taskRow =
@@ -1190,6 +1279,7 @@ export const register: Register = (on, options) => {
             <Box flexWrap="wrap" columnGap={2}>
               {cells.map(cellText)}
             </Box>
+            {explainRows(explain?.lines.length ?? 0)}
             {detailRow}
             {alerts.map(al => (
               <Text color={C.warn} bold wrap="truncate">
@@ -1206,7 +1296,7 @@ export const register: Register = (on, options) => {
     const apexRows =
       apexRun === null
         ? 0
-        : 2 + 1 + (taskRow === null ? 0 : 1) + 1 + (detailRow === null ? 0 : 1) + alerts.length + shownShells.length + (hiddenShells > 0 ? 1 : 0) + 1
+        : 2 + 1 + (taskRow === null ? 0 : 1) + 1 + (explain?.lines.length ?? 0) + (detailRow === null ? 0 : 1) + alerts.length + shownShells.length + (hiddenShells > 0 ? 1 : 0) + 1
 
     // ---- main
     const effortN = { low: 1, medium: 2, high: 3, xhigh: 4, max: 4 }[m.effort] ?? 0
@@ -1549,13 +1639,10 @@ export const register: Register = (on, options) => {
       const mg = u.pct !== null ? gauge(u.pct, 6) : null
       // While a run is live it takes its rows first: header, task, step row, its detail, each
       // alert, the running shells; the agents and the receipt get what is left of the 8.
-      const apexMini =
+      const apexRest =
         apexRun === null
           ? []
           : [
-              headerRow(apexRun),
-              ...(taskRow === null ? [] : [taskRow]),
-              <Text wrap="truncate">{stepRow()}</Text>,
               ...(detailRow === null ? [] : [detailRow]),
               ...alerts.map(al => (
                 <Text color={C.warn} bold wrap="truncate">
@@ -1563,7 +1650,15 @@ export const register: Register = (on, options) => {
                 </Text>
               )),
               ...sh.filter(s => s.status === 'running').map(s => shellRow(s, W)),
-            ].slice(0, MINI_ROWS - 1)
+            ]
+      const apexHead = apexRun === null ? [] : [headerRow(apexRun), ...(taskRow === null ? [] : [taskRow])]
+      // The open explanation takes the agents' rows first: at most 3, and at least 1 while the
+      // run's other rows leave none.
+      const explainN = Math.min(3, explain?.lines.length ?? 0, Math.max(1, MINI_ROWS - 1 - apexHead.length - 1 - apexRest.length))
+      const apexMini =
+        apexRun === null
+          ? []
+          : [...apexHead, <Box overflow="hidden">{stepRow()}</Box>, ...explainRows(explainN), ...apexRest].slice(0, MINI_ROWS - 1)
       const room = MINI_ROWS - 1 - apexMini.length
       const ordered = [...cards.filter(c => c.status === 'running'), ...cards.filter(c => c.status !== 'running').reverse()]
       let nLive = Math.min(3, cards.length, room)

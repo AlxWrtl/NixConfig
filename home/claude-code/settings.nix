@@ -38,6 +38,10 @@ in
       CLAUDE_CODE_AUTO_COMPACT_WINDOW = "400000";
       CLAUDE_STREAM_IDLE_TIMEOUT_MS = "600000";
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
+      # Garde les outils Chrome, retire la section Chrome du prompt système et
+      # la skill /claude-in-chrome : Chrome sert à agir, jamais à lire. 2026-10-10,
+      # https://code.claude.com/docs/en/env-vars
+      CLAUDE_CODE_DISABLE_CFC_PROMPT = "1";
       # Every mod named in mods.nix, copied to ~/.claude/mods by activation.
       CLAUDE_CODE_PLUGIN_DIRS = mods.pluginDirs homeDirectory;
     };
@@ -317,6 +321,20 @@ in
       schliff = "user-invocable-only";
       tdd = "user-invocable-only";
       "verify-feature" = "user-invocable-only";
+      # `name-only` (2026-10-10) : skills intégrées ou maison rarement utiles
+      # ici ; le nom reste listé donc invocable par le modèle, la description
+      # (jusqu'à 1 536 caractères) sort du contexte de chaque tour. Les skills
+      # de plugins (anthropic-skills:*, codex:*) ne sont pas couvertes : /plugin.
+      "artifact-capabilities" = "name-only";
+      "artifact-diagramming" = "name-only";
+      autoresearch = "name-only";
+      dataviz = "name-only";
+      "design-md" = "name-only";
+      "fewer-permission-prompts" = "name-only";
+      init = "name-only";
+      "keybindings-help" = "name-only";
+      schedule = "name-only";
+      "security-review" = "name-only";
     };
 
     # Contexte du classifieur auto mode (https://code.claude.com/docs/en/auto-mode-config).

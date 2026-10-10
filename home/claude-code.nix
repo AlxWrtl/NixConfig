@@ -30,6 +30,7 @@ let
   scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
   apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
   apexTier = import ./claude-code/apex-tier.nix { inherit pkgs; };
+  apexHealth = import ./claude-code/apex-health.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
     inherit pkgs lib;
     inherit (scraplingShim) scraplingShimPkg;
@@ -44,6 +45,7 @@ let
   inherit (nixOptions) nixOptionsPkg;
   inherit (apexVerifyExternal) apexVerifyExternalPkg;
   inherit (apexTier) apexTierPkg;
+  inherit (apexHealth) apexHealthPkg;
   inherit (graphifyReindex) graphifyReindexPkg;
   inherit (vaultSnapshot) vaultSnapshotPkg;
   inherit (settings)
@@ -298,6 +300,7 @@ in
       nixOptionsPkg
       apexVerifyExternalPkg
       apexTierPkg
+      apexHealthPkg
       graphifyReindexPkg
       vaultSnapshotPkg
     ];

@@ -123,6 +123,7 @@ in
       # git commit/pull/fetch: signing key + SSH remote, both denied inside.
       # An exclusion only applies when the Bash call is that command ALONE:
       # `cd … &&`, `$(…)`, heredoc or redirection keep the call sandboxed.
+      # hooks/lone-excluded-bash.js denies those shapes before they run.
       # nix flake check: sandboxed it hits EPERM on the daemon socket
       # (/nix/var/nix/daemon-socket/socket) and on ~/.cache/nix sqlite.
       # Excluding the one command, NOT allowUnixSockets: the user is in
@@ -659,6 +660,19 @@ in
             {
               type = "command";
               command = "${node} ~/.claude/hooks/block-main-bash.js";
+              timeout = 5;
+            }
+          ];
+        }
+        {
+          matcher = "Bash";
+          # No `if`: it holds one rule, and both `git` and `gh` are needed.
+          # Denies a sandbox-excluded command (git push/commit/pull/fetch, gh)
+          # composed with anything that keeps the call sandboxed. Fail-open.
+          hooks = [
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/lone-excluded-bash.js";
               timeout = 5;
             }
           ];

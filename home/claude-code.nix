@@ -84,6 +84,7 @@ let
     hookCorrectionBudget
     hookCorrectionGrant
     hookResearchModel
+    hookLoneExcludedBash
     hookReactDocsGate
     hookNullResultGate
     ;
@@ -264,6 +265,10 @@ let
     };
     "${claudeDir}/hooks/research-model.js" = {
       text = hookResearchModel;
+      executable = true;
+    };
+    "${claudeDir}/hooks/lone-excluded-bash.js" = {
+      text = hookLoneExcludedBash;
       executable = true;
     };
     "${claudeDir}/hooks/react-docs-gate.js" = {

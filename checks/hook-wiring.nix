@@ -43,6 +43,10 @@
 #      run adds a correction brief on any model but opus denied before it
 #      counts, a user grant read as one more round, and correction-grant: a
 #      grant only on a whole `apex: +1 tour` line, only for a spent run.
+#      The sandbox-shape run adds lone-excluded-bash: a chain with a
+#      non-target segment, a file redirection and a command substitution
+#      denied; a quoted `;`, fd duplication and malformed input allowed,
+#      the last three killed as over-blocks.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -396,6 +400,30 @@ let
     A-rm-overflow = {
       hook = "research-model.js";
       text = "if (input.length + c.length > MAX_INPUT) { overflow = true; input = \"\"; return; }";
+    };
+    A-le-chain = {
+      hook = "lone-excluded-bash.js";
+      text = "if (!segs.every(isCleanTarget)) return CAUSE.shape;";
+    };
+    A-le-redir = {
+      hook = "lone-excluded-bash.js";
+      text = "if (!dup) r.fileRedir = true;";
+    };
+    A-le-subst = {
+      hook = "lone-excluded-bash.js";
+      text = "if (r.subst) return CAUSE.subst;";
+    };
+    A-le-quote = {
+      hook = "lone-excluded-bash.js";
+      text = "if (ch === '\"') {";
+    };
+    A-le-failopen = {
+      hook = "lone-excluded-bash.js";
+      text = "try { data = JSON.parse(input); } catch { allow(); return; }";
+    };
+    A-le-dup = {
+      hook = "lone-excluded-bash.js";
+      text = "const dup = (op === \">&\" || op === \"<&\") && /^(?:[0-9]+-?|-)$/.test(w.val);";
     };
   };
 
@@ -777,6 +805,80 @@ let
         }
       ];
     }
+    # Sandbox-shape run. One clean segment enough: `git add . && git commit`
+    # passes, and the whole chain stays sandboxed.
+    {
+      id = "M-le-chain";
+      hook = "lone-excluded-bash.js";
+      kills = "le-add-commit-deny";
+      swaps = [
+        {
+          anchor = "A-le-chain";
+          to = "if (!segs.some(isCleanTarget)) return CAUSE.shape;";
+        }
+      ];
+    }
+    # A file redirection unseen: `gh api x > out.json` passes.
+    {
+      id = "M-le-redir";
+      hook = "lone-excluded-bash.js";
+      kills = "le-redir-deny";
+      swaps = [
+        {
+          anchor = "A-le-redir";
+          to = "if (false) r.fileRedir = true;";
+        }
+      ];
+    }
+    # A substitution unseen: `git commit -m "$(cat m)"` passes.
+    {
+      id = "M-le-subst";
+      hook = "lone-excluded-bash.js";
+      kills = "le-subst-deny";
+      swaps = [
+        {
+          anchor = "A-le-subst";
+          to = "if (false) return CAUSE.subst;";
+        }
+      ];
+    }
+    # Double quotes ignored: the `;` inside a commit message splits it.
+    # Killed on an ALLOW case, as an over-block.
+    {
+      id = "M-le-quote";
+      hook = "lone-excluded-bash.js";
+      kills = "le-quoted-msg-allow";
+      swaps = [
+        {
+          anchor = "A-le-quote";
+          to = "if (false) {";
+        }
+      ];
+    }
+    # Fail-closed on malformed input: a workflow hook blocking work.
+    {
+      id = "M-le-failopen";
+      hook = "lone-excluded-bash.js";
+      kills = "le-malformed-allow";
+      swaps = [
+        {
+          anchor = "A-le-failopen";
+          to = "try { data = JSON.parse(input); } catch { deny(\"BLOCKED: malformed input\"); return; }";
+        }
+      ];
+    }
+    # fd duplication read as a file redirection: `git fetch 2>&1` denied.
+    {
+      id = "M-le-dup";
+      hook = "lone-excluded-bash.js";
+      kills = "le-dup-allow";
+      swaps = [
+        {
+          anchor = "A-le-dup";
+          to = "const dup = false;";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -860,6 +962,32 @@ let
     "rm-plan-opus-allow"
     "rm-malformed-allow"
     "rm-oversize-allow"
+    "le-cd-chain-deny"
+    "le-git-C-deny"
+    "le-git-c-deny"
+    "le-add-commit-deny"
+    "le-pipe-deny"
+    "le-redir-deny"
+    "le-subst-deny"
+    "le-echo-subst-deny"
+    "le-heredoc-deny"
+    "le-env-prefix-deny"
+    "le-timeout-deny"
+    "le-wrapper-opt-deny"
+    "le-heredoc-body-deny"
+    "le-push-allow"
+    "le-push-u-allow"
+    "le-commit-F-allow"
+    "le-body-file-allow"
+    "le-json-allow"
+    "le-dup-allow"
+    "le-grep-allow"
+    "le-rg-allow"
+    "le-quoted-msg-allow"
+    "le-status-diff-allow"
+    "le-chain-targets-allow"
+    "le-malformed-allow"
+    "le-command-v-allow"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -905,6 +1033,7 @@ let
     "correction-budget.js"
     "correction-grant.js"
     "research-model.js"
+    "lone-excluded-bash.js"
   ];
   timeoutsOf =
     n:
@@ -1129,6 +1258,7 @@ let
         cb-*) tmo=${hostTimeout "correction-budget.js"} ;;
         cg-*) tmo=${hostTimeout "correction-grant.js"} ;;
         rm-*) tmo=${hostTimeout "research-model.js"} ;;
+        le-*) tmo=${hostTimeout "lone-excluded-bash.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -1432,6 +1562,62 @@ let
         rm-oversize-allow)
           { rm_in Explore sonnet; ${pkgs.coreutils}/bin/head -c 4400000 /dev/zero | ${pkgs.coreutils}/bin/tr '\0' ' '; printf '}garbage'; } > "$d/$lbl.big"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(${pkgs.coreutils}/bin/cat "$d/$lbl.big")"; is_allow ;;
+        # Sandbox-shape run: an excluded command leaves the sandbox only
+        # alone, or chained with other lone excluded commands.
+        le-cd-chain-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'cd /x && git push')"; is_deny "next to another command" ;;
+        le-git-C-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git -C /x push')"; is_deny "next to another command" ;;
+        le-git-c-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git -c a=b push')"; is_deny "next to another command" ;;
+        le-add-commit-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git add . && git commit -m x')"; is_deny "next to another command" ;;
+        le-pipe-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'gh pr list | head')"; is_deny "next to another command" ;;
+        le-redir-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'gh api x > out.json')"; is_deny "file redirection" ;;
+        le-subst-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -m "$(cat m)"')"; is_deny "command substitution" ;;
+        le-echo-subst-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'echo $(gh auth token)')"; is_deny "command substitution" ;;
+        le-heredoc-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in "$(printf "git commit -F - <<'EOF'\nfix: x\nEOF")")"; is_deny "heredoc" ;;
+        le-env-prefix-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'GIT_X=1 git push')"; is_deny "next to another command" ;;
+        le-timeout-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'timeout 30 gh pr list')"; is_deny "next to another command" ;;
+        # A wrapper option's value read as the command hid the target.
+        le-wrapper-opt-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'timeout -s KILL 30 gh pr list')"; is_deny "next to another command" ;;
+        # An unquoted heredoc body expands $(...): real newlines.
+        le-heredoc-body-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in "$(printf '%s\n%s\n%s' 'cat <<EOF' '$(gh auth token)' 'EOF')")"; is_deny "command substitution" ;;
+        le-command-v-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'command -v gh')"; is_allow ;;
+        le-push-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git push')"; is_allow ;;
+        le-push-u-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git push -u origin feat/x')"; is_allow ;;
+        le-commit-F-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -F msg.txt')"; is_allow ;;
+        le-body-file-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'gh pr create --body-file b.md')"; is_allow ;;
+        le-json-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'gh pr view 12 --json state')"; is_allow ;;
+        le-dup-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git fetch 2>&1')"; is_allow ;;
+        le-grep-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'grep -rn "git push" .')"; is_allow ;;
+        le-rg-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in "rg 'gh pr' file")"; is_allow ;;
+        le-quoted-msg-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -m "fix gh thing; git push"')"; is_allow ;;
+        le-status-diff-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git status && git diff')"; is_allow ;;
+        le-chain-targets-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -F m.txt && git push')"; is_allow ;;
+        le-malformed-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -1445,6 +1631,7 @@ let
         cb-*) echo ${hookFile "correction-budget.js"} ;;
         cg-*) echo ${hookFile "correction-grant.js"} ;;
         rm-*) echo ${hookFile "research-model.js"} ;;
+        le-*) echo ${hookFile "lone-excluded-bash.js"} ;;
       esac
     }
 

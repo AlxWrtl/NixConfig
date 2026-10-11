@@ -67,6 +67,16 @@ in
   # barrier — unreadable input, a throw or the watchdog let the spawn through.
   hookResearchModel = builtins.readFile ./hooks/research-model.js;
 
+  # PreToolUse on Bash: a sandbox-excluded command (git push/commit/pull/fetch,
+  # gh) leaves the sandbox only when the call is that command alone. Composed
+  # forms (`cd x &&`, `git -C`, a pipe, `$(…)`, a heredoc, a file redirect, a
+  # VAR= or wrapper prefix) keep the whole call sandboxed: keychain and ~/.ssh
+  # are denied there, the network step fails and the retry becomes a
+  # permission prompt. Denied up front with the fix in the reason. A chain
+  # made only of lone excluded commands and fd duplication (2>&1) pass (user
+  # decision 2026-10-11). Fail-open: a workflow hook, not a barrier.
+  hookLoneExcludedBash = builtins.readFile ./hooks/lone-excluded-bash.js;
+
   # Turns the APEX routing rule from advice into enforcement. The
   # UserPromptSubmit reminder is text: it is read and then skipped. Measured on
   # 2026-08-08 — 6 file-modifying tasks in one session, APEX invoked on 2.

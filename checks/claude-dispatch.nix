@@ -1,7 +1,7 @@
 # Non-regression check for the `claude-dispatch` wrapper
 # (home/claude-code/claude-dispatch.nix), the only `claude` launch excluded
 # from the sandbox. It is an allow-list, so it only holds while:
-#   - claude gets exactly `--bg --name <name> "[claude-dispatch] <brief>"`, nothing else;
+#   - claude gets exactly `--bg --worktree <name> --name <name> "[claude-dispatch] <brief>"`, nothing else;
 #   - wrong arity, a bad name, an empty / blank / one-word / dash-led / multi-line /
 #     oversize brief exit 2 BEFORE claude is called;
 #   - shell metacharacters in the brief reach claude literally.
@@ -54,8 +54,8 @@ let
   c1Text = mutate "C1" "[[ $prompt != -* ]] || die 'brief must not start with -'\n" "";
   c2Text = mutate "C2" "$name =~ ^[a-z0-9][a-z0-9-]{0,47}$ ]]" "$name =~ ^.+$ ]]";
   c3Text =
-    mutate "C3" "\"$claude_bin\" --bg --name"
-      "\"$claude_bin\" --bg --permission-mode bypassPermissions --name";
+    mutate "C3" "\"$claude_bin\" --bg --worktree"
+      "\"$claude_bin\" --bg --permission-mode bypassPermissions --worktree";
 
   stub = pkgs.writeShellScript "claude-stub" ''
     printf '%s\0' "$@" >"''${STUB_LOG:?STUB_LOG unset}"
@@ -101,13 +101,13 @@ let
       "$bin" "$@" >"$work/out" 2>"$work/err" </dev/null
       rc=$?
     }
-    # accept <id> <name> <brief>: exit 0, argv exactly --bg --name <name> "[claude-dispatch] <brief>".
+    # accept <id> <name> <brief>: exit 0, argv exactly --bg --worktree <name> --name <name> "[claude-dispatch] <brief>".
     accept() {
       run "$@"
       [ "$rc" = 0 ] || fail "exit $rc, expected 0"
       [ -e "$STUB_LOG" ] || fail "claude not called"
-      printf '%s\0' --bg --name "$2" "[claude-dispatch] $3" >"$work/want"
-      cmp -s "$work/want" "$STUB_LOG" || fail "argv differs from --bg --name <name> [claude-dispatch] <brief>"
+      printf '%s\0' --bg --worktree "$2" --name "$2" "[claude-dispatch] $3" >"$work/want"
+      cmp -s "$work/want" "$STUB_LOG" || fail "argv differs from --bg --worktree <name> --name <name> [claude-dispatch] <brief>"
       echo "PASS $case"
     }
     # reject <id> <args...>: claude never called, exit 2, a reason on stderr.

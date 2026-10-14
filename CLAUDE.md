@@ -24,9 +24,11 @@
 - Read-only diagnostics inherit the sandbox and report it as a property of
   their target (`claude mcp list`, `mdutil`, `rtk`): confirm outside the
   sandbox. A nested `claude` cannot use Bash; not fixable through settings.
-- `claude-dispatch` is unusable in this repo: background sessions run in a
-  worktree and `git worktree add` fails here (`smudge filter git-crypt
-  failed`, measured 2026-10-15). Do the tasks in the conversation.
+- `claude-dispatch` is unusable in this repo: it starts each session with
+  `--worktree`, and that worktree keeps git-crypt files encrypted
+  (`secrets.nix` = `GITCRYPT` blob, `git status` fails on the clean filter;
+  measured 2026-10-15), so no gate can run there. Do the tasks in the
+  conversation.
 - Repo tools: `apex-tier --base master` (tier of the real diff),
   `apex-health --repo .` (APEX drift, no model call), `trello` (test writes
   on the Tech & Pit board only).

@@ -305,8 +305,11 @@ in
         # store/ or global/ (two file names below). Residual risk: a binary
         # planted in .tools runs on the next pnpm call that pins that version,
         # a terminal one included.
-        # Once those two opened, the switch hit ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK
-        # on ~/Library/pnpm/pnpm-store-operation-locks (2026-10-14): that lock too.
+        # Its store operation lock is NOT under ~/Library/pnpm (#250 guessed wrong): a
+        # deny-all-writes sandbox-exec replay (2026-10-14) showed pnpm chmods
+        # /private/tmp/pnpm-store-operation-locks-<uid> and pnpm-dir-locks-<uid>.
+        # Literal paths (uid 501), not a glob: an allowWrite glob compiles to an
+        # anchored regex that does not cover the lock files inside.
         # With the lock open the switch still died on ERR_PNPM_LOCKFILE_WRITE_FILE:
         # a sandbox-exec replay (2026-10-14) showed the engine writes
         # global/v11/pnpm-lock.yaml through a `.tmp*` sibling and a rename.
@@ -319,7 +322,8 @@ in
           "${homeDirectory}/.codex"
           "${homeDirectory}/Library/pnpm/.tools"
           "${homeDirectory}/Library/pnpm/package-manager-store"
-          "${homeDirectory}/Library/pnpm/pnpm-store-operation-locks"
+          "/private/tmp/pnpm-store-operation-locks-501"
+          "/private/tmp/pnpm-dir-locks-501"
           "${homeDirectory}/Library/pnpm/global/v11/pnpm-lock.yaml"
           "${homeDirectory}/Library/pnpm/global/v11/.tmp*"
           "${alxVaultPath}/.git"

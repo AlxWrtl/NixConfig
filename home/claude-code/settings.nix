@@ -482,7 +482,7 @@ in
     # it, a /config change survives.
     pluginConfigs = {
       deck.options = {
-        panels = "main,architect,agents,receipt,log";
+        panels = "main,architect,agents,background,receipt,log";
       };
     };
 

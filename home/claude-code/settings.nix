@@ -304,12 +304,15 @@ in
         # ERR_PNPM_LOCKFILE_WRITE_FILE. Those two dirs only — not bin/,
         # global/ or store/. Residual risk: a binary planted in .tools runs on
         # the next pnpm call that pins that version, a terminal one included.
+        # Once those two opened, the switch hit ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK
+        # on ~/Library/pnpm/pnpm-store-operation-locks (2026-10-14): that lock too.
         allowWrite = [
           "${homeDirectory}/GraphVault"
           "${homeDirectory}/Library/Application Support/rtk"
           "${homeDirectory}/.codex"
           "${homeDirectory}/Library/pnpm/.tools"
           "${homeDirectory}/Library/pnpm/package-manager-store"
+          "${homeDirectory}/Library/pnpm/pnpm-store-operation-locks"
           "${alxVaultPath}/.git"
         ];
       };

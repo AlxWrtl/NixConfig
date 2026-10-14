@@ -33,7 +33,6 @@
     ];
 
     sessionPath = [
-      "$HOME/.npm-global/bin"
       "$HOME/.cargo/bin"
     ];
   };

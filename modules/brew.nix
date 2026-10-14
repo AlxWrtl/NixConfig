@@ -53,7 +53,6 @@ _:
       "obsidian"
       "raycast"
       "readdle-spark"
-      "visual-studio-code"
       "microsoft-teams"
       "whatsapp"
       "jellyfin"

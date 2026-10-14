@@ -31,6 +31,7 @@ let
   apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
   apexTier = import ./claude-code/apex-tier.nix { inherit pkgs; };
   apexHealth = import ./claude-code/apex-health.nix { inherit pkgs; };
+  claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
     inherit pkgs lib;
     inherit (scraplingShim) scraplingShimPkg;
@@ -46,6 +47,7 @@ let
   inherit (apexVerifyExternal) apexVerifyExternalPkg;
   inherit (apexTier) apexTierPkg;
   inherit (apexHealth) apexHealthPkg;
+  inherit (claudeDispatch) claudeDispatchPkg;
   inherit (graphifyReindex) graphifyReindexPkg;
   inherit (vaultSnapshot) vaultSnapshotPkg;
   inherit (settings)
@@ -337,8 +339,9 @@ in
 
     file = claudeHomeFiles;
 
-    # `libdocs` + `nix-options` + `trello` + `graphify-reindex` on PATH — usable
-    # by Claude, by APEX and its subagents, and by the user in a plain terminal.
+    # `libdocs` + `nix-options` + `trello` + `graphify-reindex` +
+    # `claude-dispatch` on PATH — usable by Claude, by APEX and its subagents,
+    # and by the user in a plain terminal.
     # home.packages is a list: this merges with the other home modules.
     packages = [
       libdocsPkg
@@ -347,6 +350,7 @@ in
       apexVerifyExternalPkg
       apexTierPkg
       apexHealthPkg
+      claudeDispatchPkg
       graphifyReindexPkg
       vaultSnapshotPkg
     ];

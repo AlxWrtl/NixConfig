@@ -75,7 +75,9 @@ let
     {
       name = "Delegation";
       body = ''
-        - Sous-tâches indépendantes fichiers disjoints → /fork background.
+        - ≥2 tâches indépendantes à fichiers dans un message, ou une nouvelle pendant qu'une autre de cette conversation tourne
+          → chacune : `claude-dispatch <slug> '<brief autonome, 1 ligne>'` (pas "…" : $VAR, ''${…} s'expansent), seul, racine
+          du projet, modèle par défaut ; son APEX y tourne. Tâche unique : ici. 1er prompt `[claude-dispatch]` : tout faire, jamais dispatcher.
         - Review routine qualité → /code-review natif (subagent background, hors
           contexte). Agent code-reviewer = spec compliance + sécu pre-merge.
       '';

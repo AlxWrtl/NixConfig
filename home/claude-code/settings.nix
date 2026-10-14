@@ -126,7 +126,8 @@ in
       # git commit/pull/fetch: signing key + SSH remote, both denied inside.
       # An exclusion only applies when the Bash call is that command ALONE:
       # `cd … &&`, `$(…)`, heredoc or redirection keep the call sandboxed.
-      # hooks/lone-excluded-bash.js denies those shapes before they run.
+      # hooks/lone-excluded-bash.js denies those shapes for git push/commit/
+      # pull/fetch, gh and claude-dispatch before they run.
       # nix flake check: sandboxed it hits EPERM on the daemon socket
       # (/nix/var/nix/daemon-socket/socket) and on ~/.cache/nix sqlite.
       # Excluding the one command, NOT allowUnixSockets: the user is in
@@ -139,6 +140,13 @@ in
         "sudo *"
         "darwin-rebuild *"
         "codex *"
+        # claude-dispatch: `claude --bg` sandboxed → EPERM mkdir ~/.claude/jobs
+        # (measured 2026-10-15, built-in protection). Wrapper, never
+        # "claude *"/"claude --bg *": claude takes ~20 flags that widen the
+        # launched session (--dangerously-skip-permissions, --settings,
+        # --add-dir, --mcp-config, --bare…); the wrapper fixes them to
+        # --bg --name. Still classifier-reviewed (auto mode).
+        "claude-dispatch *"
         # codex plugin: commands/agents call `node "${CLAUDE_PLUGIN_ROOT}/…/
         # codex-companion.mjs" …`, substituted to the absolute path BEFORE the
         # Bash call (docs: plugins-reference#where-each-variable-resolves).

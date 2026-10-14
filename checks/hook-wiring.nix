@@ -1104,6 +1104,7 @@ let
     "le-timeout-deny"
     "le-wrapper-opt-deny"
     "le-heredoc-body-deny"
+    "le-dispatch-cd-deny"
     "le-push-allow"
     "le-push-u-allow"
     "le-commit-F-allow"
@@ -1115,6 +1116,7 @@ let
     "le-quoted-msg-allow"
     "le-status-diff-allow"
     "le-chain-targets-allow"
+    "le-dispatch-allow"
     "le-malformed-allow"
     "le-command-v-allow"
     "se-preempt-deny"
@@ -1755,6 +1757,8 @@ let
         # An unquoted heredoc body expands $(...): real newlines.
         le-heredoc-body-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in "$(printf '%s\n%s\n%s' 'cat <<EOF' '$(gh auth token)' 'EOF')")"; is_deny "command substitution" ;;
+        le-dispatch-cd-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'cd /x && claude-dispatch fix-a "fix the typo"')"; is_deny "next to another command" ;;
         le-command-v-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'command -v gh')"; is_allow ;;
         le-push-allow)
@@ -1779,6 +1783,8 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git status && git diff')"; is_allow ;;
         le-chain-targets-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -F m.txt && git push')"; is_allow ;;
+        le-dispatch-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-dispatch fix-a "fix the typo"')"; is_allow ;;
         le-malformed-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
         # Sandbox-escape run: the flag needs sandbox evidence in the newest

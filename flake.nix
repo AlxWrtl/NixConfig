@@ -61,6 +61,7 @@
         apex-plan-provenance = import ./checks/apex-plan-provenance.nix { inherit pkgs; };
         apex-tier = import ./checks/apex-tier.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
+        claude-dispatch = import ./checks/claude-dispatch.nix { inherit pkgs; };
         claude-mods = import ./checks/claude-mods.nix { inherit pkgs; };
         codex-config = import ./checks/codex-config.nix { inherit pkgs; };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };

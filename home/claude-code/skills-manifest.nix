@@ -267,5 +267,14 @@ in
         }
       ];
     }
+    {
+      name = "ecriture-fr";
+      files = [
+        {
+          path = "SKILL.md";
+          text = skills.skillEcritureFr;
+        }
+      ];
+    }
   ];
 }

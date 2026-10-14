@@ -1912,6 +1912,13 @@ in
     on Agent): an Explore or codebase-navigator spawn whose `model` is not
     `haiku`, absent included, is denied.
 
+    Haiku locates, maps and audits; it does not explain causes. A "why does X
+    happen" question (root cause, tracing a library's internals, a fix
+    recommendation) goes to `subagent_type: Plan`, `model: "opus"`, fed by the
+    haiku fan-out if needed. Bench 2026-10-14, 3 real Preliz prompts, blind
+    opus judge: haiku 8.2-8.7/10 on locate and audit, 6.2 on root cause
+    (two false claims about react-router internals) against opus 9.0.
+
     Effort-tiering first: prefer dialing Opus 5.5 effort (low↔max) over switching
     models — a model switch pays the ~15× subagent/context tax. Switch model only
     when the tier gap is real (sonnet for mechanical and bulk work, haiku for

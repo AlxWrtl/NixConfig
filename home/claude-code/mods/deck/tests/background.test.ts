@@ -3,7 +3,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { BG_KEEP_MS, bgCounts, bgKind, bgSummary, bgWord, parseJobState, projectOf, recentBg, sortBg } from '../hooks/background'
+import { BG_KEEP_MS, bgCounts, bgKind, bgSummary, bgWord, inProject, parseJobState, projectOf, recentBg, sortBg } from '../hooks/background'
 import type { DeckBgAgent } from '../types'
 
 const NOW = 1_000_000_000_000
@@ -96,6 +96,18 @@ test('finished sessions leave after 24 h; the others stay however old', () => {
   expect(recentBg(list, NOW).map(a => a.id)).toEqual(['n', 'd-new'])
 })
 
+test('only the sessions of the current project: its root, a subfolder, one of its worktrees', () => {
+  const list = [
+    job({ id: 'root', state: 'working', cwd: '/p/repo' }),
+    job({ id: 'sub', state: 'working', cwd: '/p/repo/web' }),
+    job({ id: 'wt', state: 'working', cwd: '/p/repo/.claude/worktrees/x' }),
+    job({ id: 'other', state: 'working', cwd: '/p/other' }),
+    job({ id: 'prefix', state: 'working', cwd: '/p/repo-2' }),
+  ]
+  expect(inProject(list, '/p/repo').map(a => a.id)).toEqual(['root', 'sub', 'wt'])
+  expect(inProject(list, '/p/repo/.claude/worktrees/y').map(a => a.id)).toEqual(['root', 'sub', 'wt'])
+})
+
 // ---------------------------------------------------------------- through the hooks
 
 const ROOT = '/home/u/.claude/jobs'
@@ -104,11 +116,14 @@ type Job = { id: string; mtimeMs: number; text?: string }
 
 type World = { jobs?: Job[]; listed: number; reads: number[] }
 
-const state = (o: Record<string, unknown>) => JSON.stringify({ cwd: '/Users/a/projects/Preliz', updatedAt: new Date(NOW - 60_000).toISOString(), ...o })
+// The session runs at the root of Preliz; a job's cwd defaults to that root.
+const HERE = '/Users/a/projects/Preliz'
+
+const state = (o: Record<string, unknown>) => JSON.stringify({ cwd: HERE, updatedAt: new Date(NOW - 60_000).toISOString(), ...o })
 
 function world(on: On, w: World): void {
-  on('session.start', () => ({ cwd: '/work' }))
-  on('session.cwd', () => ({ value: '/work' }))
+  on('session.start', () => ({ cwd: HERE }))
+  on('session.cwd', () => ({ value: HERE }))
   on('env.get', () => ({ value: '/home/u' }))
   on('command.register', () => ({ value: { command: 'deck' } }))
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200_000 }, rateLimits: [], cost: { usd: 1 } } }))
@@ -152,18 +167,20 @@ const pane = (bodyColumns: number, placement: 'dock' | 'inline' = 'dock') => ({
 })
 
 const deck = { command: 'deck', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
-const START = { cwd: '/work', surface: 'terminal', isInteractive: true } as const
+const START = { cwd: HERE, surface: 'terminal', isInteractive: true } as const
 
 const JOBS: Job[] = [
   { id: 'aaaa0001', mtimeMs: NOW - 5000, text: state({ state: 'working', name: 'job working' }) },
-  { id: 'aaaa0002', mtimeMs: NOW - 4000, text: state({ state: 'blocked', name: 'job blocked', detail: 'approve the plan' }) },
-  { id: 'aaaa0003', mtimeMs: NOW - 3000, text: state({ state: 'paused', name: 'job paused', cwd: '/Users/a/projects/nix/.claude/worktrees/wt' }) },
+  { id: 'aaaa0002', mtimeMs: NOW - 4000, text: state({ state: 'blocked', name: 'job blocked', detail: 'approve the plan', cwd: `${HERE}/web` }) },
+  { id: 'aaaa0003', mtimeMs: NOW - 3000, text: state({ state: 'paused', name: 'job paused', cwd: `${HERE}/.claude/worktrees/wt` }) },
   { id: 'aaaa0004', mtimeMs: NOW - 2000, text: state({ state: 'done', name: 'job ancient', updatedAt: new Date(NOW - BG_KEEP_MS - 60_000).toISOString() }) },
   { id: 'aaaa0005', mtimeMs: NOW - 1000, text: '{half-written' },
   { id: 'aaaa0006', mtimeMs: NOW - 500 },
+  // Another project: read, then left out of this session's panel.
+  { id: 'aaaa0007', mtimeMs: NOW - 250, text: state({ state: 'working', name: 'job elsewhere', cwd: '/Users/a/projects/nix/.claude/worktrees/wt' }) },
 ]
 
-test('with the pane open, every project shows: needs-you first with its status line, an unknown state by its word; bad entries skipped', async ($, on) => {
+test('with the pane open, only the current project shows (root, subfolder, worktree): needs-you first with its status line, an unknown state by its word; bad entries skipped', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w: World = { jobs: JOBS, listed: 0, reads: [] }
   world(on, w)
@@ -178,7 +195,10 @@ test('with the pane open, every project shows: needs-you first with its status l
     expect(await ui.find({ type: 'Text', text: /^approve the plan$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^ paused$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^ needs you$/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /^ nix$/ })).toBeDefined() // the worktree's repo
+    expect(await ui.findAll({ type: 'Text', text: /^ Preliz$/ })).toHaveLength(2) // the root, and a worktree read as its repo
+    expect(await ui.find({ type: 'Text', text: /^ web$/ })).toBeDefined() // a subfolder shows by its own name
+    expect(await ui.find({ text: /job elsewhere/ })).toBeUndefined() // another project
+    expect(await ui.find({ type: 'Text', text: /^ nix$/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /^ 1m00s$/ })).toBeDefined() // age since updatedAt
     expect(await ui.find({ text: /job ancient/ })).toBeUndefined()
     await ui.unmount()

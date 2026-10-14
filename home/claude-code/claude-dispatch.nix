@@ -8,7 +8,7 @@
 # session (--dangerously-skip-permissions, --permission-mode, --settings,
 # --add-dir, --mcp-config, --plugin-dir, --append-system-prompt, --bare…): a
 # deny-list over them is unbounded. The wrapper is the allow-list: the only
-# flags claude ever gets are `--bg --name`, the brief is one argv entry, no
+# flags claude ever gets are `--bg --worktree <name> --name <name>`, the brief is one argv entry, no
 # file is read, no flag is passed through. The wrapper adds no env: it
 # inherits the session's own environment, and a VAR= / env prefix on the call
 # is denied by hooks/lone-excluded-bash.js. Only `claude-dispatch *` is

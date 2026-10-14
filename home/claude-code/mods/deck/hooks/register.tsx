@@ -7,8 +7,8 @@
 // the user to act, background shells), its phase changes written to the log as `apex`.
 // Observes only: every hook but the commands and the pane returns next(e)'s result unchanged.
 // Read-only: it never writes a file. The run folders are polled every 5 s only while the pane is
-// open, and once per prompt and per finished main turn otherwise; a poll writes nothing that
-// did not change.
+// open, and once per prompt and per finished main turn otherwise; the background sessions
+// (~/.claude/jobs) only while it is open. A poll writes nothing that did not change.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
@@ -30,6 +30,8 @@ import type {
   DeckUsage,
   DeckView,
   DeckApexStepName,
+  DeckBgAgent,
+  DeckBgKind,
 } from '../types'
 import {
   DEFAULT_ARCHITECT,
@@ -129,6 +131,7 @@ import {
 } from './shells'
 import type { Notification } from './shells'
 import { alertsOf, budgetOf, pickVerdict } from './signals'
+import { bgSummary, bgWord, parseJobState, recentBg, sortBg } from './background'
 
 const PANE = 'deck'
 const TITLE = 'Deck'
@@ -138,6 +141,9 @@ const POLL_MS = 5000
 const VERIFY_NAMES = ['04-external-verify.json', 'external-verify.json']
 // Finished shells shown under the running ones; the rest fold into « +N earlier ».
 const DONE_SHELLS = 3
+// Background sessions: state.json files read per poll (the newest folders), rows drawn in the panel.
+const BG_READS = 12
+const BG_ROWS = 6
 
 // ---------------------------------------------------------------- state
 
@@ -157,6 +163,7 @@ const budget = atom({ plugin: 'deck', key: 'budget' } as const, null)
 const shells = atom({ plugin: 'deck', key: 'shells' } as const, [])
 const sessionRun = atom({ plugin: 'deck', key: 'sessionRun' } as const, null)
 const openStep = atom({ plugin: 'deck', key: 'openStep' } as const, null)
+const background = atom({ plugin: 'deck', key: 'background' } as const, [])
 
 // Module-level: a hot reload drops the environment and its timer with it.
 let timer: Timer | undefined
@@ -205,6 +212,9 @@ async function getRoster($: EngineInterface): Promise<DeckRoster> {
 }
 async function getShells($: EngineInterface): Promise<DeckApexShell[]> {
   return listOf<DeckApexShell>(await read($, shells))
+}
+async function getBackground($: EngineInterface): Promise<DeckBgAgent[]> {
+  return listOf<DeckBgAgent>(await read($, background))
 }
 
 async function say($: EngineInterface, who: string, text: string, kind: DeckLogLine['kind'] = 'info', agentId: string | null = null) {
@@ -562,8 +572,50 @@ async function clearForNewRun($: EngineInterface): Promise<void> {
   await update($, openStep, () => null)
 }
 
-// One poll: run (its phase moves to the log), phases, verdict, budget, owned shells.
+// Background sessions of every project: ~/.claude/jobs/<id>/state.json of the BG_READS newest
+// folders (ranked by the folder's stat: a listing gives a folder mtime 0). A missing jobs folder,
+// a vanished or unreadable entry, a file such as pins.json: nothing, never an error.
+async function refreshBackground($: EngineInterface): Promise<void> {
+  const home = await $.env.get('HOME')
+  const root = `${home ?? ''}/.claude/jobs`
+  const entries =
+    home === undefined || home === ''
+      ? []
+      : await $.fs.list(root).catch(() => {
+          // No background session was ever started here: an empty panel.
+          return []
+        })
+  const ranked: { id: string; mtimeMs: number }[] = []
+  for (const entry of entries) {
+    if (entry.kind !== 'dir') continue
+    try {
+      ranked.push({ id: entry.name, mtimeMs: (await $.fs.stat(`${root}/${entry.name}`)).mtimeMs })
+    } catch {
+      // Vanished between list and stat: skipped.
+    }
+  }
+  ranked.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  const found: DeckBgAgent[] = []
+  for (const dir of ranked.slice(0, BG_READS)) {
+    let text: string
+    try {
+      text = await $.fs.read(`${root}/${dir.id}/state.json`)
+    } catch {
+      // No state.json (yet), or over 4 MiB: skipped.
+      continue
+    }
+    const parsed = parseJobState(dir.id, text)
+    if (parsed !== null) found.push(parsed.updatedAt > 0 ? parsed : { ...parsed, updatedAt: dir.mtimeMs })
+  }
+  const next = sortBg(recentBg(found, await $.clock.now()))
+  if (JSON.stringify(await getBackground($)) !== JSON.stringify(next)) await update($, background, () => next)
+}
+
+// One poll: background sessions (pane open only), run (its phase moves to the log), phases,
+// verdict, budget, owned shells.
 async function refresh($: EngineInterface): Promise<void> {
+  // Its own reads and write: a failure there leaves the run scan below untouched.
+  if (isPaneOpen) await record(() => refreshBackground($))
   const scanned = await scan($)
   const prev = await read($, run)
   const settled = settleRun(prev, scanned, misses)
@@ -1111,7 +1163,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     // Clients draw on terminal and desktop only; elsewhere the same frame as static text.
     const hasClient = 'Client' in els && (e.surface === 'terminal' || e.surface === 'desktop')
-    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now, open] = await Promise.all([
+    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now, open, jobs] = await Promise.all([
       getMain($),
       getUsage($),
       getArchitect($),
@@ -1128,6 +1180,7 @@ export const register: Register = (on, options) => {
       getShells($),
       $.clock.now(),
       getOpenStep($),
+      getBackground($),
     ])
     const W = Math.max(40, e.props.bodyColumns)
     const layout = v.layout ?? cfg.layout
@@ -1144,6 +1197,7 @@ export const register: Register = (on, options) => {
       main: false,
       architect: !showArchitect,
       agents: cards.length === 0,
+      background: jobs.length === 0,
       receipt: !m.isRunning && !r,
       log: false,
     }
@@ -1518,6 +1572,57 @@ export const register: Register = (on, options) => {
         </Box>
       ) : null
 
+    // ---- background agents: sessions of every project (~/.claude/jobs), what waits on you first
+    const bgMark: Record<DeckBgKind, { glyph: string; color: string }> = {
+      'needs-you': { glyph: '◆', color: C.warn },
+      working: { glyph: '◐', color: C.main },
+      failed: { glyph: '✗', color: C.warn },
+      done: { glyph: '✓', color: C.ok },
+      stopped: { glyph: '■', color: C.faint },
+      other: { glyph: '·', color: C.faint },
+    }
+    const bgShown = jobs.slice(0, BG_ROWS)
+    const bgMore = jobs.length - bgShown.length
+    const bgDetails = bgShown.filter(j => j.kind === 'needs-you' && j.detail !== '').length
+    const bgRows = jobs.length === 0 ? 0 : 2 + 1 + bgShown.length + bgDetails + (bgMore > 0 ? 1 : 0)
+    const needsYou = jobs.some(j => j.kind === 'needs-you')
+    const backgroundPanel = (w: number) => (
+      <Box flexDirection="column" borderStyle="round" borderColor={needsYou ? C.warn : C.faint} paddingX={1} width={w}>
+        <Text bold wrap="truncate">{`background agents · ${jobs.length}`}</Text>
+        {bgShown.map(j => {
+          const mk = bgMark[j.kind]
+          return (
+            <Box flexDirection="column">
+              <Box>
+                <Text color={mk.color}>{`${mk.glyph} `}</Text>
+                <Box flexShrink={1}>
+                  <Text wrap="truncate">{j.name}</Text>
+                </Box>
+                <Box flexShrink={0}>
+                  <Text color={C.dim}>{` ${shorten(j.project, 18)}`}</Text>
+                </Box>
+                <Box flexShrink={0}>
+                  <Text color={mk.color}>{` ${shorten(bgWord(j), 12)}`}</Text>
+                </Box>
+                <Box flexShrink={0}>
+                  <Text color={C.faint}>{` ${j.updatedAt > 0 ? fmtDuration(now - j.updatedAt) : '—'}`}</Text>
+                </Box>
+              </Box>
+              {j.kind === 'needs-you' && j.detail !== '' ? (
+                <Box>
+                  <Text color={C.faint}>{'│ '}</Text>
+                  <Text color={C.dim} wrap="truncate">
+                    {j.detail}
+                  </Text>
+                </Box>
+              ) : null}
+            </Box>
+          )
+        })}
+        {bgMore > 0 ? <Text color={C.faint} wrap="truncate">{`+${bgMore} more · claude agents`}</Text> : null}
+      </Box>
+    )
+
     // ---- receipt: the turn now, or the last one
     const receiptPanel = (w: number) => {
       const isReview = t.isReviewing
@@ -1544,7 +1649,7 @@ export const register: Register = (on, options) => {
     }
 
     // ---- log: whatever rows the other panels leave, 4 to 8
-    const used = 2 + apexRows + 5 + (showArchitect ? 6 : 0) + (cards.length > cfg.maxCards ? 3 + Math.min(6, cards.length) : 8) + (expandedCard ? 8 : 0) + 3
+    const used = 2 + apexRows + 5 + (showArchitect ? 6 : 0) + (cards.length > cfg.maxCards ? 3 + Math.min(6, cards.length) : 8) + (expandedCard ? 8 : 0) + 3 + (panels.includes('background') ? bgRows : 0)
     const bodyRows = e.props.scroll?.bodyRows ?? e.viewport?.rows ?? 40
     const nLog = logRows(bodyRows, used)
     const shownLines = (viewed ? lines.filter(l => l.agentId === viewed) : lines).slice(-nLog)
@@ -1583,7 +1688,7 @@ export const register: Register = (on, options) => {
     )
 
     const draw = (p: Panel, w: number) =>
-      p === 'main' ? mainPanel(w) : p === 'architect' ? architectPanel(w) : p === 'agents' ? agentsPanel(w) : p === 'receipt' ? receiptPanel(w) : logPanel(w)
+      p === 'main' ? mainPanel(w) : p === 'architect' ? architectPanel(w) : p === 'agents' ? agentsPanel(w) : p === 'background' ? backgroundPanel(w) : p === 'receipt' ? receiptPanel(w) : logPanel(w)
 
     // Panels with the flow between them; the agents panel draws its own rails.
     const column = (ps: Panel[], w: number) => (
@@ -1591,7 +1696,7 @@ export const register: Register = (on, options) => {
         {ps.map((p, i) => {
           const prev = ps[i - 1]
           const link =
-            i === 0 || p === 'agents' || prev === 'agents' || p === 'log'
+            i === 0 || p === 'agents' || prev === 'agents' || p === 'background' || prev === 'background' || p === 'log'
               ? null
               : rail(`link-${p}`, p === 'architect' ? advising : m.isRunning, p === 'architect' ? C.arch : C.main, w)
           return (
@@ -1640,6 +1745,8 @@ export const register: Register = (on, options) => {
     const isMini = layout === 'mini' || (layout === 'auto' && e.props.placement === 'inline')
     if (isMini) {
       const MINI_ROWS = 8
+      // Background sessions: one summary row, taken before the run's and the agents' rows.
+      const bgN = jobs.length > 0 && panels.includes('background') ? 1 : 0
       const mg = u.pct !== null ? gauge(u.pct, 6) : null
       // While a run is live it takes its rows first: header, task, step row, its detail, each
       // alert, the running shells; the agents and the receipt get what is left of the 8.
@@ -1658,12 +1765,12 @@ export const register: Register = (on, options) => {
       const apexHead = apexRun === null ? [] : [headerRow(apexRun), ...(taskRow === null ? [] : [taskRow])]
       // The open explanation takes the agents' rows first: at most 3, and at least 1 while the
       // run's other rows leave none.
-      const explainN = Math.min(3, explain?.lines.length ?? 0, Math.max(1, MINI_ROWS - 1 - apexHead.length - 1 - apexRest.length))
+      const explainN = Math.min(3, explain?.lines.length ?? 0, Math.max(1, MINI_ROWS - 1 - bgN - apexHead.length - 1 - apexRest.length))
       const apexMini =
         apexRun === null
           ? []
-          : [...apexHead, <Box overflow="hidden">{stepRow()}</Box>, ...explainRows(explainN), ...apexRest].slice(0, MINI_ROWS - 1)
-      const room = MINI_ROWS - 1 - apexMini.length
+          : [...apexHead, <Box overflow="hidden">{stepRow()}</Box>, ...explainRows(explainN), ...apexRest].slice(0, MINI_ROWS - 1 - bgN)
+      const room = MINI_ROWS - 1 - bgN - apexMini.length
       const ordered = [...cards.filter(c => c.status === 'running'), ...cards.filter(c => c.status !== 'running').reverse()]
       let nLive = Math.min(3, cards.length, room)
       // Agents left out: their « +N more » row takes the last slot.
@@ -1686,6 +1793,15 @@ export const register: Register = (on, options) => {
             {u.costUsd !== null ? <Text dimColor>{` · ${fmtUsd(u.costUsd)}`}</Text> : null}
             {showArchitect ? <Text color={C.arch}>{` · ${cfg.architectLabel.toLowerCase()} ${advising ? 'advising' : a.consults.length}`}</Text> : null}
           </Text>
+          {bgN > 0 ? (
+            <Text wrap="truncate">
+              <Text color={C.dim}>bg: </Text>
+              {bgSummary(jobs).flatMap((part, i) => [
+                ...(i === 0 ? [] : [<Text color={C.dim}>{' · '}</Text>]),
+                <Text color={bgMark[part.kind].color}>{part.text}</Text>,
+              ])}
+            </Text>
+          ) : null}
           {apexMini}
           {live.map(c => (
             <Box>
@@ -1723,7 +1839,7 @@ export const register: Register = (on, options) => {
       <Box flexDirection="column">
         <Box columnGap={2}>
           {column(panels.filter(p => p === 'main' || p === 'architect'), colW)}
-          {column(panels.filter(p => p === 'agents' || p === 'receipt'), colW)}
+          {column(panels.filter(p => p === 'agents' || p === 'background' || p === 'receipt'), colW)}
         </Box>
         {panels.includes('log') ? logPanel(W) : null}
       </Box>

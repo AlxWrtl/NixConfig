@@ -1,5 +1,5 @@
 // deck state contract: Flightdeck's panels (main, architect, agents, receipt,
-// log) and the APEX block (the live run, its live steps, alerts and background
+// log), the background agents panel and the APEX block (the live run, its live steps, alerts and background
 // shells). Self-contained (no import), as the plugin-authoring reference asks.
 
 export type DeckMoment = 'before a plan' | 'error repeats' | 'before done'
@@ -164,6 +164,27 @@ export type DeckApexSessionRun = {
 /** The run's external verification file, as far as the block shows it. */
 export type DeckApexVerdict = { dir: string; verdict: string; findings: number; mtimeMs: number }
 
+// ---------------------------------------------------------------- background agents
+
+/** A background session's state as the panel groups it; `needs-you` is the engine's `blocked`. */
+export type DeckBgKind = 'needs-you' | 'working' | 'failed' | 'done' | 'stopped' | 'other'
+
+/** One background session, read from ~/.claude/jobs/<id>/state.json (an undocumented format). */
+export type DeckBgAgent = {
+  id: string
+  name: string
+  cwd: string
+  /** The repo folder's name (a worktree reads as its repo). */
+  project: string
+  /** The raw `state` word. */
+  state: string
+  kind: DeckBgKind
+  /** Its one-line status, or empty. */
+  detail: string
+  /** Its last update (ms), else its folder's mtime. */
+  updatedAt: number
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'deck': {
@@ -184,6 +205,8 @@ declare module 'claude-code' {
       sessionRun: DeckApexSessionRun | null
       /** The step whose explanation box is open under the step row. */
       openStep: DeckApexStepName | null
+      /** Background sessions of every project, polled while the pane is open. */
+      background: DeckBgAgent[]
     }
   }
 }

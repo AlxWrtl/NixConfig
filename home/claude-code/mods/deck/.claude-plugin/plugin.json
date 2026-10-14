@@ -1,7 +1,7 @@
 {
   "name": "deck",
   "version": "0.1.0",
-  "description": "Deck: live agent and APEX dashboard on demand (/deck, aliases /apex-pane and /task-board). The APEX run on top while one is live (phases, alerts, background shells), then main model vitals, the on-call architect, subagent cards and swimlanes, a turn receipt and a session log. Never opens by itself, no status line. Built from Flightdeck v0.3.2 by Stephen Casella (MIT, https://github.com/scasella/claude-flightdeck).",
+  "description": "Deck: live agent and APEX dashboard on demand (/deck, aliases /apex-pane and /task-board). The APEX run on top while one is live (phases, alerts, background shells), then main model vitals, the on-call architect, subagent cards and swimlanes, the background sessions of every project, a turn receipt and a session log. Never opens by itself, no status line. Built from Flightdeck v0.3.2 by Stephen Casella (MIT, https://github.com/scasella/claude-flightdeck).",
   "author": {
     "name": "alx"
   },
@@ -22,9 +22,9 @@
     },
     "panels": {
       "title": "Panels",
-      "description": "Comma-separated panels in display order: main, architect, agents, receipt, log. Leave one out to hide it. The APEX block is not a panel: it shows while a run is live.",
+      "description": "Comma-separated panels in display order: main, architect, agents, background, receipt, log. Leave one out to hide it. background lists the background sessions of every project (~/.claude/jobs). The APEX block is not a panel: it shows while a run is live.",
       "type": "string",
-      "default": "main,architect,agents,receipt,log"
+      "default": "main,architect,agents,background,receipt,log"
     },
     "motion": {
       "title": "Motion",

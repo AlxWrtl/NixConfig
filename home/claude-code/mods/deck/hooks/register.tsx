@@ -131,7 +131,7 @@ import {
 } from './shells'
 import type { Notification } from './shells'
 import { alertsOf, budgetOf, pickVerdict } from './signals'
-import { bgSummary, bgWord, parseJobState, recentBg, sortBg } from './background'
+import { bgSummary, bgWord, inProject, parseJobState, recentBg, sortBg } from './background'
 
 const PANE = 'deck'
 const TITLE = 'Deck'
@@ -572,7 +572,7 @@ async function clearForNewRun($: EngineInterface): Promise<void> {
   await update($, openStep, () => null)
 }
 
-// Background sessions of every project: ~/.claude/jobs/<id>/state.json of the BG_READS newest
+// Background sessions of the current project (its subfolders and worktrees): ~/.claude/jobs/<id>/state.json of the BG_READS newest
 // folders (ranked by the folder's stat: a listing gives a folder mtime 0). A missing jobs folder,
 // a vanished or unreadable entry, a file such as pins.json: nothing, never an error.
 async function refreshBackground($: EngineInterface): Promise<void> {
@@ -607,7 +607,7 @@ async function refreshBackground($: EngineInterface): Promise<void> {
     const parsed = parseJobState(dir.id, text)
     if (parsed !== null) found.push(parsed.updatedAt > 0 ? parsed : { ...parsed, updatedAt: dir.mtimeMs })
   }
-  const next = sortBg(recentBg(found, await $.clock.now()))
+  const next = sortBg(recentBg(inProject(found, await $.session.cwd()), await $.clock.now()))
   if (JSON.stringify(await getBackground($)) !== JSON.stringify(next)) await update($, background, () => next)
 }
 
@@ -1572,7 +1572,7 @@ export const register: Register = (on, options) => {
         </Box>
       ) : null
 
-    // ---- background agents: sessions of every project (~/.claude/jobs), what waits on you first
+    // ---- background agents: sessions of the current project (~/.claude/jobs), what waits on you first
     const bgMark: Record<DeckBgKind, { glyph: string; color: string }> = {
       'needs-you': { glyph: '◆', color: C.warn },
       working: { glyph: '◐', color: C.main },

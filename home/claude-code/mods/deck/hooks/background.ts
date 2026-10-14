@@ -43,6 +43,15 @@ export function projectOf(cwd: string): string {
   return repo.split('/').pop() || cwd
 }
 
+/** A cwd's repo root: the path without a trailing `/.claude/worktrees/<x>`. */
+const rootOf = (cwd: string) => cwd.replace(/\/+$/, '').replace(/\/\.claude\/worktrees\/[^/]+$/, '')
+
+/** The sessions of the project at `cwd`: same repo root, or a folder under it. */
+export const inProject = (list: DeckBgAgent[], cwd: string): DeckBgAgent[] => {
+  const root = rootOf(cwd)
+  return list.filter(a => rootOf(a.cwd) === root || rootOf(a.cwd).startsWith(`${root}/`))
+}
+
 /** One state.json, or null when it is no JSON object or lacks a string `state` or `cwd`. */
 export function parseJobState(id: string, text: string): DeckBgAgent | null {
   let value: unknown

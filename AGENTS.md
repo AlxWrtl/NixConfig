@@ -39,6 +39,10 @@ Host `alex-mbp` (Apple Silicon): flake + nix-darwin + home-manager. Remote
   an uncommitted `flake.lock`: the next switch applies it. Ship it through
   its own PR, or `git restore flake.lock`.
 - A green rebuild can be inert: re-read the live file it was meant to change.
+- `system-N-link` is dated at the START of the switch; home-manager files
+  (hooks, `~/.claude`) land minutes later, at the time of
+  `~/.local/state/home-manager/gcroots/current-home`. A session event
+  before that ran the old file (transcript timestamps are UTC).
 
 ## Edit
 - Agent config is generated: edit `home/claude-code/*.nix` and `home/codex/`,

@@ -44,6 +44,9 @@ in
       CLAUDE_CODE_DISABLE_CFC_PROMPT = "1";
       # Every mod named in mods.nix, copied to ~/.claude/mods by activation.
       CLAUDE_CODE_PLUGIN_DIRS = mods.pluginDirs homeDirectory;
+      # Astro telemetry writes ~/Library/Preferences/astro: 1 EPERM in 30 d,
+      # telemetry only. Off rather than opening ~/Library/Preferences.
+      ASTRO_TELEMETRY_DISABLED = "1";
     };
 
     # Défaut déclaratif : Opus 5.5 = workhorse full-loop. L'alias `opus` suit le
@@ -207,6 +210,16 @@ in
           # (programs.git) — written at activation, outside this sandbox.
           "${homeDirectory}/.gitconfig"
           "${homeDirectory}/.config/git"
+          # ~/.cargo/registry and git are in allowWrite below; these are the
+          # parts of ~/.cargo that run code or hold credentials: bin/ is on PATH
+          # (home/default.nix:36), config* can set build.rustc-wrapper or
+          # net.git-fetch-with-cli, env is sourced. Deny wins inside an allowed
+          # dir; absent paths are fine.
+          "${homeDirectory}/.cargo/bin"
+          "${homeDirectory}/.cargo/config.toml"
+          "${homeDirectory}/.cargo/config"
+          "${homeDirectory}/.cargo/credentials.toml"
+          "${homeDirectory}/.cargo/env"
         ];
         denyRead = [
           # Sans cette entrée, la clé privée était lisible depuis le sandbox :
@@ -316,6 +329,28 @@ in
         # Those two names only; the global/v11/<hash> package dirs, which the
         # bin/ shims run, stay closed. allowWrite wildcards work on macOS only
         # (docs: settings-reference #sandbox-path-prefixes).
+        # Measured over 30 d / 1378 transcripts: ~/.cargo/registry/{index,cache}
+        # 4 fatal; ~/.cache/uv 13 fatal; ~/.config/.wrangler/logs ~60 non-fatal
+        # but counted as escape evidence.
+        # Replay 2026-10-14 (deny-all sandbox-exec): cargo also writes its lock
+        # and last-use DB at CARGO_HOME root (.package-cache,
+        # .package-cache-mutate, .global-cache, .global-cache-journal); without
+        # them it runs unlocked, no error. Literal files, nothing else at root
+        # opened.
+        # Residual a' (accepted by the user 2026-10-14): registry/src,
+        # git/checkouts and the uv cache feed code cargo/uv build and run
+        # OUTSIDE the sandbox in any project; a planted source runs on the next
+        # terminal build resolving that version (same class as pnpm .tools).
+        # git/db = bare repos with config/hooks; libgit2 (cargo default) runs
+        # no hooks.
+        # Rejected: ~/.cache whole (zsh_eval_cache_* sourced by every shell;
+        # ~/.cache/nix read by the excluded `nix flake check`); ~/.cargo whole
+        # (bin/, config); ~/.rustup (toolchains executed); ~/Library/Caches
+        # (other apps' executable caches); ~/.local/bin and
+        # ~/.local/share/uv/tools (uvx needs tools/.lock but scrapling/graphify
+        # live there, so uvx stays an escape; `uv run --with` works sandboxed);
+        # CARGO_HOME/UV_CACHE_DIR redirect (user chose real caches).
+        # Check A28 (checks/claude-config.nix) pins this.
         allowWrite = [
           "${homeDirectory}/GraphVault"
           "${homeDirectory}/Library/Application Support/rtk"
@@ -327,6 +362,14 @@ in
           "${homeDirectory}/Library/pnpm/global/v11/pnpm-lock.yaml"
           "${homeDirectory}/Library/pnpm/global/v11/.tmp*"
           "${alxVaultPath}/.git"
+          "${homeDirectory}/.config/.wrangler/logs"
+          "${homeDirectory}/.cargo/registry"
+          "${homeDirectory}/.cargo/git"
+          "${homeDirectory}/.cargo/.package-cache"
+          "${homeDirectory}/.cargo/.package-cache-mutate"
+          "${homeDirectory}/.cargo/.global-cache"
+          "${homeDirectory}/.cargo/.global-cache-journal"
+          "${homeDirectory}/.cache/uv"
         ];
       };
       network = {

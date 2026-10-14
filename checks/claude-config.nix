@@ -360,6 +360,76 @@ let
   unanchoredSandboxPaths = builtins.filter (
     p: !(builtins.isString p && hasPrefix "/" p)
   ) sandboxPaths;
+
+  # --- A28: allowWrite never opens a path whose content runs outside the sandbox ---
+  allowWriteStrs = builtins.filter builtins.isString (
+    pkgs.lib.attrByPath [ "sandbox" "filesystem" "allowWrite" ] [ ] settingsAttrs
+  );
+  classC = map (s: "/Users/alx" + s) [
+    "/.cache/nix"
+    "/.cargo/bin"
+    "/.cargo/config.toml"
+    "/.cargo/config"
+    "/.cargo/credentials.toml"
+    "/.cargo/env"
+    "/.rustup"
+    "/.local/bin"
+    "/.local/share/uv/tools"
+    "/Library/Caches"
+    "/Library/LaunchAgents"
+    "/.config/git"
+    "/.gitconfig"
+    "/.zshrc"
+    "/.zshenv"
+    "/.zprofile"
+  ];
+  # File-name prefixes, not paths: zsh writes ~/.cache/zsh_eval_cache_<suffix> siblings.
+  classCNamePrefixes = [ "/Users/alx/.cache/zsh_eval_cache_" ];
+  isUnder =
+    child: parent: child == parent || hasPrefix (pkgs.lib.removeSuffix "/" parent + "/") child;
+  globLit = p: builtins.head (builtins.match "([^*?]*).*" p);
+  opensClassC =
+    p:
+    let
+      lit = globLit p;
+      isGlob = lit != p;
+    in
+    builtins.any (
+      c: if isGlob then hasPrefix lit c || isUnder lit c else isUnder c p || isUnder p c
+    ) classC
+    || builtins.any (
+      np: if isGlob then hasPrefix lit np || hasPrefix np lit else hasPrefix np p || isUnder np p
+    ) classCNamePrefixes;
+  classCOpened = builtins.filter opensClassC allowWriteStrs;
+  # Built-in canary: the predicate must flag ancestors/descendants/globs and spare siblings.
+  classCPredicateLive =
+    builtins.all opensClassC [
+      "/Users/alx"
+      "/Users/alx/.cache"
+      "/Users/alx/.cache/"
+      "/Users/alx/.cargo"
+      "/Users/alx/.cargo/bin/x"
+      "/Users/alx/.cache/zsh_eval_cache_foo"
+      "/Users/alx/.cache/zsh_eval_cache_*"
+      "/Users/alx/.c*"
+      "/Users/alx/**/y"
+      "/"
+    ]
+    && !(builtins.any opensClassC [
+      "/Users/alx/.cache/uv"
+      "/Users/alx/.cargo/registry"
+      "/Users/alx/.cargo/git"
+      "/Users/alx/.config/.wrangler/logs"
+    ]);
+  requiredCargoDenyWrite = map (s: "/Users/alx/.cargo/" + s) [
+    "bin"
+    "config.toml"
+    "config"
+    "credentials.toml"
+    "env"
+  ];
+  missingCargoDenyWrite = builtins.filter (p: !(builtins.elem p denyWrite)) requiredCargoDenyWrite;
+
   requiredSecretDenyRead = [
     "/Users/alx/**/.env"
     "/Users/alx/**/.env.*"
@@ -612,6 +682,24 @@ let
         + " / denyRead lost: "
         + builtins.concatStringsSep ", " missingSecretDenyRead
         + " — an unprefixed path in user settings resolves under ~/.claude (docs: settings-reference #sandbox-path-prefixes), so \"**/.env\" guarded nothing elsewhere: measured, `dd if=~/projects/Preliz/.env of=/dev/null count=0` opened the file from inside the sandbox. Anchor every allowWrite/denyWrite/allowRead/denyRead entry on \${homeDirectory} or another absolute path";
+    }
+    {
+      name = "A28 sandbox: allowWrite never opens a class-c path (or its parent), ~/.cargo exec parts stay denyWrite";
+      ok =
+        allowWriteStrs != [ ] && classCPredicateLive && classCOpened == [ ] && missingCargoDenyWrite == [ ];
+      msg =
+        "allowWrite entries opening a class-c path: "
+        + builtins.toJSON classCOpened
+        + " / denyWrite lost: "
+        + builtins.concatStringsSep ", " missingCargoDenyWrite
+        + (
+          if classCPredicateLive then
+            ""
+          else
+            " / the A28 predicate no longer flags its own known-bad samples (vacuous)"
+        )
+        + (if allowWriteStrs == [ ] then " / allowWrite parsed empty (vacuous)" else "")
+        + " — a class-c path holds code or config run OUTSIDE the sandbox (shell rc, zsh_eval_cache_*, ~/.cargo/bin on PATH, cargo config, rustup toolchains, uv tools, LaunchAgents, git config, the ~/.cache/nix read by the excluded nix flake check); allowWrite on it or on any PARENT turns one sandboxed write into unsandboxed execution. Open the narrow cache subdir instead (~/.cache/uv, ~/.cargo/registry)";
     }
     {
       name = "A25 settings: Read/Edit rules are anchored with ~/ or //, never a single leading slash";

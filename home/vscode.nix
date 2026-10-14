@@ -273,7 +273,7 @@ let
 in
 
 {
-  # VS Code settings (app installed via brew, config managed here)
+  # VS Code settings (app not installed by this flake, config managed here)
   home.file = {
     "${settingsPath}/settings.json".text = builtins.toJSON settings;
     "${settingsPath}/keybindings.json".text = builtins.toJSON keybindings;

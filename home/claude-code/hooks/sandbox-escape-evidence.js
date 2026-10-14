@@ -32,7 +32,9 @@ const ENVELOPE = /^\s*<(bash-(input|stdout|stderr)|task-notification|command-nam
 
 // Commands that fail sandboxed by construction: git writes .git/config
 // (denyWrite in every repo), nix needs the daemon socket, docker its socket,
-// the browser rungs Mach IPC, the probes `git init` fixtures.
+// the browser rungs Mach IPC, the probes `git init` fixtures. sandbox-exec
+// cannot nest in Claude's Seatbelt (sandbox_apply: Operation not permitted);
+// apex-verify-external times out sandboxed with no EPERM text.
 const ALLOW = [
   /^nix\s+(?:flake\s+check|build|eval)\b/,
   /^git(?:\s+-C\s+\S+)?\s+branch\b.*\s(?:-[dDmMu]|--delete|--move|--set-upstream-to)(?=[\s=]|$)/,
@@ -42,7 +44,9 @@ const ALLOW = [
   /^docker\b/,
   /^darwin-rebuild\s+build\b/,
   /^scrapling\s+extract\s+(?:fetch|stealthy-fetch)\b/,
-  /^(?:bash\s+)?(?:\.\/)?checks\/[\w-]+-(?:probe|bench)\.sh\b/
+  /^(?:bash\s+)?(?:\.\/)?checks\/[\w-]+-(?:probe|bench)\.sh\b/,
+  /^sandbox-exec\b/,
+  /^apex-verify-external\b/
 ];
 
 let settled = false;

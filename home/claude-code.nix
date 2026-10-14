@@ -85,6 +85,7 @@ let
     hookCorrectionGrant
     hookResearchModel
     hookLoneExcludedBash
+    hookSandboxEscapeEvidence
     hookReactDocsGate
     hookNullResultGate
     ;
@@ -269,6 +270,10 @@ let
     };
     "${claudeDir}/hooks/lone-excluded-bash.js" = {
       text = hookLoneExcludedBash;
+      executable = true;
+    };
+    "${claudeDir}/hooks/sandbox-escape-evidence.js" = {
+      text = hookSandboxEscapeEvidence;
       executable = true;
     };
     "${claudeDir}/hooks/react-docs-gate.js" = {

@@ -77,6 +77,15 @@ in
   # decision 2026-10-11). Fail-open: a workflow hook, not a barrier.
   hookLoneExcludedBash = builtins.readFile ./hooks/lone-excluded-bash.js;
 
+  # PreToolUse on Bash: a call asking dangerouslyDisableSandbox is denied
+  # unless the newest Bash result batch in the transcript shows sandbox
+  # evidence (EPERM, Operation not permitted, sandbox_violations…), the
+  # newest user prompt asks to leave the sandbox, or the command is on a
+  # known-unsandboxable allowlist (git branch -d/-m/-u, nix build, docker…).
+  # Measured over 14 days: 91 % of escapes had no sandbox error before them.
+  # Fail-open: a workflow hook, not a barrier.
+  hookSandboxEscapeEvidence = builtins.readFile ./hooks/sandbox-escape-evidence.js;
+
   # Turns the APEX routing rule from advice into enforcement. The
   # UserPromptSubmit reminder is text: it is read and then skipped. Measured on
   # 2026-08-08 — 6 file-modifying tasks in one session, APEX invoked on 2.

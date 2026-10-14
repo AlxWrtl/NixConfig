@@ -189,6 +189,11 @@ in
           # #sandbox-path-prefixes).
           "${homeDirectory}/**/.git/hooks"
           "${homeDirectory}/**/.git/config"
+          # The vault .git is in allowWrite below. Writing `commondir` ALONE
+          # redirects git to another dir's config, hence core.hooksPath:
+          # probed 2026-10-14, `git config --show-origin core.hooksPath` then
+          # read <evil>/config. The hooks/config denies above do not cover it.
+          "${alxVaultPath}/.git/commondir"
           # $TMPDIR (/tmp/claude-<uid>, /private/tmp/claude-…) is writable from
           # the sandbox: a repo created there could get core.fsmonitor/hooksPath
           # or a hook, then run by an excluded git command or the codex
@@ -235,18 +240,31 @@ in
         # du répertoire reste refusé. Le deny `Read(~/.config/secrets/**)`
         # bloque toujours le Read / `cat` de Claude lui-même : seul le wrapper
         # les lit, et il ne les affiche jamais.
+        # Modèles `.env.example` / `.env.template` : versionnés, sans secret,
+        # mais emportés par `**/.env.*` ci-dessus — 14 j mesurés, première cause
+        # de sortie du sandbox avec une vraie erreur derrière. Ré-ouverts au
+        # sandbox seul ; le deny `Read(**/.env.*)` de l'outil Read reste. Ne
+        # vaut que si le glob le plus étroit l'emporte sur `**/.env.*` (règle
+        # documentée pour des chemins, pas glob contre glob) : à défaut, aucun
+        # effet, jamais une ouverture plus large.
         allowRead = [
           "${homeDirectory}/.ssh/id_ed25519.pub"
           "${homeDirectory}/.config/secrets/trello-api-key"
           "${homeDirectory}/.config/secrets/trello-token"
+          "${homeDirectory}/**/.env.example"
+          "${homeDirectory}/**/.env.template"
         ];
         # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the
         # default sandbox write-set (cwd + tmp) would kill it with "operation
         # not permitted" and force a dangerouslyDisableSandbox box at the end
         # of every `-n` session. allowWrite EXTENDS the writable set; it never
-        # re-opens a denyWrite path. The vault itself stays Bash-unwritable
+        # re-opens a denyWrite path. The vault work tree stays Bash-unwritable
         # (outside cwd): session notes go through the Write tool, as before.
+        # Its `.git` IS writable, so a sandboxed `git add`/`git status` in the
+        # vault stops failing on `.git/index.lock`. Hooks and config stay
+        # closed by the `**/.git/{hooks,config}` denyWrite above; commondir is
+        # closed in denyWrite below.
         # rtk keeps its trust store, command history and tee logs under its
         # data dir. Inside the sandbox those writes fail, and rtk does NOT
         # error — it falls back to unfiltered pass-through, silently. Measured
@@ -280,10 +298,19 @@ in
         # only lever. As above, allowWrite EXTENDS the writable set only — it
         # grants no read it did not already have and re-opens nothing covered
         # by denyRead.
+        # pnpm 12 honours `packageManager: pnpm@9.x` by installing that version
+        # under ~/Library/pnpm/.tools (from package-manager-store) and
+        # re-executing it: sandboxed, the switch dies on
+        # ERR_PNPM_LOCKFILE_WRITE_FILE. Those two dirs only — not bin/,
+        # global/ or store/. Residual risk: a binary planted in .tools runs on
+        # the next pnpm call that pins that version, a terminal one included.
         allowWrite = [
           "${homeDirectory}/GraphVault"
           "${homeDirectory}/Library/Application Support/rtk"
           "${homeDirectory}/.codex"
+          "${homeDirectory}/Library/pnpm/.tools"
+          "${homeDirectory}/Library/pnpm/package-manager-store"
+          "${alxVaultPath}/.git"
         ];
       };
       network = {
@@ -451,8 +478,8 @@ in
         "Bash(graphify-reindex)"
         # vault-snapshot auto-commits dirty notes onto `vault/<stamp>` in the
         # vault, then uploads the encrypted bundle to AlxWrtl/attic. Run as
-        # sandboxed Bash it cannot write the vault .git: logs skip=sandboxed,
-        # exits 0.
+        # sandboxed Bash it cannot write the vault .git/hooks: logs
+        # skip=sandboxed, exits 0.
         "Bash(vault-snapshot)"
         # Git — safe operations (granular, not blanket)
         "Bash(git status *)"
@@ -673,6 +700,18 @@ in
             {
               type = "command";
               command = "${node} ~/.claude/hooks/lone-excluded-bash.js";
+              timeout = 5;
+            }
+          ];
+        }
+        {
+          matcher = "Bash";
+          # Denies a dangerouslyDisableSandbox call that no sandbox error,
+          # user ask or allowlisted command justifies. Fail-open.
+          hooks = [
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/sandbox-escape-evidence.js";
               timeout = 5;
             }
           ];

@@ -47,6 +47,11 @@
 #      non-target segment, a file redirection and a command substitution
 #      denied; a quoted `;`, fd duplication and malformed input allowed,
 #      the last three killed as over-blocks.
+#      The sandbox-escape run adds sandbox-escape-evidence: an escape with
+#      no sandbox error in the newest Bash batch denied, an older batch's
+#      error, a skill body naming the flag, an allowlisted verb inside
+#      quotes and a prompt only naming the flag ignored; evidence anywhere in
+#      the batch, behind a non-Bash result, and malformed input allowed.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -424,6 +429,34 @@ let
     A-le-dup = {
       hook = "lone-excluded-bash.js";
       text = "const dup = (op === \">&\" || op === \"<&\") && /^(?:[0-9]+-?|-)$/.test(w.val);";
+    };
+    A-se-failopen = {
+      hook = "sandbox-escape-evidence.js";
+      text = "try { data = JSON.parse(input); } catch { allow(); return; }";
+    };
+    A-se-evidence = {
+      hook = "sandbox-escape-evidence.js";
+      text = "if (texts.some((t) => EVIDENCE.test(t))) { allow(); return; }";
+    };
+    A-se-batch = {
+      hook = "sandbox-escape-evidence.js";
+      text = "const texts = results.filter((r) => r.mid === newest.mid).map((r) => r.text);";
+    };
+    A-se-scope = {
+      hook = "sandbox-escape-evidence.js";
+      text = "if (msg.isMeta === true) continue;";
+    };
+    A-se-bashonly = {
+      hook = "sandbox-escape-evidence.js";
+      text = "if (!u || u.name !== \"Bash\" || b.tool_use_id === current) continue;";
+    };
+    A-se-segments = {
+      hook = "sandbox-escape-evidence.js";
+      text = "return segments(cmd).some((s) => ALLOW.some((re) => re.test(s.trim())));";
+    };
+    A-se-ask = {
+      hook = "sandbox-escape-evidence.js";
+      text = "const USER_ASK = /(sans|hors|without|bypass|outside|disable)\\W+(?:the\\s+|le\\s+|du\\s+)?sandbox/i;";
     };
   };
 
@@ -879,6 +912,102 @@ let
         }
       ];
     }
+    # Sandbox-escape run. Fail-closed on malformed input.
+    {
+      id = "M-se-failopen";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-malformed-allow";
+      swaps = [
+        {
+          anchor = "A-se-failopen";
+          to = "try { data = JSON.parse(input); } catch { deny(\"BLOCKED: malformed input\"); return; }";
+        }
+      ];
+    }
+    # Evidence never read: an EPERM retry denied.
+    {
+      id = "M-se-evidence";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-eperm-allow";
+      swaps = [
+        {
+          anchor = "A-se-evidence";
+          to = "if (false) { allow(); return; }";
+        }
+      ];
+    }
+    # The newest result alone: a parallel sibling's EPERM unseen.
+    {
+      id = "M-se-batch";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-batch-allow";
+      swaps = [
+        {
+          anchor = "A-se-batch";
+          to = "const texts = [newest.text];";
+        }
+      ];
+    }
+    # Every Bash result: an error two batches back clears a fresh escape.
+    {
+      id = "M-se-stale";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-stale-deny";
+      swaps = [
+        {
+          anchor = "A-se-batch";
+          to = "const texts = results.map((r) => r.text);";
+        }
+      ];
+    }
+    # A skill body naming dangerouslyDisableSandbox read as the user's ask.
+    {
+      id = "M-se-scope";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-sysprompt-deny";
+      swaps = [
+        {
+          anchor = "A-se-scope";
+          to = "if (false) continue;";
+        }
+      ];
+    }
+    # Any tool's result: a clean Read after the EPERM hides it.
+    {
+      id = "M-se-bashonly";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-nonbash-skip-allow";
+      swaps = [
+        {
+          anchor = "A-se-bashonly";
+          to = "if (!u || b.tool_use_id === current) continue;";
+        }
+      ];
+    }
+    # Quotes ignored: `echo 'x; docker'` yields a docker segment, allowed.
+    {
+      id = "M-se-segments";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-quoted-sep-deny";
+      swaps = [
+        {
+          anchor = "A-se-segments";
+          to = "return cmd.split(/&&|\\|\\||[;|\\n]/).some((s) => ALLOW.some((re) => re.test(s.trim())));";
+        }
+      ];
+    }
+    # The flag's bare name read as an ask: "do not use it" allowed.
+    {
+      id = "M-se-ask";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-user-token-deny";
+      swaps = [
+        {
+          anchor = "A-se-ask";
+          to = "const USER_ASK = /(sans|hors|without|bypass|outside|disable)\\W+(?:the\\s+|le\\s+|du\\s+)?sandbox|dangerouslyDisableSandbox/i;";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -988,6 +1117,20 @@ let
     "le-chain-targets-allow"
     "le-malformed-allow"
     "le-command-v-allow"
+    "se-preempt-deny"
+    "se-stale-deny"
+    "se-sysprompt-deny"
+    "se-quoted-sep-deny"
+    "se-user-token-deny"
+    "se-eperm-allow"
+    "se-violations-allow"
+    "se-batch-allow"
+    "se-nonbash-skip-allow"
+    "se-allowlist-allow"
+    "se-noflag-allow"
+    "se-user-asked-allow"
+    "se-missing-transcript-allow"
+    "se-malformed-allow"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -1034,6 +1177,7 @@ let
     "correction-grant.js"
     "research-model.js"
     "lone-excluded-bash.js"
+    "sandbox-escape-evidence.js"
   ];
   timeoutsOf =
     n:
@@ -1188,6 +1332,23 @@ let
     # research-model: $1 subagent_type, $2 model (absent when empty or unset).
     rm_in() { ${jq} -cn --arg t "$1" --arg m "''${2-}" '{hook_event_name:"PreToolUse",tool_name:"Agent",session_id:"probe",tool_input:({description:"probe",subagent_type:$t,prompt:"Find the hook wiring."} + (if $m == "" then {} else {model:$m} end))}'; }
 
+    # sandbox-escape-evidence: $1 command, $2 transcript, $3 the flag
+    # (true when unset, absent when empty). Transcript lines, in Claude's
+    # JSONL shape: se_use $1 tool_use id, $2 assistant message id, $3 tool
+    # (Bash when unset); se_res $1 tool_use id, $2 result text; se_user /
+    # se_meta a typed prompt / an injected one. se_tx writes them, in order,
+    # to $SE/$lbl.jsonl.
+    SE="$root/se"
+    mkdir -p "$SE"
+    se_in() { ${jq} -cn --arg c "$1" --arg t "$2" --arg f "''${3-true}" '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_use_id:"toolu_now",session_id:"probe",transcript_path:$t,tool_input:({command:$c} + (if $f == "" then {} else {dangerouslyDisableSandbox:($f == "true")} end))}'; }
+    se_use() { ${jq} -cn --arg id "$1" --arg m "$2" --arg n "''${3-Bash}" '{type:"assistant",message:{id:$m,role:"assistant",content:[{type:"tool_use",id:$id,name:$n,input:{command:"x"}}]}}'; }
+    se_res() { ${jq} -cn --arg id "$1" --arg t "$2" '{type:"user",message:{role:"user",content:[{type:"tool_result",tool_use_id:$id,content:$t}]}}'; }
+    se_user() { ${jq} -cn --arg t "$1" '{type:"user",message:{role:"user",content:$t}}'; }
+    se_meta() { ${jq} -cn --arg t "$1" '{type:"user",isMeta:true,message:{role:"user",content:[{type:"text",text:$t}]}}'; }
+    se_tx() { printf '%s\n' "$@" > "$SE/$lbl.jsonl"; }
+    # $1 command, $2 body: run against $SE/$lbl.jsonl with the flag set.
+    se_run() { run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(se_in "$1" "$SE/$lbl.jsonl")"; }
+
     # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
     # $tmo is the host's timeout for the hook under test (probe_case sets it);
     # 124 is `timeout` killing it, which the host reads as no decision.
@@ -1259,6 +1420,7 @@ let
         cg-*) tmo=${hostTimeout "correction-grant.js"} ;;
         rm-*) tmo=${hostTimeout "research-model.js"} ;;
         le-*) tmo=${hostTimeout "lone-excluded-bash.js"} ;;
+        se-*) tmo=${hostTimeout "sandbox-escape-evidence.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -1618,6 +1780,48 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -F m.txt && git push')"; is_allow ;;
         le-malformed-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
+        # Sandbox-escape run: the flag needs sandbox evidence in the newest
+        # Bash batch, a user ask, or an allowlisted command.
+        se-preempt-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm build' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-stale-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'mkdir: x: Operation not permitted')" "$(se_use u2 m2)" "$(se_res u2 'built')"
+          se_run 'pnpm build' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-sysprompt-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_meta 'retry ONCE outside the sandbox, with dangerouslyDisableSandbox: true')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm build' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-quoted-sep-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run "echo 'x; docker'" "$2"; is_deny "Run this command sandboxed first" ;;
+        se-user-token-deny)
+          se_tx "$(se_user 'do not use dangerouslyDisableSandbox')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm build' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-eperm-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'mkdir: x: Operation not permitted')"
+          se_run 'pnpm build' "$2"; is_allow ;;
+        se-violations-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'x <sandbox_violations>deny file-write</sandbox_violations>')"
+          se_run 'pnpm build' "$2"; is_allow ;;
+        se-batch-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_use u2 m1)" "$(se_res u1 'Error: EPERM: open x')" "$(se_res u2 'built')"
+          se_run 'pnpm build' "$2"; is_allow ;;
+        se-nonbash-skip-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'mkdir: x: Operation not permitted')" "$(se_use u2 m2 Read)" "$(se_res u2 'file text')"
+          se_run 'pnpm build' "$2"; is_allow ;;
+        se-allowlist-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'cd /x && git branch -D old' "$2"; is_allow ;;
+        se-noflag-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(se_in 'pnpm build' "$SE/$lbl.jsonl" "")"; is_allow ;;
+        se-user-asked-allow)
+          se_tx "$(se_user 'lance-le hors sandbox')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm build' "$2"; is_allow ;;
+        se-missing-transcript-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(se_in 'pnpm build' "$SE/absent.jsonl")"; is_allow ;;
+        se-malformed-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -1632,6 +1836,7 @@ let
         cg-*) echo ${hookFile "correction-grant.js"} ;;
         rm-*) echo ${hookFile "research-model.js"} ;;
         le-*) echo ${hookFile "lone-excluded-bash.js"} ;;
+        se-*) echo ${hookFile "sandbox-escape-evidence.js"} ;;
       esac
     }
 

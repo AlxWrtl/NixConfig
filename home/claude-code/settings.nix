@@ -301,11 +301,18 @@ in
         # pnpm 12 honours `packageManager: pnpm@9.x` by installing that version
         # under ~/Library/pnpm/.tools (from package-manager-store) and
         # re-executing it: sandboxed, the switch dies on
-        # ERR_PNPM_LOCKFILE_WRITE_FILE. Those two dirs only — not bin/,
-        # global/ or store/. Residual risk: a binary planted in .tools runs on
-        # the next pnpm call that pins that version, a terminal one included.
+        # ERR_PNPM_LOCKFILE_WRITE_FILE. Those two dirs whole — not bin/,
+        # store/ or global/ (two file names below). Residual risk: a binary
+        # planted in .tools runs on the next pnpm call that pins that version,
+        # a terminal one included.
         # Once those two opened, the switch hit ERR_PNPM_STORE_DIR_OPEN_OPERATION_LOCK
         # on ~/Library/pnpm/pnpm-store-operation-locks (2026-10-14): that lock too.
+        # With the lock open the switch still died on ERR_PNPM_LOCKFILE_WRITE_FILE:
+        # a sandbox-exec replay (2026-10-14) showed the engine writes
+        # global/v11/pnpm-lock.yaml through a `.tmp*` sibling and a rename.
+        # Those two names only; the global/v11/<hash> package dirs, which the
+        # bin/ shims run, stay closed. allowWrite wildcards work on macOS only
+        # (docs: settings-reference #sandbox-path-prefixes).
         allowWrite = [
           "${homeDirectory}/GraphVault"
           "${homeDirectory}/Library/Application Support/rtk"
@@ -313,6 +320,8 @@ in
           "${homeDirectory}/Library/pnpm/.tools"
           "${homeDirectory}/Library/pnpm/package-manager-store"
           "${homeDirectory}/Library/pnpm/pnpm-store-operation-locks"
+          "${homeDirectory}/Library/pnpm/global/v11/pnpm-lock.yaml"
+          "${homeDirectory}/Library/pnpm/global/v11/.tmp*"
           "${alxVaultPath}/.git"
         ];
       };

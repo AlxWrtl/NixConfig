@@ -1127,6 +1127,7 @@ let
     "se-batch-allow"
     "se-nonbash-skip-allow"
     "se-allowlist-allow"
+    "se-allowlist-verify-allow"
     "se-noflag-allow"
     "se-user-asked-allow"
     "se-missing-transcript-allow"
@@ -1812,6 +1813,9 @@ let
         se-allowlist-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'cd /x && git branch -D old' "$2"; is_allow ;;
+        se-allowlist-verify-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'apex-verify-external --acs a.txt' "$2"; is_allow ;;
         se-noflag-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(se_in 'pnpm build' "$SE/$lbl.jsonl" "")"; is_allow ;;

@@ -27,10 +27,14 @@
       pkgs.pre-commit
       pkgs.watch
       pkgs.tldr
+      # rustup only: Firefox `mach bootstrap` drives its own toolchains through it.
+      # No nixpkgs cargo/rustc beside it (binary clash).
+      pkgs.rustup
     ];
 
     sessionPath = [
       "$HOME/.npm-global/bin"
+      "$HOME/.cargo/bin"
     ];
   };
 

@@ -2413,9 +2413,9 @@ in
       `git checkout -b <x> origin/<y>`, `git remote`, `git config --local`,
       `git init` and `git clone` fail there — run them with
       dangerouslyDisableSandbox (one retry, permission box).
-    - **Sandbox-blocked** — docker, local DB sockets, or any command that just
-      failed with clear sandbox evidence (permission denied on allowed work,
-      socket/auth failure): retry ONCE with `dangerouslyDisableSandbox: true`.
+    - **Sandbox-blocked** — docker, or any command that just failed with clear
+      sandbox evidence (a refused local DB socket, permission denied on allowed
+      work, socket/auth failure): retry ONCE with `dangerouslyDisableSandbox: true`.
       The `ask` permission rule shows the user a confirmation box — they
       approve or refuse; a refusal is an answer, not an obstacle to work
       around. COORDINATOR ONLY: phase agents do not escalate; they surface the

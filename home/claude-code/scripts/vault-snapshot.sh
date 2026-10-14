@@ -79,12 +79,14 @@ esac
 [ -d "$VAULT/.git" ] || { log "FATAL not a git repo: $VAULT"; exit 1; }
 command -v gh >/dev/null 2>&1 || { log "FATAL gh not on PATH"; exit 1; }
 
-# A sandboxed caller (Seatbelt) cannot write the vault .git, so every git op
-# below would fail. Test the real capability rather than SANDBOX_RUNTIME: it
-# also covers nested sessions that inherit the sandbox without the variable.
-PROBE="$VAULT/.git/.snap-probe.$$"
+# A sandboxed caller (Seatbelt) cannot reach the keychain or the network, so
+# the upload below would fail. Test the real capability rather than
+# SANDBOX_RUNTIME: it also covers nested sessions that inherit the sandbox
+# without the variable. The vault .git itself is sandbox-writable (settings.nix
+# allowWrite), its hooks/ is not (denyWrite): probe there.
+PROBE="$VAULT/.git/hooks/.snap-probe.$$"
 if ! mkdir "$PROBE" 2>/dev/null; then
-  log "INFO skip=sandboxed (vault .git not writable)"
+  log "INFO skip=sandboxed (vault .git/hooks not writable)"
   exit 0
 fi
 rmdir "$PROBE" 2>/dev/null || true

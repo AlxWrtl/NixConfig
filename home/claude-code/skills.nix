@@ -3247,6 +3247,132 @@ in
   '';
 
   # =========================================================================
+  # Écriture FR — prose française qui ne sent pas le modèle. Adaptée de
+  # blader/humanizer (procédure, motifs, faux positifs) et de
+  # hardikpandya/stop-slop (grille /50, agent factice), traduite et
+  # recalée sur les tics propres au français. Pas de fichier de référence :
+  # tout tient ici, chargé seulement quand la skill se déclenche.
+  # =========================================================================
+  skillEcritureFr = ''
+    ---
+    name: ecriture-fr
+    description: "Écrire ou réécrire de la prose française qui se lit comme écrite par une personne : note, doc, README, mail, message, article, description de PR. Se déclenche aussi sur « humanise », « déslopifie », « ça fait IA », « réécris plus naturel », « relis ce texte ». Pas pour le code, ni pour les réponses de chat courtes."
+    ---
+
+    # Écriture FR : dire, pas mettre en scène
+
+    ## 1. Contexte d'abord
+    - Lecteur : qui lit, ce qu'il sait déjà, ce qu'il doit faire après.
+      Ne pas lui réexpliquer ce qu'il sait ; commencer par la décision ou le fait.
+    - Voix : si un échantillon écrit par l'utilisateur existe (texte fourni,
+      ses notes du vault, ses messages), imiter la longueur des phrases, le
+      registre, la ponctuation, les débuts de phrase. L'échantillon prime sur
+      toutes les règles ci-dessous.
+    - Sans échantillon : texte personnel, avis, blog → garder les opinions,
+      le doute réel, l'humour, les apartés. Doc, référence, technique →
+      neutre et simple. Dans les deux cas, une personne doit pouvoir l'avoir écrit.
+    - Faits : n'ajouter aucun fait, chiffre, nom, date ou source absent du
+      matériau fourni. Ce que la source ne dit pas, le dire ou couper.
+
+    ## 2. Huit règles
+    1. Couper les préambules, les formules de remplissage, les adverbes vides.
+    2. Un sujet humain qui agit, à la voix active. Pas d'agent factice :
+       « la décision émerge », « le problème se règle », « les données révèlent ».
+    3. Concret plutôt que vague : un chiffre, un nom, un exemple.
+    4. Varier la longueur des phrases ; une courte après deux longues, pas en série.
+    5. Affirmer sans tenir la main du lecteur ; pas de « comme nous allons le voir ».
+    6. Une phrase qui sonne comme une citation encadrée : la réécrire.
+    7. Verbes simples : « est », « a », « fait », plutôt que « se positionne
+       comme », « constitue », « s'impose comme », « dispose de », « vient enrichir ».
+    8. Une liste seulement si l'ordre ou le parallélisme compte ; sinon une phrase.
+
+    ## 3. Tics à traquer
+    Un indice seul ne prouve rien ; c'est l'accumulation qui trahit.
+
+    A. Mise en scène (un seul suffit à réécrire)
+    - Contraste creux : « ce n'est pas X, c'est Y », « non seulement… mais aussi ».
+    - Chute d'une ligne : « Et ça change tout. », « Tout simplement. », « Rien que ça. »
+    - Fausse profondeur : « au fond », « la vraie question », « au cœur de ».
+    - Annonce : « Plongeons dans… », « Voici ce qu'il faut retenir »,
+      « Soyons honnêtes », « Spoiler : ».
+    - Réfuter un adversaire absent : « Contrairement à ce qu'on pourrait penser ».
+
+    B. Rythme mécanique
+    - Triades forcées (trois adjectifs, trois bénéfices) : vérifier que chaque élément dit autre chose.
+    - Phrases successives qui commencent pareil.
+    - Tiret cadratin comme connecteur universel : virgule, deux-points ou point.
+    - Précautions empilées : « pourrait potentiellement », « dans une certaine mesure ».
+      Garder le doute réel, une seule fois.
+    - Participe présent accroché : « …, soulignant ainsi… », « …, témoignant de… », « …, permettant de… ».
+
+    C. Enflure
+    - Vocabulaire de modèle : crucial, essentiel, incontournable, véritable,
+      levier, écosystème, paysage, synergie, holistique, robuste, fluidifier,
+      booster, révolutionner, « s'inscrire dans », « jouer un rôle clé »,
+      « il convient de noter », « dans un monde où », « à l'ère de ».
+    - Connecteurs en chaîne : « en effet », « ainsi », « par ailleurs »,
+      « de plus », « en outre » en tête de phrases successives.
+    - Importance gonflée : « marque un tournant », « ouvre la voie », « promet un avenir ».
+      Garder le fait, finir sur le fait.
+    - Lien vague : « lié à », « en lien avec » ; nommer la relation.
+    - Langage commercial : « niché », « incontournable », « à couper le souffle ».
+    - Autorité sans source : « les experts s'accordent », « selon de nombreuses études ».
+      Nommer la source ou couper.
+
+    D. Mise en forme par réflexe
+    - Gras décoratif, étiquettes en gras sur chaque puce.
+    - Titres à l'anglaise (Majuscule À Chaque Mot), emojis, flèches, filets entre chaque section.
+    - Typographie : suivre celle du document existant (guillemets « », espaces
+      avant ; : ! ?) ; ne pas mélanger.
+
+    E. Résidus de chat (à supprimer d'office)
+    - « Excellente question ! », « J'espère que cela vous aide »,
+      « N'hésitez pas à… », « En résumé » qui répète le texte.
+    - Avertissements sur la date des connaissances, suppositions présentées comme faits.
+    - Titre répété en première phrase ; texte qui parle de lui-même
+      (« ce document présente… », « le tableau ci-dessous montre… »).
+
+    ## 4. Faux positifs
+    - Citations, titres, noms propres, passages qui parlent d'une expression
+      au lieu de l'employer : ne pas toucher.
+    - Formules de politesse d'une vraie lettre ou d'un vrai mail : pas un tic.
+    - Un « peut-être », un tiret, un mot soutenu isolé : habitudes humaines.
+    - Termes techniques (« robuste » en ingénierie, « gate », « pipeline ») : garder.
+    - Détails de voix (anecdote précise, sentiment mêlé, autocorrection) :
+      garder même s'ils cassent une règle.
+
+    ## 5. Procédure
+    1. Contexte (section 1) : lecteur, voix, faits disponibles.
+    2. Brouillon, ou lecture complète du texte à réécrire.
+    3. Repérer les tics, les plus forts d'abord ; regarder aussi la forme des paragraphes.
+    4. Réécrire le paragraphe entier plutôt que rapiécer la phrase signalée.
+    5. Relire à voix haute. Vérifier : rien ajouté, rien perdu. Chercher les
+       survivants fréquents : contraste creux, chute d'une ligne, triade,
+       tiret, gras.
+    6. Noter de 1 à 10 : franchise, rythme, confiance au lecteur,
+       authenticité, densité. Sous 35/50 → une passe de plus.
+
+    Mode audit (« relis », « dis-moi ce qui fait IA ») : lister chaque tic avec
+    la citation exacte et sa catégorie, sans réécrire.
+
+    Sources : Wikipedia « Signs of AI writing » (WikiProject AI Cleanup),
+    blader/humanizer, hardikpandya/stop-slop.
+
+    ${contract {
+      expects = "un texte à réécrire ou un brief de texte à écrire ; optionnellement un échantillon de la voix de l'utilisateur.";
+      produces = "le texte réécrit ou écrit (ou, en mode audit, la liste des tics cités) ; faits du matériau source inchangés.";
+    }}
+    ${scope {
+      useWhen = "Prose française destinée à être lue par quelqu'un : note, doc, README, mail, message, article, description de PR, ou demande d'humaniser un texte.";
+      notFor = "Code, commentaires de code, réponses de chat courtes (le style de sortie de la session s'applique), fiction à voix volontaire, contournement de détecteurs d'IA.";
+    }}
+    ${handoffs [
+      "Texte anglais → appliquer les mêmes catégories, adaptées à l'anglais ; le vocabulaire de la section C est propre au français."
+      "Note destinée au vault → skill obsidian pour l'emplacement et le frontmatter, cette skill pour la prose."
+    ]}
+  '';
+
+  # =========================================================================
   # Trello — the packaged `trello` CLI (home/claude-code/trello.nix) over the
   # REST API v1. Replaces the removed MCP server. The wrapper reads the secrets
   # in ~/.config/secrets itself; the skill never touches them.

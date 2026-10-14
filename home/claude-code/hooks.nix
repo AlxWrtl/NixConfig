@@ -1,7 +1,7 @@
 # Hook scripts for Claude Code
 # All command hooks: read JSON from stdin, exit 0 + JSON stdout
 # permissionDecision: "allow" | "deny" | "ask"
-# Bodies live in ./hooks/<deployed name>, read verbatim. The 4 bodies that
+# Bodies live in ./hooks/<deployed name>, read verbatim. The 5 bodies that
 # need a nix value carry a placeholder; `subst` throws if it is missing, so a
 # renamed placeholder cannot ship a hook with the literal still in it.
 {
@@ -270,7 +270,9 @@ in
     builtins.toJSON alxVaultPath
   );
 
-  hookSessionStart = builtins.readFile ./hooks/session-start.sh;
+  # SessionStart also lists the cwd project's vault notes (path only): a shell
+  # body, so the raw path is substituted, not its JSON form.
+  hookSessionStart = subst ./hooks/session-start.sh "@alxVaultPath@" alxVaultPath;
 
   # SessionEnd: refresh the AlxVault knowledge graph. Reason for existing: the
   # APEX step-09b text instruction only fires when the model remembers it —

@@ -412,7 +412,13 @@ declared in this repo decide what actually happens.
 
 The lifecycle of one request, in order:
 
-1. **Session opens** — `SessionStart` prints the branch and last commit.
+1. **Session opens** — `SessionStart` prints the branch and last commit,
+   then, when the vault has a `02-Projets/<main checkout name>` folder (a
+   worktree resolves to its main repo; `stock-market` → `trading-agent`),
+   that folder's path and its notes relative to it, for the model to read
+   on demand: other notes first, then `sessions/` newest first. The whole
+   output stays under Claude Code's hook-stdout truncation limit; a cut list
+   ends on `… N autres notes (ls "<folder>")`.
 2. **You type** — `UserPromptSubmit` injects the routing line naming the
    modes and their default flags. This is context, not enforcement.
 3. **The model tries to edit** — `PreToolUse` on `Edit|Write` and `Bash`
@@ -614,6 +620,21 @@ fix; the lone command, `2>&1`, chains of lone excluded commands, a
 included), and every input it cannot read must pass, and
 128 KB / 64 KB adversarial shapes must finish fast. Its `--mutants` mode
 grades every mutant on its declared red set.
+
+`checks/session-start-probe.sh` runs the SessionStart body against a fixture
+vault in throwaway repos (`--separate-git-dir`, so it runs in the sandbox),
+under `bash` and `/bin/bash` 3.2: a matching repo lists its notes relative
+and recursive, other notes before `sessions/`, sessions newest first, names
+with spaces intact; `stock-market` resolves to `trading-agent`; a linked
+worktree resolves to its main checkout; no folder or an empty one adds
+nothing; names holding a control character are skipped; a symlinked folder
+is followed; an oversized list stays within the character budget (counted in
+characters, not bytes) and ends on the `… N autres notes` line, while an
+exactly-fitting one has no such line; an unreadable subfolder and a non-repo
+cwd still exit 0. It exits non-zero unless each of its mutants (alias
+removed, lookup misdirected, budget raised, ordering reversed, worktree
+resolved by toplevel, control-character filter removed, fit test off by
+one, symlinks not followed, byte counting) turns a case red.
 
 ### Usage
 

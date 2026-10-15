@@ -482,6 +482,11 @@ in
     };
     enabledPlugins = {
       "codex@openai-codex" = true;
+      # Anthropic's on-demand scanner (`/claude-security`), installed as
+      # shipped: its license is proprietary, so no copy lives in this repo.
+      # security-guidance is left off on purpose (hooks on every edit,
+      # commit and Stop, LLM review rewakes outside the correction budget).
+      "claude-security@claude-plugins-official" = true;
     };
     # Options of the mods' plugin.json userConfig, read from user settings
     # only (`pluginConfigs[<name>].options`). The deck mod opens only on

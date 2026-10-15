@@ -71,7 +71,14 @@
       # Set before each prompt and each command, so it stays the folder while
       # Claude runs (Claude's own title is off: CLAUDE_CODE_DISABLE_TERMINAL_TITLE).
       # Ghostty's shell-integration title is off too (ghostty.nix).
-      _tab_title_folder() { print -Pn $'\e]0;%1~\a' }
+      # Colored dot = stable hash of the folder path: same project, same color.
+      # Glyphs as \U escapes (literal multibyte got mangled in nix strings before).
+      _tab_dots=($'\U1F534' $'\U1F7E0' $'\U1F7E1' $'\U1F7E2' $'\U1F535' $'\U1F7E3' $'\U1F7E4')
+      _tab_title_folder() {
+        local c h=0
+        for c in ''${(s::)PWD}; do h=$(( (h * 31 + #c) % 1000003 )); done
+        print -Pn $'\e]0;'"''${_tab_dots[h % 7 + 1]} %1~"$'\a'
+      }
       autoload -Uz add-zsh-hook
       add-zsh-hook precmd _tab_title_folder
       add-zsh-hook preexec _tab_title_folder

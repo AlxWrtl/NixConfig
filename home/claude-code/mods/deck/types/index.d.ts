@@ -181,9 +181,16 @@ export type DeckBgAgent = {
   kind: DeckBgKind
   /** Its one-line status, or empty. */
   detail: string
+  /** The prompt it was started with (one line, redacted), or empty. */
+  intent: string
+  /** Its token count, or null when state.json gives none. */
+  tokens: number | null
   /** Its last update (ms), else its folder's mtime. */
   updatedAt: number
 }
+
+/** One step of a background session, read from ~/.claude/jobs/<id>/timeline.jsonl. */
+export type DeckBgEvent = { at: number; state: string; detail: string }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -207,6 +214,8 @@ declare module 'claude-code' {
       openStep: DeckApexStepName | null
       /** Background sessions of every project, polled while the pane is open. */
       background: DeckBgAgent[]
+      /** The last steps of the background row unfolded in the panel (`view.expanded` = `bg:<id>`). */
+      bgTimeline: { id: string; events: DeckBgEvent[] } | null
     }
   }
 }

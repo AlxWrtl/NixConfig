@@ -3,7 +3,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { BG_KEEP_MS, bgCounts, bgKind, bgSummary, bgWord, inProject, parseJobState, projectOf, recentBg, sortBg } from '../hooks/background'
+import { BG_KEEP_MS, BG_TIMELINE, bgCounts, bgKind, bgSummary, bgWord, inProject, parseJobState, parseTimeline, projectOf, recentBg, sortBg } from '../hooks/background'
 import type { DeckBgAgent } from '../types'
 
 const NOW = 1_000_000_000_000
@@ -14,6 +14,8 @@ const job = (o: Partial<DeckBgAgent> & Pick<DeckBgAgent, 'id' | 'state'>): DeckB
   project: 'x',
   kind: bgKind(o.state),
   detail: '',
+  intent: '',
+  tokens: null,
   updatedAt: NOW,
   ...o,
 })
@@ -50,6 +52,8 @@ test('a state.json parses defensively: no object, no string state or cwd → nul
     state: 'blocked',
     kind: 'needs-you',
     detail: 'wants approval',
+    intent: '',
+    tokens: null,
     updatedAt: Date.parse('2026-08-06T05:42:11.089Z'),
   })
   expect(parseJobState('a', '{not json')).toBe(null)
@@ -61,6 +65,40 @@ test('a state.json parses defensively: no object, no string state or cwd → nul
   expect([bare?.name, bare?.updatedAt, bare?.detail]).toEqual(['ff00', 0, ''])
   // A credential in the status line is masked before it reaches state.
   expect(parseJobState('a', JSON.stringify({ state: 'blocked', cwd: '/x', detail: 'export API_KEY=sk-abcdefghijkl1234' }))?.detail).not.toContain('abcdefghijkl')
+})
+
+test('intent and tokens are read when present: intent one line and redacted, tokens a finite number else null', () => {
+  const full = parseJobState('a', JSON.stringify({ state: 'working', cwd: '/x', intent: 'Fix the\n  login  page', tokens: 54002 }))
+  expect([full?.intent, full?.tokens]).toEqual(['Fix the login page', 54002])
+  const bare = parseJobState('a', JSON.stringify({ state: 'working', cwd: '/x' }))
+  expect([bare?.intent, bare?.tokens]).toEqual(['', null])
+  expect(parseJobState('a', JSON.stringify({ state: 'working', cwd: '/x', intent: 3, tokens: '54002' }))?.tokens).toBe(null)
+  expect(parseJobState('a', JSON.stringify({ state: 'working', cwd: '/x', intent: 'use API_KEY=sk-abcdefghijkl1234' }))?.intent).not.toContain('abcdefghijkl')
+})
+
+const tl = (at: string, detail: unknown, state = 'working') => JSON.stringify({ at, state, detail, text: '' })
+
+test('a timeline keeps its last steps oldest first: broken lines, empty details and bad dates skipped, repeats folded', () => {
+  const text = [
+    tl('2026-10-15T10:59:03.541Z', ''),
+    tl('2026-10-15T10:59:20.962Z', 'Finding guard  assertions'),
+    '{half',
+    tl('2026-10-15T10:59:30.000Z', 'Finding guard assertions'),
+    tl('soon', 'no date'),
+    tl('2026-10-15T11:00:01.809Z', 'Checking e2e'),
+    JSON.stringify([1]),
+    tl('2026-10-15T11:00:02.000Z', 42),
+    tl('2026-10-15T11:01:00.000Z', 'export API_KEY=sk-abcdefghijkl1234'),
+    '',
+  ].join('\n')
+  const events = parseTimeline(text, 10)
+  expect(events.map(e => e.detail.slice(0, 14))).toEqual(['Finding guard ', 'Checking e2e', 'export API_KEY'])
+  expect(events[0]?.at).toBe(Date.parse('2026-10-15T10:59:20.962Z')) // a repeat keeps its first time
+  expect(events[2]?.detail).not.toContain('abcdefghijkl')
+  expect(events.every((e, i) => i === 0 || (events[i - 1]?.at ?? 0) < e.at)).toBe(true)
+  const many = Array.from({ length: 9 }, (_, i) => tl(new Date(NOW + i * 1000).toISOString(), `step ${i}`)).join('\n')
+  expect(parseTimeline(many, BG_TIMELINE).map(e => e.detail)).toEqual(['step 4', 'step 5', 'step 6', 'step 7', 'step 8'])
+  expect(parseTimeline('', 5)).toEqual([])
 })
 
 test('the project is the folder name, a worktree read as its repo', () => {
@@ -112,9 +150,9 @@ test('only the sessions of the current project: its root, a subfolder, one of it
 
 const ROOT = '/home/u/.claude/jobs'
 
-type Job = { id: string; mtimeMs: number; text?: string }
+type Job = { id: string; mtimeMs: number; text?: string; timeline?: string }
 
-type World = { jobs?: Job[]; listed: number; reads: number[] }
+type World = { jobs?: Job[]; listed: number; reads: number[]; timelineReads?: number }
 
 // The session runs at the root of Preliz; a job's cwd defaults to that root.
 const HERE = '/Users/a/projects/Preliz'
@@ -148,6 +186,12 @@ function world(on: On, w: World): void {
   })
   on('fs.read', (_$, e) => {
     if (e.path.startsWith(`${ROOT}/`)) w.reads[w.reads.length - 1] = (w.reads[w.reads.length - 1] ?? 0) + 1
+    const t = w.jobs?.find(x => e.path === `${ROOT}/${x.id}/timeline.jsonl`)
+    if (t !== undefined) {
+      w.timelineReads = (w.timelineReads ?? 0) + 1
+      if (t.timeline === undefined) throw new Error('ENOENT')
+      return { value: t.timeline }
+    }
     const j = w.jobs?.find(x => e.path === `${ROOT}/${x.id}/state.json`)
     if (j?.text === undefined) throw new Error('ENOENT')
     return { value: j.text }
@@ -281,5 +325,54 @@ test('inline, one summary row in panel order', async ($, on) => {
   const parts = (await ui.findAll({ type: 'Text', text: /^\d+ (needs you|working|other)$/ })).map(t => t.text)
   expect(parts).toEqual(['1 needs you', '1 working', '1 other'])
   expect(await ui.find({ text: /background agents/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('a row pressed unfolds intent, status, tokens and its last steps; pressed again it folds; only its timeline is read', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const at = (ms: number) => new Date(NOW - ms).toISOString()
+  const timeline = [tl(at(90_000), 'Finding guard assertions'), tl(at(80_000), 'Finding guard assertions'), tl(at(70_000), 'Checking e2e references'), '{half'].join('\n')
+  const jobs: Job[] = [
+    { id: 'cccc0001', mtimeMs: NOW - 2000, text: state({ state: 'working', name: 'job open', detail: 'Writing the note', intent: 'Shrink the ghost banner to a back button', tokens: 54002 }), timeline },
+    { id: 'cccc0002', mtimeMs: NOW - 1000, text: state({ state: 'blocked', name: 'job other', detail: 'approve the plan' }), timeline: tl(at(1000), 'other step') },
+  ]
+  const w: World = { jobs, listed: 0, reads: [] }
+  world(on, w)
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  expect(w.timelineReads ?? 0).toBe(0) // nothing unfolded: no timeline read
+  const ui = await $.ui.mount(pane(80))
+  expect(await ui.find({ type: 'Text', text: /^click: details$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Shrink the ghost banner/ })).toBeUndefined()
+  await ui.press({ key: 'bg-cccc0001' })
+  await clock.settle()
+  expect(await ui.find({ type: 'Text', text: /^Shrink the ghost banner to a back button$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^Writing the note$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^54k tok · cccc0001$/ })).toBeDefined()
+  expect(await ui.findAll({ type: 'Text', text: /^\d\d:\d\d Finding guard assertions$/ })).toHaveLength(1) // a repeat folded
+  expect(await ui.find({ type: 'Text', text: /^\d\d:\d\d Checking e2e references$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /other step/ })).toBeUndefined() // the other row stays folded
+  expect(await ui.find({ type: 'Text', text: /^approve the plan$/ })).toBeDefined()
+  expect(w.timelineReads).toBe(1)
+  await ui.press({ key: 'bg-cccc0001' })
+  await clock.settle()
+  expect(await ui.find({ type: 'Text', text: /Shrink the ghost banner/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /Checking e2e references/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('an unfolded row without a timeline file still shows its intent and tokens', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const jobs: Job[] = [{ id: 'dddd0001', mtimeMs: NOW - 2000, text: state({ state: 'working', name: 'job bare', intent: 'Do the thing' }) }]
+  world(on, { jobs, listed: 0, reads: [] })
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  const ui = await $.ui.mount(pane(80))
+  await ui.press({ key: 'bg-dddd0001' })
+  await clock.settle()
+  expect(await ui.find({ type: 'Text', text: /^Do the thing$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^dddd0001$/ })).toBeDefined() // no tokens: the id alone
   await ui.unmount()
 })

@@ -32,7 +32,6 @@
 
       # Window
       confirm-close-surface = false
-      title = " "
       window-new-tab-position = current
       window-save-state = always
       window-padding-x = 10
@@ -73,9 +72,9 @@
       cursor-color = #87a2bf
       cursor-text = #292b3b
 
-      # Shell integration (no cursor override)
+      # Shell integration (no cursor override; tab title set by zsh.nix)
       shell-integration = detect
-      shell-integration-features = no-cursor
+      shell-integration-features = no-cursor,no-title
 
       # Performance
       scrollback-limit = 134217728

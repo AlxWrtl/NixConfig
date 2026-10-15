@@ -38,6 +38,9 @@ in
       CLAUDE_CODE_AUTO_COMPACT_WINDOW = "400000";
       CLAUDE_STREAM_IDLE_TIMEOUT_MS = "600000";
       CLAUDE_BASH_MAINTAIN_PROJECT_WORKING_DIR = "1";
+      # Tab title stays the folder name (zsh.nix), not the topic of the moment.
+      # Also skips the session-title request and OSC 7501 status reports.
+      CLAUDE_CODE_DISABLE_TERMINAL_TITLE = "1";
       # Garde les outils Chrome, retire la section Chrome du prompt système et
       # la skill /claude-in-chrome : Chrome sert à agir, jamais à lire. 2026-10-10,
       # https://code.claude.com/docs/en/env-vars

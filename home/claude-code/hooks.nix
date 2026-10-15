@@ -341,8 +341,6 @@ in
 
   hookSubagentStop = builtins.readFile ./hooks/subagent-stop.js;
 
-  hookNotification = builtins.readFile ./hooks/notification.sh;
-
   hookCompactContext = builtins.readFile ./hooks/compact-context.sh;
 
   # Quality gate — scan recent changes for anti-patterns on Stop

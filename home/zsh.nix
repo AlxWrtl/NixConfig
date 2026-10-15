@@ -67,6 +67,15 @@
       setopt NO_BEEP
       unsetopt NOMATCH
 
+      # ---- Tab title = current folder name ----
+      # Set before each prompt and each command, so it stays the folder while
+      # Claude runs (Claude's own title is off: CLAUDE_CODE_DISABLE_TERMINAL_TITLE).
+      # Ghostty's shell-integration title is off too (ghostty.nix).
+      _tab_title_folder() { print -Pn $'\e]0;%1~\a' }
+      autoload -Uz add-zsh-hook
+      add-zsh-hook precmd _tab_title_folder
+      add-zsh-hook preexec _tab_title_folder
+
       # Plugin tuning
       ZSH_AUTOSUGGEST_BUFFER_MAX_SIZE=20
       ZSH_AUTOSUGGEST_USE_ASYNC=1

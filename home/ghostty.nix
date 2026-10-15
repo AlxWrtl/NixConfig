@@ -101,6 +101,9 @@
       adjust-cell-height = 0
       title-report = false
       desktop-notifications = true
+      # BEL (Claude Code end of turn): 🔔 in the tab title + border on the
+      # split, both cleared on focus; no Dock bounce, no popup, no sound.
+      bell-features = no-system,no-audio,no-attention,title,border
 
       # macOS security
       macos-auto-secure-input = true

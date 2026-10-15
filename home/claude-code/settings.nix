@@ -78,9 +78,11 @@ in
     };
     skipDangerousModePermissionPrompt = true;
 
-    # Turns off Claude Code's built-in desktop notification (Ghostty OSC,
-    # fired at end of turn); the Notification hook below still covers prompts.
-    preferredNotifChannel = "notifications_disabled";
+    # Rings BEL instead of a desktop notification (Ghostty OSC): Ghostty shows
+    # it as a 🔔 tab-title prefix + split border (bell-features, ghostty.nix),
+    # so the finished session is visible. The Notification hook below still
+    # covers permission prompts.
+    preferredNotifChannel = "terminal_bell";
 
     attribution = {
       commit = "";

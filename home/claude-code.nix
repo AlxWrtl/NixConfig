@@ -76,7 +76,6 @@ let
     hookVaultSnapshot
     hookApexReminder
     hookSubagentStop
-    hookNotification
     hookCompactContext
     hookStopFailure
     hookCircuitBreaker
@@ -228,10 +227,6 @@ let
     };
     "${claudeDir}/hooks/subagent-stop.js" = {
       text = hookSubagentStop;
-      executable = true;
-    };
-    "${claudeDir}/hooks/notification.sh" = {
-      text = hookNotification;
       executable = true;
     };
     "${claudeDir}/hooks/compact-context.sh" = {

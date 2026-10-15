@@ -80,8 +80,8 @@ in
 
     # Rings BEL instead of a desktop notification (Ghostty OSC): Ghostty shows
     # it as a 🔔 tab-title prefix + split border (bell-features, ghostty.nix),
-    # so the finished session is visible. The Notification hook below still
-    # covers permission prompts.
+    # so the session that finished or waits on a permission is visible. No
+    # macOS popup: there is no Notification hook.
     preferredNotifChannel = "terminal_bell";
 
     attribution = {
@@ -898,21 +898,6 @@ in
               type = "command";
               command = "${node} ~/.claude/hooks/circuit-breaker.js";
               timeout = 5;
-            }
-          ];
-        }
-      ];
-      Notification = [
-        {
-          # Pop-up only when Claude needs an answer, not on idle_prompt /
-          # agent_completed (end of turn). Letters, `_` and `|` only: the docs
-          # treat such a matcher as an exact-value list.
-          matcher = "permission_prompt|elicitation_dialog";
-          hooks = [
-            {
-              type = "command";
-              command = "bash ~/.claude/hooks/notification.sh";
-              timeout = 3;
             }
           ];
         }

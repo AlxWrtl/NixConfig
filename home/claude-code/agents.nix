@@ -444,6 +444,10 @@
     - Never expose actual secret values in output
     - Always check .env, .env.*, secrets/ patterns
     - Flag any hardcoded localhost/127.0.0.1 URLs in production code
+    - This audit is grep-driven: for a whole-repo threat model or a sensitive
+      diff (auth, permissions, payments), end the report by recommending
+      `/claude-security` (multi-agent scan, panel-verified findings). You
+      cannot run it yourself: it needs the main session.
   '';
 
   agentDebugger = ''

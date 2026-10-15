@@ -1,11 +1,14 @@
 // Pure helpers for the background agents panel: no `$`, no clock, no I/O. Each session is one
 // ~/.claude/jobs/<id>/state.json, a format the engine does not document: parsed defensively, an
 // entry that does not read is skipped rather than drawn wrong.
-import type { DeckBgAgent, DeckBgKind } from '../types'
+import type { DeckBgAgent, DeckBgEvent, DeckBgKind } from '../types'
 
 import { redact } from './core'
 
 export type { DeckBgKind }
+
+/** Timeline steps an unfolded row shows. */
+export const BG_TIMELINE = 5
 
 /** A finished session older than this leaves the panel. */
 export const BG_KEEP_MS = 24 * 60 * 60 * 1000
@@ -68,6 +71,8 @@ export function parseJobState(id: string, text: string): DeckBgAgent | null {
   const name: unknown = Reflect.get(value, 'name')
   const detail: unknown = Reflect.get(value, 'detail')
   const updated: unknown = Reflect.get(value, 'updatedAt')
+  const intent: unknown = Reflect.get(value, 'intent')
+  const tokens: unknown = Reflect.get(value, 'tokens')
   const at = typeof updated === 'string' ? Date.parse(updated) : Number.NaN
   return {
     id,
@@ -77,8 +82,38 @@ export function parseJobState(id: string, text: string): DeckBgAgent | null {
     state,
     kind: bgKind(state),
     detail: typeof detail === 'string' ? redact(oneLine(detail)) : '',
+    intent: typeof intent === 'string' ? redact(oneLine(intent)) : '',
+    tokens: typeof tokens === 'number' && Number.isFinite(tokens) ? tokens : null,
     updatedAt: Number.isFinite(at) ? at : 0,
   }
+}
+
+/**
+ * A timeline.jsonl's last `max` steps, oldest first: a line that does not read, has no ISO `at` or
+ * no non-empty `detail` is skipped; a detail repeated on the next line folds into its first.
+ */
+export function parseTimeline(text: string, max: number): DeckBgEvent[] {
+  const events: DeckBgEvent[] = []
+  for (const line of text.split('\n')) {
+    if (line.trim() === '') continue
+    let value: unknown
+    try {
+      value = JSON.parse(line)
+    } catch {
+      // Half-written last line or not JSON: skipped.
+      continue
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+    const rawAt: unknown = Reflect.get(value, 'at')
+    const rawDetail: unknown = Reflect.get(value, 'detail')
+    const rawState: unknown = Reflect.get(value, 'state')
+    const at = typeof rawAt === 'string' ? Date.parse(rawAt) : Number.NaN
+    const detail = typeof rawDetail === 'string' ? redact(oneLine(rawDetail)) : ''
+    if (!Number.isFinite(at) || detail === '') continue
+    if (events[events.length - 1]?.detail === detail) continue
+    events.push({ at, state: typeof rawState === 'string' ? oneLine(rawState) : '', detail })
+  }
+  return max > 0 ? events.slice(-max) : []
 }
 
 /** Without the finished sessions (done, stopped) last updated over BG_KEEP_MS ago. */

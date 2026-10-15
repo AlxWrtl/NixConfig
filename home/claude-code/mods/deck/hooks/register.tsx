@@ -31,6 +31,7 @@ import type {
   DeckView,
   DeckApexStepName,
   DeckBgAgent,
+  DeckBgEvent,
   DeckBgKind,
 } from '../types'
 import {
@@ -131,7 +132,7 @@ import {
 } from './shells'
 import type { Notification } from './shells'
 import { alertsOf, budgetOf, pickVerdict } from './signals'
-import { bgSummary, bgWord, inProject, parseJobState, recentBg, sortBg } from './background'
+import { BG_TIMELINE, bgSummary, bgWord, inProject, parseJobState, parseTimeline, recentBg, sortBg } from './background'
 
 const PANE = 'deck'
 const TITLE = 'Deck'
@@ -144,6 +145,8 @@ const DONE_SHELLS = 3
 // Background sessions: state.json files read per poll (the newest folders), rows drawn in the panel.
 const BG_READS = 12
 const BG_ROWS = 6
+// `view.expanded` of an unfolded background row: `bg:<id>` (a card's id never starts so).
+const BG_OPEN = 'bg:'
 
 // ---------------------------------------------------------------- state
 
@@ -164,6 +167,7 @@ const shells = atom({ plugin: 'deck', key: 'shells' } as const, [])
 const sessionRun = atom({ plugin: 'deck', key: 'sessionRun' } as const, null)
 const openStep = atom({ plugin: 'deck', key: 'openStep' } as const, null)
 const background = atom({ plugin: 'deck', key: 'background' } as const, [])
+const bgTimeline = atom({ plugin: 'deck', key: 'bgTimeline' } as const, null)
 
 // Module-level: a hot reload drops the environment and its timer with it.
 let timer: Timer | undefined
@@ -214,7 +218,19 @@ async function getShells($: EngineInterface): Promise<DeckApexShell[]> {
   return listOf<DeckApexShell>(await read($, shells))
 }
 async function getBackground($: EngineInterface): Promise<DeckBgAgent[]> {
-  return listOf<DeckBgAgent>(await read($, background))
+  // A row saved before intent and tokens were read has neither: none.
+  return listOf<DeckBgAgent>(await read($, background)).map(j => ({
+    ...j,
+    intent: typeof j.intent === 'string' ? j.intent : '',
+    tokens: typeof j.tokens === 'number' ? j.tokens : null,
+  }))
+}
+// The unfolded background row's last steps, or null (an older shape reads as none).
+async function getBgTimeline($: EngineInterface): Promise<{ id: string; events: DeckBgEvent[] } | null> {
+  const value: unknown = await read($, bgTimeline)
+  const id = stringField(value, 'id')
+  const events: unknown = Reflect.get(Object(value), 'events')
+  return id === undefined || !Array.isArray(events) ? null : { id, events: listOf<DeckBgEvent>(events) }
 }
 
 async function say($: EngineInterface, who: string, text: string, kind: DeckLogLine['kind'] = 'info', agentId: string | null = null) {
@@ -609,6 +625,31 @@ async function refreshBackground($: EngineInterface): Promise<void> {
   }
   const next = sortBg(recentBg(inProject(found, await $.session.cwd()), await $.clock.now()))
   if (JSON.stringify(await getBackground($)) !== JSON.stringify(next)) await update($, background, () => next)
+  // The unfolded row's timeline only, never one per session; its id is one the listing gave.
+  const expanded = (await getView($)).expanded
+  const openId = expanded !== null && expanded.startsWith(BG_OPEN) ? expanded.slice(BG_OPEN.length) : null
+  let timeline: { id: string; events: DeckBgEvent[] } | null = null
+  if (openId !== null && next.some(j => j.id === openId)) {
+    let text = ''
+    try {
+      text = await $.fs.read(`${root}/${openId}/timeline.jsonl`)
+    } catch {
+      // No timeline (yet), or over 4 MiB: the row unfolds without steps.
+    }
+    timeline = { id: openId, events: parseTimeline(text, BG_TIMELINE) }
+  }
+  if (JSON.stringify(await getBgTimeline($)) !== JSON.stringify(timeline)) await update($, bgTimeline, () => timeline)
+}
+
+// A background row pressed: it unfolds, or folds when it was the one open (one slot with the
+// cards); its timeline is read at once rather than at the next tick.
+async function toggleBgRow($: EngineInterface, id: string): Promise<void> {
+  const key = `${BG_OPEN}${id}`
+  await update($, view, x => {
+    const current = normalize(DEFAULT_VIEW, x)
+    return { ...current, expanded: current.expanded === key ? null : key }
+  })
+  await record(() => refreshBackground($))
 }
 
 // One poll: background sessions (pane open only), run (its phase moves to the log), phases,
@@ -1163,7 +1204,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     // Clients draw on terminal and desktop only; elsewhere the same frame as static text.
     const hasClient = 'Client' in els && (e.surface === 'terminal' || e.surface === 'desktop')
-    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now, open, jobs] = await Promise.all([
+    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now, open, jobs, tl] = await Promise.all([
       getMain($),
       getUsage($),
       getArchitect($),
@@ -1181,6 +1222,7 @@ export const register: Register = (on, options) => {
       $.clock.now(),
       getOpenStep($),
       getBackground($),
+      getBgTimeline($),
     ])
     const W = Math.max(40, e.props.bodyColumns)
     const layout = v.layout ?? cfg.layout
@@ -1583,20 +1625,46 @@ export const register: Register = (on, options) => {
     }
     const bgShown = jobs.slice(0, BG_ROWS)
     const bgMore = jobs.length - bgShown.length
-    const bgDetails = bgShown.filter(j => j.kind === 'needs-you' && j.detail !== '').length
-    const bgRows = jobs.length === 0 ? 0 : 2 + 1 + bgShown.length + bgDetails + (bgMore > 0 ? 1 : 0)
+    // The unfolded row (a press on its name), and its last steps once the poll has read them.
+    const bgOpenId = v.expanded !== null && v.expanded.startsWith(BG_OPEN) ? v.expanded.slice(BG_OPEN.length) : null
+    const bgOpen = bgShown.find(j => j.id === bgOpenId)
+    const bgEvents = bgOpen !== undefined && tl !== null && tl.id === bgOpen.id ? tl.events.slice(-BG_TIMELINE) : []
+    // The current status, unless the last step already says it.
+    const bgOpenDetail = bgOpen !== undefined && bgOpen.detail !== '' && bgEvents[bgEvents.length - 1]?.detail !== bgOpen.detail ? bgOpen.detail : ''
+    const bgOpenRows = bgOpen === undefined ? 0 : (bgOpen.intent !== '' ? 2 : 0) + (bgOpenDetail !== '' ? 1 : 0) + 1 + bgEvents.length
+    const bgDetails = bgShown.filter(j => j.kind === 'needs-you' && j.detail !== '' && j !== bgOpen).length
+    const bgRows = jobs.length === 0 ? 0 : 2 + 1 + bgShown.length + bgDetails + bgOpenRows + (bgMore > 0 ? 1 : 0)
     const needsYou = jobs.some(j => j.kind === 'needs-you')
+    // One line under a row: a faint rail, then the text.
+    const bgLine = (text: string, color: string, wrap: 'wrap' | 'truncate' = 'truncate') => (
+      <Box>
+        <Text color={C.faint}>{'│ '}</Text>
+        <Box flexShrink={1}>
+          <Text color={color} wrap={wrap}>
+            {text}
+          </Text>
+        </Box>
+      </Box>
+    )
     const backgroundPanel = (w: number) => (
       <Box flexDirection="column" borderStyle="round" borderColor={needsYou ? C.warn : C.faint} paddingX={1} width={w}>
-        <Text bold wrap="truncate">{`background agents · ${jobs.length}`}</Text>
+        <Box justifyContent="space-between">
+          <Text bold wrap="truncate">{`background agents · ${jobs.length}`}</Text>
+          {w >= 44 ? <Text color={C.faint}>click: details</Text> : null}
+        </Box>
         {bgShown.map(j => {
           const mk = bgMark[j.kind]
+          const isOpen = j === bgOpen
           return (
             <Box flexDirection="column">
               <Box>
                 <Text color={mk.color}>{`${mk.glyph} `}</Text>
                 <Box flexShrink={1}>
-                  <Text wrap="truncate">{j.name}</Text>
+                  <Button key={`bg-${j.id}`} plain onPress={() => toggleBgRow($, j.id)}>
+                    <Text bold={isOpen} wrap="truncate">
+                      {j.name}
+                    </Text>
+                  </Button>
                 </Box>
                 <Box flexShrink={0}>
                   <Text color={C.dim}>{` ${shorten(j.project, 18)}`}</Text>
@@ -1608,13 +1676,15 @@ export const register: Register = (on, options) => {
                   <Text color={C.faint}>{` ${j.updatedAt > 0 ? fmtDuration(now - j.updatedAt) : '—'}`}</Text>
                 </Box>
               </Box>
-              {j.kind === 'needs-you' && j.detail !== '' ? (
-                <Box>
-                  <Text color={C.faint}>{'│ '}</Text>
-                  <Text color={C.dim} wrap="truncate">
-                    {j.detail}
-                  </Text>
+              {isOpen ? (
+                <Box flexDirection="column">
+                  {j.intent !== '' ? bgLine(shorten(j.intent, 200), C.text, 'wrap') : null}
+                  {bgOpenDetail !== '' ? bgLine(bgOpenDetail, C.main) : null}
+                  {bgLine(`${j.tokens !== null ? `${kTokens(j.tokens)} tok · ` : ''}${j.id}`, C.dim)}
+                  {bgEvents.map(ev => bgLine(`${fmtClock(ev.at).slice(0, 5)} ${ev.detail}`, C.faint))}
                 </Box>
+              ) : j.kind === 'needs-you' && j.detail !== '' ? (
+                bgLine(j.detail, C.dim)
               ) : null}
             </Box>
           )

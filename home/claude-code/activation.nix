@@ -146,7 +146,8 @@
 
       # Intelligent merge: base provides defaults, existing preserves user changes
       # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox,
-      # effortLevel, alwaysThinkingEnabled, skillOverrides, autoMode. Base without
+      # effortLevel, alwaysThinkingEnabled, skillOverrides, autoMode,
+      # preferredNotifChannel. Base without
       # statusLine (the status bar is a mod): the live key is REMOVED, not kept.
       # NEVER force .model:
       # /model and /fast are deliberate session choices that must survive rebuilds.
@@ -172,6 +173,9 @@
       # donc sans force-override une entrée ajoutée par /auto-mode-setup ou
       # /permissions masquerait la liste nix. Base sans autoMode (null) : live
       # laissé intact plutôt que d'y écrire `null`.
+      # `.preferredNotifChannel` : sans force-override, la valeur live gagnait
+      # au deep merge — #263 (terminal_bell) restait inerte derrière l'ancien
+      # `notifications_disabled`. Même garde null que autoMode.
       if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
         TMP=$(mktemp)
         trap 'rm -f "$TMP"' EXIT
@@ -184,10 +188,12 @@
         BASE_THINK=$(jq -c '.alwaysThinkingEnabled' "$BASE")
         BASE_SKILLOV=$(jq -c '.skillOverrides' "$BASE")
         BASE_AM=$(jq -c '.autoMode' "$BASE")
+        BASE_NOTIF=$(jq -c '.preferredNotifChannel' "$BASE")
         jq -s '.[0] * .[1]' "$BASE" "$TARGET" \
-          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" --argjson so "$BASE_SKILLOV" --argjson am "$BASE_AM" \
+          | jq --argjson sl "$BASE_SL" --argjson p "$BASE_PERMS" --argjson h "$BASE_HOOKS" --argjson e "$BASE_ENV" --argjson sb "$BASE_SANDBOX" --argjson ef "$BASE_EFFORT" --argjson th "$BASE_THINK" --argjson so "$BASE_SKILLOV" --argjson am "$BASE_AM" --argjson nc "$BASE_NOTIF" \
             '(if $sl == null then del(.statusLine) else .statusLine = $sl end) | .permissions = $p | .hooks = $h | .env = $e | .sandbox = $sb | .effortLevel = $ef | .alwaysThinkingEnabled = $th | .skillOverrides = $so
              | (if $am == null then . else .autoMode = $am end)
+             | (if $nc == null then . else .preferredNotifChannel = $nc end)
              # legacy: `voiceEnabled` (clé plate) est encore lue par le binaire
              # mais remplacée par le bloc `voice`. Supprimée du live pour ne pas
              # garder deux sources de vérité qui peuvent diverger.

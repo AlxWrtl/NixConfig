@@ -14,30 +14,25 @@
 #     sessionId that is not a uuid led by the id, no usable directory or a
 #     model outside its charset or dash-led exit 2 BEFORE claude is called;
 #   - a failed `stop`, or a job still working 15 s after it, exits 1 and is
-#     not resumed;
-#   - `open <id>` never runs claude: open gets exactly `-n -b
-#     com.mitchellh.ghostty --args -e <claude> attach <id>`, and a missing
-#     state.json, a bad id or wrong arity exit 2 with neither called.
+#     not resumed.
 #
 # Runtime suite: the BUILT wrapper runs against a stub claude that appends its
 # argv (NUL-separated) and records its cwd; on `stop` it exits 1 if the
 # fixture is named `stopfail`, else marks the job stopped unless it is named
-# `stuck`. A stub open appends its argv the same way to its own log. Every case
-# runs with HOME=$work/home, where the suite writes the job fixtures. The
-# stubbed builds take `true` for sleep, so the 30-poll wait of r37 costs no
-# wall time. r01-r03, r23-r27, r39 and r43 accept, r04-r22, r28-r36, r38,
-# r41, r42 and r44-r47 reject, r37 is the stuck job, r40 the failed stop. The
-# rejects also run against the real package (/opt/homebrew/bin/claude,
-# /usr/bin/open): a reject never reaches either, so a regression there exits
-# other than 2 and goes red.
-# Canaries: eight mutants of the script go through the same suite and must FAIL
+# `stuck`. Every case runs with HOME=$work/home, where the suite writes the job
+# fixtures. The stubbed builds take `true` for sleep, so the 30-poll wait of
+# r37 costs no wall time. r01-r03, r23-r27 and r39 accept, r04-r22, r28-r36,
+# r38, r41 and r42 reject, r37 is the stuck job, r40 the failed stop. The rejects also
+# run against the real package (/opt/homebrew/bin/claude): a reject never
+# reaches claude, so a regression there exits 126/127 instead of 2 and goes red.
+# Canaries: seven mutants of the script go through the same suite and must FAIL
 # at their case — C1 widens the id regex (r08), C2 drops the status arity rule
 # (r05), C3 adds a subcommand (r16), C4 changes the status argv (r03), C5 drops
 # the tempo test (r30), C6 lets bypassPermissions through (r25), C7 drops the
-# pending-question test (r41), C8 drops the open state.json test (r44). A
-# canary that survives, or dies at another case, fails the check. Anchors,
-# `@claude@`, `@jq@`, `@sleep@`, `@open@` and the prompt line must occur
-# exactly once in the script: an eval-time throw otherwise.
+# pending-question test (r41). A canary that
+# survives, or dies at another case, fails the check. Anchors, `@claude@`,
+# `@jq@`, `@sleep@` and the prompt line must occur exactly once in the script:
+# an eval-time throw otherwise.
 { pkgs }:
 
 let
@@ -80,7 +75,7 @@ let
 
   c1Text = mutate "C1" "$2 =~ ^[0123456789abcdef]{8}$ ]]" "$2 =~ ^.+$ ]]";
   c2Text = mutate "C2" "[ \"$#\" -eq 1 ] || die \"$usage\"\n" "";
-  c3Text = mutate "C3" "  respawn | logs | resume | open)" "  respawn | logs | resume | open | rm)";
+  c3Text = mutate "C3" "  respawn | logs | resume)" "  respawn | logs | resume | rm)";
   c4Text = mutate "C4" "exec \"$claude_bin\" daemon status" "exec \"$claude_bin\" daemon stop";
   c5Text = mutate "C5" "[ \"$tempo\" = blocked ]" "true";
   c6Text =
@@ -89,13 +84,6 @@ let
   c7Text =
     mutate "C7" "[ -n \"$needs\" ] || [ \"\${questions:-0}\" != 0 ]"
       "false && [ -n \"$needs$questions\" ]";
-  c8Text =
-    mutate "C8" "[ -f \"$HOME/.claude/jobs/$2/state.json\" ]"
-      "[ -n \"$2\" ] || [ -f \"$HOME/.claude/jobs/$2/state.json\" ]";
-
-  openStub = pkgs.writeShellScript "open-stub" ''
-    printf '%s\0' "$@" >>"''${STUB_LOG:?STUB_LOG unset}.open"
-  '';
 
   stub = pkgs.writeShellScript "claude-stub" ''
     printf '%s\0' "$@" >>"''${STUB_LOG:?STUB_LOG unset}"
@@ -115,7 +103,6 @@ let
     mkClaudeBg {
       claude = "${stub}";
       sleep = "${pkgs.coreutils}/bin/true";
-      open = "${openStub}";
       inherit text;
     };
   stubbed = stubbedWith source;
@@ -126,7 +113,6 @@ let
   c5 = stubbedWith c5Text;
   c6 = stubbedWith c6Text;
   c7 = stubbedWith c7Text;
-  c8 = stubbedWith c8Text;
 
   # suite <claude-bg binary> <work dir> <all|rejects> — prints `PASS rNN` per
   # case; the first failure prints `FAIL rNN: <reason>` and exits 1.
@@ -150,7 +136,7 @@ let
     run() {
       case="$1"
       shift
-      rm -f "$STUB_LOG" "$STUB_LOG.cwd" "$STUB_LOG.open"
+      rm -f "$STUB_LOG" "$STUB_LOG.cwd"
       HOME="$work/home" "$bin" "$@" >"$work/out" 2>"$work/err" </dev/null
       rc=$?
     }
@@ -162,7 +148,6 @@ let
       run "$id" "$@"
       [ "$rc" = 0 ] || fail "exit $rc, expected 0"
       [ -e "$STUB_LOG" ] || fail "claude not called"
-      [ ! -e "$STUB_LOG.open" ] || fail "open called"
       # shellcheck disable=SC2086
       printf '%s\0' $want >"$work/want"
       cmp -s "$work/want" "$STUB_LOG" || fail "argv differs from $want"
@@ -183,12 +168,10 @@ let
       [ "$(cat "$STUB_LOG.cwd")" = "$want_cwd" ] || fail "ran in $(cat "$STUB_LOG.cwd"), expected $want_cwd"
       echo "PASS $case"
     }
-    # reject <id> <args...>: neither claude nor open called, exit 2, a reason
-    # on stderr.
+    # reject <id> <args...>: claude never called, exit 2, a reason on stderr.
     reject() {
       run "$@"
       [ ! -e "$STUB_LOG" ] || fail "claude called"
-      [ ! -e "$STUB_LOG.open" ] || fail "open called"
       [ "$rc" = 2 ] || fail "exit $rc, expected 2"
       [ -s "$work/err" ] || fail "no reason on stderr"
       echo "PASS $case"
@@ -242,12 +225,6 @@ let
     edit a0000041 '.needs = "answer: push? (Yes · No)"'
     stalled a0000042 null '[]'
     edit a0000042 '.needs = null | .block = {questions: [{question: "push?", options: [{label: "Yes"}]}]}'
-    # open: a job to attach to; r44 has none. r45-r47 have a state.json, so
-    # only the id or arity rule can refuse them.
-    stalled a0000043 null '[]'
-    stalled a0000046 null '[]'
-    job ABCDEF12 '{}'
-    job --all '{}'
 
     if [ "$only" = all ]; then
       accept r01 "respawn 4b04dbe6" respawn 4b04dbe6
@@ -259,14 +236,6 @@ let
       accept_resume r26 a0000026 "$p" stop a0000026 --bg --resume a0000026-0000-4000-8000-000000000000 "$prompt"
       accept_resume r27 a0000027 "$p" stop a0000027 --bg --resume a0000027-0000-4000-8000-000000000000 --permission-mode acceptEdits "$prompt"
       accept_resume r39 a0000039 "$p" stop a0000039 --bg --resume a0000039-0000-4000-8000-000000000000 "$prompt"
-      # open: the stub open gets exactly the Ghostty launch line, claude never runs.
-      run r43 open a0000043
-      [ "$rc" = 0 ] || fail "exit $rc, expected 0"
-      [ ! -e "$STUB_LOG" ] || fail "claude called"
-      [ -e "$STUB_LOG.open" ] || fail "open not called"
-      printf '%s\0' -n -b com.mitchellh.ghostty --args -e ${stub} attach a0000043 >"$work/want"
-      cmp -s "$work/want" "$STUB_LOG.open" || fail "open argv differs: $(tr '\0' ' ' <"$STUB_LOG.open")"
-      echo "PASS $case"
     fi
 
     reject r04
@@ -300,10 +269,6 @@ let
     reject r38 resume a0000038
     reject r41 resume a0000041
     reject r42 resume a0000042
-    reject r44 open a0000044
-    reject r45 open ABCDEF12
-    reject r46 open a0000046 x
-    reject r47 open --all
 
     if [ "$only" = all ]; then
       # A job still working after stop: exit 1, stop was the only call.
@@ -327,17 +292,16 @@ in
 assert once "@claude@" "@claude@";
 assert once "@jq@" "@jq@";
 assert once "@sleep@" "@sleep@";
-assert once "@open@" "@open@";
 assert once "the resume prompt line" "resume_prompt=${lib.escapeShellArg resumePrompt}\n";
 pkgs.runCommand "claude-bg-check" { } ''
   real=${claudeBgPkg}/bin/claude-bg
-  for want in /opt/homebrew/bin/claude ${jqBin} ${pkgs.coreutils}/bin/sleep /usr/bin/open; do
+  for want in /opt/homebrew/bin/claude ${jqBin} ${pkgs.coreutils}/bin/sleep; do
     grep -qF "$want" "$real" || {
       echo "claude-bg: $want is not substituted into the real wrapper"
       exit 1
     }
   done
-  for left in @claude@ @jq@ @sleep@ @open@; do
+  for left in @claude@ @jq@ @sleep@; do
     if grep -qF "$left" "$real"; then
       echo "claude-bg: $left left unsubstituted in the real wrapper"
       exit 1
@@ -357,10 +321,10 @@ pkgs.runCommand "claude-bg-check" { } ''
     echo "claude-bg: reject suite FAILED against the real wrapper"
     exit 1
   }
-  for r in r01 r02 r03 r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 r32 r33 r34 r35 r36 r37 r38 r39 r40 r41 r42 r43 r44 r45 r46 r47; do
+  for r in r01 r02 r03 r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 r32 r33 r34 r35 r36 r37 r38 r39 r40 r41 r42; do
     grep -qx "PASS $r" stub.log || { echo "claude-bg: case $r did not run against the stub"; exit 1; }
   done
-  for r in r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r28 r29 r30 r31 r32 r33 r34 r35 r36 r38 r41 r42 r44 r45 r46 r47; do
+  for r in r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r28 r29 r30 r31 r32 r33 r34 r35 r36 r38 r41 r42; do
     grep -qx "PASS $r" real.log || { echo "claude-bg: case $r did not run against the real wrapper"; exit 1; }
   done
 
@@ -388,8 +352,7 @@ pkgs.runCommand "claude-bg-check" { } ''
   canary C5 ${c5}/bin/claude-bg r30
   canary C6 ${c6}/bin/claude-bg r25
   canary C7 ${c7}/bin/claude-bg r41
-  canary C8 ${c8}/bin/claude-bg r44
 
-  echo "claude-bg: 47 runtime cases, 8 canaries — OK"
+  echo "claude-bg: 42 runtime cases, 7 canaries — OK"
   touch $out
 ''

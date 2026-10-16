@@ -147,7 +147,8 @@
       # Intelligent merge: base provides defaults, existing preserves user changes
       # Nix-managed keys always win: statusLine, permissions, hooks, env, sandbox,
       # effortLevel, alwaysThinkingEnabled, skillOverrides, autoMode,
-      # preferredNotifChannel. Base without
+      # preferredNotifChannel, inputNeededNotifEnabled,
+      # agentPushNotifEnabled. Base without
       # statusLine (the status bar is a mod): the live key is REMOVED, not kept.
       # NEVER force .model:
       # /model and /fast are deliberate session choices that must survive rebuilds.
@@ -176,6 +177,10 @@
       # `.preferredNotifChannel` : sans force-override, la valeur live gagnait
       # au deep merge — #263 (terminal_bell) restait inerte derrière l'ancien
       # `notifications_disabled`. Même garde null que autoMode.
+      # `inputNeededNotifEnabled` /
+      # `agentPushNotifEnabled` : même raison (le live gagnait au deep merge),
+      # étage jq à part pour ne pas toucher la ligne des --argjson. Une clé
+      # absente de la base (null) est filtrée : le live reste intact.
       if [ -f "$TARGET" ] && [ ! -L "$TARGET" ]; then
         TMP=$(mktemp)
         trap 'rm -f "$TMP"' EXIT
@@ -201,6 +206,7 @@
              # legacy: le mod flightdeck est retiré (#227, remplacé par deck) ;
              # le deep merge garde sinon son ancienne entrée pour toujours.
              | del(.pluginConfigs.flightdeck?)' \
+          | jq --slurpfile b "$BASE" '. + ($b[0] | {inputNeededNotifEnabled, agentPushNotifEnabled} | with_entries(select(.value != null)))' \
           > "$TMP" || exit 1
         mv "$TMP" "$TARGET"
         chmod 600 "$TARGET"

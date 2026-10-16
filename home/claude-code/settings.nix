@@ -83,9 +83,14 @@ in
 
     # Rings BEL instead of a desktop notification (Ghostty OSC): Ghostty shows
     # it as a 🔔 tab-title prefix + split border (bell-features, ghostty.nix),
-    # so the session that finished or waits on a permission is visible. No
-    # macOS popup: there is no Notification hook.
+    # so the session that finished or waits on a permission is visible. The
+    # two flags below turn off push notifications to the user's devices
+    # (waiting prompt/question, proactive agent push); the Claude app can show
+    # them as macOS notifications, the suspected source of the "Claude Code —
+    # <project> — Attention" popup (unconfirmed until after the switch).
     preferredNotifChannel = "terminal_bell";
+    inputNeededNotifEnabled = false;
+    agentPushNotifEnabled = false;
 
     attribution = {
       commit = "";

@@ -79,6 +79,7 @@ import {
   receiptOf,
   shorten,
   startConsult,
+  upsertCard,
 } from './core'
 import type { Config, Panel } from './core'
 import {
@@ -1144,21 +1145,23 @@ export const register: Register = (on, options) => {
     if (await isArchitectType($, cfg, e.subagentType)) {
       await update($, architect, a => {
         const x = normalize(DEFAULT_ARCHITECT, a)
-        return { ...x, ids: [...listOf<string>(x.ids), id].slice(-40) }
+        return x.ids.includes(id) ? x : { ...x, ids: [...listOf<string>(x.ids), id].slice(-40) }
       })
       await consultStarted($, cfg, id, e.subagentType.split(':').pop() ?? 'agent')
       return started
     }
-    const card: DeckAgentCard = {
-      ...normalizeCard({}),
-      id,
-      type: e.name ?? e.subagentType,
-      model: started.model,
-      description: e.description,
-      spawnedAt: await $.clock.now(),
-    }
-    await update($, agents, list => [...listOf<unknown>(list).map(normalizeCard), card].slice(-24))
-    await say($, shorten(cardTitle(card), 12), `spawned · ${card.type}`, 'info', id)
+    const at = await $.clock.now()
+    const fresh: DeckAgentCard = { ...normalizeCard({}), id, type: e.name ?? e.subagentType, model: started.model, description: e.description, spawnedAt: at }
+    // The prior card is read inside the write: a ctx/steps/tools update landing meanwhile is kept.
+    let resumed = false
+    const stored = await update($, agents, list => {
+      const l = listOf<unknown>(list).map(normalizeCard)
+      const p = l.find(c => c.id === id)
+      resumed = p !== undefined
+      return upsertCard(l, p ? { ...p, model: started.model, description: e.description, status: 'running', endedAt: null, answer: '', lastStop: null, spawnedAt: at } : fresh)
+    })
+    const card = listOf<unknown>(stored).map(normalizeCard).find(c => c.id === id) ?? fresh
+    await say($, shorten(cardTitle(card), 12), `${resumed ? 'resumed' : 'spawned'} · ${card.type}`, 'info', id)
     return started
   })
 

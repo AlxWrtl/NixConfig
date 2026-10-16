@@ -82,6 +82,10 @@ export const normalizeCard = (stored: unknown): DeckAgentCard =>
     stored,
   )
 
+/** A spawn's card: a resumed id replaces its old card (one card, one set of keys per id), last in line. */
+export const upsertCard = (list: DeckAgentCard[], card: DeckAgentCard, max = 24): DeckAgentCard[] =>
+  [...list.filter(c => c.id !== card.id), card].slice(-max)
+
 export const normalizeLog = (stored: unknown): DeckLogLine[] =>
   listOf<Record<string, unknown>>(stored).map(l => ({
     at: typeof l.at === 'number' ? l.at : 0,

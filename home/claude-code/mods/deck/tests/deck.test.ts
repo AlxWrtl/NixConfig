@@ -29,7 +29,9 @@ import {
   receiptOf,
   redact,
   startConsult,
+  upsertCard,
 } from '../hooks/core'
+import type { DeckAgentCard, DeckLogLine } from '../types'
 
 // ---------------------------------------------------------------- pure behaviour
 
@@ -214,6 +216,52 @@ test('/clear starts the pane fresh', async ($, on) => {
   const ui = await $.ui.mount({ ...pane(64), surface: 'terminal' })
   expect(await ui.find({ text: /look around/ })).toBeUndefined()
   await ui.unmount()
+})
+
+test('a resumed subagent keeps one card, moved last and running again', async ($, on) => {
+  const clock = mock.clock(on)
+  on('turn.start', (_$, e) => ({ turnId: e.turnId }))
+  on('turn.complete', () => ({ text: '' }))
+  // The deck's writes, as they land (a test's $ has no $.state to read them back).
+  let cards: DeckAgentCard[] = []
+  let lines: DeckLogLine[] = []
+  on('state.set', { plugin: 'deck', key: 'agents' }, (_$, e, next) => ((cards = e.value), next(e)))
+  on('state.set', { plugin: 'deck', key: 'log' }, (_$, e, next) => ((lines = e.value), next(e)))
+  const ids = ['rs1', 'rs2', 'rs1']
+  on('agent.spawn', () => ({ model: 'claude-sonnet-5-5', agentId: ids.shift() ?? 'none' }))
+  await $.turn.start({ text: 'go', turnId: 'R1' })
+  await $.agent.spawn(spawn('general-purpose', 'Fix the parser'))
+  const firstAt = clock.now()
+  await $.turn.complete({ answer: 'fixed', durationMs: 10, isAborted: false, turnId: 'R1', agentId: 'rs1', reason: 'answer' })
+  await clock.advance(1000)
+  await $.agent.spawn(spawn('Explore', 'Map the call sites'))
+  await clock.advance(1000)
+  const resumeAt = clock.now()
+  await $.agent.spawn({ ...spawn('general-purpose', 'Fix the parser again'), resume: { agentId: 'rs1' } })
+
+  expect(cards.map(c => c.id)).toEqual(['rs2', 'rs1'])
+  const rs1 = cards[1]
+  expect(rs1?.status).toBe('running')
+  expect(rs1?.endedAt).toBe(null)
+  expect(rs1?.spawnedAt).toBe(resumeAt)
+  expect((rs1?.spawnedAt ?? 0) > firstAt).toBe(true)
+  expect(lines.some(l => l.agentId === 'rs1' && /resumed/.test(l.text))).toBe(true)
+
+  const ui = await $.ui.mount({ ...pane(70), surface: 'terminal' })
+  expect(await ui.find({ text: /2 total/ })).toBeDefined()
+  await ui.unmount()
+
+  const a = normalizeCard({ id: 'a', status: 'done', endedAt: 5 })
+  const b = normalizeCard({ id: 'b' })
+  const a2 = normalizeCard({ id: 'a', spawnedAt: 9 })
+  const up = upsertCard([a, b], a2)
+  expect(up.map(c => c.id)).toEqual(['b', 'a'])
+  expect(up[1]).toBe(a2)
+  const full = Array.from({ length: 24 }, (_, i) => normalizeCard({ id: `c${i}` }))
+  const capped = upsertCard(full, normalizeCard({ id: 'new' }))
+  expect(capped.length).toBe(24)
+  expect(capped[0]?.id).toBe('c1')
+  expect(capped[23]?.id).toBe('new')
 })
 
 test('colours come from the theme by default, raw hex only when asked', async ($, on) => {

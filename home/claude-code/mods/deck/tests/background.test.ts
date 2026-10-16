@@ -52,6 +52,39 @@ test('a working state whose tempo is blocked is stalled, shown as its kind, sort
   expect(bgSummary(list).map(p => p.text)).toEqual(['1 needs you', '1 stalled', '1 working'])
 })
 
+// Shape of a live state.json waiting on an AskUserQuestion (job d591f567): working, tempo blocked,
+// the question in `needs` and in `block.questions`.
+const ASKING = {
+  state: 'working',
+  tempo: 'blocked',
+  cwd: '/x',
+  needs: 'answer: Je pousse avec --no-verify ? (Oui, --no-verify (Recommandé) · Non, je pousse moi-même)',
+  block: {
+    questions: [
+      {
+        question: 'Je pousse avec --no-verify ?',
+        options: [
+          { label: 'Oui, --no-verify (Recommandé)', description: 'Ne saute que l’étape base de données.' },
+          { label: 'Non, je pousse moi-même', description: 'Je m’arrête ici.' },
+        ],
+      },
+    ],
+  },
+}
+
+test('a working session blocked on a question (needs, or block.questions) needs you, never stalled', () => {
+  expect(parseJobState('d591f567', JSON.stringify(ASKING))?.kind).toBe('needs-you')
+  expect(parseJobState('a', JSON.stringify({ ...ASKING, block: undefined }))?.kind).toBe('needs-you')
+  expect(parseJobState('a', JSON.stringify({ ...ASKING, needs: undefined }))?.kind).toBe('needs-you')
+  expect(parseJobState('a', JSON.stringify({ ...ASKING, needs: null }))?.kind).toBe('needs-you')
+  expect([bgKind('working', 'blocked', true), bgKind('working', 'blocked', false)]).toEqual(['needs-you', 'stalled'])
+  // Neither a question nor a non-empty `needs`: stalled, whatever the empty shape.
+  const bare = { state: 'working', tempo: 'blocked', cwd: '/x' }
+  for (const rest of [{}, { needs: null, block: null }, { needs: '' }, { block: { questions: [] } }, { needs: '', block: {} }, { needs: 3, block: { questions: 'x' } }]) {
+    expect(parseJobState('a', JSON.stringify({ ...bare, ...rest }))?.kind).toBe('stalled')
+  }
+})
+
 test('a state.json parses defensively: no object, no string state or cwd → null', () => {
   const ok = parseJobState(
     'ab12cd34',
@@ -435,6 +468,30 @@ test('« ↻ relancer » on a stalled row only: one wrapper run per id at a time
   expect(await log.find({ type: 'Text', text: /eeee0001 relancé/ })).toBeDefined()
   expect(w.listed > listedBefore).toBe(true)
   await log.unmount()
+})
+
+test('a working row blocked on a question shows needs you and carries no « ↻ relancer »', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const jobs: Job[] = [
+    { id: 'ffff0001', mtimeMs: NOW - 2000, text: state({ ...ASKING, cwd: HERE, name: 'job asking' }) },
+    { id: 'ffff0002', mtimeMs: NOW - 1000, text: state({ state: 'working', tempo: 'blocked', name: 'job stalled' }) },
+  ]
+  world(on, { jobs, listed: 0, reads: [] })
+  const calls: string[][] = []
+  on('process.run', (_$, e) => {
+    calls.push([...e.argv])
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.find({ type: 'Text', text: /^ needs you$/ })).toBeDefined()
+  expect(await ui.find({ key: 'bg-resume-ffff0001' })).toBeUndefined()
+  expect(await ui.find({ key: 'bg-resume-ffff0002' })).toBeDefined()
+  expect(await ui.findAll({ type: 'Text', text: /^ ↻ relancer$/ })).toHaveLength(1)
+  expect(calls).toEqual([])
+  await ui.unmount()
 })
 
 test('a refused resume logs the exit code and the wrapper\'s first stderr line', async ($, on) => {

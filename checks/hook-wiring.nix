@@ -473,6 +473,10 @@ let
       hook = "sandbox-escape-evidence.js";
       text = "const USER_ASK = /(sans|hors|without|bypass|outside|disable)\\W+(?:the\\s+|le\\s+|du\\s+)?sandbox/i;";
     };
+    A-se-noproxy = {
+      hook = "sandbox-escape-evidence.js";
+      text = "/^curl\\b(?=.*\\s--noproxy(?:[\\s=]|$))/,";
+    };
   };
 
   # The M5 mutants name their shell: execSync's default /bin/sh dispatches
@@ -1061,6 +1065,18 @@ let
         }
       ];
     }
+    # curl --noproxy unlisted: the refused-proxy retry denied.
+    {
+      id = "M-se-noproxy";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-noproxy-allow";
+      swaps = [
+        {
+          anchor = "A-se-noproxy";
+          to = "/^curl\\b(?!)/,";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -1184,12 +1200,14 @@ let
     "se-sysprompt-deny"
     "se-quoted-sep-deny"
     "se-user-token-deny"
+    "se-curl-proxy-deny"
     "se-eperm-allow"
     "se-violations-allow"
     "se-batch-allow"
     "se-nonbash-skip-allow"
     "se-allowlist-allow"
     "se-allowlist-verify-allow"
+    "se-noproxy-allow"
     "se-noflag-allow"
     "se-user-asked-allow"
     "se-missing-transcript-allow"
@@ -1878,6 +1896,9 @@ let
         se-user-token-deny)
           se_tx "$(se_user 'do not use dangerouslyDisableSandbox')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'pnpm build' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-curl-proxy-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'home 000')"
+          se_run 'curl -s https://example.com/' "$2"; is_deny "Run this command sandboxed first" ;;
         se-eperm-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'mkdir: x: Operation not permitted')"
           se_run 'pnpm build' "$2"; is_allow ;;
@@ -1896,6 +1917,9 @@ let
         se-allowlist-verify-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'apex-verify-external --acs a.txt' "$2"; is_allow ;;
+        se-noproxy-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'home 000')"
+          se_run "curl -s --noproxy '*' -o /dev/null -w '%{http_code}' https://example.com/" "$2"; is_allow ;;
         se-noflag-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(se_in 'pnpm build' "$SE/$lbl.jsonl" "")"; is_allow ;;

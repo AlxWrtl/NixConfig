@@ -35,6 +35,8 @@ const ENVELOPE = /^\s*<(bash-(input|stdout|stderr)|task-notification|command-nam
 // the browser rungs Mach IPC, the probes `git init` fixtures. sandbox-exec
 // cannot nest in Claude's Seatbelt (sandbox_apply: Operation not permitted);
 // apex-verify-external times out sandboxed with no EPERM text.
+// wrangler reads its OAuth from ~/.config/.wrangler, denied sandboxed, and
+// reports "not logged in" with no EPERM; pnpm run deploy wraps it.
 // curl --noproxy bypasses the sandbox proxy: the direct connection is
 // refused and curl -s prints only 000.
 const ALLOW = [
@@ -48,6 +50,8 @@ const ALLOW = [
   /^scrapling\s+extract\s+(?:fetch|stealthy-fetch)\b/,
   /^(?:bash\s+)?(?:\.\/)?checks\/[\w-]+-(?:probe|bench)\.sh\b/,
   /^sandbox-exec\b/,
+  /^(?:pnpm\s+(?:exec\s+|dlx\s+)?|npx\s+)?wrangler\b/,
+  /^pnpm\s+run\s+deploy(?::[\w-]+)?(?=\s|$)/,
   /^curl\b(?=.*\s--noproxy(?:[\s=]|$))/,
   /^apex-verify-external\b/
 ];

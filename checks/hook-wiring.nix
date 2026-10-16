@@ -477,6 +477,14 @@ let
       hook = "sandbox-escape-evidence.js";
       text = "/^curl\\b(?=.*\\s--noproxy(?:[\\s=]|$))/,";
     };
+    A-se-wrangler = {
+      hook = "sandbox-escape-evidence.js";
+      text = "/^(?:pnpm\\s+(?:exec\\s+|dlx\\s+)?|npx\\s+)?wrangler\\b/,";
+    };
+    A-se-deploy = {
+      hook = "sandbox-escape-evidence.js";
+      text = "/^pnpm\\s+run\\s+deploy(?::[\\w-]+)?(?=\\s|$)/,";
+    };
     A-se-mkdir = {
       hook = "sandbox-escape-evidence.js";
       text = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory/i;";
@@ -1081,6 +1089,30 @@ let
         }
       ];
     }
+    # wrangler unlisted: the OAuth-less deploy retry denied.
+    {
+      id = "M-se-wrangler";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-wrangler-exec-allow";
+      swaps = [
+        {
+          anchor = "A-se-wrangler";
+          to = "/^wrangler\\b(?!)/,";
+        }
+      ];
+    }
+    # pnpm run deploy unlisted: the wrangler-backed deploy retry denied.
+    {
+      id = "M-se-deploy";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-deploy-allow";
+      swaps = [
+        {
+          anchor = "A-se-deploy";
+          to = "/^pnpm\\b(?!)/,";
+        }
+      ];
+    }
     # git's ref mkdir refusal unread: the retry denied.
     {
       id = "M-se-mkdir";
@@ -1217,6 +1249,8 @@ let
     "se-quoted-sep-deny"
     "se-user-token-deny"
     "se-curl-proxy-deny"
+    "se-pnpm-deploy-builtin-deny"
+    "se-deployer-deny"
     "se-eperm-allow"
     "se-violations-allow"
     "se-mkdir-ref-allow"
@@ -1225,6 +1259,10 @@ let
     "se-allowlist-allow"
     "se-allowlist-verify-allow"
     "se-noproxy-allow"
+    "se-deploy-allow"
+    "se-wrangler-allow"
+    "se-wrangler-exec-allow"
+    "se-wrangler-npx-allow"
     "se-noflag-allow"
     "se-user-asked-allow"
     "se-missing-transcript-allow"
@@ -1916,6 +1954,12 @@ let
         se-curl-proxy-deny)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'home 000')"
           se_run 'curl -s https://example.com/' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-pnpm-deploy-builtin-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm deploy out' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-deployer-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm run deployer' "$2"; is_deny "Run this command sandboxed first" ;;
         se-eperm-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'mkdir: x: Operation not permitted')"
           se_run 'pnpm build' "$2"; is_allow ;;
@@ -1940,6 +1984,18 @@ let
         se-noproxy-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'home 000')"
           se_run "curl -s --noproxy '*' -o /dev/null -w '%{http_code}' https://example.com/" "$2"; is_allow ;;
+        se-deploy-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm run deploy < /dev/null > deploy.log 2>&1' "$2"; is_allow ;;
+        se-wrangler-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'wrangler deploy --config build/server/wrangler-preprod.json' "$2"; is_allow ;;
+        se-wrangler-exec-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm exec wrangler whoami' "$2"; is_allow ;;
+        se-wrangler-npx-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'npx wrangler tail' "$2"; is_allow ;;
         se-noflag-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(se_in 'pnpm build' "$SE/$lbl.jsonl" "")"; is_allow ;;

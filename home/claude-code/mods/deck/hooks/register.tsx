@@ -8,8 +8,10 @@
 // Observes: every hook but the commands and the pane returns next(e)'s result unchanged, and it
 // never writes a file. The run folders are polled every 5 s only while the pane is open, and once
 // per prompt and per finished main turn otherwise; the background sessions (~/.claude/jobs) only
-// while it is open. A poll writes nothing that did not change. One action: « ↻ relancer » pressed
-// on a stalled background row runs `claude-bg resume <id>` (hooks/resume.ts), its outcome logged.
+// while it is open. A poll writes nothing that did not change. Two actions, each outcome logged:
+// « ⧉ ouvrir » on any background row runs `claude-bg open <id>` (hooks/open.ts), a new Ghostty
+// window attached to that session; « ↻ relancer » on a stalled row runs `claude-bg resume <id>`
+// (hooks/resume.ts).
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
@@ -134,6 +136,7 @@ import {
 import type { Notification } from './shells'
 import { alertsOf, budgetOf, pickVerdict } from './signals'
 import { BG_TIMELINE, bgSummary, bgWord, inProject, parseJobState, parseTimeline, recentBg, sortBg } from './background'
+import { openBg } from './open'
 import { resumeBg } from './resume'
 
 const PANE = 'deck'
@@ -652,6 +655,14 @@ async function toggleBgRow($: EngineInterface, id: string): Promise<void> {
     return { ...current, expanded: current.expanded === key ? null : key }
   })
   await record(() => refreshBackground($))
+}
+
+// « ⧉ ouvrir » pressed on a background row: the wrapper opens a Ghostty window attached to it,
+// the outcome goes to the log. A press while the same id is under way does nothing.
+async function openRow($: EngineInterface, id: string): Promise<void> {
+  const o = await openBg($, id)
+  if (o === null) return
+  await record(() => say($, 'bg', `${id} ${o.text}`, o.ok ? 'done' : 'error'))
 }
 
 // « ↻ relancer » pressed on a stalled row: the wrapper resumes it, the outcome goes to the log,
@@ -1683,6 +1694,11 @@ export const register: Register = (on, options) => {
                 </Box>
                 <Box flexShrink={0}>
                   <Text color={mk.color}>{` ${shorten(bgWord(j), 12)}`}</Text>
+                </Box>
+                <Box flexShrink={0}>
+                  <Button key={`bg-open-${j.id}`} plain onPress={() => openRow($, j.id)}>
+                    <Text color={C.dim}>{' ⧉ ouvrir'}</Text>
+                  </Button>
                 </Box>
                 {j.kind === 'stalled' ? (
                   <Box flexShrink={0}>

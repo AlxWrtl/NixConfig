@@ -14,26 +14,31 @@
 # only ever gets `respawn <id>`, `logs <id>`, `daemon status`, or for
 # `resume <id>` (the deck's « ↻ relancer » on a stalled job) `stop <id>` then
 # `--bg --resume <uuid>` with at most --name, --model and --permission-mode
-# re-read from the job and re-checked, and a fixed prompt. Only `claude-bg *`
-# is excluded.
+# re-read from the job and re-checked, and a fixed prompt. `open <id>` (the
+# deck's « ⧉ ouvrir ») never calls claude: it runs `/usr/bin/open -n -b
+# com.mitchellh.ghostty --args -e <claude> attach <id>`, a new Ghostty window
+# attached to the job, once ~/.claude/jobs/<id>/state.json exists. Only
+# `claude-bg *` is excluded.
 #
 # The id must be the 8-hex short id (^[0123456789abcdef]{8}$, as in ~/.claude/jobs) for
-# respawn, logs and resume: respawn also takes `--all`, and logs also takes a
+# respawn, logs, resume and open: respawn also takes `--all`, and logs also takes a
 # name matched as a fuzzy substring — neither is an allow-list.
 #
-# claude, jq and sleep are called by absolute path (substituted for @claude@,
-# @jq@, @sleep@). One file read: resume parses ~/.claude/jobs/<id>/state.json
-# with jq. The wrapper adds no env: it inherits the session's own, and a
+# claude, jq, sleep and open are called by absolute path (substituted for
+# @claude@, @jq@, @sleep@, @open@). One file read: resume parses
+# ~/.claude/jobs/<id>/state.json with jq; open only tests that it exists. The wrapper adds no env: it inherits the session's own, and a
 # VAR= / env prefix on the call is denied by hooks/lone-excluded-bash.js.
 # inheritPath stays true: everything else is a bash builtin, so PATH cannot
 # substitute anything it calls. mkClaudeBg is exported so checks/claude-bg.nix
-# can build the same script against a stub claude (and its canary mutants).
+# can build the same script against a stub claude and a stub open (and its
+# canary mutants).
 { pkgs }:
 let
   mkClaudeBg =
     {
       claude ? "/opt/homebrew/bin/claude",
       sleep ? "${pkgs.coreutils}/bin/sleep",
+      open ? "/usr/bin/open",
       text ? builtins.readFile ./scripts/claude-bg.sh,
     }:
     pkgs.writeShellApplication {
@@ -41,11 +46,12 @@ let
       runtimeInputs = [ ];
       text =
         builtins.replaceStrings
-          [ "@claude@" "@jq@" "@sleep@" ]
+          [ "@claude@" "@jq@" "@sleep@" "@open@" ]
           [
             claude
             "${pkgs.jq}/bin/jq"
             sleep
+            open
           ]
           text;
     };

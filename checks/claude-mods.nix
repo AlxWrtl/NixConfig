@@ -16,11 +16,12 @@
 #      mod no refusal or rewrite token either (`deny`, `permissionDecision`,
 #      `decision:`, `updatedToolOutput`, `preventContinuation`) nor the bare
 #      word `process`: the mods observe, they never refuse, rewrite or stop a
-#      call. One exception, the deck's « ↻ relancer »: the exact
-#      `$.process.run([…claude-bg, 'resume', id], …)` call is stripped before
-#      the scan in deck/hooks/resume.ts only, and only while it is that file's
-#      single `$.process`;
-#   M5b that call occurs exactly once in deck/hooks/resume.ts;
+#      call. Two exceptions, the deck's « ↻ relancer » and « ⧉ ouvrir »: the
+#      exact `$.process.run([…claude-bg, 'resume', id], …)` call is stripped
+#      before the scan in deck/hooks/resume.ts only, the exact
+#      `$.process.run([…claude-bg, 'open', id], …)` call in deck/hooks/open.ts
+#      only, each only while it is its file's single `$.process`;
+#   M5b each of those calls occurs exactly once in its file;
 #   M6 settings env CLAUDE_CODE_PLUGIN_DIRS is exactly the absolute
 #      ~/.claude/mods/<name> folders of mods.nix, ":"-joined, recomputed here
 #      rather than read back through mods.pluginDirs;
@@ -33,7 +34,9 @@
 # in resume.ts that survives the strip (C6), another subcommand (C7), the
 # aliases `$['process']` and `{ process: p } = $` (C9) and
 # `Reflect.get($, 'pro' + 'cess')` (C10); it must pass the call alone in
-# resume.ts (C8), or the exception would only hold with the call gone.
+# resume.ts (C8), or the exception would only hold with the call gone. For the
+# open exception, it must flag the open call in resume.ts (C11) and another
+# subcommand in open.ts (C12), and pass the call alone in open.ts (C13).
 { pkgs }:
 
 let
@@ -139,15 +142,31 @@ let
     needle: hay:
     (builtins.stringLength hay - builtins.stringLength (builtins.replaceStrings [ needle ] [ "" ] hay))
     / builtins.stringLength needle;
-  # The one host command of any mod: the deck's « ↻ relancer » runs the
-  # claude-bg allow-list wrapper. Only this exact call, once, in this one file,
-  # and no other `$.process` there; anything else keeps every noun it holds.
+  # The two host commands of any mod: the deck's « ↻ relancer » and « ⧉ ouvrir »
+  # run the claude-bg allow-list wrapper. Each exact call only in its own file,
+  # once, and no other `$.process` there; anything else keeps every noun it holds.
   resumeFile = "deck/hooks/resume.ts";
   resumeNeedle = "$.process.run(['/etc/profiles/per-user/alx/bin/claude-bg', 'resume', id], { timeoutMs: 60000 })";
+  openFile = "deck/hooks/open.ts";
+  openNeedle = "$.process.run(['/etc/profiles/per-user/alx/bin/claude-bg', 'open', id], { timeoutMs: 15000 })";
+  allowed = [
+    {
+      file = resumeFile;
+      needle = resumeNeedle;
+    }
+    {
+      file = openFile;
+      needle = openNeedle;
+    }
+  ];
   allowedText =
     path: text:
-    if path == resumeFile && count "$.process" text == 1 && count resumeNeedle text == 1 then
-      builtins.replaceStrings [ resumeNeedle ] [ "" ] text
+    let
+      own = builtins.filter (a: a.file == path) allowed;
+      needle = (builtins.head own).needle;
+    in
+    if own != [ ] && count "$.process" text == 1 && count needle text == 1 then
+      builtins.replaceStrings [ needle ] [ "" ] text
     else
       text;
   nounsIn =
@@ -155,11 +174,10 @@ let
     builtins.filter (n: hasInfix n (allowedText path text)) (
       forbidden ++ lib.optionals (isHooksModule path) hookResultNouns
     );
-  resumeText =
-    if builtins.pathExists (root + "/${resumeFile}") then
-      builtins.readFile (root + "/${resumeFile}")
-    else
-      "";
+  textOf =
+    file: if builtins.pathExists (root + "/${file}") then builtins.readFile (root + "/${file}") else "";
+  # M5b: each allowed call in its real file, exactly once (missing file = 0).
+  badAllowed = builtins.filter (a: count a.needle (textOf a.file) != 1) allowed;
   scan = lib.concatMap (
     f: map (n: "${f}: ${n}") (nounsIn f (builtins.readFile (root + "/${f}")))
   ) files;
@@ -211,9 +229,14 @@ let
       msg = "found ${builtins.toJSON scan}";
     }
     {
-      name = "M5b the deck's resume call is in ${resumeFile}, exactly once";
-      ok = count resumeNeedle resumeText == 1;
-      msg = "${resumeFile} holds the claude-bg resume call ${toString (count resumeNeedle resumeText)} times (missing file = 0), expected exactly once: ${resumeNeedle}";
+      name = "M5b each allowed deck call is in its file, exactly once";
+      ok = badAllowed == [ ];
+      msg = builtins.concatStringsSep "; " (
+        map (
+          a:
+          "${a.file} holds ${toString (count a.needle (textOf a.file))} times (missing file = 0), expected exactly once: ${a.needle}"
+        ) badAllowed
+      );
     }
     {
       name = "M6 settings env CLAUDE_CODE_PLUGIN_DIRS = the mods folders";
@@ -288,6 +311,30 @@ let
       name = "C10 the M5 scan flags a Reflect.get on the engine";
       ok = nounsIn "deck/hooks/core.ts" "Reflect.get($, 'pro' + 'cess')" == [ "Reflect.get($" ];
       msg = "a computed Reflect.get($, …) alias of $.process is no longer flagged";
+    }
+    {
+      name = "C11 the M5 scan flags the open call in ${resumeFile}";
+      ok =
+        nounsIn resumeFile "const r = await ${openNeedle}" == [
+          "$.process"
+          "process"
+        ];
+      msg = "the open exception is no longer bound to its one file";
+    }
+    {
+      name = "C12 the M5 scan flags another claude-bg subcommand in ${openFile}";
+      ok =
+        nounsIn openFile ("const r = await " + builtins.replaceStrings [ "'open'" ] [ "'stop'" ] openNeedle)
+        == [
+          "$.process"
+          "process"
+        ];
+      msg = "the open exception no longer requires the exact argv";
+    }
+    {
+      name = "C13 the M5 scan passes the open call alone in ${openFile}";
+      ok = nounsIn openFile ("const r = await " + openNeedle) == [ ];
+      msg = "the open exception no longer strips its one allowed call — M5 could only pass with it gone";
     }
     {
       name = "C2 the M4 filter flags a .js file";

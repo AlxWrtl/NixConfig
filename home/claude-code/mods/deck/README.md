@@ -19,7 +19,12 @@ unless you open it.
   stopped, done; finished ones
   leave after 24 h; 6 rows, then `+N more`. Inline, one summary row (`bg: 1 needs you · 2
   working`). The jobs format is undocumented: if it changes, its rows vanish rather than break
-  the pane. A stalled row carries `↻ relancer`: pressed, it runs
+  the pane. Every row carries `⧉ ouvrir`: pressed, it runs
+  `/etc/profiles/per-user/alx/bin/claude-bg open <id>` (argument vector, no shell, 15 s at
+  most, one run per id at a time), which opens a new Ghostty window running
+  `claude attach <id>`, to answer that session without the `←` agents view (no engine API
+  attaches a background session inside the current pane); the outcome goes to the session log
+  as `bg`. A stalled row also carries `↻ relancer`: pressed, it runs
   `/etc/profiles/per-user/alx/bin/claude-bg resume <id>` (argument vector, no shell, 60 s at
   most, one run per id at a time), which stops the job and resumes its conversation in the
   background; the outcome goes to the session log as `bg`.
@@ -28,9 +33,10 @@ unless you open it.
 `pluginConfigs.deck.options`): `architectPattern`, `architectLabel`, `panels`, `motion`,
 `moments`, `matchDescriptions`, `maxCards`, `layout`, `palette`.
 
-It observes: every hook returns the event's result unchanged, and it never writes a file. Its one
-action is that button, the mod's only host command: `hooks/resume.ts` holds the single call
-`checks/claude-mods.nix` (M5) allows there, character for character, and nowhere else.
+It observes: every hook returns the event's result unchanged, and it never writes a file. Its
+two actions are those buttons, the mod's only host commands: `hooks/open.ts` and
+`hooks/resume.ts` each hold the single call `checks/claude-mods.nix` (M5) allows in that file,
+character for character, and nowhere else.
 It reads `<cwd>/.claude/output/apex/*/00-context.md`, the run's `external-verify.json`,
 `~/.claude/apex-correction-budget/`, `.git/HEAD` and, while the pane is open,
 `~/.claude/jobs/*/state.json`.

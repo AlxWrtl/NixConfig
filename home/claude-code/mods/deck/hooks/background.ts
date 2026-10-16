@@ -19,10 +19,11 @@ export const BG_ORDER: readonly DeckBgKind[] = ['needs-you', 'stalled', 'failed'
 /**
  * The engine's state word as the panel groups it; a word it does not know is `other`. A `working`
  * state whose `tempo` is `blocked`, both exact case as the claude-bg wrapper compares them, is
+ * `needs-you` when it `asks` (a pending question: a non-empty `needs` or `block.questions`), else
  * `stalled`.
  */
-export function bgKind(state: string, tempo = ''): DeckBgKind {
-  if (state === 'working' && tempo === 'blocked') return 'stalled'
+export function bgKind(state: string, tempo = '', asks = false): DeckBgKind {
+  if (state === 'working' && tempo === 'blocked') return asks ? 'needs-you' : 'stalled'
   switch (state.toLowerCase()) {
     case 'working':
       return 'working'
@@ -60,7 +61,7 @@ export const inProject = (list: DeckBgAgent[], cwd: string): DeckBgAgent[] => {
   return list.filter(a => rootOf(a.cwd) === root || rootOf(a.cwd).startsWith(`${root}/`))
 }
 
-/** One state.json (its `tempo` read for `stalled`), or null when it is no JSON object or lacks a string `state` or `cwd`. */
+/** One state.json (its `tempo`, `needs` and `block.questions` read for `stalled` or `needs-you`), or null when it is no JSON object or lacks a string `state` or `cwd`. */
 export function parseJobState(id: string, text: string): DeckBgAgent | null {
   let value: unknown
   try {
@@ -79,6 +80,10 @@ export function parseJobState(id: string, text: string): DeckBgAgent | null {
   const intent: unknown = Reflect.get(value, 'intent')
   const tokens: unknown = Reflect.get(value, 'tokens')
   const tempo: unknown = Reflect.get(value, 'tempo')
+  const needs: unknown = Reflect.get(value, 'needs')
+  const block: unknown = Reflect.get(value, 'block')
+  const questions: unknown = typeof block === 'object' && block !== null ? Reflect.get(block, 'questions') : undefined
+  const asks = (typeof needs === 'string' && needs !== '') || (Array.isArray(questions) && questions.length > 0)
   const at = typeof updated === 'string' ? Date.parse(updated) : Number.NaN
   return {
     id,
@@ -86,7 +91,7 @@ export function parseJobState(id: string, text: string): DeckBgAgent | null {
     cwd,
     project: projectOf(cwd),
     state,
-    kind: bgKind(state, typeof tempo === 'string' ? tempo : ''),
+    kind: bgKind(state, typeof tempo === 'string' ? tempo : '', asks),
     detail: typeof detail === 'string' ? redact(oneLine(detail)) : '',
     intent: typeof intent === 'string' ? redact(oneLine(intent)) : '',
     tokens: typeof tokens === 'number' && Number.isFinite(tokens) ? tokens : null,

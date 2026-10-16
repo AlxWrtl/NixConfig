@@ -26,13 +26,15 @@ model_re='^[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789][][AB
 name_re='^[ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789][ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789._-]{0,63}$'
 
 resume() {
-  local id="$1" f state tempo sid wt cwd dir model name mode shown i
+  local id="$1" f state tempo needs questions sid wt cwd dir model name mode shown i
   local -a flags=()
   f="$HOME/.claude/jobs/$id/state.json"
   [ -f "$f" ] || die "no job $id (no ~/.claude/jobs/$id/state.json)"
   field() { "$jq_bin" -r "$jq_defs $1 | strings // \"\"" "$f"; }
   state=$(field .state) || die "job $id: state.json is not readable JSON"
   tempo=$(field .tempo) || die "job $id: state.json is not readable JSON"
+  needs=$(field .needs) || die "job $id: state.json is not readable JSON"
+  questions=$(field '(.block | objects | .questions | arrays | length | tostring)') || die "job $id: state.json is not readable JSON"
   sid=$(field .sessionId) || die "job $id: state.json is not readable JSON"
   wt=$(field .worktreePath) || die "job $id: state.json is not readable JSON"
   cwd=$(field .cwd) || die "job $id: state.json is not readable JSON"
@@ -43,6 +45,10 @@ resume() {
   if ! { [ "$state" = working ] && [ "$tempo" = blocked ]; }; then
     printf -v shown '%q/%q' "$state" "$tempo"
     die "job $id is $shown, not stalled (working/blocked)"
+  fi
+  # A pending question (AskUserQuestion) also reads working/blocked: it waits on the user.
+  if [ -n "$needs" ] || [ "${questions:-0}" != 0 ]; then
+    die "job $id is waiting for an answer, not stalled"
   fi
   if ! [[ $sid =~ $uuid_re ]] || [[ $sid != "$id"-* ]]; then
     die "job $id: sessionId is not a uuid starting with $id"

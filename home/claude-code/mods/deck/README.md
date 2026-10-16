@@ -13,8 +13,10 @@ unless you open it.
   swimlanes (keys 1-6 expand a card), the turn receipt, the session log.
 - **Background agents** (ours, only while one exists): the background sessions of the current
   project (`claude agents`; its subfolders and `.claude/worktrees/` count), read from `~/.claude/jobs/<id>/state.json` while the pane is open (the 12
-  newest folders per 5 s poll). What waits on you first (`blocked`, with its status line), then
-  stalled (`working` with tempo `blocked`), failed, working, other, stopped, done; finished ones
+  newest folders per 5 s poll). What waits on you first (`blocked`, or `working` with tempo
+  `blocked` and a pending question in `needs` or `block.questions`, with its status line), then
+  stalled (`working` with tempo `blocked` and no pending question), failed, working, other,
+  stopped, done; finished ones
   leave after 24 h; 6 rows, then `+N more`. Inline, one summary row (`bg: 1 needs you · 2
   working`). The jobs format is undocumented: if it changes, its rows vanish rather than break
   the pane. A stalled row carries `↻ relancer`: pressed, it runs

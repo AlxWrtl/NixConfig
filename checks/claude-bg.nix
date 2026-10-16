@@ -9,7 +9,8 @@
 #     back) and the fixed prompt, run in the worktree, else the cwd;
 #   - wrong arity, an id that is not 8 lowercase hex (`--all`, a name, a dash-led
 #     word, control characters, empty), any other subcommand, and for resume a
-#     missing or non-JSON state.json, a job that is not working/blocked, a
+#     missing or non-JSON state.json, a job that is not working/blocked or
+#     waits on an answer (non-empty needs or block.questions), a
 #     sessionId that is not a uuid led by the id, no usable directory or a
 #     model outside its charset or dash-led exit 2 BEFORE claude is called;
 #   - a failed `stop`, or a job still working 15 s after it, exits 1 and is
@@ -20,14 +21,15 @@
 # fixture is named `stopfail`, else marks the job stopped unless it is named
 # `stuck`. Every case runs with HOME=$work/home, where the suite writes the job
 # fixtures. The stubbed builds take `true` for sleep, so the 30-poll wait of
-# r37 costs no wall time. r01-r03, r23-r27 and r39 accept, r04-r22, r28-r36
-# and r38 reject, r37 is the stuck job, r40 the failed stop. The rejects also
+# r37 costs no wall time. r01-r03, r23-r27 and r39 accept, r04-r22, r28-r36,
+# r38, r41 and r42 reject, r37 is the stuck job, r40 the failed stop. The rejects also
 # run against the real package (/opt/homebrew/bin/claude): a reject never
 # reaches claude, so a regression there exits 126/127 instead of 2 and goes red.
-# Canaries: six mutants of the script go through the same suite and must FAIL
+# Canaries: seven mutants of the script go through the same suite and must FAIL
 # at their case — C1 widens the id regex (r08), C2 drops the status arity rule
 # (r05), C3 adds a subcommand (r16), C4 changes the status argv (r03), C5 drops
-# the tempo test (r30), C6 lets bypassPermissions through (r25). A canary that
+# the tempo test (r30), C6 lets bypassPermissions through (r25), C7 drops the
+# pending-question test (r41). A canary that
 # survives, or dies at another case, fails the check. Anchors, `@claude@`,
 # `@jq@`, `@sleep@` and the prompt line must occur exactly once in the script:
 # an eval-time throw otherwise.
@@ -79,6 +81,9 @@ let
   c6Text =
     mutate "C6" "default | acceptEdits | auto | plan)"
       "default | acceptEdits | auto | plan | bypassPermissions)";
+  c7Text =
+    mutate "C7" "[ -n \"$needs\" ] || [ \"\${questions:-0}\" != 0 ]"
+      "false && [ -n \"$needs$questions\" ]";
 
   stub = pkgs.writeShellScript "claude-stub" ''
     printf '%s\0' "$@" >>"''${STUB_LOG:?STUB_LOG unset}"
@@ -107,6 +112,7 @@ let
   c4 = stubbedWith c4Text;
   c5 = stubbedWith c5Text;
   c6 = stubbedWith c6Text;
+  c7 = stubbedWith c7Text;
 
   # suite <claude-bg binary> <work dir> <all|rejects> — prints `PASS rNN` per
   # case; the first failure prints `FAIL rNN: <reason>` and exits 1.
@@ -214,6 +220,11 @@ let
     stalled a0000039 null '["--name","--dangerously-skip-permissions"]'
     stalled a0000040 null '[]'
     edit a0000040 '.name = "stopfail"'
+    # Waiting on an AskUserQuestion: the question in needs, or in block.questions only.
+    stalled a0000041 null '[]'
+    edit a0000041 '.needs = "answer: push? (Yes · No)"'
+    stalled a0000042 null '[]'
+    edit a0000042 '.needs = null | .block = {questions: [{question: "push?", options: [{label: "Yes"}]}]}'
 
     if [ "$only" = all ]; then
       accept r01 "respawn 4b04dbe6" respawn 4b04dbe6
@@ -256,6 +267,8 @@ let
     reject r35 resume a0000035 x
     reject r36 resume a0000036
     reject r38 resume a0000038
+    reject r41 resume a0000041
+    reject r42 resume a0000042
 
     if [ "$only" = all ]; then
       # A job still working after stop: exit 1, stop was the only call.
@@ -308,10 +321,10 @@ pkgs.runCommand "claude-bg-check" { } ''
     echo "claude-bg: reject suite FAILED against the real wrapper"
     exit 1
   }
-  for r in r01 r02 r03 r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 r32 r33 r34 r35 r36 r37 r38 r39 r40; do
+  for r in r01 r02 r03 r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31 r32 r33 r34 r35 r36 r37 r38 r39 r40 r41 r42; do
     grep -qx "PASS $r" stub.log || { echo "claude-bg: case $r did not run against the stub"; exit 1; }
   done
-  for r in r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r28 r29 r30 r31 r32 r33 r34 r35 r36 r38; do
+  for r in r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r28 r29 r30 r31 r32 r33 r34 r35 r36 r38 r41 r42; do
     grep -qx "PASS $r" real.log || { echo "claude-bg: case $r did not run against the real wrapper"; exit 1; }
   done
 
@@ -338,7 +351,8 @@ pkgs.runCommand "claude-bg-check" { } ''
   canary C4 ${c4}/bin/claude-bg r03
   canary C5 ${c5}/bin/claude-bg r30
   canary C6 ${c6}/bin/claude-bg r25
+  canary C7 ${c7}/bin/claude-bg r41
 
-  echo "claude-bg: 40 runtime cases, 6 canaries — OK"
+  echo "claude-bg: 42 runtime cases, 7 canaries — OK"
   touch $out
 ''

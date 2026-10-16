@@ -166,8 +166,11 @@ export type DeckApexVerdict = { dir: string; verdict: string; findings: number; 
 
 // ---------------------------------------------------------------- background agents
 
-/** A background session's state as the panel groups it; `needs-you` is the engine's `blocked`. */
-export type DeckBgKind = 'needs-you' | 'working' | 'failed' | 'done' | 'stopped' | 'other'
+/**
+ * A background session's state as the panel groups it; `needs-you` is the engine's `blocked`,
+ * `stalled` a `working` state whose `tempo` is `blocked` (it waits on nothing the panel can answer).
+ */
+export type DeckBgKind = 'needs-you' | 'stalled' | 'working' | 'failed' | 'done' | 'stopped' | 'other'
 
 /** One background session, read from ~/.claude/jobs/<id>/state.json (an undocumented format). */
 export type DeckBgAgent = {

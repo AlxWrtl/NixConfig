@@ -23,7 +23,7 @@ const job = (o: Partial<DeckBgAgent> & Pick<DeckBgAgent, 'id' | 'state'>): DeckB
 // ---------------------------------------------------------------- pure
 
 test('state words map to kinds; an unknown word is other and shows as itself', () => {
-  expect(['working', 'blocked', 'done', 'completed', 'failed', 'error', 'stopped', 'killed', 'paused'].map(bgKind)).toEqual([
+  expect(['working', 'blocked', 'done', 'completed', 'failed', 'error', 'stopped', 'killed', 'paused'].map(s => bgKind(s))).toEqual([
     'working',
     'needs-you',
     'done',
@@ -37,6 +37,19 @@ test('state words map to kinds; an unknown word is other and shows as itself', (
   expect(bgWord({ kind: 'needs-you', state: 'blocked' })).toBe('needs you')
   expect(bgWord({ kind: 'other', state: 'paused' })).toBe('paused')
   expect(bgWord({ kind: 'done', state: 'completed' })).toBe('done')
+})
+
+test('a working state whose tempo is blocked is stalled, shown as its kind, sorted after needs-you', () => {
+  expect([bgKind('working', 'blocked'), bgKind('working', 'idle'), bgKind('blocked', 'blocked'), bgKind('working')]).toEqual(['stalled', 'working', 'needs-you', 'working'])
+  // Exact case only, as the wrapper compares: anything else is not resumable, so not stalled.
+  expect([bgKind('Working', 'BLOCKED'), bgKind('working', 'Blocked'), bgKind('WORKING', 'blocked')]).toEqual(['working', 'working', 'working'])
+  const parsed = parseJobState('ab12cd34', JSON.stringify({ state: 'working', tempo: 'blocked', cwd: '/x' }))
+  expect(parsed?.kind).toBe('stalled')
+  expect(parseJobState('ab12cd34', JSON.stringify({ state: 'working', tempo: 3, cwd: '/x' }))?.kind).toBe('working')
+  expect(bgWord({ kind: 'stalled', state: 'working' })).toBe('stalled')
+  const list = [job({ id: 'w', state: 'working' }), job({ id: 's', state: 'working', kind: 'stalled' }), job({ id: 'n', state: 'blocked' })]
+  expect(sortBg(list).map(a => a.id)).toEqual(['n', 's', 'w'])
+  expect(bgSummary(list).map(p => p.text)).toEqual(['1 needs you', '1 stalled', '1 working'])
 })
 
 test('a state.json parses defensively: no object, no string state or cwd → null', () => {
@@ -119,7 +132,7 @@ test('needs-you first, then failed, working, other, stopped, done; newest first 
     job({ id: 'f', state: 'failed' }),
   ]
   expect(sortBg(list).map(a => a.id)).toEqual(['n', 'f', 'w-new', 'w-old', 'o', 's', 'd'])
-  expect(bgCounts(list)).toEqual({ 'needs-you': 1, working: 2, failed: 1, done: 1, stopped: 1, other: 1 })
+  expect(bgCounts(list)).toEqual({ 'needs-you': 1, stalled: 0, working: 2, failed: 1, done: 1, stopped: 1, other: 1 })
   expect(bgSummary(list.slice(0, 2)).map(p => p.text)).toEqual(['1 working', '1 done'])
 })
 
@@ -375,4 +388,87 @@ test('an unfolded row without a timeline file still shows its intent and tokens'
   expect(await ui.find({ type: 'Text', text: /^Do the thing$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^dddd0001$/ })).toBeDefined() // no tokens: the id alone
   await ui.unmount()
+})
+
+// ---------------------------------------------------------------- resume a stalled row
+
+type Run = { argv: readonly string[]; timeoutMs: number | undefined }
+
+const STALLED: Job[] = [
+  { id: 'eeee0001', mtimeMs: NOW - 2000, text: state({ state: 'working', tempo: 'blocked', name: 'job stalled' }) },
+  { id: 'eeee0002', mtimeMs: NOW - 1000, text: state({ state: 'working', name: 'job running' }) },
+]
+
+const BG_BIN = '/etc/profiles/per-user/alx/bin/claude-bg'
+
+test('« ↻ relancer » on a stalled row only: one wrapper run per id at a time, logged, the panel read again', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w: World = { jobs: STALLED, listed: 0, reads: [] }
+  world(on, w)
+  const calls: Run[] = []
+  let release: () => void = () => undefined
+  const gate = new Promise<void>(r => {
+    release = r
+  })
+  on('process.run', async (_$, e) => {
+    calls.push({ argv: e.argv, timeoutMs: e.init?.timeoutMs })
+    await gate
+    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.findAll({ type: 'Text', text: /^ ↻ relancer$/ })).toHaveLength(1)
+  expect(await ui.find({ type: 'Text', text: /^ stalled$/ })).toBeDefined()
+  expect(await ui.find({ key: 'bg-resume-eeee0002' })).toBeUndefined()
+  const listedBefore = w.listed
+  const first = ui.press({ key: 'bg-resume-eeee0001' })
+  const second = ui.press({ key: 'bg-resume-eeee0001' })
+  await clock.settle()
+  release()
+  await Promise.all([first, second])
+  await clock.settle()
+  expect(calls).toEqual([{ argv: [BG_BIN, 'resume', 'eeee0001'], timeoutMs: 60000 }])
+  await ui.unmount()
+  const log = await $.ui.mount(pane(120))
+  expect(await log.find({ type: 'Text', text: /eeee0001 relancé/ })).toBeDefined()
+  expect(w.listed > listedBefore).toBe(true)
+  await log.unmount()
+})
+
+test('a refused resume logs the exit code and the wrapper\'s first stderr line', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { jobs: STALLED, listed: 0, reads: [] })
+  on('process.run', () => ({
+    value: { exitCode: 2, stdout: '', stderr: '\nclaude-bg: job eeee0001 is working/idle, not stalled\n', isStdoutTruncated: false, isStderrTruncated: false },
+  }))
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  const ui = await $.ui.mount(pane(120))
+  await ui.press({ key: 'bg-resume-eeee0001' })
+  await clock.settle()
+  await ui.unmount()
+  const log = await $.ui.mount(pane(120))
+  expect(await log.find({ type: 'Text', text: /eeee0001 exit 2 · claude-bg:/ })).toBeDefined()
+  await log.unmount()
+})
+
+test('a resume whose command cannot start logs « échec ou pas de retour », not a silent drop', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, { jobs: STALLED, listed: 0, reads: [] })
+  on('process.run', () => {
+    throw new Error('spawn ENOENT')
+  })
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  const ui = await $.ui.mount(pane(120))
+  await ui.press({ key: 'bg-resume-eeee0001' })
+  await clock.settle()
+  await ui.unmount()
+  const log = await $.ui.mount(pane(120))
+  expect(await log.find({ type: 'Text', text: /^eeee0001 échec ou pas de retour/ })).toBeDefined()
+  await log.unmount()
 })

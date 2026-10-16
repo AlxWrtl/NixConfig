@@ -14,15 +14,21 @@ unless you open it.
 - **Background agents** (ours, only while one exists): the background sessions of the current
   project (`claude agents`; its subfolders and `.claude/worktrees/` count), read from `~/.claude/jobs/<id>/state.json` while the pane is open (the 12
   newest folders per 5 s poll). What waits on you first (`blocked`, with its status line), then
-  failed, working, other, stopped, done; finished ones leave after 24 h; 6 rows, then
-  `+N more`. Inline, one summary row (`bg: 1 needs you · 2 working`). The jobs format is
-  undocumented: if it changes, its rows vanish rather than break the pane.
+  stalled (`working` with tempo `blocked`), failed, working, other, stopped, done; finished ones
+  leave after 24 h; 6 rows, then `+N more`. Inline, one summary row (`bg: 1 needs you · 2
+  working`). The jobs format is undocumented: if it changes, its rows vanish rather than break
+  the pane. A stalled row carries `↻ relancer`: pressed, it runs
+  `/etc/profiles/per-user/alx/bin/claude-bg resume <id>` (argument vector, no shell, 60 s at
+  most, one run per id at a time), which stops the job and resumes its conversation in the
+  background; the outcome goes to the session log as `bg`.
 
 `/deck close`, `/deck reset`, `/deck layout auto|compact|wide|mini`. Options (`/config`, or
 `pluginConfigs.deck.options`): `architectPattern`, `architectLabel`, `panels`, `motion`,
 `moments`, `matchDescriptions`, `maxCards`, `layout`, `palette`.
 
-It only observes: every hook returns the event's result unchanged, and it never writes a file.
+It observes: every hook returns the event's result unchanged, and it never writes a file. Its one
+action is that button, the mod's only host command: `hooks/resume.ts` holds the single call
+`checks/claude-mods.nix` (M5) allows there, character for character, and nowhere else.
 It reads `<cwd>/.claude/output/apex/*/00-context.md`, the run's `external-verify.json`,
 `~/.claude/apex-correction-budget/`, `.git/HEAD` and, while the pane is open,
 `~/.claude/jobs/*/state.json`.

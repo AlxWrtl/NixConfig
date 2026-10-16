@@ -35,6 +35,8 @@ const ENVELOPE = /^\s*<(bash-(input|stdout|stderr)|task-notification|command-nam
 // the browser rungs Mach IPC, the probes `git init` fixtures. sandbox-exec
 // cannot nest in Claude's Seatbelt (sandbox_apply: Operation not permitted);
 // apex-verify-external times out sandboxed with no EPERM text.
+// curl --noproxy bypasses the sandbox proxy: the direct connection is
+// refused and curl -s prints only 000.
 const ALLOW = [
   /^nix\s+(?:flake\s+check|build|eval)\b/,
   /^git(?:\s+-C\s+\S+)?\s+branch\b.*\s(?:-[dDmMu]|--delete|--move|--set-upstream-to)(?=[\s=]|$)/,
@@ -46,6 +48,7 @@ const ALLOW = [
   /^scrapling\s+extract\s+(?:fetch|stealthy-fetch)\b/,
   /^(?:bash\s+)?(?:\.\/)?checks\/[\w-]+-(?:probe|bench)\.sh\b/,
   /^sandbox-exec\b/,
+  /^curl\b(?=.*\s--noproxy(?:[\s=]|$))/,
   /^apex-verify-external\b/
 ];
 

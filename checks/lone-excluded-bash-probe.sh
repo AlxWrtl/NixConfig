@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 # Positive control for `hookLoneExcludedBash` — the PreToolUse hook that
 # denies a sandbox-excluded command (git push/commit/pull/fetch, gh,
-# claude-dispatch) composed with anything that keeps the Bash call sandboxed.
+# claude-dispatch, claude-bg) composed with anything that keeps the Bash call
+# sandboxed.
 #
 # WHAT IT GRADES, IN BOTH POLARITIES. A hook that denies every `git push`
 # scores green on every deny case, so each deny shape has partners that must
 # PASS: the lone command, its quoted arguments, fd duplication (2>&1), a
 # chain made only of lone excluded commands (user decision 2026-10-11;
-# claude-dispatch joined the excluded set 2026-10-15), text
+# claude-dispatch joined the excluded set 2026-10-15, claude-bg 2026-10-16),
+# text
 # that merely MENTIONS one (grep, rg, echo, a commit message), and every
 # input the hook cannot read (malformed JSON, an unbalanced quote, an input
 # past its 4 MiB cap): it fails OPEN.
@@ -140,9 +142,9 @@ fi
 # MUTANT DRIVER
 # ==============================================================================
 
-M1_EXPECT="d01-cd-chain d04-add-commit d05-pipe-head d12-newline d19-push-then-ls d23-semicolon d24-pipe-into-gh d33-dispatch-cd d36-dispatch-pipe"
-M2_EXPECT="d06-redir-file d20-devnull d35-dispatch-redir"
-M3_EXPECT="d07-subst-in-msg d08-echo-subst d21-backtick-msg d31-heredoc-body d34-dispatch-subst"
+M1_EXPECT="d01-cd-chain d04-add-commit d05-pipe-head d12-newline d19-push-then-ls d23-semicolon d24-pipe-into-gh d33-dispatch-cd d36-dispatch-pipe d41-bg-cd d44-bg-pipe"
+M2_EXPECT="d06-redir-file d20-devnull d35-dispatch-redir d43-bg-redir"
+M3_EXPECT="d07-subst-in-msg d08-echo-subst d21-backtick-msg d31-heredoc-body d34-dispatch-subst d42-bg-subst"
 M4_EXPECT="a09-quoted-msg a33-dispatch-quoted-sep d15-quoted-verb d17-bash-c"
 M5_EXPECT="a12-malformed"
 M6_EXPECT="a06-fd-dup a17-push-dup-dash"
@@ -419,6 +421,11 @@ check d37-dispatch-herestring deny 'claude-dispatch fix-a "fix it now" <<< x' 'h
 check d38-dispatch-abs deny '/etc/profiles/per-user/alx/bin/claude-dispatch fix-a "fix the typo"' 'an absolute path'
 check d39-dispatch-env-assign deny 'CLAUDE_CONFIG_DIR=/x claude-dispatch fix-a "fix the typo"' 'next to another command'
 check d40-dispatch-env-cmd deny 'env CLAUDE_CONFIG_DIR=/x claude-dispatch fix-a "fix the typo"' 'next to another command'
+check d41-bg-cd deny 'cd /x && claude-bg logs 4b04dbe6' 'next to another command'
+check d42-bg-subst deny 'claude-bg logs "$(cat id)"' 'command substitution'
+check d43-bg-redir deny 'claude-bg logs 4b04dbe6 > log.txt' 'file redirection'
+check d44-bg-pipe deny 'claude-bg logs 4b04dbe6 | tail' 'next to another command'
+check d45-bg-env-assign deny 'CLAUDE_CONFIG_DIR=/x claude-bg logs 4b04dbe6' 'next to another command'
 # --- MUST PASS (AC7, AC8) ------------------------------------------------------
 check a01-push pass 'git push'
 check a02-push-u pass 'git push -u origin feat/x'
@@ -450,6 +457,8 @@ check a30-dispatch pass 'claude-dispatch fix-a "fix the typo in README.md"'
 check a31-dispatch-chain pass 'claude-dispatch fix-a "fix the typo" && claude-dispatch add-b "add the helper"'
 check a32-dispatch-mention pass 'grep -rn "claude-dispatch" README.md'
 check a33-dispatch-quoted-sep pass 'claude-dispatch fix-a "fix x; then run the tests"'
+check a34-bg-status pass 'claude-bg status'
+check a35-bg-chain pass 'claude-bg respawn 4b04dbe6 && claude-bg logs 4b04dbe6'
 # --- MUST PASS: inputs the hook cannot read (fail open) ----------------------
 printf '%s' '{"hook_event_name":"PreToolUse","tool_input":{' > "$WORK/out/malformed.json"
 check_raw a12-malformed pass "$WORK/out/malformed.json"

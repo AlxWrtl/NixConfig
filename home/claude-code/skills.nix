@@ -2400,7 +2400,7 @@ in
       do not ask again.
       Never hand the user a command to type, never a `! cmd`.
     - **Sandbox-excluded** — `git push`, `git commit`, `git pull`, `git fetch`,
-      `gh`, `codex`, `claude-dispatch` and bare `nix flake check` run OUTSIDE the sandbox only
+      `gh`, `codex`, `claude-dispatch`, `claude-bg` and bare `nix flake check` run OUTSIDE the sandbox only
       when the Bash call is that command alone:
       run them as standalone commands — one per Bash call, from the repo cwd, no `cd … &&`, no
       `git -C`, no `&&` chain, no redirection, heredoc or `$(…)` (multi-line

@@ -32,6 +32,7 @@ let
   apexTier = import ./claude-code/apex-tier.nix { inherit pkgs; };
   apexHealth = import ./claude-code/apex-health.nix { inherit pkgs; };
   claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
+  claudeBg = import ./claude-code/claude-bg.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
     inherit pkgs lib;
     inherit (scraplingShim) scraplingShimPkg;
@@ -48,6 +49,7 @@ let
   inherit (apexTier) apexTierPkg;
   inherit (apexHealth) apexHealthPkg;
   inherit (claudeDispatch) claudeDispatchPkg;
+  inherit (claudeBg) claudeBgPkg;
   inherit (graphifyReindex) graphifyReindexPkg;
   inherit (vaultSnapshot) vaultSnapshotPkg;
   inherit (settings)
@@ -335,7 +337,7 @@ in
     file = claudeHomeFiles;
 
     # `libdocs` + `nix-options` + `trello` + `graphify-reindex` +
-    # `claude-dispatch` on PATH — usable by Claude, by APEX and its subagents,
+    # `claude-dispatch` + `claude-bg` on PATH — usable by Claude, by APEX and its subagents,
     # and by the user in a plain terminal.
     # home.packages is a list: this merges with the other home modules.
     packages = [
@@ -346,6 +348,7 @@ in
       apexTierPkg
       apexHealthPkg
       claudeDispatchPkg
+      claudeBgPkg
       graphifyReindexPkg
       vaultSnapshotPkg
     ];

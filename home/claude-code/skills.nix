@@ -68,7 +68,7 @@ in
     | Direct | `-pr` | ≤ 4 files, ≤ 30 changed lines, no sensitive surface, not a bug | `steps/DIRECT.md` + `steps/COMMANDS.md` |
     | Diagnosis | `-x -pr -o -n` | bug / error / crash / broken: reproduce first, debugger agent implements | as Standard |
     | Standard / complex | `-t -pr -o -n` | everything else that changes files | `steps/step-00-init.md`, `steps/ORCHESTRATION.md`, `steps/ROUTING.md`, `steps/COMMANDS.md`, then steps as routed |
-    | High-stakes | `-t -x -pr -o -n -e` | the diff touches a sensitive surface | Standard list + `steps/HIGH-STAKES.md` |
+    | High-stakes | `-t -f -x -pr -o -n -e` | the diff touches a sensitive surface | Standard list + `steps/HIGH-STAKES.md` |
     | Pure research | none | zero file change | none — answer directly; no branch, no PR |
 
     Sensitive surface — judged on the CONTENT of `Files:` and of the real diff:
@@ -114,8 +114,8 @@ in
     2. The tier's default set (table above).
     3. OFF.
 
-    Never on by default — must be typed: `-q`, `-f`, `-2`, `-p`, `-k`, `-v`.
-    `-e` is a default of High-stakes only. State the tier and the resolved
+    Never on by default — must be typed: `-q`, `-2`, `-p`, `-k`, `-v`.
+    `-e` and `-f` are defaults of High-stakes only. State the tier and the resolved
     flags in `00-context.md`.
 
     ## Common Usage
@@ -2112,6 +2112,10 @@ in
     a finding at validate, never an option on the table. The separation is the
     point — the agent that writes the code cannot also be the agent that decides
     what "passing" means.
+
+    `-f` is a default of the High-stakes set only; a run escalated to
+    High-stakes by `apex-tier` gains it, `-F` cancels it, and in Diagnosis or
+    Standard it runs only when typed.
 
     ## Divergence (`-2`) — a second independent implementation
 

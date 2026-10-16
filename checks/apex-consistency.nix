@@ -886,6 +886,13 @@ let
     || rowHas "Standard / complex" "-e"
     || rowHas "Direct" "-e";
 
+  # -f (test-first) likewise: a default of the High-stakes row ONLY.
+  testFirstDefaultDrift =
+    !(rowHas "High-stakes" "-f")
+    || rowHas "Diagnosis" "-f"
+    || rowHas "Standard / complex" "-f"
+    || rowHas "Direct" "-f";
+
   # Direct is the inline tier: a test agent, an adversarial reviewer, a
   # cross-vendor pass, a vault read or a session note in its DEFAULT set
   # brings back the cost it exists to remove. Typed, they are honoured.
@@ -1116,6 +1123,7 @@ let
       "reference(s) to non-existent step file(s): " + builtins.concatStringsSep ", " danglingSteps
     )
     ++ pkgs.lib.optional externalDefaultDrift "-e (external verify) drifted: it must be in the High-stakes tier row of skillApex and absent from the Direct, Diagnosis and Standard rows."
+    ++ pkgs.lib.optional testFirstDefaultDrift "-f (test-first) drifted: it must be in the High-stakes tier row of skillApex and absent from the Direct, Diagnosis and Standard rows."
     ++ pkgs.lib.optional (directDrift != [ ]) (
       "the Direct tier row carries "
       + builtins.concatStringsSep ", " directDrift

@@ -247,7 +247,7 @@ list, deliberately not duplicated here.
 | App Store | mas (`modules/brew.nix`) | DaisyDisk, Trello, iWork (Keynote/Numbers/Pages), Microsoft Office, Affinity Photo & Publisher |
 | Fonts | Nix (`modules/ui.nix`) | Nerd Fonts (JetBrains Mono, Meslo LG, Hack, Fira Code, Sauce Code Pro), Cascadia Code, Inconsolata, Noto (+ CJK, emoji) |
 | macOS defaults | Nix (`modules/ui.nix`) | Dock, Finder, trackpad, clock, screensaver, Window Manager, wallpaper |
-| Services | Nix (`modules/services.nix`) | weekly flake update, throttled brew update, power tuning (`pmset`), network/TCP tuning |
+| Services | Nix (`modules/services.nix`) | weekly flake update, power tuning (`pmset`), open-file limits (`sysctl`) |
 | System | Nix (`modules/system.nix`) | Nix daemon settings, binary caches, env vars, application firewall |
 | Terminal | home-manager (`home/ghostty.nix`) | Catppuccin Macchiato, quick terminal, keybindings |
 | Editor | home-manager (`home/vscode.nix`) | Settings, keybindings, extension list |

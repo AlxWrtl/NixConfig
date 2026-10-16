@@ -9,7 +9,6 @@ let
   # Single source of truth for power settings (overrides power.sleep)
   displaySleepMinutes = 25;
   systemSleepMinutes = 45;
-  tcpSlowStartFlightSize = 16;
   maxOpenFiles = 65536;
   maxFilesPerProc = 32768;
   mkMaintenanceDaemon =
@@ -64,56 +63,6 @@ let
       RunAtLoad = false;
     };
   };
-  homebrewUpdateAgent = lib.mkIf config.homebrew.enable {
-    serviceConfig = {
-      ProgramArguments = [
-        "/bin/sh"
-        "-c"
-        ''
-          last_update_file="$HOME/.cache/homebrew-last-update"
-          current_time=$(date +%s)
-
-          if [ ! -f "$last_update_file" ]; then
-            /opt/homebrew/bin/brew update && \
-            echo "$current_time" > "$last_update_file" && \
-            echo "$(date): Homebrew updated (first run)" >> ~/.cache/homebrew-update.log
-            exit 0
-          fi
-
-          last_update=$(cat "$last_update_file")
-          time_diff=$((current_time - last_update))
-          three_days=$((3 * 24 * 60 * 60))
-
-          if [ "$time_diff" -gt "$three_days" ]; then
-            /opt/homebrew/bin/brew update && \
-            echo "$current_time" > "$last_update_file" && \
-            echo "$(date): Homebrew updated (catch-up after $((time_diff / 86400)) days)" >> ~/.cache/homebrew-update.log
-          else
-            echo "$(date): Homebrew update skipped (last update $((time_diff / 86400)) days ago)" >> ~/.cache/homebrew-update.log
-          fi
-        ''
-      ];
-      StartCalendarInterval = [
-        {
-          Weekday = 2;
-          Hour = 9;
-          Minute = 0;
-        }
-        {
-          Weekday = 4;
-          Hour = 9;
-          Minute = 0;
-        }
-      ];
-      StandardOutPath = "${
-        config.users.users.${config.system.primaryUser}.home
-      }/.cache/homebrew-update.log";
-      StandardErrorPath = "${
-        config.users.users.${config.system.primaryUser}.home
-      }/.cache/homebrew-update-error.log";
-      RunAtLoad = true;
-    };
-  };
   powerOptimizationDaemon = mkMaintenanceDaemon {
     name = "power-optimization";
     runAtLoad = true;
@@ -143,16 +92,9 @@ let
     name = "network-optimization";
     runAtLoad = true;
     script = ''
-      # TCP optimizations
-      /usr/sbin/sysctl -w net.inet.tcp.delayed_ack=2
-      /usr/sbin/sysctl -w net.inet.tcp.sendspace=131072
-      /usr/sbin/sysctl -w net.inet.tcp.recvspace=131072
-      /usr/sbin/sysctl -w net.inet.tcp.local_slowstart_flightsize=${toString tcpSlowStartFlightSize}
-
-      # Sockets & filesystem
+      # Open-file limits (dev file watchers)
       /usr/sbin/sysctl -w kern.maxfiles=${toString maxOpenFiles}
       /usr/sbin/sysctl -w kern.maxfilesperproc=${toString maxFilesPerProc}
-      /usr/sbin/sysctl -w kern.ipc.somaxconn=1024
 
       echo "Network optimization applied: $(date)" >> /var/log/network-optimization.log
     '';
@@ -164,7 +106,6 @@ in
   launchd = {
     user.agents = {
       nix-flake-update = nixFlakeUpdateAgent;
-      homebrew-update = homebrewUpdateAgent;
     };
     daemons = {
       power-optimization = powerOptimizationDaemon;

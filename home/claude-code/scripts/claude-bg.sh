@@ -15,7 +15,7 @@ case "$1" in
     ;;
   respawn | logs)
     [ "$#" -eq 2 ] || die "$usage"
-    [[ $2 =~ ^[0-9a-f]{8}$ ]] || die 'id must be the 8-hex short id (ls ~/.claude/jobs): ^[0-9a-f]{8}$'
+    [[ $2 =~ ^[0123456789abcdef]{8}$ ]] || die 'id must be the 8-hex short id (ls ~/.claude/jobs): ^[0123456789abcdef]{8}$'
     exec "$claude_bin" "$1" "$2"
     ;;
   *) die "$usage" ;;

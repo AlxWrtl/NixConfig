@@ -51,7 +51,7 @@ let
     else
       text;
 
-  c1Text = mutate "C1" "$2 =~ ^[0-9a-f]{8}$ ]]" "$2 =~ ^.+$ ]]";
+  c1Text = mutate "C1" "$2 =~ ^[0123456789abcdef]{8}$ ]]" "$2 =~ ^.+$ ]]";
   c2Text = mutate "C2" "[ \"$#\" -eq 1 ] || die \"$usage\"\n" "";
   c3Text = mutate "C3" "  respawn | logs)" "  respawn | logs | rm)";
   c4Text = mutate "C4" "exec \"$claude_bin\" daemon status" "exec \"$claude_bin\" daemon stop";

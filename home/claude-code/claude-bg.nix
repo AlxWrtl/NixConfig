@@ -14,7 +14,7 @@
 # only ever gets `respawn <id>`, `logs <id>` or `daemon status`. Only
 # `claude-bg *` is excluded.
 #
-# The id must be the 8-hex short id (^[0-9a-f]{8}$, as in ~/.claude/jobs) for
+# The id must be the 8-hex short id (^[0123456789abcdef]{8}$, as in ~/.claude/jobs) for
 # both respawn and logs: respawn also takes `--all`, and logs also takes a
 # name matched as a fuzzy substring — neither is an allow-list.
 #

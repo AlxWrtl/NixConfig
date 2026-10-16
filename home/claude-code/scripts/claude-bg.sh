@@ -1,26 +1,22 @@
-# claude-bg respawn <id> | logs <id> | resume <id> | open <id> | status — tend
-# background Claude Code sessions from the main session. Allow-list: claude only
-# ever gets `respawn <id>`, `logs <id>`, `daemon status`, or for resume `stop
-# <id>` then `--bg --resume <uuid> [--name n] [--model m] [--permission-mode p]
-# <fixed prompt>`, the id being the 8-hex short id from ~/.claude/jobs. No flag
-# passthrough. open never calls claude itself: it launches a new Ghostty window
-# (`open -n -b com.mitchellh.ghostty --args -e <claude> attach <id>`) and reads
-# nothing but the existence of the job's state.json. One file read: resume
-# reads ~/.claude/jobs/<id>/state.json with
+# claude-bg respawn <id> | logs <id> | resume <id> | status — tend background
+# Claude Code sessions from the main session. Allow-list: claude only ever gets
+# `respawn <id>`, `logs <id>`, `daemon status`, or for resume `stop <id>` then
+# `--bg --resume <uuid> [--name n] [--model m] [--permission-mode p] <fixed
+# prompt>`, the id being the 8-hex short id from ~/.claude/jobs. No flag
+# passthrough. One file read: resume reads ~/.claude/jobs/<id>/state.json with
 # jq (stalled = state working + tempo blocked; sessionId, worktreePath or cwd,
 # and the last --name/--model/--permission-mode of respawnFlags, each
 # re-checked: a bad model refuses, a bad name or mode is dropped, so
 # bypassPermissions never comes back). Adds no env (inherits the session's
 # own; a VAR= / env prefix on the call is denied by hooks/lone-excluded-bash.js).
-# Absolute claude, jq, sleep and open paths (substituted at build time).
-# Exit 2 = refused input, neither claude nor open called; exit 1 = stop failed or the job
+# Absolute claude, jq and sleep paths (substituted at build time).
+# Exit 2 = refused input, claude never called; exit 1 = stop failed or the job
 # was still working 15 s after it, not resumed.
 claude_bin="@claude@"
 jq_bin="@jq@"
 sleep_bin="@sleep@"
-open_bin="@open@"
 resume_prompt='Reprends là où tu t'\''es arrêté : vérifie l'\''état puis continue la tâche.'
-usage='usage: claude-bg respawn <id> | claude-bg logs <id> | claude-bg resume <id> | claude-bg open <id> | claude-bg status'
+usage='usage: claude-bg respawn <id> | claude-bg logs <id> | claude-bg resume <id> | claude-bg status'
 die() { printf 'claude-bg: %s\n' "$1" >&2; exit 2; }
 note() { printf 'claude-bg: %s\n' "$1" >&2; }
 # shellcheck disable=SC2016 # jq variables, not shell ones
@@ -108,16 +104,12 @@ case "$1" in
     [ "$#" -eq 1 ] || die "$usage"
     exec "$claude_bin" daemon status
     ;;
-  respawn | logs | resume | open)
+  respawn | logs | resume)
     [ "$#" -eq 2 ] || die "$usage"
     [[ $2 =~ ^[0123456789abcdef]{8}$ ]] || die 'id must be the 8-hex short id (ls ~/.claude/jobs): ^[0123456789abcdef]{8}$'
     if [ "$1" = resume ]; then
       resume "$2"
       exit 1
-    fi
-    if [ "$1" = open ]; then
-      [ -f "$HOME/.claude/jobs/$2/state.json" ] || die "no job $2 (no ~/.claude/jobs/$2/state.json)"
-      exec "$open_bin" -n -b com.mitchellh.ghostty --args -e "$claude_bin" attach "$2"
     fi
     exec "$claude_bin" "$1" "$2"
     ;;

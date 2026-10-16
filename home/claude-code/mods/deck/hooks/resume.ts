@@ -1,8 +1,7 @@
-// One of the deck's two host commands (the other: hooks/open.ts): `claude-bg resume <id>` for a
-// stalled background row, by its absolute path and an argument vector (no shell). The id is
-// checked here again (eight lowercase hex digits) before it reaches the argv; the wrapper checks
-// it once more, then reads the job's state.json itself. One run per id at a time: a second press
-// while the first runs does nothing.
+// The deck's one host command: `claude-bg resume <id>` for a stalled background row, by its
+// absolute path and an argument vector (no shell). The id is checked here again (eight lowercase
+// hex digits) before it reaches the argv; the wrapper checks it once more, then reads the job's
+// state.json itself. One run per id at a time: a second press while the first runs does nothing.
 import type { EngineInterface } from 'claude-code'
 
 import { redact } from './core'

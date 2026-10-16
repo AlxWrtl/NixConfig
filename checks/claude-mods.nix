@@ -9,11 +9,18 @@
 #   M3 every hooks/hooks.json names exactly one module, and it exists;
 #   M4 no .js/.cjs/.mjs under mods/ (js-lint counts every tracked .js, and
 #      the mods are TypeScript ES modules, outside its commonjs config);
-#   M5 no source holds a forbidden noun: sound, host processes, network,
-#      file writes, dynamic import, toasts; in a hooks module of any mod no
-#      refusal or rewrite token either (`deny`, `permissionDecision`,
-#      `decision:`, `updatedToolOutput`, `preventContinuation`): the mods
-#      observe, they never refuse, rewrite or stop a call;
+#   M5 no source holds a forbidden noun: sound, host processes (and their
+#      aliases `process.spawn`, `'process'`, `"process"`, a computed `$[` or
+#      `Reflect.get($`),
+#      network, file writes, dynamic import, toasts; in a hooks module of any
+#      mod no refusal or rewrite token either (`deny`, `permissionDecision`,
+#      `decision:`, `updatedToolOutput`, `preventContinuation`) nor the bare
+#      word `process`: the mods observe, they never refuse, rewrite or stop a
+#      call. One exception, the deck's « ↻ relancer »: the exact
+#      `$.process.run([…claude-bg, 'resume', id], …)` call is stripped before
+#      the scan in deck/hooks/resume.ts only, and only while it is that file's
+#      single `$.process`;
+#   M5b that call occurs exactly once in deck/hooks/resume.ts;
 #   M6 settings env CLAUDE_CODE_PLUGIN_DIRS is exactly the absolute
 #      ~/.claude/mods/<name> folders of mods.nix, ":"-joined, recomputed here
 #      rather than read back through mods.pluginDirs;
@@ -21,7 +28,12 @@
 #      excluded) and home/claude-code.nix hands it the source folder.
 # Canaries: the M5 scan must flag `$.audio.speak`, and a `deny` and a
 # `permissionDecision` in the deck mod's hooks, M4 a .js name, and M1 an extra name, or the check fails: a
-# scan that stopped matching would otherwise be green forever.
+# scan that stopped matching would otherwise be green forever. For the resume
+# exception, the scan must flag the call in another file (C5), a second call
+# in resume.ts that survives the strip (C6), another subcommand (C7), the
+# aliases `$['process']` and `{ process: p } = $` (C9) and
+# `Reflect.get($, 'pro' + 'cess')` (C10); it must pass the call alone in
+# resume.ts (C8), or the exception would only hold with the call gone.
 { pkgs }:
 
 let
@@ -104,21 +116,50 @@ let
     "fetch("
     "import("
     "toast"
+    # Aliases of $.process: another engine member, a computed key, a quoted name.
+    "process.spawn"
+    "'process'"
+    "\"process\""
+    "$["
+    "Reflect.get($"
   ];
   isHooksModule = f: hasInfix "/hooks/" f && (hasSuffix ".ts" f || hasSuffix ".tsx" f);
-  # Refusal and rewrite spellings of the hook results, barred from every hooks module.
+  # Refusal and rewrite spellings of the hook results, barred from every hooks
+  # module, plus the bare word `process` (a destructured `{ process } = $`).
   hookResultNouns = [
     "deny"
     "permissionDecision"
     "decision:"
     "updatedToolOutput"
     "preventContinuation"
+    "process"
   ];
+  # Occurrences of a literal needle: length delta, not a regex.
+  count =
+    needle: hay:
+    (builtins.stringLength hay - builtins.stringLength (builtins.replaceStrings [ needle ] [ "" ] hay))
+    / builtins.stringLength needle;
+  # The one host command of any mod: the deck's « ↻ relancer » runs the
+  # claude-bg allow-list wrapper. Only this exact call, once, in this one file,
+  # and no other `$.process` there; anything else keeps every noun it holds.
+  resumeFile = "deck/hooks/resume.ts";
+  resumeNeedle = "$.process.run(['/etc/profiles/per-user/alx/bin/claude-bg', 'resume', id], { timeoutMs: 60000 })";
+  allowedText =
+    path: text:
+    if path == resumeFile && count "$.process" text == 1 && count resumeNeedle text == 1 then
+      builtins.replaceStrings [ resumeNeedle ] [ "" ] text
+    else
+      text;
   nounsIn =
     path: text:
-    builtins.filter (n: hasInfix n text) (
+    builtins.filter (n: hasInfix n (allowedText path text)) (
       forbidden ++ lib.optionals (isHooksModule path) hookResultNouns
     );
+  resumeText =
+    if builtins.pathExists (root + "/${resumeFile}") then
+      builtins.readFile (root + "/${resumeFile}")
+    else
+      "";
   scan = lib.concatMap (
     f: map (n: "${f}: ${n}") (nounsIn f (builtins.readFile (root + "/${f}")))
   ) files;
@@ -170,6 +211,11 @@ let
       msg = "found ${builtins.toJSON scan}";
     }
     {
+      name = "M5b the deck's resume call is in ${resumeFile}, exactly once";
+      ok = count resumeNeedle resumeText == 1;
+      msg = "${resumeFile} holds the claude-bg resume call ${toString (count resumeNeedle resumeText)} times (missing file = 0), expected exactly once: ${resumeNeedle}";
+    }
+    {
       name = "M6 settings env CLAUDE_CODE_PLUGIN_DIRS = the mods folders";
       ok = pluginDirs == expectedDirs;
       msg = "got ${builtins.toJSON pluginDirs}, expected ${builtins.toJSON expectedDirs}";
@@ -192,6 +238,56 @@ let
         && nounsIn "deck/hooks/register.tsx" "{ permissionDecision: 'ask' }" == [ "permissionDecision" ]
         && nounsIn "deck/hooks/core.ts" "$.http.get(u)" == [ "$.http" ];
       msg = "the refusal-token scan no longer covers the deck mod";
+    }
+    {
+      name = "C5 the M5 scan flags the resume call outside ${resumeFile}";
+      ok =
+        nounsIn "deck/hooks/register.tsx" "const r = await ${resumeNeedle}" == [
+          "$.process"
+          "process"
+        ];
+      msg = "the resume exception is no longer bound to its one file";
+    }
+    {
+      name = "C6 the M5 scan flags a second call in ${resumeFile} that survives the strip";
+      ok =
+        nounsIn resumeFile "const r = await ${resumeNeedle}\nawait $.process.run(['sh'])" == [
+          "$.process"
+          "process"
+        ];
+      msg = "a second call in resume.ts that survives the strip is no longer flagged";
+    }
+    {
+      name = "C7 the M5 scan flags another claude-bg subcommand in ${resumeFile}";
+      ok =
+        nounsIn resumeFile (
+          "const r = await " + builtins.replaceStrings [ "'resume'" ] [ "'stop'" ] resumeNeedle
+        ) == [
+          "$.process"
+          "process"
+        ];
+      msg = "the resume exception no longer requires the exact argv";
+    }
+    {
+      name = "C8 the M5 scan passes the resume call alone in ${resumeFile}";
+      ok = nounsIn resumeFile "const r = await ${resumeNeedle}" == [ ];
+      msg = "the resume exception no longer strips the one allowed call — M5 could only pass with it gone";
+    }
+    {
+      name = "C9 the M5 scan flags computed and destructured $.process aliases";
+      ok =
+        nounsIn "deck/hooks/core.ts" "await $['process'].run(['sh'])" == [
+          "'process'"
+          "$["
+          "process"
+        ]
+        && nounsIn "deck/hooks/core.ts" "const { process: p } = $" == [ "process" ];
+      msg = "the alias spellings of $.process are no longer flagged";
+    }
+    {
+      name = "C10 the M5 scan flags a Reflect.get on the engine";
+      ok = nounsIn "deck/hooks/core.ts" "Reflect.get($, 'pro' + 'cess')" == [ "Reflect.get($" ];
+      msg = "a computed Reflect.get($, …) alias of $.process is no longer flagged";
     }
     {
       name = "C2 the M4 filter flags a .js file";

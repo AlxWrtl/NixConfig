@@ -642,7 +642,7 @@ let
       msg =
         "sandbox.excludedCommands is missing: "
         + builtins.concatStringsSep ", " missingExcluded
-        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`claude --bg`) hits EPERM on ~/.claude/jobs, and claude-bg (`claude respawn`/`logs`) a dead daemon socket; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
+        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`claude --bg`) hits EPERM on ~/.claude/jobs, and claude-bg (`claude respawn`/`logs`/`stop`/`--bg --resume`) a dead daemon socket; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
     }
     {
       name = "A14b sandbox: bare nix flake check is excluded, no wildcard, the daemon socket stays closed";
@@ -668,7 +668,7 @@ let
         )
         + "sandbox.excludedCommands entries running `claude` itself: "
         + builtins.concatStringsSep ", " claudeExcluded
-        + " — claude takes ~20 flags that widen the launched session (--dangerously-skip-permissions, --settings, --add-dir, --mcp-config, --bare…), so an unsandboxed `claude *` / `claude --bg *` is an unbounded deny-list. Background launches go through `claude-dispatch *`, which fixes the flags to --bg --name; respawn/logs/status go through `claude-bg *`, which fixes argv to `respawn|logs <8-hex id>` / `daemon status`";
+        + " — claude takes ~20 flags that widen the launched session (--dangerously-skip-permissions, --settings, --add-dir, --mcp-config, --bare…), so an unsandboxed `claude *` / `claude --bg *` is an unbounded deny-list. Background launches go through `claude-dispatch *`, which fixes the flags to --bg --name; respawn/logs/status/resume go through `claude-bg *`, which fixes argv to `respawn|logs <8-hex id>` / `daemon status`, or for resume `stop <id>` then `--bg --resume <uuid>` with only a re-checked --name/--model/--permission-mode (never bypassPermissions) and a fixed prompt";
     }
     {
       name = "A14c skills: caveman names force-push and history rewrite as irreversible, not push or merge";

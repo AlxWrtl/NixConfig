@@ -5,10 +5,11 @@
 // subagent cards and swimlanes, a turn receipt and a session log. Ours: the APEX block on top,
 // drawn only while an APEX run of the session's folder is live (header, phase dots, what asks
 // the user to act, background shells), its phase changes written to the log as `apex`.
-// Observes only: every hook but the commands and the pane returns next(e)'s result unchanged.
-// Read-only: it never writes a file. The run folders are polled every 5 s only while the pane is
-// open, and once per prompt and per finished main turn otherwise; the background sessions
-// (~/.claude/jobs) only while it is open. A poll writes nothing that did not change.
+// Observes: every hook but the commands and the pane returns next(e)'s result unchanged, and it
+// never writes a file. The run folders are polled every 5 s only while the pane is open, and once
+// per prompt and per finished main turn otherwise; the background sessions (~/.claude/jobs) only
+// while it is open. A poll writes nothing that did not change. One action: « ↻ relancer » pressed
+// on a stalled background row runs `claude-bg resume <id>` (hooks/resume.ts), its outcome logged.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
@@ -133,6 +134,7 @@ import {
 import type { Notification } from './shells'
 import { alertsOf, budgetOf, pickVerdict } from './signals'
 import { BG_TIMELINE, bgSummary, bgWord, inProject, parseJobState, parseTimeline, recentBg, sortBg } from './background'
+import { resumeBg } from './resume'
 
 const PANE = 'deck'
 const TITLE = 'Deck'
@@ -649,6 +651,15 @@ async function toggleBgRow($: EngineInterface, id: string): Promise<void> {
     const current = normalize(DEFAULT_VIEW, x)
     return { ...current, expanded: current.expanded === key ? null : key }
   })
+  await record(() => refreshBackground($))
+}
+
+// « ↻ relancer » pressed on a stalled row: the wrapper resumes it, the outcome goes to the log,
+// then the panel is read again at once. A press while the same id is under way does nothing.
+async function resumeRow($: EngineInterface, id: string): Promise<void> {
+  const o = await resumeBg($, id)
+  if (o === null) return
+  await record(() => say($, 'bg', `${id} ${o.text}`, o.ok ? 'done' : 'error'))
   await record(() => refreshBackground($))
 }
 
@@ -1617,6 +1628,7 @@ export const register: Register = (on, options) => {
     // ---- background agents: sessions of the current project (~/.claude/jobs), what waits on you first
     const bgMark: Record<DeckBgKind, { glyph: string; color: string }> = {
       'needs-you': { glyph: '◆', color: C.warn },
+      stalled: { glyph: '⟳', color: C.amber },
       working: { glyph: '◐', color: C.main },
       failed: { glyph: '✗', color: C.warn },
       done: { glyph: '✓', color: C.ok },
@@ -1672,6 +1684,13 @@ export const register: Register = (on, options) => {
                 <Box flexShrink={0}>
                   <Text color={mk.color}>{` ${shorten(bgWord(j), 12)}`}</Text>
                 </Box>
+                {j.kind === 'stalled' ? (
+                  <Box flexShrink={0}>
+                    <Button key={`bg-resume-${j.id}`} plain onPress={() => resumeRow($, j.id)}>
+                      <Text color={C.amber}>{' ↻ relancer'}</Text>
+                    </Button>
+                  </Box>
+                ) : null}
                 <Box flexShrink={0}>
                   <Text color={C.faint}>{` ${j.updatedAt > 0 ? fmtDuration(now - j.updatedAt) : '—'}`}</Text>
                 </Box>

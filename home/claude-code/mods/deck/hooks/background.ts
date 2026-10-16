@@ -14,10 +14,15 @@ export const BG_TIMELINE = 5
 export const BG_KEEP_MS = 24 * 60 * 60 * 1000
 
 /** The panel's order: what waits on you first, what ended last. */
-export const BG_ORDER: readonly DeckBgKind[] = ['needs-you', 'failed', 'working', 'other', 'stopped', 'done']
+export const BG_ORDER: readonly DeckBgKind[] = ['needs-you', 'stalled', 'failed', 'working', 'other', 'stopped', 'done']
 
-/** The engine's state word as the panel groups it; a word it does not know is `other`. */
-export function bgKind(state: string): DeckBgKind {
+/**
+ * The engine's state word as the panel groups it; a word it does not know is `other`. A `working`
+ * state whose `tempo` is `blocked`, both exact case as the claude-bg wrapper compares them, is
+ * `stalled`.
+ */
+export function bgKind(state: string, tempo = ''): DeckBgKind {
+  if (state === 'working' && tempo === 'blocked') return 'stalled'
   switch (state.toLowerCase()) {
     case 'working':
       return 'working'
@@ -55,7 +60,7 @@ export const inProject = (list: DeckBgAgent[], cwd: string): DeckBgAgent[] => {
   return list.filter(a => rootOf(a.cwd) === root || rootOf(a.cwd).startsWith(`${root}/`))
 }
 
-/** One state.json, or null when it is no JSON object or lacks a string `state` or `cwd`. */
+/** One state.json (its `tempo` read for `stalled`), or null when it is no JSON object or lacks a string `state` or `cwd`. */
 export function parseJobState(id: string, text: string): DeckBgAgent | null {
   let value: unknown
   try {
@@ -73,6 +78,7 @@ export function parseJobState(id: string, text: string): DeckBgAgent | null {
   const updated: unknown = Reflect.get(value, 'updatedAt')
   const intent: unknown = Reflect.get(value, 'intent')
   const tokens: unknown = Reflect.get(value, 'tokens')
+  const tempo: unknown = Reflect.get(value, 'tempo')
   const at = typeof updated === 'string' ? Date.parse(updated) : Number.NaN
   return {
     id,
@@ -80,7 +86,7 @@ export function parseJobState(id: string, text: string): DeckBgAgent | null {
     cwd,
     project: projectOf(cwd),
     state,
-    kind: bgKind(state),
+    kind: bgKind(state, typeof tempo === 'string' ? tempo : ''),
     detail: typeof detail === 'string' ? redact(oneLine(detail)) : '',
     intent: typeof intent === 'string' ? redact(oneLine(intent)) : '',
     tokens: typeof tokens === 'number' && Number.isFinite(tokens) ? tokens : null,
@@ -126,7 +132,7 @@ export const sortBg = (list: DeckBgAgent[]): DeckBgAgent[] =>
 
 /** How many sessions of each kind. */
 export function bgCounts(list: DeckBgAgent[]): Record<DeckBgKind, number> {
-  const counts: Record<DeckBgKind, number> = { 'needs-you': 0, working: 0, failed: 0, done: 0, stopped: 0, other: 0 }
+  const counts: Record<DeckBgKind, number> = { 'needs-you': 0, stalled: 0, working: 0, failed: 0, done: 0, stopped: 0, other: 0 }
   for (const a of list) counts[a.kind] += 1
   return counts
 }

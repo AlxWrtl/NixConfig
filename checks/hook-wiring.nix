@@ -477,6 +477,10 @@ let
       hook = "sandbox-escape-evidence.js";
       text = "/^curl\\b(?=.*\\s--noproxy(?:[\\s=]|$))/,";
     };
+    A-se-mkdir = {
+      hook = "sandbox-escape-evidence.js";
+      text = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory/i;";
+    };
   };
 
   # The M5 mutants name their shell: execSync's default /bin/sh dispatches
@@ -1077,6 +1081,18 @@ let
         }
       ];
     }
+    # git's ref mkdir refusal unread: the retry denied.
+    {
+      id = "M-se-mkdir";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-mkdir-ref-allow";
+      swaps = [
+        {
+          anchor = "A-se-mkdir";
+          to = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key/i;";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -1203,6 +1219,7 @@ let
     "se-curl-proxy-deny"
     "se-eperm-allow"
     "se-violations-allow"
+    "se-mkdir-ref-allow"
     "se-batch-allow"
     "se-nonbash-skip-allow"
     "se-allowlist-allow"
@@ -1905,6 +1922,9 @@ let
         se-violations-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'x <sandbox_violations>deny file-write</sandbox_violations>')"
           se_run 'pnpm build' "$2"; is_allow ;;
+        se-mkdir-ref-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 "fatal: cannot lock ref 'refs/heads/y': unable to create directory for .git/refs/heads/y")"
+          se_run 'git -C /x checkout -b y' "$2"; is_allow ;;
         se-batch-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_use u2 m1)" "$(se_res u1 'Error: EPERM: open x')" "$(se_res u2 'built')"
           se_run 'pnpm build' "$2"; is_allow ;;

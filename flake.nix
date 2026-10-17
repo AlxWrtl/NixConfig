@@ -65,6 +65,10 @@
         claude-dispatch = import ./checks/claude-dispatch.nix { inherit pkgs; };
         claude-mods = import ./checks/claude-mods.nix { inherit pkgs; };
         codex-config = import ./checks/codex-config.nix { inherit pkgs; };
+        colima-ci = import ./checks/colima-ci.nix {
+          inherit pkgs;
+          hm = self.darwinConfigurations."alex-mbp".config.home-manager.users.alx;
+        };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };
         js-lint = import ./checks/js-lint.nix { inherit pkgs; };
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };

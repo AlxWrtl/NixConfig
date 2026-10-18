@@ -92,8 +92,10 @@ in
       setDockerHost = false;
       settings = {
         # 6 of the M1's 8 cores, 8 of its 16 GB: room freed by Docker Desktop's
-        # removal; `default` takes 2 + 2. A colima.yaml change applies only
-        # on `colima restart ci` (the launchd plist does not change).
+        # removal; `default` takes 2 + 2. A colima.yaml change needs a VM
+        # restart (the launchd plist does not change). `colima restart ci` and
+        # `colima start ci` fail on this read-only yaml: run `colima stop ci`,
+        # then `launchctl kickstart -k gui/$UID/org.nix-community.home.colima-ci`.
         cpu = 6;
         memory = 8;
         disk = 30;

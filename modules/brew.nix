@@ -50,6 +50,7 @@ _:
       "google-chrome"
       "notion"
       "obsidian"
+      "openlogi"
       "raycast"
       "readdle-spark"
       "microsoft-teams"
@@ -83,10 +84,6 @@ _:
       }
       {
         name = "keka";
-        greedy = true;
-      }
-      {
-        name = "logi-options+";
         greedy = true;
       }
       {

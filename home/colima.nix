@@ -91,8 +91,11 @@ in
       isActive = false;
       setDockerHost = false;
       settings = {
-        cpu = 4;
-        memory = 7;
+        # 6 of the M1's 8 cores, 8 of its 16 GB: room freed by Docker Desktop's
+        # removal; `default` takes 2 + 2. A colima.yaml change applies only
+        # on `colima restart ci` (the launchd plist does not change).
+        cpu = 6;
+        memory = 8;
         disk = 30;
         arch = "aarch64";
         runtime = "docker";

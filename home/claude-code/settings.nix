@@ -374,6 +374,13 @@ in
         # ~/.local/share/uv/tools (uvx needs tools/.lock but scrapling/graphify
         # live there, so uvx stays an escape; `uv run --with` works sandboxed);
         # CARGO_HOME/UV_CACHE_DIR redirect (user chose real caches).
+        # ~/.config/.wrangler/config (2026-10-18): the OAuth access token lives 1 h;
+        # wrangler then spends the single-use refresh token and writes the new pair
+        # to config/default.toml (or <profile>.enc, same dir). Sandboxed, that write
+        # died EPERM after the refresh was spent: the pair was lost and the next
+        # unsandboxed deploy got 400, forcing `wrangler login`. Residual risk
+        # (accepted by the user 2026-10-18): a sandboxed command can overwrite the
+        # Cloudflare OAuth pair (already readable); no code in that dir runs.
         # Check A28 (checks/claude-config.nix) pins this.
         allowWrite = [
           "${homeDirectory}/GraphVault"
@@ -387,6 +394,7 @@ in
           "${homeDirectory}/Library/pnpm/global/v11/.tmp*"
           "${alxVaultPath}/.git"
           "${homeDirectory}/.config/.wrangler/logs"
+          "${homeDirectory}/.config/.wrangler/config"
           "${homeDirectory}/.cargo/registry"
           "${homeDirectory}/.cargo/git"
           "${homeDirectory}/.cargo/.package-cache"

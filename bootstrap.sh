@@ -381,7 +381,7 @@ echo -e "  • GitHub SSH: github.com/settings/keys → add ~/.ssh/id_ed25519.pu
 echo -e "  • Arc: login to restore Spaces, Folders & Tabs via Arc Sync → Set as Default"
 echo -e "  • iCloud: System Settings → Apple ID → iCloud → iCloud Drive → Options → enable Desktop & Documents"
 echo -e "  • Login: Discord, WhatsApp, Spark, Figma, Notion, Plex, Claude,"
-echo -e "          Docker Desktop, Google Chrome, Microsoft (Teams/Excel/Word/PowerPoint),"
+echo -e "          Google Chrome, Microsoft (Teams/Excel/Word/PowerPoint),"
 echo -e "          Tailscale, Trello"
 echo -e "  • Restart your terminal: ${BLUE}exec \$SHELL${NC}"
 echo -e "  • ${YELLOW}Reboot${NC}: restart your Mac to apply all system-level changes"

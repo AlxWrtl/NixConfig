@@ -46,7 +46,6 @@ _:
       "claude-code@latest"
       "codex-app"
       "discord"
-      "docker-desktop"
       "figma"
       "google-chrome"
       "notion"

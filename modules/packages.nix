@@ -55,6 +55,13 @@
     pkgs.postgresql
     pkgs.redis
 
+    # Containers (Colima VMs; replaces Docker.app's /usr/local/bin symlinks)
+    pkgs.docker-client
+    pkgs.docker-compose
+    pkgs.docker-buildx
+    pkgs.docker-credential-helpers
+    pkgs.kubectl
+
     # Network & data
     pkgs.curl
     pkgs.wget

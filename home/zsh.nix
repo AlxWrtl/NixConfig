@@ -172,7 +172,7 @@
       # Tools
       BAT_THEME = "TwoDark";
       LESS = "-R --use-color";
-      DOCKER_DEFAULT_PLATFORM = "linux/amd64";
+      DOCKER_DEFAULT_PLATFORM = "linux/arm64";
       EZA_CONFIG_DIR = "$HOME/.config/eza";
       PNPM_HOME = "$HOME/Library/pnpm";
     };

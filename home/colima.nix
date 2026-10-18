@@ -1,7 +1,10 @@
-# Self-hosted GitHub Actions runners for the private repos with a CI
-# (Preliz plan « plan-ci-rapide-et-gratuite », Phase 2B, validated by Preliz
-# PR #575). One Colima VM `ci` runs k3s; k3s auto-deploys ARC from the
-# manifest the provision script writes, so a rebuilt VM reinstalls itself.
+# Two Colima VMs, replacing Docker Desktop's runtime:
+# - `ci`: self-hosted GitHub Actions runners for the private repos with a CI
+#   (Preliz plan « plan-ci-rapide-et-gratuite », Phase 2B, validated by Preliz
+#   PR #575). It runs k3s; k3s auto-deploys ARC from the manifest the provision
+#   script writes, so a rebuilt VM reinstalls itself. Never active, no mounts.
+# - `default`: dev containers (Preliz `preliz-pg`, …). It holds the active
+#   Docker context `colima`, as Docker Desktop's `desktop-linux` did.
 #
 # ⚠️ The GitHub token is NOT here: it is a k8s secret the user creates by hand
 # (`pre-defined-secret`, key `github_token`, namespace `arc-runners`). It
@@ -56,8 +59,29 @@ in
 {
   services.colima = {
     enable = true;
-    # Replaces the module's default profile: `ci` is the only VM, and it never
-    # takes the Docker/Kubernetes context (Docker Desktop keeps `desktop-linux`).
+    # Dev VM: the only active profile, so `docker` targets it by default. Own
+    # containers only, never CI code, so Colima's default $HOME mount stays
+    # (same exposure as Docker Desktop). No k3s, no ~/.ssh/config entry.
+    # `setDockerHost` stays false: an exported DOCKER_HOST would override
+    # `--context colima-ci`.
+    profiles.default = {
+      isService = true;
+      isActive = true;
+      setDockerHost = false;
+      settings = {
+        cpu = 2;
+        memory = 2;
+        disk = 20;
+        arch = "aarch64";
+        runtime = "docker";
+        vmType = "vz";
+        mountType = "virtiofs";
+        sshConfig = false;
+        autoActivate = true;
+        kubernetes.enabled = false;
+      };
+    };
+    # CI VM: never takes the Docker/Kubernetes context (`default` holds it).
     profiles.ci = {
       isService = true;
       isActive = false;

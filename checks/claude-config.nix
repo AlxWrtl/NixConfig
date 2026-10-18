@@ -443,6 +443,7 @@ let
       "/Users/alx/.cargo/registry"
       "/Users/alx/.cargo/git"
       "/Users/alx/.config/.wrangler/logs"
+      "/Users/alx/.config/.wrangler/config"
     ]);
   requiredCargoDenyWrite = map (s: "/Users/alx/.cargo/" + s) [
     "bin"

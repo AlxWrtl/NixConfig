@@ -3,9 +3,13 @@
 # PR #575). One Colima VM `ci` runs k3s; k3s auto-deploys ARC from the
 # manifest the provision script writes, so a rebuilt VM reinstalls itself.
 #
-# ⚠️ The GitHub token is NOT here: it is a k8s secret the user creates by hand
-# (`pre-defined-secret`, key `github_token`, namespace `arc-runners`). It
-# survives VM restarts, not `colima delete ci`.
+# ⚠️ The GitHub credentials are NOT here: they are a k8s secret the user
+# creates by hand (`pre-defined-secret`, namespace `arc-runners`) for the
+# GitHub App `arc-runners-alxwrtl` (no expiry): keys `github_app_id` (5365901),
+# `github_app_installation_id` (172616492), `github_app_private_key` (.pem).
+# It survives VM restarts, not `colima delete ci`. Listeners copy it once into
+# their own `*-listener-config`: after changing it, run
+# `kubectl -n arc-systems delete autoscalinglisteners --all` (ARC recreates them).
 # ⚠️ No public repo here: a fork's pull request would run its code on this Mac.
 { lib, ... }:
 let

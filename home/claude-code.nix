@@ -92,6 +92,10 @@ let
     hookReactDocsGate
     hookNullResultGate
     ;
+  hookWorktreeEnvSync = hooks.hookWorktreeEnvSync {
+    jqBin = "${pkgs.jq}/bin/jq";
+    gitBin = "${pkgs.git}/bin/git";
+  };
   inherit (agents)
     agentFrontend
     agentBackend
@@ -281,6 +285,10 @@ let
     };
     "${claudeDir}/hooks/null-result-gate.js" = {
       text = hookNullResultGate;
+      executable = true;
+    };
+    "${claudeDir}/hooks/worktree-env-sync.sh" = {
+      text = hookWorktreeEnvSync;
       executable = true;
     };
   };

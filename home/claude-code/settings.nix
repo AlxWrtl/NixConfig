@@ -254,12 +254,13 @@ in
           "${homeDirectory}/.aws/credentials"
           "${homeDirectory}/.gnupg/private-keys-v1.d"
           # NOTE: la clé publique est ré-ouverte plus bas via allowRead.
-          # Ancrés sur $HOME : non préfixé, un chemin des settings user se
+          # Ancré sur $HOME : non préfixé, un chemin des settings user se
           # résout sous ~/.claude (docs: settings-reference
-          # #sandbox-path-prefixes). Mesuré en « **/.env » : ouvrir
-          # ~/projects/Preliz/.env depuis le sandbox (`dd … count=0`) passait.
-          "${homeDirectory}/**/.env"
-          "${homeDirectory}/**/.env.*"
+          # #sandbox-path-prefixes). `.env` / `.env.*` ne sont plus refusés
+          # au sandbox (décision utilisateur 2026-10-19) : l'agent de fond lance
+          # le serveur de dev et les migrations, qui lisent `.env` sous le même
+          # profil Seatbelt, et le code qu'il écrit tourne de toute façon avec
+          # le secret. Voir aussi permissions.deny (plus de `Read(**/.env*)`).
           "${homeDirectory}/**/secrets"
         ];
         # Ré-ouvre la clé PUBLIQUE, que le denyRead sur ~/.ssh emportait aussi.
@@ -277,19 +278,10 @@ in
         # du répertoire reste refusé. Le deny `Read(~/.config/secrets/**)`
         # bloque toujours le Read / `cat` de Claude lui-même : seul le wrapper
         # les lit, et il ne les affiche jamais.
-        # Modèles `.env.example` / `.env.template` : versionnés, sans secret,
-        # mais emportés par `**/.env.*` ci-dessus — 14 j mesurés, première cause
-        # de sortie du sandbox avec une vraie erreur derrière. Ré-ouverts au
-        # sandbox seul ; le deny `Read(**/.env.*)` de l'outil Read reste. Ne
-        # vaut que si le glob le plus étroit l'emporte sur `**/.env.*` (règle
-        # documentée pour des chemins, pas glob contre glob) : à défaut, aucun
-        # effet, jamais une ouverture plus large.
         allowRead = [
           "${homeDirectory}/.ssh/id_ed25519.pub"
           "${homeDirectory}/.config/secrets/trello-api-key"
           "${homeDirectory}/.config/secrets/trello-token"
-          "${homeDirectory}/**/.env.example"
-          "${homeDirectory}/**/.env.template"
         ];
         # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the
@@ -718,8 +710,12 @@ in
         "Read(~/.aws/**)"
         "Read(~/.gnupg/**)"
         "Read(~/.config/secrets/**)"
-        "Read(**/.env)"
-        "Read(**/.env.*)"
+        # `.env` / `.env.*` ouverts au sandbox ET à l'outil Read (décision
+        # utilisateur 2026-10-19) : l'agent de fond lance dev et migrations,
+        # le hook SessionStart/EnterWorktree copie ces fichiers dans les worktrees. Un deny
+        # Read serait fusionné au sandbox sous le cwd (`Read(**/.env)` = tout
+        # .env sous le cwd, docs: permissions + sandboxing) ; un ask bloquerait
+        # chaque run autonome sur une boîte (A19 : ask = sudo seul).
         "Read(**/secrets/**)"
         # Network piping
         "Bash(curl * | sh)"
@@ -903,6 +899,23 @@ in
           ];
         }
         {
+          # Nom d'outil exact (liste littérale, cf. matcher ci-dessus). Après
+          # EnterWorktree le cwd de l'entrée est déjà la racine du worktree
+          # (docs: hooks) : le hook ci-dessous y copie les .env du checkout
+          # principal. Synchrone, même timeout qu'au SessionStart (D3 de
+          # hook-wiring) : le contexte doit arriver avant le tour suivant.
+          # Pas de SubagentStart : son entrée n'a qu'agent_id/agent_type, pas
+          # le cwd du worktree ; le `.worktreeinclude` du repo couvre ce cas.
+          matcher = "EnterWorktree";
+          hooks = [
+            {
+              type = "command";
+              command = "bash ~/.claude/hooks/worktree-env-sync.sh";
+              timeout = 5;
+            }
+          ];
+        }
+        {
           hooks = [
             {
               type = "command";
@@ -949,6 +962,16 @@ in
             {
               type = "command";
               command = "bash ~/.claude/hooks/session-start.sh";
+              timeout = 5;
+            }
+            {
+              # Session ouverte dans un worktree (`--worktree`, agent de fond) :
+              # copie les .env ignorés du checkout principal qui y manquent,
+              # pour que le serveur de dev démarre sans copie à la main
+              # (décision utilisateur 2026-10-19). Synchrone, timeout = celui
+              # du PostToolUse EnterWorktree.
+              type = "command";
+              command = "bash ~/.claude/hooks/worktree-env-sync.sh";
               timeout = 5;
             }
           ];

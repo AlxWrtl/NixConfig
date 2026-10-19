@@ -1,9 +1,10 @@
 # Hook scripts for Claude Code
 # All command hooks: read JSON from stdin, exit 0 + JSON stdout
 # permissionDecision: "allow" | "deny" | "ask"
-# Bodies live in ./hooks/<deployed name>, read verbatim. The 5 bodies that
-# need a nix value carry a placeholder; `subst` throws if it is missing, so a
-# renamed placeholder cannot ship a hook with the literal still in it.
+# Bodies live in ./hooks/<deployed name>, read verbatim. The bodies that
+# need a nix value carry a placeholder; `subst` / `substAll` throw if one is
+# missing, so a renamed placeholder cannot ship a hook with the literal still
+# in it.
 {
   graphifyReindexPkg,
   vaultSnapshotPkg,
@@ -17,6 +18,19 @@ let
       r = builtins.replaceStrings [ from ] [ to ] t;
     in
     if r == t then throw "hooks.nix: placeholder ${from} not found in ${toString file}" else r;
+  # Several placeholders, each under the same rule as `subst`: a missing one throws.
+  substAll =
+    file: pairs:
+    let
+      t = builtins.readFile file;
+      missing = builtins.filter (
+        p: builtins.replaceStrings [ (builtins.elemAt p 0) ] [ "" ] t == t
+      ) pairs;
+    in
+    if missing != [ ] then
+      throw "hooks.nix: placeholder ${builtins.elemAt (builtins.head missing) 0} not found in ${toString file}"
+    else
+      builtins.replaceStrings (map (p: builtins.elemAt p 0) pairs) (map (p: builtins.elemAt p 1) pairs) t;
 in
 {
   hookProtectMain = subst ./hooks/protect-main.js (builtins.toJSON "@alxVaultPath@") (
@@ -282,6 +296,30 @@ in
   # SessionStart also lists the cwd project's vault notes (path only): a shell
   # body, so the raw path is substituted, not its JSON form.
   hookSessionStart = subst ./hooks/session-start.sh "@alxVaultPath@" alxVaultPath;
+
+  # SessionStart, and PostToolUse on EnterWorktree: in a linked git worktree,
+  # copies from the main checkout the root .env, .env.* and .dev.vars files
+  # that both checkouts ignore and the worktree lacks — never over an existing
+  # file or symlink, never through a symlink, mode kept (temp file + hard
+  # link). So a background agent's worktree can run the dev server without a
+  # copy by hand. Fail-open, silent unless something was copied, then one
+  # additionalContext line naming the files. jq and git are absolute store
+  # paths: the hook PATH is not guaranteed (see the node comment at the top of
+  # settings.nix). A function of its two binaries, not two more arguments of
+  # this file: checks/apex-consistency.nix stubs every argument here and would
+  # stop evaluating on a new one.
+  hookWorktreeEnvSync =
+    { jqBin, gitBin }:
+    substAll ./hooks/worktree-env-sync.sh [
+      [
+        "@jq@"
+        jqBin
+      ]
+      [
+        "@git@"
+        gitBin
+      ]
+    ];
 
   # SessionEnd: refresh the AlxVault knowledge graph. Reason for existing: the
   # APEX step-09b text instruction only fires when the model remembers it —

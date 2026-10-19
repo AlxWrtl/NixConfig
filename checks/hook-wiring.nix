@@ -55,6 +55,10 @@
 #      error, a skill body naming the flag, an allowlisted verb inside
 #      quotes and a prompt only naming the flag ignored; evidence anywhere in
 #      the batch, behind a non-Bash result, and malformed input allowed.
+#      The worktree-env-sync run adds worktree-env-sync.sh, the first bash
+#      body D runs: the main checkout's ignored root .env files copied into a
+#      new worktree, never over a file there, never through a symlink, never
+#      one the main checkout tracks or the worktree does not ignore.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -488,6 +492,26 @@ let
     A-se-mkdir = {
       hook = "sandbox-escape-evidence.js";
       text = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory/i;";
+    };
+    A-wes-symlink = {
+      hook = "worktree-env-sync.sh";
+      text = "if [ -L \"$src\" ] || [ ! -f \"$src\" ]; then continue; fi";
+    };
+    A-wes-present = {
+      hook = "worktree-env-sync.sh";
+      text = "if [ -e \"$dst\" ] || [ -L \"$dst\" ]; then continue; fi";
+    };
+    A-wes-ign-main = {
+      hook = "worktree-env-sync.sh";
+      text = "\"$GIT\" -c core.fsmonitor=false -C \"$MAIN\" check-ignore -q -- \"$name\" 2>/dev/null || continue";
+    };
+    A-wes-ign-wt = {
+      hook = "worktree-env-sync.sh";
+      text = "\"$GIT\" -c core.fsmonitor=false -C \"$WT\" check-ignore -q -- \"$name\" 2>/dev/null || continue";
+    };
+    A-wes-link = {
+      hook = "worktree-env-sync.sh";
+      text = "if cp -p \"$src\" \"$tmp\" 2>/dev/null && ln -n \"$tmp\" \"$dst\" 2>/dev/null; then LIST=\"$LIST, $name\"; fi";
     };
   };
 
@@ -1125,6 +1149,74 @@ let
         }
       ];
     }
+    # worktree-env-sync run. The worktree's own .env.production overwritten
+    # with the main checkout's: no presence check, and `ln -nf` to replace.
+    {
+      id = "M-wes-overwrite";
+      hook = "worktree-env-sync.sh";
+      kills = "wes-sessionstart-copy";
+      swaps = [
+        {
+          anchor = "A-wes-present";
+          to = ":";
+        }
+        {
+          anchor = "A-wes-link";
+          to = "if cp -p \"$src\" \"$tmp\" 2>/dev/null && ln -nf \"$tmp\" \"$dst\" 2>/dev/null; then LIST=\"$LIST, $name\"; fi";
+        }
+      ];
+    }
+    # A symlink source followed: .env.local (-> .env) lands as a copy.
+    {
+      id = "M-wes-symlink";
+      hook = "worktree-env-sync.sh";
+      kills = "wes-sessionstart-copy";
+      swaps = [
+        {
+          anchor = "A-wes-symlink";
+          to = "if [ ! -f \"$src\" ]; then continue; fi";
+        }
+      ];
+    }
+    # The main checkout's tracking unread: .env.example, tracked there and
+    # dropped from the worktree's index, is copied back in.
+    {
+      id = "M-wes-tracked";
+      hook = "worktree-env-sync.sh";
+      kills = "wes-sessionstart-copy";
+      swaps = [
+        {
+          anchor = "A-wes-ign-main";
+          to = ":";
+        }
+      ];
+    }
+    # The worktree's own ignore rules unread: .env.staging, which its
+    # .gitignore un-ignores, is copied in as a file git would commit.
+    {
+      id = "M-wes-wtignore";
+      hook = "worktree-env-sync.sh";
+      kills = "wes-sessionstart-copy";
+      swaps = [
+        {
+          anchor = "A-wes-ign-wt";
+          to = ":";
+        }
+      ];
+    }
+    # The fsmonitor override dropped from the main checkout's check-ignore:
+    # the repo's core.fsmonitor command runs, outside the sandbox.
+    {
+      id = "M-wes-fsmonitor";
+      hook = "worktree-env-sync.sh";
+      kills = "wes-fsmonitor-pwned";
+      swaps = [
+        {
+          anchor = "A-wes-ign-main";
+          to = "\"$GIT\" -C \"$MAIN\" check-ignore -q -- \"$name\" 2>/dev/null || continue";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -1267,6 +1359,14 @@ let
     "se-user-asked-allow"
     "se-missing-transcript-allow"
     "se-malformed-allow"
+    "wes-sessionstart-copy"
+    "wes-enterworktree-copy"
+    "wes-rerun-silent"
+    "wes-main-silent"
+    "wes-norepo-silent"
+    "wes-malformed-silent"
+    "wes-dangling-dest"
+    "wes-fsmonitor-pwned"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -1314,6 +1414,7 @@ let
     "research-model.js"
     "lone-excluded-bash.js"
     "sandbox-escape-evidence.js"
+    "worktree-env-sync.sh"
   ];
   timeoutsOf =
     n:
@@ -1485,14 +1586,106 @@ let
     # $1 command, $2 body: run against $SE/$lbl.jsonl with the flag set.
     se_run() { run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(se_in "$1" "$SE/$lbl.jsonl")"; }
 
+    # worktree-env-sync: a main checkout $M and its worktree $T under
+    # .claude/worktrees/, fresh per label. At M's root, all ignored there:
+    # .env and .dev.vars (due in T); .env.local, a symlink to .env;
+    # .env.production, which T already has; .env.staging, which T's
+    # .gitignore un-ignores; .env.example, tracked in M and dropped from T's
+    # index; and sub/.env, nested. Only the first two are due. The four
+    # check-ignore lines prove the fixture has the shape the canaries need.
+    wes_fixture() {
+      wb="$root/wes/$lbl"
+      M="$wb/main"
+      T="$M/.claude/worktrees/w"
+      W="$wb/outside"
+      rm -rf "$wb"
+      mkdir -p "$M/sub" "$W" "$M/.claude/worktrees" \
+        && g init -q -b master "$M" \
+        && printf '%s\n' .env '.env.*' .dev.vars .claude/worktrees/ > "$M/.gitignore" \
+        && printf 'a\n' > "$M/sub/a.txt" \
+        && printf 'E=example\n' > "$M/.env.example" \
+        && g -C "$M" add .gitignore sub/a.txt \
+        && g -C "$M" add -f .env.example \
+        && g -C "$M" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q -m probe \
+        && g -C "$M" worktree add -q -b wt "$T" \
+        && printf 'SECRET=main\n' > "$M/.env" && chmod 600 "$M/.env" \
+        && printf 'D=main\n' > "$M/.dev.vars" && chmod 640 "$M/.dev.vars" \
+        && ln -s .env "$M/.env.local" \
+        && printf 'P=main\n' > "$M/.env.production" \
+        && printf 'S=main\n' > "$M/.env.staging" \
+        && printf 'N=main\n' > "$M/sub/.env" \
+        && printf 'P=wt\n' > "$T/.env.production" \
+        && printf '%s\n' '!.env.staging' >> "$T/.gitignore" \
+        && g -C "$T" rm -q -- .env.example \
+        && g -C "$M" check-ignore -q -- .env.staging \
+        && ! g -C "$T" check-ignore -q -- .env.staging \
+        && ! g -C "$M" check-ignore -q -- .env.example \
+        && g -C "$T" check-ignore -q -- .env.example \
+        || { why="worktree-env-sync fixture could not be built"; return 1; }
+    }
+    # $1 event, $2 cwd: the SessionStart input, or EnterWorktree's PostToolUse.
+    wes_in() { ${jq} -cn --arg e "$1" --arg c "$2" 'if $e == "PostToolUse" then {hook_event_name:$e,session_id:"probe",cwd:$c,tool_name:"EnterWorktree",tool_input:{name:"w"},tool_response:{}} else {hook_event_name:$e,session_id:"probe",cwd:$c,source:"startup"} end'; }
+    # $1 body, $2 event, $3 cwd.
+    wes_run() { run "$lbl" "$1" "$NOREPO" "${pkgs.coreutils}/bin" "$(wes_in "$2" "$3")"; }
+    # Nothing in T that was not due: a followed symlink, a tracked file, a
+    # file T does not ignore, a nested one, T's own file overwritten, or a
+    # temp file left behind.
+    wes_clean() {
+      kind=pwned
+      if [ -e "$T/.env.local" ] || [ -L "$T/.env.local" ]; then why="the .env.local symlink was followed: a copy of its target sits in the worktree"; return 1; fi
+      if [ -e "$T/.env.example" ] || [ -L "$T/.env.example" ]; then why=".env.example copied: the main checkout tracks it"; return 1; fi
+      if [ -e "$T/.env.staging" ] || [ -L "$T/.env.staging" ]; then why=".env.staging copied: the worktree does not ignore it, git would commit it"; return 1; fi
+      if [ -e "$T/sub/.env" ] || [ -L "$T/sub/.env" ]; then why="sub/.env copied: only the root is synced"; return 1; fi
+      [ "$(${pkgs.coreutils}/bin/cat "$T/.env.production" 2> /dev/null)" = P=wt ] || { why="the worktree's own .env.production was overwritten"; return 1; }
+      for t in "$T"/.worktree-env-sync.*; do
+        if [ -e "$t" ] || [ -L "$t" ]; then why="temp file left in the worktree: $t"; return 1; fi
+      done
+      kind=""
+    }
+    # $1 name, $2 mode: copied from M, byte for byte, as a regular file.
+    wes_copied() {
+      if [ ! -f "$T/$1" ] || [ -L "$T/$1" ] || ! ${pkgs.diffutils}/bin/cmp -s "$M/$1" "$T/$1"; then
+        why="$1 not copied into the worktree as a regular file equal to the main checkout's"; kind=mismatch; return 1
+      fi
+      wm=$(${pkgs.coreutils}/bin/stat -c %a "$T/$1")
+      [ "$wm" = "$2" ] || { why="$1 copied with mode $wm, expected $2"; return 1; }
+    }
+    # $1 event, $2 the names copied: the one context line, under that event.
+    wes_context() {
+      ev=$(${jq} -r '.hookSpecificOutput.hookEventName // ""' "$d/$lbl.out" 2> /dev/null) || ev=""
+      ctx=$(${jq} -r '.hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
+      [ "$ev" = "$1" ] || { why="hookEventName '$ev', expected '$1'"; return 1; }
+      [ "$ctx" = "worktree-env-sync: copied $2 from the main checkout" ] || { why="context '$ctx', expected 'worktree-env-sync: copied $2 from the main checkout'"; return 1; }
+    }
+    # $1 event: .env and .dev.vars synced, nothing else, and said.
+    is_synced() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      wes_clean || return 1
+      wes_copied .env 600 || return 1
+      wes_copied .dev.vars 640 || return 1
+      wes_context "$1" ".env, .dev.vars"
+    }
+    is_silent() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ ! -s "$d/$lbl.out" ] || { why="stdout not empty, expected silence"; return 1; }
+    }
+    wes_snap() { (cd "$T" && ${pkgs.coreutils}/bin/ls -Ali --time-style=+%s && ${pkgs.coreutils}/bin/cat .env .dev.vars) 2>&1; }
+
     # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
     # $tmo is the host's timeout for the hook under test (probe_case sets it);
     # 124 is `timeout` killing it, which the host reads as no decision.
+    # The interpreter goes by the body's name: a mutant's ends with its hook's.
     # No set +e/-e toggling: this runs both inside and outside `if`.
     run() {
       printf '%s' "$5" > "$d/$1.in"
       rc=0
-      (cd "$3" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH="$4" ${pkgs.coreutils}/bin/timeout "$tmo" ${pkgs.nodejs_22}/bin/node "$2") \
+      case "$2" in
+        *.sh) i=${pkgs.bash}/bin/bash ;;
+        *) i=${pkgs.nodejs_22}/bin/node ;;
+      esac
+      (cd "$3" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH="$4" ${pkgs.coreutils}/bin/timeout "$tmo" "$i" "$2") \
         < "$d/$1.in" > "$d/$1.out" 2> "$d/$1.err" || rc=$?
     }
 
@@ -1557,6 +1750,7 @@ let
         rm-*) tmo=${hostTimeout "research-model.js"} ;;
         le-*) tmo=${hostTimeout "lone-excluded-bash.js"} ;;
         se-*) tmo=${hostTimeout "sandbox-escape-evidence.js"} ;;
+        wes-*) tmo=${hostTimeout "worktree-env-sync.sh"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -2006,6 +2200,57 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(se_in 'pnpm build' "$SE/absent.jsonl")"; is_allow ;;
         se-malformed-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
+        # worktree-env-sync run: the hook reads the cwd the event carries, a
+        # worktree subdirectory at SessionStart, the worktree root after
+        # EnterWorktree; the process itself starts outside any repo.
+        wes-sessionstart-copy)
+          wes_fixture || return 1
+          wes_run "$2" SessionStart "$T/sub"; is_synced SessionStart ;;
+        wes-enterworktree-copy)
+          wes_fixture || return 1
+          wes_run "$2" PostToolUse "$T"; is_synced PostToolUse ;;
+        # A second session in the same worktree: everything due is there.
+        wes-rerun-silent)
+          wes_fixture || return 1
+          wes_run "$2" SessionStart "$T"; is_synced SessionStart || return 1
+          wsnap=$(wes_snap)
+          wes_run "$2" SessionStart "$T"; is_silent || return 1
+          [ "$(wes_snap)" = "$wsnap" ] || { why="the second run changed the worktree"; kind=pwned; return 1; } ;;
+        # The main checkout's own session is no worktree.
+        wes-main-silent)
+          wes_fixture || return 1
+          wes_run "$2" SessionStart "$M"; is_silent || return 1
+          if [ -e "$T/.env" ] || [ -L "$T/.env" ]; then why="a session in the main checkout wrote into its worktree"; kind=pwned; return 1; fi ;;
+        wes-norepo-silent)
+          wes_run "$2" SessionStart "$NOREPO"; is_silent ;;
+        wes-malformed-silent)
+          run "$lbl" "$2" "$NOREPO" "${pkgs.coreutils}/bin" "$malformed"; is_silent ;;
+        # T/.env a dangling symlink out of the worktree: never written
+        # through, never replaced; .dev.vars still copied, and alone named.
+        wes-dangling-dest)
+          wes_fixture || return 1
+          ln -s "$W/pwned" "$T/.env" || { why="cannot plant the dangling symlink"; return 1; }
+          wes_run "$2" SessionStart "$T"
+          [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+          [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+          if [ -e "$W/pwned" ] || [ -L "$W/pwned" ]; then why="written through the worktree's dangling .env symlink"; kind=pwned; return 1; fi
+          [ -L "$T/.env" ] && [ "$(${pkgs.coreutils}/bin/readlink "$T/.env")" = "$W/pwned" ] || { why="the worktree's .env symlink was replaced"; kind=pwned; return 1; }
+          wes_clean || return 1
+          wes_copied .dev.vars 640 || return 1
+          wes_context SessionStart ".dev.vars" ;;
+        # M's core.fsmonitor names a script that leaves a marker: never run.
+        # The bare check-ignore first proves it fires on an index read here.
+        wes-fsmonitor-pwned)
+          wes_fixture || return 1
+          printf '#!%s\n%s %s\n' ${pkgs.bash}/bin/bash ${pkgs.coreutils}/bin/touch "$W/fsmonitor-ran" > "$W/fsmonitor" \
+            && chmod 755 "$W/fsmonitor" \
+            && g -C "$M" config core.fsmonitor "$W/fsmonitor" \
+            && { g -C "$M" check-ignore -q -- .env 2> /dev/null; [ -e "$W/fsmonitor-ran" ]; } \
+            && rm -f "$W/fsmonitor-ran" \
+            || { why="fsmonitor fixture: the script did not run on a bare check-ignore"; return 1; }
+          wes_run "$2" SessionStart "$T"
+          if [ -e "$W/fsmonitor-ran" ]; then why="the repo's core.fsmonitor command ran"; kind=pwned; return 1; fi
+          is_synced SessionStart ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -2021,6 +2266,7 @@ let
         rm-*) echo ${hookFile "research-model.js"} ;;
         le-*) echo ${hookFile "lone-excluded-bash.js"} ;;
         se-*) echo ${hookFile "sandbox-escape-evidence.js"} ;;
+        wes-*) echo ${hookFile "worktree-env-sync.sh"} ;;
       esac
     }
 

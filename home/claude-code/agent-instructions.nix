@@ -52,8 +52,8 @@ let
         - Repo file edits: proceed — the branch hooks gate them, do not ask first.
           Ask before: sudo, chmod, installs, deletes outside the repo, large
           refactors, anything irreversible.
-        - Never touch secrets: ~/.ssh, ~/.aws, ~/.gnupg, **/.env*, secrets/,
-          *token*, *key*, *cert*.
+        - Never touch secrets: ~/.ssh, ~/.aws, ~/.gnupg, secrets/, *token*, *key*,
+          *cert*. `.env*`: commands may read them; never print or commit values.
         - Keep diffs minimal. Small, reversible changes.
       '';
     }

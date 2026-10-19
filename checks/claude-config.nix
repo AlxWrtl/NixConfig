@@ -370,7 +370,7 @@ let
   # Write(path) is accepted but never consulted: it reads as a guard, guards nothing.
   inertWriteDeny = builtins.filter (e: builtins.isString e && hasPrefix "Write(" e) deny;
 
-  # Every sandbox path must be absolute: unprefixed ("**/.env"), a user-settings
+  # Every sandbox path must be absolute: unprefixed ("**/secrets"), a user-settings
   # path resolves under ~/.claude and guards nothing elsewhere under $HOME.
   sandboxPaths =
     builtins.concatMap (k: pkgs.lib.attrByPath [ "sandbox" "filesystem" k ] [ ] settingsAttrs)
@@ -454,12 +454,22 @@ let
   ];
   missingCargoDenyWrite = builtins.filter (p: !(builtins.elem p denyWrite)) requiredCargoDenyWrite;
 
-  requiredSecretDenyRead = [
-    "/Users/alx/**/.env"
-    "/Users/alx/**/.env.*"
-    "/Users/alx/**/secrets"
-  ];
+  requiredSecretDenyRead = [ "/Users/alx/**/secrets" ];
   missingSecretDenyRead = builtins.filter (p: !(builtins.elem p denyRead)) requiredSecretDenyRead;
+
+  # User decision 2026-10-19: `.env` is open to the sandbox and to the Read
+  # tool alike. A background agent runs the dev server and the migrations
+  # that read it, and worktree-env-sync copies it into new worktrees. A
+  # Read/Edit DENY rule is merged into the sandbox (docs: sandboxing), so
+  # `Read(**/.env)` left in deny would block it there under the cwd; an ask
+  # would stall every autonomous run on a box (A19).
+  # By shape, not by exact string: `**/.env*`, `./**/.env`, `//Users/…/.env`
+  # and an `Edit(…)` rule block it just as well.
+  envDenyRead = builtins.filter (
+    e: builtins.isString e && hasPrefix ".env" (pkgs.lib.last (pkgs.lib.splitString "/" e))
+  ) denyRead;
+  envDenied = builtins.filter (r: builtins.isString r && hasInfix ".env" r) deny;
+  envAsked = builtins.filter (r: builtins.isString r && hasInfix ".env" r) ask;
 
   # Read/Edit rules: one leading slash is relative to the settings source
   # (user settings → ~/.claude), NOT the filesystem root; absolute is `//`.
@@ -523,8 +533,20 @@ let
       ok =
         builtins.any (e: builtins.isString e && hasSuffix "/.aws/credentials" e) denyRead
         && builtins.any (e: builtins.isString e && hasInfix "gnupg/private-keys-v1.d" e) denyRead
-        && builtins.any (e: builtins.isString e && hasSuffix "/**/.env" e) denyRead;
-      msg = "sandbox.filesystem.denyRead lost one of .aws/credentials, gnupg/private-keys-v1.d, **/.env — adding the ~/.ssh entry must not shadow the pre-existing secret paths";
+        && builtins.any (e: builtins.isString e && hasSuffix "/**/secrets" e) denyRead;
+      msg = "sandbox.filesystem.denyRead lost one of .aws/credentials, gnupg/private-keys-v1.d, **/secrets — adding the ~/.ssh entry must not shadow the pre-existing secret paths";
+    }
+    {
+      name = "A2c sandbox: .env is neither denied nor asked, to the sandbox or the Read tool (user decision 2026-10-19)";
+      ok = envDenyRead == [ ] && envDenied == [ ] && envAsked == [ ];
+      msg =
+        "denyRead entries whose last segment starts with .env: "
+        + builtins.toJSON envDenyRead
+        + " / permissions.deny rules naming .env (any tool): "
+        + builtins.toJSON envDenied
+        + " / permissions.ask rules naming .env (any tool): "
+        + builtins.toJSON envAsked
+        + " — user decision 2026-10-19: background agents run the dev server and the migrations (vite, dotenv, drizzle), which read .env under the same Seatbelt profile, and worktree-env-sync copies the files into new worktrees. A denyRead entry blocks them; so does a Read/Edit deny rule, which is merged into the sandbox (docs: sandboxing, \"Read and Edit deny rules\"; `Read(**/.env)` = any .env at or under the cwd, docs: permissions). An ask rule would stall every autonomous run on a box (A19: ask holds sudo only)";
     }
     {
       name = "A3 settings: fallbackModel is a short list of model ids";
@@ -709,14 +731,14 @@ let
       msg = "autoMode.environment / autoMode.allow must be non-empty lists starting with \"$defaults\" (without it the list REPLACES the classifier's built-in rules — force-push, curl|bash, exfiltration blocks gone), environment must name the ruleset protect-master (the classifier's only evidence master is server-protected), and activation.nix must keep `.autoMode = $am` (jq `*` replaces arrays, so an entry written by /auto-mode-setup or /permissions would otherwise mask the nix list on every rebuild)";
     }
     {
-      name = "A24 sandbox: every filesystem path is absolute and .env/secrets denyRead is anchored on $HOME";
+      name = "A24 sandbox: every filesystem path is absolute and the secrets denyRead is anchored on $HOME";
       ok = unanchoredSandboxPaths == [ ] && missingSecretDenyRead == [ ];
       msg =
         "sandbox.filesystem unanchored path(s): "
         + builtins.concatStringsSep ", " (map builtins.toJSON unanchoredSandboxPaths)
         + " / denyRead lost: "
         + builtins.concatStringsSep ", " missingSecretDenyRead
-        + " — an unprefixed path in user settings resolves under ~/.claude (docs: settings-reference #sandbox-path-prefixes), so \"**/.env\" guarded nothing elsewhere: measured, `dd if=~/projects/Preliz/.env of=/dev/null count=0` opened the file from inside the sandbox. Anchor every allowWrite/denyWrite/allowRead/denyRead entry on \${homeDirectory} or another absolute path";
+        + " — an unprefixed path in user settings resolves under ~/.claude (docs: settings-reference #sandbox-path-prefixes), so \"**/.env\" guarded nothing elsewhere: measured, `dd if=~/projects/Preliz/.env of=/dev/null count=0` opened the file from inside the sandbox (the .env entries were dropped on purpose since, see A2c). Anchor every allowWrite/denyWrite/allowRead/denyRead entry on \${homeDirectory} or another absolute path";
     }
     {
       name = "A28 sandbox: allowWrite never opens a class-c path (or its parent), ~/.cargo exec parts stay denyWrite";

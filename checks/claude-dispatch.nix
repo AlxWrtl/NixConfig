@@ -9,20 +9,23 @@
 #
 # Runtime suite: the BUILT wrapper runs against a stub abduco and a stub
 # claude that record who was called and its argv (NUL-separated). r01-r04
-# accept, r05-r23 reject. The rejects also run against the real package (store
-# abduco, /opt/homebrew/bin/claude): a reject never reaches abduco, so a
-# regression there exits non-2 and goes red.
+# accept, r05-r23 reject, r24 calls the wrapper with CLAUDE_CODE_CHILD_SESSION=1
+# and requires abduco to see it unset (an inherited marker turns transcript
+# saving off in the dispatched session, claude 2.1.305). The rejects also run
+# against the real package (store abduco, /opt/homebrew/bin/claude): a reject
+# never reaches abduco, so a regression there exits non-2 and goes red.
 # Real-abduco probe: the wrapper with the store abduco and an argv-recording
 # claude stub, socket in the build dir: abduco must exit 0 and claude get
 # `--worktree p --name p "[claude-dispatch] <brief>"` (getopt stops at the
 # name). A mutant with `--worktree` before the name dies there with
 # `abduco: illegal option -- -` (shown by hand 2026-10-21, not a canary).
-# Canaries: six mutants of the script go through the same suite and must
+# Canaries: seven mutants of the script go through the same suite and must
 # FAIL at their case — C1 drops the leading-dash rule (r15), C2 widens the
 # name regex (r08), C3 adds a permission flag to claude (r01), C4 drops the
 # `[claude-dispatch] ` marker (r01), C5 reverts to `claude --bg` (r01), C6
-# adds an abduco flag (r01). A canary that survives, or dies at another case,
-# fails the check. Anchors, `@abduco@` and `@claude@` must occur exactly once
+# adds an abduco flag (r01), C7 drops the CLAUDE_CODE_CHILD_SESSION unset
+# (r24). A canary that survives, or dies at another case, fails the check.
+# Anchors, `@abduco@` and `@claude@` must occur exactly once
 # in the script, `--bg` never: an eval-time throw otherwise.
 { pkgs }:
 
@@ -82,11 +85,15 @@ let
   # otherwise fail the mutant's build instead of the suite killing it.
   c5Text = mutate "C5" launch ": \"$abduco_bin\"; exec \"$claude_bin\" --bg --worktree";
   c6Text = mutate "C6" "\"$abduco_bin\" -n" "\"$abduco_bin\" -f -n";
+  c7Text = mutate "C7" "unset CLAUDE_CODE_CHILD_SESSION\n" "";
 
   # Each stub records `<who>` then its argv, NUL-separated, so a wrapper that
   # execs claude directly cannot pass for one that goes through abduco.
+  # The abduco stub also records CLAUDE_CODE_CHILD_SESSION as it sees it
+  # (`<unset>` when absent) to $STUB_LOG.env.
   stubAbduco = pkgs.writeShellScript "abduco-stub" ''
     printf '%s\0' abduco "$@" >"''${STUB_LOG:?STUB_LOG unset}"
+    printf '%s' "''${CLAUDE_CODE_CHILD_SESSION-<unset>}" >"$STUB_LOG.env"
   '';
   stubClaude = pkgs.writeShellScript "claude-stub" ''
     printf '%s\0' claude "$@" >"''${STUB_LOG:?STUB_LOG unset}"
@@ -119,6 +126,7 @@ let
   c4 = withStubs c4Text;
   c5 = withStubs c5Text;
   c6 = withStubs c6Text;
+  c7 = withStubs c7Text;
 
   # suite <claude-dispatch binary> <work dir> <all|rejects> — prints
   # `PASS rNN` per case; the first failure prints `FAIL rNN: <reason>` and
@@ -142,7 +150,7 @@ let
     run() {
       case="$1"
       shift
-      rm -f "$STUB_LOG"
+      rm -f "$STUB_LOG" "$STUB_LOG.env"
       "$bin" "$@" >"$work/out" 2>"$work/err" </dev/null
       rc=$?
     }
@@ -164,6 +172,19 @@ let
       [ -s "$work/err" ] || fail "no reason on stderr"
       echo "PASS $case"
     }
+    # child <id> <name> <brief>: the wrapper called with
+    # CLAUDE_CODE_CHILD_SESSION=1 (as from a Claude session's Bash) exits 0 and
+    # abduco sees the variable unset.
+    child() {
+      export CLAUDE_CODE_CHILD_SESSION=1
+      run "$@"
+      unset CLAUDE_CODE_CHILD_SESSION
+      [ "$rc" = 0 ] || fail "exit $rc, expected 0"
+      [ -e "$STUB_LOG.env" ] || fail "abduco not called"
+      seen=$(cat "$STUB_LOG.env")
+      [ "$seen" = "<unset>" ] || fail "abduco inherited CLAUDE_CODE_CHILD_SESSION=$seen (transcript saving off in the dispatched session)"
+      echo "PASS $case"
+    }
 
     if [ "$only" = all ]; then
       accept r01 fix-readme "corrige la faute dans README.md"
@@ -173,6 +194,7 @@ let
       accept r03 fix-a "$long"
       accept r04 fix-a "x; touch $work/pwned \$(id)"
       [ ! -e "$work/pwned" ] || fail "the brief was evaluated by a shell"
+      child r24 fix-a "fix the typo"
     fi
 
     reject r05
@@ -232,7 +254,7 @@ pkgs.runCommand "claude-dispatch-check" { } ''
     echo "claude-dispatch: reject suite FAILED against the real wrapper"
     exit 1
   }
-  for r in r01 r02 r03 r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23; do
+  for r in r01 r02 r03 r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24; do
     grep -qx "PASS $r" stub.log || { echo "claude-dispatch: case $r did not run against the stubs"; exit 1; }
   done
   for r in r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23; do
@@ -291,7 +313,8 @@ pkgs.runCommand "claude-dispatch-check" { } ''
   canary C4 ${c4}/bin/claude-dispatch r01
   canary C5 ${c5}/bin/claude-dispatch r01
   canary C6 ${c6}/bin/claude-dispatch r01
+  canary C7 ${c7}/bin/claude-dispatch r24
 
-  echo "claude-dispatch: 23 runtime cases, 6 canaries — OK"
+  echo "claude-dispatch: 24 runtime cases, 7 canaries — OK"
   touch $out
 ''

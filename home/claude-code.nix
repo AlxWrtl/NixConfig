@@ -34,6 +34,7 @@ let
   apexBoard = import ./claude-code/apex-board.nix { inherit pkgs; };
   claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
   claudeBg = import ./claude-code/claude-bg.nix { inherit pkgs; };
+  agentPane = import ./claude-code/agent-pane.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
     inherit pkgs lib;
     inherit (scraplingShim) scraplingShimPkg;
@@ -52,6 +53,7 @@ let
   inherit (apexBoard) apexBoardPkg;
   inherit (claudeDispatch) claudeDispatchPkg;
   inherit (claudeBg) claudeBgPkg;
+  inherit (agentPane) agentPanePkg;
   inherit (graphifyReindex) graphifyReindexPkg;
   inherit (vaultSnapshot) vaultSnapshotPkg;
   inherit (settings)
@@ -354,10 +356,12 @@ in
     file = claudeHomeFiles;
 
     # `libdocs` + `nix-options` + `trello` + `graphify-reindex` +
-    # `claude-dispatch` + `claude-bg` on PATH — usable by Claude, by APEX and its subagents,
-    # and by the user in a plain terminal. `abduco` too, from the same pkgs as
-    # the claude-dispatch wrapper (same default socket dir), so
-    # `abduco -a <name>` attaches to a dispatched session.
+    # `claude-dispatch` + `claude-bg` + `agent-pane` on PATH — usable by
+    # Claude, by APEX and its subagents, and by the user in a plain terminal.
+    # `abduco` too, from the same pkgs as the claude-dispatch wrapper and
+    # agent-pane (same default socket dir), so `abduco -a <name>` attaches to
+    # a dispatched session, and `agent-pane` run in the top pane shows the
+    # one last picked with `agent-pane pick <name>`.
     # home.packages is a list: this merges with the other home modules.
     packages = [
       libdocsPkg
@@ -370,6 +374,7 @@ in
       claudeDispatchPkg
       pkgs.abduco
       claudeBgPkg
+      agentPanePkg
       graphifyReindexPkg
       vaultSnapshotPkg
     ];

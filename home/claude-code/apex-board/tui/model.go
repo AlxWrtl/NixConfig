@@ -65,6 +65,9 @@ type Model struct {
 	tick          bool
 	follow        bool // keep the selected card in view (keys); off after the wheel
 	quit          bool
+	tab           int // tabRuns | tabAgents
+	ag            agentsState
+	attach        string // the session `o` asked for: main execs `claude attach` on it after quitting
 
 	runsDir, budgetDir string
 	reader             *Reader
@@ -142,6 +145,7 @@ type pollMsg struct {
 	now      float64
 	clock    string
 	err      error
+	agents   *agentsPoll // nil without a jobs dir
 }
 
 type drawerMsg struct {
@@ -162,25 +166,27 @@ func pollTickCmd() tea.Cmd {
 	return tea.Tick(pollEvery, func(time.Time) tea.Msg { return pollTickMsg{} })
 }
 
-// pollCmd reads and derives in the Cmd goroutine; one poll at a time owns the Reader.
+// pollCmd reads and derives in the Cmd goroutine, the runs and the jobs; one poll at a time
+// owns the Readers.
 func (m *Model) pollCmd() tea.Cmd {
 	if m.polling {
 		return nil
 	}
 	m.polling = true
-	r := m.reader
+	r, jr := m.reader, m.ag.reader
 	return func() tea.Msg {
+		agents := pollAgents(jr)
 		runs, problems, err := r.Read()
 		t := time.Now()
 		if err != nil {
-			return pollMsg{err: err}
+			return pollMsg{err: err, agents: agents}
 		}
 		now := float64(t.UnixMilli())
 		cards := make([]*Card, len(runs))
 		for i, in := range runs {
 			cards[i] = deriveRun(in, now)
 		}
-		return pollMsg{runs: runs, cards: cards, groups: groupRuns(cards), problems: problems, now: now, clock: t.Format("15:04:05")}
+		return pollMsg{runs: runs, cards: cards, groups: groupRuns(cards), problems: problems, now: now, clock: t.Format("15:04:05"), agents: agents}
 	}
 }
 
@@ -238,6 +244,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.applyPoll(msg)
 	case drawerMsg:
 		m.applyDrawer(msg)
+	case agentDrawerMsg:
+		m.applyAgentDrawer(msg)
 	case docMsg:
 		if d := m.drawer; d != nil && d.id == msg.id && d.hasPath && d.path == msg.path {
 			doc := msg.doc
@@ -250,6 +258,16 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.click(msg.X, msg.Y)
 		}
 	case tea.MouseWheelMsg:
+		if m.tab == tabAgents {
+			if h := hitAt(m.hits, msg.X, msg.Y); h != nil && (msg.Button == tea.MouseWheelUp || msg.Button == tea.MouseWheelDown) {
+				dir := 1
+				if msg.Button == tea.MouseWheelUp {
+					dir = -1
+				}
+				m.wheelAgents(h, dir)
+			}
+			return m, nil
+		}
 		switch msg.Button {
 		case tea.MouseWheelUp:
 			m.wheel(msg.X, msg.Y, -1)
@@ -263,6 +281,9 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) applyPoll(msg pollMsg) tea.Cmd {
 	m.polling = false
 	next := pollTickCmd()
+	if c := m.applyAgents(msg.agents); c != nil {
+		next = tea.Batch(next, c)
+	}
 	if msg.err != nil {
 		// The runs dir itself is unreadable: keep the last board and say why.
 		m.status, m.dirty = &boardStatus{err: msg.err.Error()}, true
@@ -318,6 +339,9 @@ func (m *Model) key(ev string) tea.Cmd {
 		m.quit = true
 		return tea.Quit
 	}
+	if m.tab == tabAgents {
+		return m.keyAgents(ev)
+	}
 	if m.drawer != nil {
 		return m.keyDrawer(ev)
 	}
@@ -353,6 +377,8 @@ func (m *Model) keyBoard(ev string) tea.Cmd {
 	case "q":
 		m.quit = true
 		return tea.Quit
+	case "a", "tab":
+		m.setTab(tabAgents)
 	case "left", "h":
 		m.pick(max(0, sel.col-1), row)
 	case "right", "l":
@@ -461,7 +487,13 @@ func (m *Model) click(x, y int) tea.Cmd {
 	if h == nil {
 		return nil
 	}
+	if m.tab == tabAgents {
+		return m.clickAgents(h)
+	}
 	if m.drawer == nil {
+		if h.kind == hitTab {
+			m.setTab(h.col)
+		}
 		if h.kind == hitCard {
 			return m.openDrawer(h.col, h.idx, h.id)
 		}

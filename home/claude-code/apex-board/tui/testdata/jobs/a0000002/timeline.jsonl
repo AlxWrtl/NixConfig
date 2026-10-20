@@ -1,0 +1,7 @@
+{"at":"2026-10-20T11:40:00.000Z","state":"working","detail":"Lecture du module auth","text":""}
+{"at":"2026-10-20T11:41:00.000Z","state":"working","detail":"Lecture du module auth","text":"Le module boucle sur le refresh."}
+{"at":"2026-10-20T11:50:00.000Z","state":"working","detail":"Correctif écrit, tests verts","text":""}
+{oops
+{"at":"pas une date","state":"working","detail":"ligne sans date valide","text":""}
+{"at":"2026-10-20T11:51:00.000Z","state":"working","detail":"","text":"sans detail"}
+{"at":"2026-10-20T11:57:00.000Z","state":"blocked","detail":"Je merge la PR #12 ou j'attends ta relecture ?","text":"PR #12 ouverte.\n\nJe merge ou j'attends ta relecture ?"}

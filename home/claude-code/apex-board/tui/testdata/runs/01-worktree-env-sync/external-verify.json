@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "tool": "apex-verify-external",
+  "verdict": "FAIL",
+  "reason": "",
+  "model": "gpt-5.6-terra",
+  "summary": "Linked worktrees with separate git directories are skipped.",
+  "findings": [
+    {
+      "file": "home/claude-code/hooks/worktree-env-sync.sh",
+      "line": 39,
+      "severity": "important",
+      "problem": "The main checkout root is derived only when the common git directory ends in `/.git`.",
+      "expected_fix": "Resolve the primary worktree root using Git worktree metadata.",
+      "ac": "3"
+    }
+  ]
+}

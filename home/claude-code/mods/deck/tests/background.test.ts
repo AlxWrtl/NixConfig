@@ -3,7 +3,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { BG_KEEP_MS, BG_TIMELINE, bgCounts, bgKind, bgSummary, bgWord, inProject, parseJobState, parseTimeline, projectOf, recentBg, sortBg } from '../hooks/background'
+import { BG_KEEP_MS, BG_TIMELINE, bgCounts, bgKind, bgSummary, bgWord, inProject, parseJobState, parseTimeline, projectOf, recentBg, sortBg, waitingText } from '../hooks/background'
 import type { DeckBgAgent } from '../types'
 
 const NOW = 1_000_000_000_000
@@ -71,6 +71,17 @@ const ASKING = {
     ],
   },
 }
+
+test('a tempo of active is working whatever the state; exact case only', () => {
+  expect([bgKind('blocked', 'active'), bgKind('done', 'active'), bgKind('working', 'active', true), bgKind('paused', 'active')]).toEqual([
+    'working',
+    'working',
+    'working',
+    'working',
+  ])
+  expect([bgKind('blocked', 'Active'), bgKind('working', 'ACTIVE', true)]).toEqual(['needs-you', 'working'])
+  expect(parseJobState('a', JSON.stringify({ state: 'blocked', tempo: 'active', cwd: '/x' }))?.kind).toBe('working')
+})
 
 test('a working session blocked on a question (needs, or block.questions) needs you, never stalled', () => {
   expect(parseJobState('d591f567', JSON.stringify(ASKING))?.kind).toBe('needs-you')
@@ -147,6 +158,30 @@ test('a timeline keeps its last steps oldest first: broken lines, empty details 
   expect(parseTimeline('', 5)).toEqual([])
 })
 
+// A user prompt line (no `text`), then an agent reply line (`detail` a summary, `text` the reply).
+const ask = (detail: string) => JSON.stringify({ at: '2026-10-20T09:00:00.000Z', state: 'working', detail })
+const reply = (detail: string, text: string) => JSON.stringify({ at: '2026-10-20T09:01:00.000Z', state: 'blocked', detail, text })
+
+test('the waiting text is the last paragraph of the agent\'s last reply, one line', () => {
+  const turn = [ask('donne moi la prochaine card'), reply('Card found', 'J\'ai lu le board.\n\nLa card #12   est prête.\n  \nJe la prends ?\n\n')].join('\n')
+  expect(waitingText(turn, 'Card found')).toBe('Je la prends ?')
+  expect(waitingText(reply('x', 'Une\nseule   partie'), 'x')).toBe('Une seule partie') // whitespace collapsed
+  // A prompt after the reply: still the reply, never the prompt.
+  const later = [reply('Plan ready', 'Le plan est prêt.\n\nOn y va ?'), ask('et la suite ?')].join('\n')
+  expect(waitingText(later, 'et la suite ?')).toBe('On y va ?')
+  // A later reply wins; a half-written or non-object line is skipped.
+  expect(waitingText([reply('a', 'premier'), reply('b', 'second'), '{"text":"half', JSON.stringify(['x']), '42'].join('\n'), 'b')).toBe('second')
+  expect(waitingText(reply('k', 'Done.\n\nexport API_KEY=sk-abcdefghijkl1234'), 'k')).not.toContain('abcdefghijkl')
+})
+
+test('without a reply the waiting text is the detail, unless it echoes a prompt', () => {
+  expect(waitingText(ask('donne moi la prochaine card'), 'donne moi la prochaine card')).toBe('')
+  expect(waitingText([ask('donne  moi\nla card'), '{half'].join('\n'), 'donne moi la card')).toBe('') // compared one line
+  expect(waitingText(ask('donne moi la prochaine card'), 'approve the plan')).toBe('approve the plan')
+  expect(waitingText('', 'approve the plan')).toBe('approve the plan')
+  expect(waitingText(reply('x', '   \n\n  '), 'approve the plan')).toBe('approve the plan') // a blank reply is none
+})
+
 test('the project is the folder name, a worktree read as its repo', () => {
   expect(projectOf('/Users/a/projects/Preliz')).toBe('Preliz')
   expect(projectOf('/Users/a/projects/Preliz/')).toBe('Preliz')
@@ -198,7 +233,7 @@ const ROOT = '/home/u/.claude/jobs'
 
 type Job = { id: string; mtimeMs: number; text?: string; timeline?: string }
 
-type World = { jobs?: Job[]; listed: number; reads: number[]; timelineReads?: number }
+type World = { jobs?: Job[]; listed: number; reads: number[]; timelineReads?: string[] }
 
 // The session runs at the root of Preliz; a job's cwd defaults to that root.
 const HERE = '/Users/a/projects/Preliz'
@@ -234,7 +269,7 @@ function world(on: On, w: World): void {
     if (e.path.startsWith(`${ROOT}/`)) w.reads[w.reads.length - 1] = (w.reads[w.reads.length - 1] ?? 0) + 1
     const t = w.jobs?.find(x => e.path === `${ROOT}/${x.id}/timeline.jsonl`)
     if (t !== undefined) {
-      w.timelineReads = (w.timelineReads ?? 0) + 1
+      w.timelineReads = [...(w.timelineReads ?? []), t.id]
       if (t.timeline === undefined) throw new Error('ENOENT')
       return { value: t.timeline }
     }
@@ -374,7 +409,7 @@ test('inline, one summary row in panel order', async ($, on) => {
   await ui.unmount()
 })
 
-test('a row pressed unfolds intent, status, tokens and its last steps; pressed again it folds; only its timeline is read', async ($, on) => {
+test('a row pressed unfolds intent, status, tokens and its last steps; pressed again it folds; only its timeline is read, besides the needs-you rows\' own', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const at = (ms: number) => new Date(NOW - ms).toISOString()
   const timeline = [tl(at(90_000), 'Finding guard assertions'), tl(at(80_000), 'Finding guard assertions'), tl(at(70_000), 'Checking e2e references'), '{half'].join('\n')
@@ -387,7 +422,9 @@ test('a row pressed unfolds intent, status, tokens and its last steps; pressed a
   await $.session.start(START)
   await $.command.run(deck)
   await clock.settle()
-  expect(w.timelineReads ?? 0).toBe(0) // nothing unfolded: no timeline read
+  const readsOf = (id: string) => (w.timelineReads ?? []).filter(x => x === id).length
+  expect(readsOf('cccc0001')).toBe(0) // nothing unfolded: no timeline read for a working row
+  expect(readsOf('cccc0002') > 0).toBe(true) // a needs-you row reads its own for its waiting text
   const ui = await $.ui.mount(pane(80))
   expect(await ui.find({ type: 'Text', text: /^click: details$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Shrink the ghost banner/ })).toBeUndefined()
@@ -400,7 +437,7 @@ test('a row pressed unfolds intent, status, tokens and its last steps; pressed a
   expect(await ui.find({ type: 'Text', text: /^\d\d:\d\d Checking e2e references$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /other step/ })).toBeUndefined() // the other row stays folded
   expect(await ui.find({ type: 'Text', text: /^approve the plan$/ })).toBeDefined()
-  expect(w.timelineReads).toBe(1)
+  expect(readsOf('cccc0001')).toBe(1)
   await ui.press({ key: 'bg-cccc0001' })
   await clock.settle()
   expect(await ui.find({ type: 'Text', text: /Shrink the ghost banner/ })).toBeUndefined()
@@ -420,6 +457,28 @@ test('an unfolded row without a timeline file still shows its intent and tokens'
   await clock.settle()
   expect(await ui.find({ type: 'Text', text: /^Do the thing$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^dddd0001$/ })).toBeDefined() // no tokens: the id alone
+  await ui.unmount()
+})
+
+test('a needs-you row shows the agent\'s last reply, never its detail echoing the last prompt', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const jobs: Job[] = [
+    {
+      id: 'gggg0001',
+      mtimeMs: NOW - 2000,
+      text: state({ state: 'blocked', name: 'job replied', detail: 'donne moi la prochaine card' }),
+      timeline: [reply('Card found', 'J\'ai lu le board.\n\nJe prends la card #12 ?'), ask('donne moi la prochaine card')].join('\n'),
+    },
+    { id: 'gggg0002', mtimeMs: NOW - 1000, text: state({ state: 'blocked', name: 'job asked', detail: 'et la suite ?' }), timeline: ask('et la suite ?') },
+  ]
+  world(on, { jobs, listed: 0, reads: [] })
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.find({ type: 'Text', text: /^Je prends la card #12 \?$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /donne moi la prochaine card/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /et la suite/ })).toBeUndefined()
   await ui.unmount()
 })
 

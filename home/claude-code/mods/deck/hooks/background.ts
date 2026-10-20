@@ -17,12 +17,14 @@ export const BG_KEEP_MS = 24 * 60 * 60 * 1000
 export const BG_ORDER: readonly DeckBgKind[] = ['needs-you', 'stalled', 'failed', 'working', 'other', 'stopped', 'done']
 
 /**
- * The engine's state word as the panel groups it; a word it does not know is `other`. A `working`
- * state whose `tempo` is `blocked`, both exact case as the claude-bg wrapper compares them, is
- * `needs-you` when it `asks` (a pending question: a non-empty `needs` or `block.questions`), else
- * `stalled`.
+ * The engine's state word as the panel groups it; a word it does not know is `other`. A `tempo`
+ * of `active` (exact case) is `working` whatever the state: the session runs a turn now. A
+ * `working` state whose `tempo` is `blocked`, both exact case as the claude-bg wrapper compares
+ * them, is `needs-you` when it `asks` (a pending question: a non-empty `needs` or
+ * `block.questions`), else `stalled`.
  */
 export function bgKind(state: string, tempo = '', asks = false): DeckBgKind {
+  if (tempo === 'active') return 'working'
   if (state === 'working' && tempo === 'blocked') return asks ? 'needs-you' : 'stalled'
   switch (state.toLowerCase()) {
     case 'working':
@@ -125,6 +127,39 @@ export function parseTimeline(text: string, max: number): DeckBgEvent[] {
     events.push({ at, state: typeof rawState === 'string' ? oneLine(rawState) : '', detail })
   }
   return max > 0 ? events.slice(-max) : []
+}
+
+/**
+ * What a needs-you session waits on, from its timeline.jsonl: the last paragraph (parts split on a
+ * blank line) of the last line with a non-empty `text` (an agent reply), one line and redacted.
+ * Without a reply, `detail` (already one line and redacted), unless it equals the `detail` of a
+ * line without `text` (a user prompt): a prompt echo gives ''. A line that does not read is skipped.
+ */
+export function waitingText(timeline: string, detail: string): string {
+  let reply = ''
+  const prompts = new Set<string>()
+  for (const line of timeline.split('\n')) {
+    if (line.trim() === '') continue
+    let value: unknown
+    try {
+      value = JSON.parse(line)
+    } catch {
+      // Half-written last line or not JSON: skipped.
+      continue
+    }
+    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
+    const rawText: unknown = Reflect.get(value, 'text')
+    const text = typeof rawText === 'string' ? rawText.trim() : ''
+    if (text !== '') {
+      reply = text
+      continue
+    }
+    const rawDetail: unknown = Reflect.get(value, 'detail')
+    if (typeof rawDetail === 'string') prompts.add(redact(oneLine(rawDetail)))
+  }
+  const last = redact(oneLine(reply.split(/\n[ \t]*\n/).filter(p => p.trim() !== '').pop() ?? ''))
+  if (last !== '') return last
+  return prompts.has(detail) ? '' : detail
 }
 
 /** Without the finished sessions (done, stopped) last updated over BG_KEEP_MS ago. */

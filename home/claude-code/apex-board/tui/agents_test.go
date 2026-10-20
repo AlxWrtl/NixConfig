@@ -5,7 +5,8 @@ package main
 // `needs`, by `block.questions` and by the last reply, stalled, an unknown state, a finished one
 // over 24 h, a half-written state.json) copied to a temp dir, where the edges that cannot live in
 // git are added: a dir without state.json, a state.json link and a dir link out of the jobs dir,
-// an oversized state.json, a timeline link, control chars and secrets in a detail.
+// an oversized state.json, a timeline link, control chars and secrets in a detail. An active
+// tempo is working whatever the state: the blocked sessions that wait on you get tempo idle there.
 
 import (
 	"io"
@@ -13,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -35,6 +37,14 @@ func newJobsFixture(t *testing.T) *jobsFixture {
 		mustDo(t, os.MkdirAll(filepath.Dir(p), 0o755))
 		mustDo(t, os.WriteFile(p, []byte(text), 0o600))
 	}
+	for _, id := range []string{"a0000002", "a000000c", "a000000d"} {
+		data, err := os.ReadFile(filepath.Join(f.jobs, id, "state.json"))
+		mustDo(t, err)
+		if !strings.Contains(string(data), `"tempo":"active"`) {
+			t.Fatalf("%s: no active tempo to idle", id)
+		}
+		put(id+"/state.json", strings.Replace(string(data), `"tempo":"active"`, `"tempo":"idle"`, 1))
+	}
 	// Control chars and secrets, written here: raw control bytes are no valid JSON in a file.
 	put("a000000a/state.json", `{"name":null,"nameSource":"auto","state":"working","tempo":"active","intent":"explore le cache","detail":"lit \u001b[31mrouge\u0007 avec token=abcdef123456 et ghp_abcdefghijklmnop","cwd":"/Users/u/projects/Gamma/","updatedAt":"2026-10-20T11:59:30.000Z"}`)
 	put("a000000a/timeline.jsonl", `{"at":"2026-10-20T11:59:30.000Z","state":"working","detail":"lecture"}`+"\n")
@@ -47,7 +57,7 @@ func newJobsFixture(t *testing.T) *jobsFixture {
 	mustDo(t, os.Symlink(filepath.Join(f.outside, "state.json"), filepath.Join(f.jobs, "b0000002", "state.json")))
 	put("b0000003/state.json", `{"name":"big","state":"working","cwd":"/x","pad":"`+strings.Repeat("x", maxStateBytes)+`"}`)
 	mustDo(t, os.Symlink(f.outside, filepath.Join(f.jobs, "b0000004"))) // a dir link: never listed
-	put("b0000005/state.json", `{"name":"linked-tl","state":"blocked","tempo":"active","cwd":"/x","intent":"x","updatedAt":"2026-10-20T11:00:00.000Z"}`)
+	put("b0000005/state.json", `{"name":"linked-tl","state":"blocked","tempo":"idle","cwd":"/x","intent":"x","updatedAt":"2026-10-20T11:00:00.000Z"}`)
 	mustDo(t, os.Symlink(filepath.Join(f.outside, "timeline.jsonl"), filepath.Join(f.jobs, "b0000005", "timeline.jsonl")))
 	put("pins.json", `[]`)
 	return f
@@ -105,8 +115,12 @@ func TestBgKindIsDecks(t *testing.T) {
 		{"Working", "blocked", false, "working"}, // the blocked rule is exact case, as deck's
 		{"working", "Blocked", true, "working"},
 		{"working", "idle", false, "working"},
-		{"working", "active", true, "working"},
-		{"blocked", "active", false, "needs-you"},
+		{"working", "active", true, "working"}, // an active tempo is working whatever the state
+		{"blocked", "active", false, "working"},
+		{"done", "active", false, "working"},
+		{"paused", "active", false, "working"},
+		{"blocked", "Active", false, "needs-you"}, // exact case, as the blocked rule
+		{"blocked", "idle", false, "needs-you"},
 		{"BLOCKED", "", false, "needs-you"},
 		{"done", "idle", false, "done"},
 		{"completed", "", false, "done"},
@@ -157,8 +171,9 @@ func TestReadJobsColumns(t *testing.T) {
 		}
 	}
 	// What each card says.
-	if a := agentOf(t, b, "a0000002"); !a.Asking || a.Current != "Je merge la PR #12 ou j'attends ta relecture ?" || a.Age != "il y a 3 min" || a.Project != "Beta" {
-		t.Fatalf("blocked/active: %+v", a)
+	// The last reply's last paragraph, not the detail.
+	if a := agentOf(t, b, "a0000002"); !a.Asking || a.Current != "Je merge ou j'attends ta relecture ?" || a.Age != "il y a 3 min" || a.Project != "Beta" {
+		t.Fatalf("blocked/idle: %+v", a)
 	}
 	if a := agentOf(t, b, "a0000008"); a.Current != "Autoriser l'édition de config.ts ?" {
 		t.Fatalf("needs: %q", a.Current)
@@ -167,7 +182,7 @@ func TestReadJobsColumns(t *testing.T) {
 		t.Fatalf("block.questions: %q", a.Current)
 	}
 	if a := agentOf(t, b, "a000000d"); a.Current != "Je pars sur l'option A ?" {
-		// no needs, questions nor detail: the last reply's last paragraph speaks
+		// no needs nor questions: the last reply's last paragraph speaks
 		t.Fatalf("last reply: %q", a.Current)
 	}
 	if a := agentOf(t, b, "a0000003"); a.Mission != "/card X1 — monter vite en 7.3" || a.Project != "Alpha" || a.Branch != "worktree-deps-bump" || a.Asking {
@@ -252,15 +267,79 @@ func TestAttachIDCheck(t *testing.T) {
 	}
 }
 
-func TestDetailBeforeLastReply(t *testing.T) {
+// The waiting text: the last reply before the detail, which after a prompt echoes it; with no
+// reply, the detail unless it is a prompt; a timeline that does not read gives no text.
+func TestLastReplyBeforeDetail(t *testing.T) {
 	f := newJobsFixture(t)
 	p := filepath.Join(f.jobs, "a000000d", "state.json")
 	data, err := os.ReadFile(p)
 	mustDo(t, err)
 	mustDo(t, os.WriteFile(p, []byte(strings.Replace(string(data), `"detail":null`, `"detail":"Analyse terminée"`, 1)), 0o600))
+	// state blocked, tempo "", its detail the prompt that followed the reply.
+	echo := `{"name":"echo","state":"blocked","tempo":"","intent":"x","detail":"donne moi la prochaine card","cwd":"/x","updatedAt":"2026-10-20T11:59:00.000Z"}`
+	mustDo(t, os.MkdirAll(filepath.Join(f.jobs, "c0000001"), 0o755))
+	mustDo(t, os.WriteFile(filepath.Join(f.jobs, "c0000001", "state.json"), []byte(echo), 0o600))
+	tl := `{"at":"2026-10-20T11:58:00.000Z","state":"blocked","detail":"Card trouvée","text":"J'ai lu le board.\n\nJe prends la card #12 ?"}` + "\n" +
+		`{"at":"2026-10-20T11:59:00.000Z","state":"working","detail":"donne moi la prochaine card","text":""}` + "\n"
+	mustDo(t, os.WriteFile(filepath.Join(f.jobs, "c0000001", "timeline.jsonl"), []byte(tl), 0o600))
+	// The same with only the prompt in its timeline: no text rather than the echo.
+	mustDo(t, os.MkdirAll(filepath.Join(f.jobs, "c0000002"), 0o755))
+	mustDo(t, os.WriteFile(filepath.Join(f.jobs, "c0000002", "state.json"), []byte(echo), 0o600))
+	mustDo(t, os.WriteFile(filepath.Join(f.jobs, "c0000002", "timeline.jsonl"), []byte(`{"at":"2026-10-20T11:59:00.000Z","state":"working","detail":"donne moi la prochaine card"}`+"\n"), 0o600))
 	_, b := f.read(t)
-	if a := agentOf(t, b, "a000000d"); a.Current != "Analyse terminée" {
-		t.Fatalf("detail: %q", a.Current)
+	if a := agentOf(t, b, "a000000d"); a.Current != "Je pars sur l'option A ?" {
+		t.Fatalf("reply before detail: %q", a.Current)
+	}
+	if a := agentOf(t, b, "c0000001"); a.Column != "ask" || a.Current != "Je prends la card #12 ?" {
+		t.Fatalf("prompt echo: %+v", a)
+	}
+	if a := agentOf(t, b, "c0000002"); a.Column != "ask" || a.Current != "" {
+		t.Fatalf("prompt-only timeline: %q", a.Current)
+	}
+	// A timeline present but unread: no text, never the detail.
+	j := &jobInput{ID: "c0000003", State: "blocked", Detail: "donne moi la prochaine card", Intent: "x", HasTimeline: true}
+	if a := deriveAgent(j, testNow); a.Current != "" {
+		t.Fatalf("unread timeline: %q", a.Current)
+	}
+	j.HasTimeline = false
+	if a := deriveAgent(j, testNow); a.Current != "donne moi la prochaine card" {
+		t.Fatalf("no timeline: %q", a.Current)
+	}
+	// An active tempo works, whatever the state.
+	if a := deriveAgent(&jobInput{ID: "c0000004", State: "blocked", Tempo: "active", Detail: "lit", UpdatedAt: testNow}, testNow); a.Column != "work" || a.Asking {
+		t.Fatalf("blocked/active: %+v", a)
+	}
+}
+
+// deck's waitingText (background.ts), case by case.
+func TestWaitingTextIsDecks(t *testing.T) {
+	ask := func(d string) string {
+		return `{"at":"2026-10-20T09:00:00.000Z","state":"working","detail":` + strconv.Quote(d) + `}`
+	}
+	reply := func(d, text string) string {
+		return `{"at":"2026-10-20T09:01:00.000Z","state":"blocked","detail":` + strconv.Quote(d) + `,"text":` + strconv.Quote(text) + `}`
+	}
+	lines := func(ls ...string) []byte { return []byte(strings.Join(ls, "\n")) }
+	for _, c := range []struct {
+		name, detail, want string
+		data               []byte
+	}{
+		{"last paragraph", "Card found", "Je la prends ?", lines(ask("donne moi la prochaine card"), reply("Card found", "J'ai lu le board.\n\nLa card #12   est prête.\n  \nJe la prends ?\n\n"))},
+		{"whitespace collapsed", "x", "Une seule partie", lines(reply("x", "Une\nseule   partie"))},
+		{"prompt after the reply", "et la suite ?", "On y va ?", lines(reply("Plan ready", "Le plan est prêt.\n\nOn y va ?"), ask("et la suite ?"))},
+		{"later reply wins, bad lines skipped", "b", "second", lines(reply("a", "premier"), reply("b", "second"), `{"text":"half`, `["x"]`, `42`)},
+		{"prompt echo", "donne moi la prochaine card", "", lines(ask("donne moi la prochaine card"))},
+		{"prompt echo one-lined", "donne moi la card", "", lines(ask("donne  moi\nla card"), `{half`)},
+		{"detail not a prompt", "approve the plan", "approve the plan", lines(ask("donne moi la prochaine card"))},
+		{"no timeline", "approve the plan", "approve the plan", nil},
+		{"blank reply is none", "approve the plan", "approve the plan", lines(reply("x", "   \n\n  "))},
+	} {
+		if got := waitingText(c.data, c.detail); got != c.want {
+			t.Errorf("%s: waitingText = %q, want %q", c.name, got, c.want)
+		}
+	}
+	if got := waitingText(lines(reply("k", "Done.\n\nexport API_KEY=sk-abcdefghijkl1234")), "k"); strings.Contains(got, "abcdefghijkl") {
+		t.Fatalf("secret kept: %q", got)
 	}
 }
 
@@ -411,7 +490,7 @@ func TestRenderAgents(t *testing.T) {
 	}
 	for _, want := range []string{
 		"[Agents ● 5]", " Runs ", "jobs/ · 13 · 12:00:00",
-		"fix-login", "Beta", "il y a 3 min", "corrige le login qui boucle", "Je merge la PR #12",
+		"fix-login", "Beta", "il y a 3 min", "corrige le login qui boucle", "Je merge ou j'attends ta relecture ?",
 		"sans nom · a000000a", "lit ?[31mrouge?", "token=•••", "/card X1 — monter vite en 7.3", "Alpha · worktree-deps",
 		"échec", "arrêtée", "rien depuis 40 min", "paused", "bloquée sans question",
 		"2 sessions vides masquées · 1 terminée depuis plus de 24 h masquée",
@@ -635,12 +714,12 @@ func TestAgentsSnapshotFlag(t *testing.T) {
 
 func BenchmarkAgentsView(b *testing.B) {
 	jobs := make([]*jobInput, 80)
-	states := [][2]string{{"blocked", "active"}, {"working", "idle"}, {"working", "active"}, {"done", "idle"}, {"failed", "idle"}}
+	states := [][2]string{{"blocked", "idle"}, {"working", "idle"}, {"working", "active"}, {"done", "idle"}, {"failed", "idle"}}
 	for i := range jobs {
 		s := states[i%len(states)]
 		jobs[i] = &jobInput{
 			ID: "j" + itoaT(1000000+i), Name: "session-" + itoaT(i), Cwd: "/Users/u/projects/P" + itoaT(i%7), State: s[0], Tempo: s[1],
-			Intent: "mission " + strings.Repeat("longue ", 8), Detail: "étape en cours " + itoaT(i), UpdatedAt: testNow - float64(i)*120_000, HasTimeline: true,
+			Intent: "mission " + strings.Repeat("longue ", 8), Detail: "étape en cours " + itoaT(i), LastText: "étape en cours " + itoaT(i), UpdatedAt: testNow - float64(i)*120_000, HasTimeline: true,
 		}
 	}
 	m := newModel("", "", "bench", 200, 60)

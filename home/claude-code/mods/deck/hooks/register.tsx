@@ -134,7 +134,7 @@ import {
 } from './shells'
 import type { Notification } from './shells'
 import { alertsOf, budgetOf, pickVerdict } from './signals'
-import { BG_TIMELINE, bgSummary, bgWord, inProject, parseJobState, parseTimeline, recentBg, sortBg } from './background'
+import { BG_TIMELINE, bgSummary, bgWord, inProject, parseJobState, parseTimeline, recentBg, sortBg, waitingText } from './background'
 import { resumeBg } from './resume'
 
 const PANE = 'deck'
@@ -626,7 +626,20 @@ async function refreshBackground($: EngineInterface): Promise<void> {
     const parsed = parseJobState(dir.id, text)
     if (parsed !== null) found.push(parsed.updatedAt > 0 ? parsed : { ...parsed, updatedAt: dir.mtimeMs })
   }
-  const next = sortBg(recentBg(inProject(found, await $.session.cwd()), await $.clock.now()))
+  const next: DeckBgAgent[] = []
+  for (const j of sortBg(recentBg(inProject(found, await $.session.cwd()), await $.clock.now()))) {
+    if (j.kind !== 'needs-you') {
+      next.push(j)
+      continue
+    }
+    // What it waits on: the agent's last reply, never its detail echoing the last prompt.
+    try {
+      next.push({ ...j, detail: waitingText(await $.fs.read(`${root}/${j.id}/timeline.jsonl`), j.detail) })
+    } catch {
+      // No timeline (yet), or over 4 MiB: its detail as is.
+      next.push(j)
+    }
+  }
   if (JSON.stringify(await getBackground($)) !== JSON.stringify(next)) await update($, background, () => next)
   // The unfolded row's timeline only, never one per session; its id is one the listing gave.
   const expanded = (await getView($)).expanded

@@ -53,10 +53,14 @@ const (
 
 // ---- deck's mapping ------------------------------------------------------------
 
-// bgKind is deck's bgKind word for word: a `working` state whose `tempo` is `blocked` (exact
-// case) is `needs-you` when it asks (a non-empty `needs` or `block.questions`), else `stalled`;
-// the other words are compared lowercased; a word it does not know is `other`.
+// bgKind is deck's bgKind word for word: a `tempo` of `active` (exact case) is `working`
+// whatever the state (the session runs a turn now); a `working` state whose `tempo` is `blocked`
+// (exact case) is `needs-you` when it asks (a non-empty `needs` or `block.questions`), else
+// `stalled`; the other words are compared lowercased; a word it does not know is `other`.
 func bgKind(state, tempo string, asks bool) string {
+	if tempo == "active" {
+		return "working"
+	}
 	if state == "working" && tempo == "blocked" {
 		if asks {
 			return "needs-you"
@@ -134,7 +138,7 @@ func projectOf(cwd string) string {
 type jobInput struct {
 	ID, Name, Cwd, Branch, State, Tempo string
 	Needs, Question, Intent, Detail     string
-	LastText                            string // the last reply's last paragraph, read only when it waits without saying on what
+	LastText                            string // the waiting text: the last reply's last paragraph, else detail unless it echoes a prompt
 	UpdatedAt                           float64
 	HasTimeline                         bool
 	asks                                bool
@@ -256,20 +260,39 @@ func parseTimeline(data []byte, limit int) []timelineEvent {
 	return out
 }
 
-// lastReply: the last paragraph of the timeline's last non-empty reply text, one line.
-func lastReply(data []byte) string {
-	lines := bytes.Split(data, []byte{'\n'})
-	for i := len(lines) - 1; i >= 0; i-- {
+// paragraphBreak: a blank line, as deck's waitingText splits a reply.
+var paragraphBreak = regexp.MustCompile(`\n[ \t]*\n`)
+
+// waitingText is deck's waitingText: what a needs-you session waits on, the last paragraph of the
+// timeline's last non-empty reply `text`, one line and redacted. Without a reply, `detail`
+// (already one line and redacted), unless it equals the `detail` of a line without `text` (a
+// user prompt): a prompt echo gives "". A line that does not read is skipped.
+func waitingText(data []byte, detail string) string {
+	reply := ""
+	prompts := map[string]bool{}
+	for line := range bytes.SplitSeq(data, []byte{'\n'}) {
 		var v map[string]any
-		if json.Unmarshal(lines[i], &v) != nil || v == nil {
+		if json.Unmarshal(line, &v) != nil || v == nil {
 			continue
 		}
 		if t := strings.TrimSpace(strOf(v, "text")); t != "" {
-			parts := strings.Split(t, "\n\n")
-			return oneLine(redact(parts[len(parts)-1]))
+			reply = t
+			continue
+		}
+		if d, ok := v["detail"].(string); ok {
+			prompts[oneLine(redact(d))] = true
 		}
 	}
-	return ""
+	parts := slices.DeleteFunc(paragraphBreak.Split(reply, -1), func(p string) bool { return strings.TrimSpace(p) == "" })
+	if len(parts) > 0 {
+		if last := oneLine(redact(parts[len(parts)-1])); last != "" {
+			return last
+		}
+	}
+	if prompts[detail] {
+		return ""
+	}
+	return detail
 }
 
 // ---- disk ----------------------------------------------------------------------
@@ -476,9 +499,9 @@ func (r *JobsReader) Read() (jobsRead, error) {
 			continue // half-written or not a session: skipped this poll, as deck does
 		}
 		j.HasTimeline = hasTL
-		if hasTL && j.kind() == "needs-you" && j.Needs == "" && j.Question == "" && j.Detail == "" {
+		if hasTL && j.kind() == "needs-you" && j.Needs == "" && j.Question == "" {
 			if tail, err := readTail(tlPath, maxTimelineBytes); err == nil {
-				j.LastText = lastReply(tail)
+				j.LastText = waitingText(tail, j.Detail)
 			}
 		}
 		c := cachedJob{sig: sig, job: j, empty: j.neverStarted()}
@@ -600,7 +623,14 @@ func deriveAgent(j *jobInput, now float64) *Agent {
 	a.Current = j.Detail
 	if col == "ask" {
 		a.Asking = true
-		for _, s := range []string{j.Needs, j.Question, j.Detail, j.LastText} {
+		// With a timeline, its waiting text rather than a detail that may echo the last prompt (a
+		// timeline that does not read: no text).
+		said := j.Detail
+		if j.HasTimeline {
+			said = j.LastText
+		}
+		a.Current = ""
+		for _, s := range []string{j.Needs, j.Question, said} {
 			if s != "" {
 				a.Current = s
 				break

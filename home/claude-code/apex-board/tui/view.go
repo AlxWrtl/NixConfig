@@ -96,6 +96,9 @@ type rowsMemo struct {
 	dotOff cell
 }
 
+// pulses: a live card still at work carries the pulsing dot; a Terminé card, live or not, none.
+func (c *Card) pulses() bool { return c.Live && c.Column != "done" }
+
 // chipLines: the chips row, flowed onto as many lines as the card needs.
 func chipLines(chips []Chip, iw int, bg rgb) [][]cell {
 	lines := [][]cell{nil}
@@ -154,7 +157,7 @@ func cardRows(card *Card, cw int, selected bool) *rowsMemo {
 	var body [][]cell
 
 	var top []cell
-	if card.Live {
+	if card.pulses() {
 		top = toCells("● ", st(P.active), top)
 	}
 	dotOff := cell{ch: "●", w: 1, st: st(P.faint)}
@@ -439,7 +442,7 @@ func (m *Model) render() {
 					continue
 				}
 				g.putMax(x, cardsTop+at, row, x+cw)
-				if r == 1 && !m.tick && grp.Cards[i].Live {
+				if r == 1 && !m.tick && grp.Cards[i].pulses() {
 					g.putMax(x+2, cardsTop+at, []cell{rows.dotOff}, x+cw)
 				}
 				if firstRow < 0 {

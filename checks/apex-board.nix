@@ -4,6 +4,9 @@
 #
 #   T1  `node test.js board.js` (fixtures in the three real 00-context.md
 #       shapes + synthetic À-toi cases)         -> exit 0
+#   T2  `node tui-test.js` (tui.js on temp-dir fixture runs: disk reads, links
+#       out of the runs dir never read, board render width/colors/cap, keys
+#       and mouse, markdown, terminal restore)  -> exit 0
 #   D1  --dry-run --port 9999 <repo>, HOME holds .claude/apex-correction-budget
 #       -> url on 127.0.0.1:9999, runs -> <repo>/.claude/output/apex,
 #          budget -> $HOME/.claude/apex-correction-budget, index.html and
@@ -20,6 +23,12 @@
 #   D3  no repo argument, cwd = a subdir of a git repo -> runs of its toplevel
 #   D4  repo without .claude/output/apex       -> exit 1, nothing served
 #   D5  --port 0                               -> exit 2 (usage)
+#   D6  --tui --dry-run, HOME with and without the budget dir -> exactly
+#       `tui: node <store page dir>/tui.js`, `runs: <repo>/.claude/output/apex`,
+#       `budget: <dir>` / `budget: none`; tui.js in the store byte-equal to its
+#       source, tui-test.js not shipped, no temp root made; --port 0 ignored
+#   D7  --tui with PATH=/var/empty and no terminal -> node found through the
+#       package's runtimeInputs, tui.js refuses: exit 1, "needs a terminal"
 #   S1  serve.py's gates imported under python3: host_allowed takes
 #       127.0.0.1:<port> and localhost:<port> only (another host, another
 #       port, no port, no Host -> refused); path_allowed takes the root,
@@ -46,6 +55,10 @@
 # Canary M2: a copy of serve.py whose host_allowed returns True (DNS
 # rebinding open again) must make S1 exit non-zero on the foreign-Host case;
 # guarded the same way against a vanished anchor.
+#
+# Canary M3: a copy of tui.js (board.js next to it) whose LEAVE no longer
+# leaves the alternate screen (`?1049l` -> `?1049h`) must make tui-test.js exit
+# non-zero on the terminal-restore case; the anchor must appear exactly once.
 #
 # Offline: node, python3, git and coreutils only; HOME and system git config
 # isolated in $TMPDIR. The only socket is S2's, bound to 127.0.0.1.
@@ -199,6 +212,26 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   esac
   echo "apex-board: canary M1 killed — failed read as done turns the failed-step run away from À toi"
 
+  # T2: the terminal board on the real tui.js and board.js.
+  node ${pageDir}/tui-test.js || fail "T2 FAILED — tui-test.js is red on tui.js"
+  echo "apex-board: T2 OK — tui-test.js green on tui.js"
+
+  # Canary M3: LEAVE stays on the alternate screen.
+  mkdir "$TMPDIR/m3"
+  cp ${pageDir}/board.js "$TMPDIR/m3/board.js"
+  sed 's/?1049l/?1049h/' ${pageDir}/tui.js > "$TMPDIR/m3/tui.js"
+  if [ "$(grep -c '?1049l' ${pageDir}/tui.js)" != 1 ] || cmp -s ${pageDir}/tui.js "$TMPDIR/m3/tui.js"; then
+    fail "canary anchor '?1049l' not found once in tui.js — the mutant equals the source"
+  fi
+  if m3="$(node ${pageDir}/tui-test.js "$TMPDIR/m3/tui.js" 2>&1)"; then
+    fail "canary M3 SURVIVED — tui.js whose LEAVE stays on the alternate screen still passes tui-test.js"
+  fi
+  case "$m3" in
+  *"FAIL terminal restore"*"LEAVE does not leave the alt screen"*) ;;
+  *) fail "canary M3 died for another reason than the terminal restore: $m3" ;;
+  esac
+  echo "apex-board: canary M3 killed — a LEAVE that keeps the alternate screen is caught"
+
   # Fixtures: a repo with one run, a repo without runs, two HOMEs.
   R="$TMPDIR/myrepo"
   mkdir -p "$R/.claude/output/apex/run-1" "$R/sub" "$TMPDIR/norun" \
@@ -284,6 +317,27 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   [ "$rc" = 2 ] || fail "D5 expected exit 2 on --port 0, got $rc: $res"
   echo "apex-board: D5 OK — bad port, exit 2"
 
+  # D6: --tui --dry-run, no server and no temp root.
+  [ -z "$(find "$TMPDIR" -maxdepth 1 -name 'apex-board.*')" ] || fail "D6 a temp root is already there before the case"
+  res="$(HOME="$TMPDIR/home-with" "$bin" --tui --dry-run --port 0 "$R")" || fail "D6 exited non-zero: $res"
+  has "$res" "tui: node $d/tui.js" || fail "D6 tui line wrong: $res"
+  has "$res" "runs: $Rp/.claude/output/apex" || fail "D6 runs line wrong: $res"
+  has "$res" "budget: $TMPDIR/home-with/.claude/apex-correction-budget" || fail "D6 budget line wrong: $res"
+  [ "$(printf '%s\n' "$res" | wc -l | tr -d ' ')" = 3 ] || fail "D6 expected 3 lines: $res"
+  res="$(HOME="$TMPDIR/home-without" "$bin" --tui --dry-run "$R")" || fail "D6 (no budget) exited non-zero: $res"
+  has "$res" "budget: none" || fail "D6 budget not none: $res"
+  cmp -s "$d/tui.js" "${pageDir}/tui.js" || fail "D6 tui.js missing from $d or differs from its source"
+  [ ! -e "$d/tui-test.js" ] || fail "D6 tui-test.js shipped in the store page dir $d"
+  [ -z "$(find "$TMPDIR" -maxdepth 1 -name 'apex-board.*')" ] || fail "D6 --tui made a temp root"
+  echo "apex-board: D6 OK — --tui dry-run: node on the store tui.js, runs, budget, no root"
+
+  # D7: --tui for real without a terminal, node only from runtimeInputs.
+  rc=0
+  res="$(PATH=/var/empty HOME="$TMPDIR/home-with" "$bin" --tui "$R" < /dev/null 2>&1)" || rc=$?
+  [ "$rc" = 1 ] || fail "D7 expected exit 1 from tui.js without a terminal, got $rc: $res"
+  case "$res" in *"needs a terminal"*) ;; *) fail "D7 message missing: $res" ;; esac
+  echo "apex-board: D7 OK — node from runtimeInputs, no terminal refused"
+
   # S1: serve.py's gates, imported from the store copy the launcher runs.
   python3 -I ${probe} unit "$d/serve.py" "$TMPDIR/s1" || fail "S1 FAILED — serve.py gates"
   echo "apex-board: S1 OK — Host and path gates"
@@ -343,6 +397,6 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   fi
   echo "apex-board: B1 OK — serve.py from the store, bound to 127.0.0.1 only"
 
-  echo "apex-board: 1 node suite, 6 dry-run cases, 2 serve cases, 1 static case, 2 canaries — OK"
+  echo "apex-board: 2 node suites, 8 launcher cases, 2 serve cases, 1 static case, 3 canaries — OK"
   touch $out
 ''

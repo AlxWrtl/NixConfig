@@ -24,15 +24,17 @@
 #   meta.json: <compact json>
 # checks/apex-board.nix asserts this format.
 #
-# --tui: no server, no temp root, no port: exec node on tui.js (next to the page
-# in the store) with the runs dir, the budget dir ("" when absent) and the repo
-# name; tui.js reads the disk itself, read-only, and never leaves the runs dir.
+# --tui: no server, no temp root, no port: exec the Go board (apex-board-tui,
+# store path baked in by apex-board.nix) with the runs dir, the budget dir (""
+# when absent) and the repo name; it reads the disk itself, read-only, and
+# never leaves the runs dir.
 # --port and --no-open are ignored. With --dry-run it prints and stops:
-#   tui: node <board_dir>/tui.js
+#   tui: <tui_bin>
 #   runs: <repo>/.claude/output/apex
 #   budget: <dir> | none
 
 board_dir="@boardDir@"
+tui_bin="@tuiBin@"
 port=8765
 open_page=1
 dry_run=0
@@ -115,12 +117,12 @@ if [ "$tui" -eq 1 ]; then
     budget_dir="$budget_src"
   fi
   if [ "$dry_run" -eq 1 ]; then
-    printf 'tui: node %s\n' "$board_dir/tui.js"
+    printf 'tui: %s\n' "$tui_bin"
     printf 'runs: %s\n' "$runs"
     printf 'budget: %s\n' "${budget_dir:-none}"
     exit 0
   fi
-  exec node "$board_dir/tui.js" "$runs" "$budget_dir" "$(basename "$repo")"
+  exec "$tui_bin" "$runs" "$budget_dir" "$(basename "$repo")"
 fi
 
 root="$(mktemp -d "${TMPDIR:-/tmp}/apex-board.XXXXXX")"

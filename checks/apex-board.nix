@@ -1,12 +1,15 @@
 # Runtime check for apex-board (home/claude-code/apex-board.nix): the page's
-# stage rules under node, then the BUILT launcher in --dry-run against
-# throwaway repos and HOMEs.
+# stage rules under node, the Go terminal board's port of them, then the BUILT
+# launcher in --dry-run against throwaway repos and HOMEs.
 #
 #   T1  `node test.js board.js` (fixtures in the three real 00-context.md
 #       shapes + synthetic À-toi cases)         -> exit 0
-#   T2  `node tui-test.js` (tui.js on temp-dir fixture runs: disk reads, links
-#       out of the runs dir never read, board render width/colors/cap, keys
-#       and mouse, markdown, terminal restore)  -> exit 0
+#   P1  parity: the Go module's testdata (fixture runs in the three real
+#       00-context.md shapes, À-toi cases, links out of a run) copied to
+#       $TMPDIR, read as-is, then aged per mtimes.tsv (default 1 h before
+#       NOW, links untouched); each time `node parity.js` (board.js) and the
+#       BUILT `apex-board-tui --derive-json` on the same RUNS BUDGET NOW
+#       -> byte-equal JSON. Its `go test` already ran in the binary's build.
 #   D1  --dry-run --port 9999 <repo>, HOME holds .claude/apex-correction-budget
 #       -> url on 127.0.0.1:9999, runs -> <repo>/.claude/output/apex,
 #          budget -> $HOME/.claude/apex-correction-budget, index.html and
@@ -24,11 +27,12 @@
 #   D4  repo without .claude/output/apex       -> exit 1, nothing served
 #   D5  --port 0                               -> exit 2 (usage)
 #   D6  --tui --dry-run, HOME with and without the budget dir -> exactly
-#       `tui: node <store page dir>/tui.js`, `runs: <repo>/.claude/output/apex`,
-#       `budget: <dir>` / `budget: none`; tui.js in the store byte-equal to its
-#       source, tui-test.js not shipped, no temp root made; --port 0 ignored
-#   D7  --tui with PATH=/var/empty and no terminal -> node found through the
-#       package's runtimeInputs, tui.js refuses: exit 1, "needs a terminal"
+#       `tui: <store>/bin/apex-board-tui` (the built Go binary),
+#       `runs: <repo>/.claude/output/apex`, `budget: <dir>` / `budget: none`;
+#       no tui.js nor tui-test.js in the store page dir, no temp root made;
+#       --port 0 ignored
+#   D7  --tui with PATH=/var/empty, stdin </dev/null and stdout a pipe -> the
+#       binary is exec'd by store path and refuses: exit 1, "needs a terminal"
 #   S1  serve.py's gates imported under python3: host_allowed takes
 #       127.0.0.1:<port> and localhost:<port> only (another host, another
 #       port, no port, no Host -> refused); path_allowed takes the root,
@@ -56,17 +60,38 @@
 # rebinding open again) must make S1 exit non-zero on the foreign-Host case;
 # guarded the same way against a vanished anchor.
 #
-# Canary M3: a copy of tui.js (board.js next to it) whose LEAVE no longer
-# leaves the alternate screen (`?1049l` -> `?1049h`) must make tui-test.js exit
-# non-zero on the terminal-restore case; the anchor must appear exactly once.
+# Canary M3: the Go module rebuilt (same vendorHash, no checkPhase) from a
+# copy of its source whose rules.go reads `failed` as `done`
+# (`return "failed"` -> `return "done"`) must make P1 differ from parity.js
+# on the aged fixtures; the anchor must appear exactly once and the mutant
+# source must differ. If it still matches, P1 does not see the rules and the
+# check fails.
 #
-# Offline: node, python3, git and coreutils only; HOME and system git config
+# Offline: node, python3, git, coreutils and the Go binaries built by nix
+# (their go-modules derivation is the only fetch); HOME and system git config
 # isolated in $TMPDIR. The only socket is S2's, bound to 127.0.0.1.
 { pkgs }:
 
 let
-  board = (import ../home/claude-code/apex-board.nix { inherit pkgs; }).apexBoardPkg;
+  apexBoard = import ../home/claude-code/apex-board.nix { inherit pkgs; };
+  board = apexBoard.apexBoardPkg;
+  tuiBin = "${apexBoard.tui}/bin/apex-board-tui";
   pageDir = ../home/claude-code/apex-board;
+  tuiSrc = ../home/claude-code/apex-board/tui;
+  # M3: rules.go with failed read as done. The anchor guard runs in the check
+  # script (a vanished anchor builds a mutant equal to the source). Same name
+  # and vendorHash: the go-modules output is the one already built, no fetch.
+  m3Src = pkgs.runCommand "apex-board-tui-m3-src" { } ''
+    cp -R ${tuiSrc} $out
+    chmod -R u+w $out
+    sed -i 's/return "failed"/return "done"/' $out/rules.go
+  '';
+  m3Bin = "${
+    apexBoard.tui.overrideAttrs {
+      src = m3Src;
+      doCheck = false;
+    }
+  }/bin/apex-board-tui";
   # S1/S2 harness: `unit SERVE WORKDIR`, `port`, `http PORT`, `down PORT`.
   probe = pkgs.writeText "apex-board-serve-probe.py" ''
     import http.client
@@ -180,6 +205,7 @@ let
     pkgs.git
     pkgs.coreutils
     pkgs.diffutils
+    pkgs.findutils
     pkgs.gnugrep
     pkgs.gnused
     pkgs.python3
@@ -212,25 +238,49 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   esac
   echo "apex-board: canary M1 killed — failed read as done turns the failed-step run away from À toi"
 
-  # T2: the terminal board on the real tui.js and board.js.
-  node ${pageDir}/tui-test.js || fail "T2 FAILED — tui-test.js is red on tui.js"
-  echo "apex-board: T2 OK — tui-test.js green on tui.js"
+  # P1: board.js (parity.js) and the built Go binary derive the same board.
+  # Store files sit at mtime 1: the copy is read once as copied, then aged.
+  now_ms=1792500000000
+  P="$TMPDIR/p1"
+  cp -R ${tuiSrc}/testdata "$P"
+  chmod -R u+w "$P"
+  # derive OUT BIN: both sides on $P into $TMPDIR/OUT.{js,go}.json.
+  derive() {
+    node ${pageDir}/parity.js "$P/runs" "$P/budget" "$now_ms" > "$TMPDIR/$1.js.json" ||
+      fail "P1 parity.js failed on $1"
+    "$2" --derive-json "$P/runs" "$P/budget" "$now_ms" > "$TMPDIR/$1.go.json" ||
+      fail "P1 $2 --derive-json failed on $1"
+  }
+  derive plain ${tuiBin}
+  cmp "$TMPDIR/plain.js.json" "$TMPDIR/plain.go.json" ||
+    fail "P1 FAILED — board.js and the Go board differ on the unaged fixtures"
+  declare -A age
+  while IFS=$'\t' read -r id a; do
+    if [ -n "$id" ]; then age[$id]="$a"; fi
+  done < "$P/mtimes.tsv"
+  [ "''${#age[@]}" -gt 0 ] || fail "P1 mtimes.tsv gave no ages"
+  for d in "$P"/runs/*; do
+    [ -d "$d" ] && [ ! -L "$d" ] || continue
+    id="$(basename "$d")"
+    t=$((now_ms / 1000 - ''${age[$id]:-3600}))
+    find "$d" -type f -exec touch -d "@$t" {} +
+  done
+  derive aged ${tuiBin}
+  cmp "$TMPDIR/aged.js.json" "$TMPDIR/aged.go.json" ||
+    fail "P1 FAILED — board.js and the Go board differ on the aged fixtures"
+  cmp -s "$TMPDIR/plain.js.json" "$TMPDIR/aged.js.json" &&
+    fail "P1 aging changed nothing — the stale/live rules are not exercised"
+  echo "apex-board: P1 OK — parity.js and apex-board-tui --derive-json byte-equal, unaged and aged"
 
-  # Canary M3: LEAVE stays on the alternate screen.
-  mkdir "$TMPDIR/m3"
-  cp ${pageDir}/board.js "$TMPDIR/m3/board.js"
-  sed 's/?1049l/?1049h/' ${pageDir}/tui.js > "$TMPDIR/m3/tui.js"
-  if [ "$(grep -c '?1049l' ${pageDir}/tui.js)" != 1 ] || cmp -s ${pageDir}/tui.js "$TMPDIR/m3/tui.js"; then
-    fail "canary anchor '?1049l' not found once in tui.js — the mutant equals the source"
+  # Canary M3: the Go rules read failed as done.
+  if [ "$(grep -c 'return "failed"' ${tuiSrc}/rules.go)" != 1 ] || cmp -s ${tuiSrc}/rules.go ${m3Src}/rules.go; then
+    fail "canary anchor 'return \"failed\"' not found once in rules.go — the mutant equals the source"
   fi
-  if m3="$(node ${pageDir}/tui-test.js "$TMPDIR/m3/tui.js" 2>&1)"; then
-    fail "canary M3 SURVIVED — tui.js whose LEAVE stays on the alternate screen still passes tui-test.js"
+  derive m3 ${m3Bin}
+  if cmp -s "$TMPDIR/m3.js.json" "$TMPDIR/m3.go.json"; then
+    fail "canary M3 SURVIVED — a Go board reading failed as done still matches board.js in P1"
   fi
-  case "$m3" in
-  *"FAIL terminal restore"*"LEAVE does not leave the alt screen"*) ;;
-  *) fail "canary M3 died for another reason than the terminal restore: $m3" ;;
-  esac
-  echo "apex-board: canary M3 killed — a LEAVE that keeps the alternate screen is caught"
+  echo "apex-board: canary M3 killed — Go rules reading failed as done break the parity"
 
   # Fixtures: a repo with one run, a repo without runs, two HOMEs.
   R="$TMPDIR/myrepo"
@@ -320,23 +370,29 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   # D6: --tui --dry-run, no server and no temp root.
   [ -z "$(find "$TMPDIR" -maxdepth 1 -name 'apex-board.*')" ] || fail "D6 a temp root is already there before the case"
   res="$(HOME="$TMPDIR/home-with" "$bin" --tui --dry-run --port 0 "$R")" || fail "D6 exited non-zero: $res"
-  has "$res" "tui: node $d/tui.js" || fail "D6 tui line wrong: $res"
+  has "$res" "tui: ${tuiBin}" || fail "D6 tui line is not the built binary ${tuiBin}: $res"
+  case "${tuiBin}" in
+  /nix/store/*-apex-board-tui-*/bin/apex-board-tui) ;;
+  *) fail "D6 binary not in the store: ${tuiBin}" ;;
+  esac
+  [ -x "${tuiBin}" ] || fail "D6 ${tuiBin} is not an executable"
   has "$res" "runs: $Rp/.claude/output/apex" || fail "D6 runs line wrong: $res"
   has "$res" "budget: $TMPDIR/home-with/.claude/apex-correction-budget" || fail "D6 budget line wrong: $res"
   [ "$(printf '%s\n' "$res" | wc -l | tr -d ' ')" = 3 ] || fail "D6 expected 3 lines: $res"
   res="$(HOME="$TMPDIR/home-without" "$bin" --tui --dry-run "$R")" || fail "D6 (no budget) exited non-zero: $res"
   has "$res" "budget: none" || fail "D6 budget not none: $res"
-  cmp -s "$d/tui.js" "${pageDir}/tui.js" || fail "D6 tui.js missing from $d or differs from its source"
-  [ ! -e "$d/tui-test.js" ] || fail "D6 tui-test.js shipped in the store page dir $d"
+  for js in tui.js tui-test.js; do
+    [ ! -e "$d/$js" ] || fail "D6 $js still shipped in the store page dir $d"
+  done
   [ -z "$(find "$TMPDIR" -maxdepth 1 -name 'apex-board.*')" ] || fail "D6 --tui made a temp root"
-  echo "apex-board: D6 OK — --tui dry-run: node on the store tui.js, runs, budget, no root"
+  echo "apex-board: D6 OK — --tui dry-run: the store Go binary, runs, budget, no node file, no root"
 
-  # D7: --tui for real without a terminal, node only from runtimeInputs.
+  # D7: --tui for real without a terminal, the binary exec'd by store path.
   rc=0
   res="$(PATH=/var/empty HOME="$TMPDIR/home-with" "$bin" --tui "$R" < /dev/null 2>&1)" || rc=$?
-  [ "$rc" = 1 ] || fail "D7 expected exit 1 from tui.js without a terminal, got $rc: $res"
+  [ "$rc" = 1 ] || fail "D7 expected exit 1 from apex-board-tui without a terminal, got $rc: $res"
   case "$res" in *"needs a terminal"*) ;; *) fail "D7 message missing: $res" ;; esac
-  echo "apex-board: D7 OK — node from runtimeInputs, no terminal refused"
+  echo "apex-board: D7 OK — Go binary found with PATH=/var/empty, no terminal refused"
 
   # S1: serve.py's gates, imported from the store copy the launcher runs.
   python3 -I ${probe} unit "$d/serve.py" "$TMPDIR/s1" || fail "S1 FAILED — serve.py gates"
@@ -397,6 +453,6 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   fi
   echo "apex-board: B1 OK — serve.py from the store, bound to 127.0.0.1 only"
 
-  echo "apex-board: 2 node suites, 8 launcher cases, 2 serve cases, 1 static case, 3 canaries — OK"
+  echo "apex-board: 1 node suite, 1 parity case, 8 launcher cases, 2 serve cases, 1 static case, 3 canaries — OK"
   touch $out
 ''

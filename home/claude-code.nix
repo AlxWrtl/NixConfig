@@ -348,7 +348,9 @@ in
 
     # `libdocs` + `nix-options` + `trello` + `graphify-reindex` +
     # `claude-dispatch` + `claude-bg` on PATH — usable by Claude, by APEX and its subagents,
-    # and by the user in a plain terminal.
+    # and by the user in a plain terminal. `abduco` too, from the same pkgs as
+    # the claude-dispatch wrapper (same default socket dir), so
+    # `abduco -a <name>` attaches to a dispatched session.
     # home.packages is a list: this merges with the other home modules.
     packages = [
       libdocsPkg
@@ -359,6 +361,7 @@ in
       apexHealthPkg
       apexBoardPkg
       claudeDispatchPkg
+      pkgs.abduco
       claudeBgPkg
       graphifyReindexPkg
       vaultSnapshotPkg

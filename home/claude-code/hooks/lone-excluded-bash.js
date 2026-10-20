@@ -6,7 +6,7 @@
 // the Bash call is made of them alone. `cd x && git push`, `git -C x push`, a
 // pipe, `$(...)`, a heredoc or a file redirection keep the WHOLE call
 // sandboxed, where the keychain and ~/.ssh are denied: the network or signing
-// step fails (x509, no SSH key; EPERM on ~/.claude/jobs for claude-dispatch,
+// step fails (x509, no SSH key; EPERM on the abduco socket (create-session) for claude-dispatch,
 // a dead daemon socket for claude-bg)
 // and the retry turns into a permission prompt. Refusing that
 // shape up front, with the fix in the reason, costs one retry instead.

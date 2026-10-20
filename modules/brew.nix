@@ -54,6 +54,7 @@ _:
       "raycast"
       "readdle-spark"
       "microsoft-teams"
+      "vorssaint" # keep-awake, closed-lid mode
       "whatsapp"
       "jellyfin"
 

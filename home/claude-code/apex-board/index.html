@@ -1,0 +1,650 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APEX board</title>
+<style>
+  :root {
+    --bg: #14151b;
+    --panel: #1a1c24;
+    --card: #20222c;
+    --card-hover: #252835;
+    --line: #2b2e3b;
+    --text: #e4e5ea;
+    --muted: #868ba0;
+    --faint: #5b6075;
+    --active: #8be9fd;
+    --pass: #50fa7b;
+    --changes: #ffb86c;
+    --human: #ff79c6;
+    --merged: #bd93f9;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; color: inherit; }
+
+  /* Header */
+  header {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 16px;
+    flex-wrap: wrap; padding: 28px 32px 8px;
+  }
+  h1 { margin: 0; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .status { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .status .dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: var(--pass); margin-right: 6px; vertical-align: 1px;
+  }
+  .status.error { color: var(--human); }
+  .status.error .dot { background: var(--human); }
+  .banner {
+    margin: 12px 32px 0; padding: 10px 14px; border: 1px solid var(--human);
+    border-radius: 8px; color: var(--human); font-family: var(--mono); font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+
+  /* Board */
+  .board {
+    display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px;
+    padding: 20px 32px 40px; align-items: start;
+  }
+  .col { min-width: 0; }
+  .col-head {
+    display: flex; align-items: center; gap: 8px; padding: 0 2px 10px;
+    border-bottom: 1px solid var(--line); margin-bottom: 12px; position: relative;
+  }
+  .col-head h2 { margin: 0; font-size: 13px; font-weight: 600; white-space: nowrap; }
+  .col-head .who { font-size: 11px; color: var(--faint); font-family: var(--mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .col-head .count {
+    margin-left: auto; font-family: var(--mono); font-size: 11px; color: var(--muted);
+  }
+  .col:not(:last-child):not(:nth-last-child(2)) .col-head::after {
+    content: "›"; position: absolute; right: -10px; top: -2px; color: var(--faint); font-size: 16px;
+  }
+  .col.human .col-head { border-bottom-color: color-mix(in srgb, var(--human) 55%, transparent); }
+  .col.human h2 { color: var(--human); }
+  .col.merged-col h2 { color: var(--merged); }
+  .empty { color: var(--faint); font-size: 12px; padding: 4px 2px; }
+
+  /* Cards */
+  .card {
+    display: block; width: 100%; text-align: left; cursor: pointer;
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 12px 12px 10px; margin-bottom: 10px;
+    transition: background .15s, border-color .15s, transform .15s;
+  }
+  .card:hover { background: var(--card-hover); transform: translateY(-1px); }
+  .card:focus-visible { outline: 2px solid var(--active); outline-offset: 2px; }
+  .card.live { border-color: color-mix(in srgb, var(--active) 35%, var(--line)); }
+  .card.human {
+    border-color: var(--human);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--human) 40%, transparent),
+                0 8px 24px -12px color-mix(in srgb, var(--human) 60%, transparent);
+  }
+  .card.merged { opacity: .72; }
+  .card-top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .num { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+  .card-top .num { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pulse {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--active); flex: none;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  .flag {
+    margin-left: auto; font-size: 10px; font-weight: 600; letter-spacing: .06em;
+    text-transform: uppercase; color: var(--human); white-space: nowrap;
+  }
+  .flag.idle { color: var(--muted); }
+  .feature { font-size: 13px; line-height: 1.4; margin: 0 0 6px; overflow-wrap: anywhere; }
+  .branch {
+    font-family: var(--mono); font-size: 11px; color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .rounds { margin-top: 10px; display: grid; gap: 5px; }
+  .round { display: flex; align-items: center; gap: 4px; }
+  .round .r { font-family: var(--mono); font-size: 10px; color: var(--faint); width: 20px; }
+  .chip {
+    flex: 1; min-width: 0; text-align: center; font-family: var(--mono); font-size: 10px;
+    padding: 2px 3px; border-radius: 4px; border: 1px dashed var(--faint); color: var(--faint);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .chip.wait { animation: breathe 1.6s ease-in-out infinite; }
+  .chip.info { flex: 1.6; border: 1px solid var(--line); color: var(--muted); }
+  .chip.PASS {
+    border: 1px solid transparent; color: var(--pass);
+    background: color-mix(in srgb, var(--pass) 14%, transparent);
+  }
+  .chip.CHANGES {
+    border: 1px solid transparent; color: var(--changes);
+    background: color-mix(in srgb, var(--changes) 16%, transparent);
+  }
+  .chip.bad { border: 1px solid var(--human); color: var(--human); }
+  .hint {
+    margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--line);
+    font-family: var(--mono); font-size: 10.5px; color: var(--muted); line-height: 1.6;
+    overflow-wrap: anywhere;
+  }
+  .hint .why { display: block; color: var(--human); }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+  @keyframes breathe { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+  @media (prefers-reduced-motion: reduce) { .pulse, .chip.wait { animation: none; } }
+
+  /* Drawer */
+  .scrim {
+    position: fixed; inset: 0; background: rgba(5, 6, 10, .55);
+    opacity: 0; pointer-events: none; transition: opacity .2s;
+  }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: min(920px, 100vw);
+    background: var(--panel); border-left: 1px solid var(--line);
+    display: grid; grid-template-rows: auto 1fr; transform: translateX(100%);
+    transition: transform .25s ease;
+  }
+  .open .scrim { opacity: 1; pointer-events: auto; }
+  .open .drawer { transform: none; }
+  .d-head { padding: 20px 24px 16px; border-bottom: 1px solid var(--line); position: relative; }
+  .d-head .num { font-size: 12px; }
+  .d-head h3 { margin: 4px 40px 6px 0; font-size: 16px; font-weight: 600; line-height: 1.35; }
+  .d-head .hint:empty { display: none; }
+  .close {
+    position: absolute; top: 16px; right: 16px; width: 32px; height: 32px;
+    border-radius: 8px; border: 1px solid var(--line); background: none; cursor: pointer;
+    color: var(--muted); font-size: 18px; line-height: 1;
+  }
+  .close:hover { color: var(--text); border-color: var(--muted); }
+  .close:focus-visible, .file:focus-visible { outline: 2px solid var(--active); outline-offset: 1px; }
+  .d-body { display: grid; grid-template-columns: 200px 1fr; min-height: 0; }
+  .files { border-right: 1px solid var(--line); padding: 14px 10px; overflow-y: auto; }
+  .files .group {
+    font-size: 10px; text-transform: uppercase; letter-spacing: .08em;
+    color: var(--faint); margin: 12px 8px 4px;
+  }
+  .files .group:first-child { margin-top: 0; }
+  .file {
+    display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+    background: none; border: 0; border-radius: 6px; padding: 5px 8px; cursor: pointer;
+    font-family: var(--mono); font-size: 12px; color: var(--muted); overflow-wrap: anywhere;
+  }
+  .file:hover { background: var(--card); color: var(--text); }
+  .file.on { background: var(--card-hover); color: var(--text); }
+  .file .rn { display: none; }
+  .file .v { width: 6px; height: 6px; border-radius: 50%; background: var(--faint); flex: none; }
+  .v.good { background: var(--pass); } .v.warn { background: var(--changes); } .v.stop { background: var(--human); }
+  .doc { overflow-y: auto; padding: 22px 28px 60px; min-width: 0; }
+
+  /* Rendered markdown */
+  .md { max-width: 680px; line-height: 1.65; }
+  .md h1, .md h2, .md h3, .md h4 { line-height: 1.3; margin: 1.6em 0 .5em; }
+  .md h1 { font-size: 20px; } .md h2 { font-size: 15px; } .md h3 { font-size: 14px; color: var(--muted); }
+  .md > :first-child { margin-top: 0; }
+  .md p, .md ul, .md ol, .md blockquote, .md pre, .md table { margin: 0 0 .9em; }
+  .md ul, .md ol { padding-left: 1.3em; }
+  .md li { margin: .2em 0; }
+  .md li.task { list-style: none; margin-left: -1.3em; }
+  .md li.task::before { content: "☐"; margin-right: .5em; color: var(--faint); }
+  .md li.task.done::before { content: "☑"; color: var(--pass); }
+  .md code {
+    font-family: var(--mono); font-size: 12px; background: var(--card);
+    padding: 1px 5px; border-radius: 4px;
+  }
+  .md pre {
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; overflow-x: auto;
+  }
+  .md pre code { background: none; padding: 0; }
+  .md blockquote { border-left: 2px solid var(--line); padding-left: 12px; color: var(--muted); }
+  .md a { color: var(--active); }
+  .md table { border-collapse: collapse; font-size: 13px; display: block; overflow-x: auto; }
+  .md th, .md td { border: 1px solid var(--line); padding: 5px 9px; text-align: left; }
+  .verdict {
+    display: inline-block; font-family: var(--mono); font-size: 12px; font-weight: 600;
+    padding: 4px 10px; border-radius: 6px; margin-bottom: 14px;
+  }
+  .verdict + * { margin-top: .4em; }
+  .verdict.good { color: var(--pass); background: color-mix(in srgb, var(--pass) 14%, transparent); }
+  .verdict.warn { color: var(--changes); background: color-mix(in srgb, var(--changes) 16%, transparent); }
+  .verdict.stop { color: var(--human); background: color-mix(in srgb, var(--human) 16%, transparent); }
+  .note { color: var(--faint); font-size: 13px; }
+
+  footer {
+    padding: 0 32px 32px; font-family: var(--mono); font-size: 11px; color: var(--faint);
+    display: flex; gap: 20px; flex-wrap: wrap;
+  }
+
+  @media (max-width: 1100px) {
+    .board { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 28px; }
+    .col-head::after { display: none; }
+  }
+  @media (max-width: 640px) {
+    header { padding: 20px 16px 4px; }
+    .banner { margin: 12px 16px 0; }
+    .board { grid-template-columns: 1fr; padding: 16px 16px 32px; }
+    footer { padding: 0 16px 24px; }
+    .d-head { padding: 16px; }
+    .d-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; }
+    .files {
+      border-right: 0; border-bottom: 1px solid var(--line); display: flex; gap: 4px;
+      overflow-x: auto; padding: 8px;
+    }
+    .files .group { display: none; }
+    .file { width: auto; white-space: nowrap; overflow-wrap: normal; }
+    .file .rn { display: inline; white-space: pre; }
+    .doc { padding: 18px 16px 48px; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1 id="title">APEX board</h1>
+  <div class="status" id="status" role="status">connexion…</div>
+</header>
+<div id="banner"></div>
+<main class="board" id="board"></main>
+<footer>
+  <span>/apex &lt;tâche&gt;</span>
+  <span>/apex -x &lt;tâche&gt;</span>
+  <span>apex: +1 tour</span>
+  <span>/deck</span>
+</footer>
+
+<div id="overlay" inert>
+  <div class="scrim" data-close></div>
+  <aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="d-title">
+    <div class="d-head">
+      <div class="num" id="d-num"></div>
+      <h3 id="d-title"></h3>
+      <div class="branch" id="d-branch"></div>
+      <div class="hint" id="d-hint"></div>
+      <button class="close" id="d-close" data-close aria-label="Fermer">×</button>
+    </div>
+    <div class="d-body">
+      <nav class="files" id="d-files" aria-label="Fichiers du run"></nav>
+      <article class="doc"><div class="md" id="d-doc"></div></article>
+    </div>
+  </aside>
+</div>
+
+<script src="board.js"></script>
+<script>
+// Read-only: every request below is a GET on the python http.server that serves index.html,
+// board.js, meta.json, runs/ (the repo's .claude/output/apex) and budget/ (the correction budget).
+const POLL_MS = 2000
+const MISS_RECHECK_MS = 30000 // a run without 00-context.md is re-asked at most this often
+const B = window.ApexBoard
+const CHIP = { info: 'info', pass: 'PASS', fail: 'bad', used: 'CHANGES', unset: '' }
+const LABEL = Object.fromEntries(B.COLUMNS.map((c) => [c.key, c.label]))
+
+const $ = (id) => document.getElementById(id)
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) =>
+  ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c])
+const enc = (p) => p.split('/').map(encodeURIComponent).join('/')
+const runBase = (id) => `runs/${encodeURIComponent(id)}/`
+
+const runs = new Map() // id -> what the last polls read of runs/<id>/
+let budget = new Map()
+let cards = []
+let lastRender = ''
+let openRunId = null
+let openPath = null
+let openText = null
+let busy = false
+
+async function fetchText(url) {
+  const res = await fetch(url, { cache: 'no-store' })
+  if (!res.ok) throw new Error(`${url}: HTTP ${res.status}`)
+  return res.text()
+}
+
+// ---- Board ---------------------------------------------------------------
+
+// One run per poll: 00-context.md as a conditional GET (304 while unchanged, its Last-Modified is
+// the run's liveness), then its listing and external verdict only when the context changed, on
+// first sight, or while the run is live. After a 404 the context is not asked again for
+// MISS_RECHECK_MS: such a run stays as it was read (no context, not live).
+async function loadRun(id, now) {
+  const r = runs.get(id) || { id, context: null, lm: null, mtimeMs: null, files: null, verdict: null, seen: false, missAt: null }
+  if (r.missAt !== null && now - r.missAt < MISS_RECHECK_MS) return
+  const headers = r.lm ? { 'If-Modified-Since': r.lm } : {}
+  const res = await fetch(`${runBase(id)}00-context.md`, { cache: 'no-store', headers })
+  let changed = !r.seen
+  if (res.status === 200) {
+    r.context = await res.text()
+    r.lm = res.headers.get('Last-Modified')
+    const ms = r.lm ? Date.parse(r.lm) : NaN
+    r.mtimeMs = Number.isNaN(ms) ? null : ms
+    r.missAt = null
+    changed = true
+  } else if (res.status === 404) {
+    if (r.context !== null) changed = true
+    r.context = null
+    r.lm = null
+    r.mtimeMs = null
+    r.missAt = now
+  } else if (res.status !== 304) {
+    throw new Error(`${runBase(id)}00-context.md: HTTP ${res.status}`)
+  }
+  if (changed || r.files === null || B.isLive(r.mtimeMs, now)) {
+    const files = B.parseIndex(await fetchText(runBase(id))).filter((e) => !e.dir).map((e) => e.name)
+    const vf = B.verdictFile(files)
+    r.verdict = vf ? await fetchText(runBase(id) + encodeURIComponent(vf)) : null
+    r.files = files
+  }
+  r.seen = true
+  runs.set(id, r)
+}
+
+// The budget dir holds <run-id>.round<n> and <run-id>.grant<n>; the launcher serves an empty dir
+// when it does not exist.
+async function loadBudget() {
+  const names = B.parseIndex(await fetchText('budget/')).filter((e) => !e.dir).map((e) => e.name)
+  return B.parseBudget(names)
+}
+
+function card(c) {
+  const human = c.column === 'human'
+  const chips = c.chips.map((ch) =>
+    `<span class="chip ${CHIP[ch.state]}" title="${esc(ch.title)}">${esc(ch.label)}</span>`).join('')
+  const flag = c.flag ? `<span class="flag ${human ? '' : 'idle'}">${esc(c.flag)}</span>` : ''
+  const hint = human
+    ? `<div class="hint">${c.reasons.map((r) => `<span class="why">${esc(r)}</span>`).join('')}${c.hints.map(esc).join('<br>')}</div>`
+    : ''
+  return `
+    <button class="card ${c.live ? 'live' : ''} ${human ? 'human' : ''} ${c.column === 'done' ? 'merged' : ''}"
+            data-run="${esc(c.id)}" aria-haspopup="dialog">
+      <div class="card-top">
+        ${c.live ? '<span class="pulse" role="img" aria-label="actif"></span>' : ''}
+        <span class="num">${esc(c.id)}</span>
+        ${flag}
+      </div>
+      <p class="feature">${esc(c.title)}</p>
+      ${c.branch ? `<div class="branch">${esc(c.branch)}</div>` : ''}
+      <div class="rounds"><div class="round">${chips}</div></div>
+      ${hint}
+    </button>`
+}
+
+function render(now, problems) {
+  cards = [...runs.values()].map((r) => B.deriveRun({
+    id: r.id, context: r.context, mtimeMs: r.mtimeMs, files: r.files,
+    budget: budget.get(r.id), verdict: r.verdict,
+  }, now))
+  const groups = B.groupRuns(cards)
+  // Newest first within a column; Terminé shows the 30 newest, then +N.
+  const html = B.COLUMNS.map((s) => {
+    const g = groups[s.key]
+    const total = g.cards.length + g.more
+    const more = g.more ? `<div class="empty">+${g.more}</div>` : ''
+    return `
+    <section class="col ${s.cls || ''}" aria-label="${esc(s.label)}">
+      <div class="col-head">
+        <h2>${esc(s.label)}</h2><span class="who">${esc(s.who)}</span>
+        <span class="count">${total || ''}</span>
+      </div>
+      ${g.cards.map(card).join('') || '<div class="empty">—</div>'}${more}
+    </section>`
+  }).join('')
+  const banner = problems.map((p) => `<div class="banner">${esc(p)}</div>`).join('')
+  if (html + banner !== lastRender) {
+    lastRender = html + banner
+    $('board').innerHTML = html
+    $('banner').innerHTML = banner
+  }
+}
+
+async function poll() {
+  if (busy) return
+  busy = true
+  const status = $('status')
+  try {
+    const now = Date.now()
+    const ids = B.parseIndex(await fetchText('runs/')).filter((e) => e.dir).map((e) => e.name)
+    for (const id of [...runs.keys()]) if (!ids.includes(id)) runs.delete(id)
+    const problems = []
+    try {
+      budget = await loadBudget()
+    } catch (err) {
+      problems.push(`budget/ illisible, tours de correction inconnus : ${err.message}`)
+    }
+    const results = await Promise.allSettled(ids.map((id) => loadRun(id, now)))
+    results.forEach((res, i) => {
+      if (res.status === 'rejected') problems.push(`${ids[i]} : ${res.reason && res.reason.message}`)
+    })
+    render(now, problems)
+    const open = cards.find((c) => c.id === openRunId)
+    if (open && open.live) await refreshDrawer()
+    status.className = 'status'
+    status.innerHTML = `<span class="dot"></span>runs/ · ${ids.length} · ${new Date().toLocaleTimeString()}`
+  } catch (err) {
+    status.className = 'status error'
+    status.innerHTML = `<span class="dot"></span>${esc(err.message)}`
+  } finally {
+    busy = false
+  }
+}
+
+async function loadMeta() {
+  try {
+    const meta = JSON.parse(await fetchText('meta.json'))
+    if (typeof meta.repo === 'string' && meta.repo) {
+      $('title').textContent = `APEX board · ${meta.repo}`
+      document.title = `APEX board · ${meta.repo}`
+    }
+  } catch (err) {
+    $('banner').insertAdjacentHTML('beforeend', `<div class="banner">meta.json : ${esc(err.message)}</div>`)
+  }
+}
+
+// ---- Drawer --------------------------------------------------------------
+
+// serve.py (python's SimpleHTTPRequestHandler) serves an HTML index for directories; read its links.
+async function listFiles(dir) {
+  const out = []
+  for (const e of B.parseIndex(await fetchText(dir))) {
+    if (e.dir) out.push(...(await listFiles(`${dir}${encodeURIComponent(e.name)}/`)).map((f) => `${e.name}/${f}`))
+    else out.push(e.name)
+  }
+  return out
+}
+
+// Verdict dots: .md and .json files only; the open file is re-read each time.
+const tones = new Map()
+const toned = (f) => /\.(md|json)$/.test(f)
+
+// Three callers (poll, openDrawer, showFile) can overlap: each call takes a generation, and after
+// every await a call that is no longer the latest, or whose run is no longer open, stops before
+// touching the DOM, so a slow earlier read never lands under another run's or file's header.
+let drawerGen = 0
+
+async function refreshDrawer() {
+  const gen = ++drawerGen
+  const c = cards.find((x) => x.id === openRunId)
+  if (!c) return
+  const stale = () => gen !== drawerGen || openRunId !== c.id
+  try {
+    await drawRun(c, stale)
+  } catch (err) {
+    // A stale call's error belongs to a view that is gone: drop it with the call.
+    if (stale()) return
+    throw err
+  }
+}
+
+async function drawRun(c, stale) {
+  $('d-num').textContent = [c.id, LABEL[c.column], c.current, c.live ? 'actif' : 'inactif'].filter(Boolean).join(' · ')
+  $('d-title').textContent = c.title
+  $('d-branch').textContent = c.branch || ''
+  $('d-hint').innerHTML = c.column === 'human'
+    ? `${c.reasons.map((r) => `<span class="why">${esc(r)}</span>`).join('')}${c.hints.map(esc).join('<br>')}`
+    : ''
+
+  const base = runBase(c.id)
+  const files = B.sortFiles(await listFiles(base))
+  if (stale()) return
+  if (!openPath || !files.includes(openPath)) openPath = files[0] || null
+  const path = openPath
+
+  let text = null
+  if (path) {
+    text = await fetchText(base + enc(path))
+    if (stale()) return
+    if (toned(path)) tones.set(base + path, B.fileTone(path, text))
+  }
+  await Promise.all(files.filter((f) => toned(f) && !tones.has(base + f)).map(async (f) => {
+    const t = B.fileTone(f, await fetchText(base + enc(f)))
+    tones.set(base + f, t)
+  }))
+  if (stale()) return
+
+  let group = null
+  $('d-files').innerHTML = files.map((f) => {
+    const g = f.includes('/') ? f.split('/').slice(0, -1).join('/') : 'Run'
+    const head = g !== group ? `<div class="group">${esc(g)}</div>` : ''
+    group = g
+    const t = tones.get(base + f)
+    return `${head}<button class="file ${f === path ? 'on' : ''}" data-file="${esc(f)}"${f === path ? ' aria-current="true"' : ''}>
+      <span class="v ${t || ''}"></span>${esc(f.split('/').pop())}</button>`
+  }).join('') || '<div class="empty">Aucun fichier.</div>'
+
+  if (text !== openText) {
+    openText = text
+    $('d-doc').innerHTML = text === null
+      ? '<p class="note">Ce run n’a encore rien écrit.</p>'
+      : /\.md$/.test(path) ? markdown(text) : `<pre><code>${esc(text)}</code></pre>`
+  }
+}
+
+async function openDrawer(id) {
+  openRunId = id
+  openPath = null
+  openText = undefined
+  $('overlay').inert = false
+  document.body.classList.add('open')
+  $('d-close').focus()
+  try {
+    await refreshDrawer()
+  } catch (err) {
+    $('d-doc').innerHTML = `<p class="note">${esc(err.message)}</p>`
+  }
+}
+
+// Focus goes back to the run's card: the board re-renders, so it is found again by its id.
+function closeDrawer() {
+  if (!openRunId) return
+  const id = openRunId
+  openRunId = null
+  document.body.classList.remove('open')
+  $('overlay').inert = true
+  const cardEl = document.querySelector(`[data-run="${CSS.escape(id)}"]`)
+  if (cardEl) cardEl.focus()
+}
+
+async function showFile(path) {
+  openPath = path
+  openText = undefined
+  $('d-doc').parentElement.scrollTop = 0
+  try {
+    await refreshDrawer()
+  } catch (err) {
+    $('d-doc').innerHTML = `<p class="note">${esc(err.message)}</p>`
+  }
+}
+
+document.addEventListener('click', (e) => {
+  const cardEl = e.target.closest('[data-run]')
+  if (cardEl) return openDrawer(cardEl.dataset.run)
+  const fileEl = e.target.closest('[data-file]')
+  if (fileEl) return showFile(fileEl.dataset.file)
+  if (e.target.closest('[data-close]')) closeDrawer()
+})
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeDrawer() })
+
+// ---- Markdown (just enough for the run's files) -------------------------
+
+function inline(s) {
+  const codes = []
+  s = esc(s).replace(/`([^`]+)`/g, (_, c) => `\u0000${codes.push(c) - 1}\u0000`)
+  s = s
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\s][^*]*)\*/g, '$1<em>$2</em>')
+    .replace(/\[([^\]]+)\]\(((?:https?:\/\/|\.{0,2}\/|#)[^)\s]*)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>')
+  return s.replace(/\u0000(\d+)\u0000/g, (_, i) => `<code>${codes[i]}</code>`)
+}
+
+function markdown(src) {
+  const lines = src.replace(/\r/g, '').split('\n')
+  let i = 0
+  let html = ''
+  const first = (lines[0] || '').trim()
+  const t = B.lineTone(first)
+  if (t) { html += `<div class="verdict ${t}">${esc(first)}</div>`; i = 1 }
+
+  const isList = (l) => /^\s*([-*+]|\d+\.)\s+/.test(l)
+  const isBlockStart = (l) => /^(#{1,6}\s|```|\s*>|\|)/.test(l) || isList(l)
+
+  while (i < lines.length) {
+    const line = lines[i]
+    if (!line.trim()) { i++; continue }
+
+    if (line.startsWith('```')) {
+      const body = []
+      i++
+      while (i < lines.length && !lines[i].startsWith('```')) body.push(lines[i++])
+      i++
+      html += `<pre><code>${esc(body.join('\n'))}</code></pre>`
+      continue
+    }
+    const h = line.match(/^(#{1,6})\s+(.*)$/)
+    if (h) { const n = Math.min(h[1].length, 4); html += `<h${n}>${inline(h[2])}</h${n}>`; i++; continue }
+
+    if (/^\s*>/.test(line)) {
+      const body = []
+      while (i < lines.length && /^\s*>/.test(lines[i])) body.push(lines[i++].replace(/^\s*>\s?/, ''))
+      html += `<blockquote>${inline(body.join(' '))}</blockquote>`
+      continue
+    }
+    if (line.startsWith('|')) {
+      const rows = []
+      while (i < lines.length && lines[i].startsWith('|')) rows.push(lines[i++])
+      const cells = (r) => r.replace(/^\||\|$/g, '').split('|').map((c) => inline(c.trim()))
+      const body = rows.filter((r) => !/^\|[\s:|-]+\|$/.test(r))
+      html += '<table>' + body.map((r, n) => `<tr>${cells(r).map((c) => n ? `<td>${c}</td>` : `<th>${c}</th>`).join('')}</tr>`).join('') + '</table>'
+      continue
+    }
+    if (isList(line)) {
+      const ordered = /^\s*\d+\./.test(line)
+      const items = []
+      while (i < lines.length && (isList(lines[i]) || (/^\s{2,}\S/.test(lines[i]) && items.length))) {
+        const l = lines[i++]
+        if (isList(l)) items.push({ indent: l.match(/^\s*/)[0].length, text: l.replace(/^\s*([-*+]|\d+\.)\s+/, '') })
+        else items[items.length - 1].text += ' ' + l.trim()
+      }
+      const lis = items.map(({ indent, text }) => {
+        const task = text.match(/^\[([ xX])\]\s+(.*)$/)
+        const style = indent ? ` style="margin-left:${indent * 0.6}em"` : ''
+        return task
+          ? `<li class="task ${task[1] === ' ' ? '' : 'done'}"${style}>${inline(task[2])}</li>`
+          : `<li${style}>${inline(text)}</li>`
+      }).join('')
+      html += ordered ? `<ol>${lis}</ol>` : `<ul>${lis}</ul>`
+      continue
+    }
+    const para = []
+    while (i < lines.length && lines[i].trim() && !isBlockStart(lines[i])) para.push(lines[i++])
+    html += `<p>${inline(para.join(' '))}</p>`
+  }
+  return html
+}
+
+loadMeta()
+poll()
+setInterval(poll, POLL_MS)
+</script>
+</body>
+</html>

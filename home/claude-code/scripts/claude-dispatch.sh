@@ -5,7 +5,9 @@
 # Allow-list: abduco gets only `-n <name>`, the only flags claude ever gets are
 # --worktree --name. No file read, no flag passthrough; adds no env (inherits
 # the session's own; a VAR= / env prefix on the call is denied by
-# hooks/lone-excluded-bash.js). Brief gets the `[claude-dispatch] ` marker:
+# hooks/lone-excluded-bash.js), minus the child-session marker
+# CLAUDE_CODE_CHILD_SESSION: claude 2.1.305 does not save the transcript of a
+# session that inherits it. Brief gets the `[claude-dispatch] ` marker:
 # the launched session must not dispatch again.
 # abduco's getopt is libSystem's (BSD): it stops at the first operand <name>,
 # so claude's `--worktree` after it is never read as an abduco option
@@ -24,4 +26,5 @@ prompt=$2
 [[ $prompt =~ [^[:space:]]+[[:space:]]+[^[:space:]] ]] || die 'brief must be several words (one word can be read as a claude subcommand)'
 [[ $prompt != *[[:cntrl:]]* ]] || die 'brief must be one line, no control characters'
 [ "${#prompt}" -le 8000 ] || die 'brief longer than 8000 characters'
+unset CLAUDE_CODE_CHILD_SESSION
 exec "$abduco_bin" -n "$name" "$claude_bin" --worktree "$name" --name "$name" "[claude-dispatch] $prompt"

@@ -21,7 +21,10 @@
 # `--worktree <name> --name <name>`, the brief is one argv entry, no file is
 # read, no flag is passed through. The wrapper adds no env: it inherits the
 # session's own environment, and a VAR= / env prefix on the call is denied by
-# hooks/lone-excluded-bash.js. Only `claude-dispatch *` is excluded. The brief
+# hooks/lone-excluded-bash.js. It removes one variable: CLAUDE_CODE_CHILD_SESSION,
+# set in every Bash call of a Claude session; claude 2.1.305 turns transcript
+# saving off in a session that inherits it, so `/resume` could not find the
+# dispatched session. Only `claude-dispatch *` is excluded. The brief
 # reaches claude as `[claude-dispatch] <brief>`: the CLAUDE.md Delegation rule
 # forbids a session started that way to dispatch.
 #

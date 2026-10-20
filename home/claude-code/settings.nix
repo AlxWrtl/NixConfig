@@ -959,6 +959,27 @@ in
               command = "${node} ~/.claude/hooks/correction-grant.js";
               timeout = 5;
             }
+            # Session state of an abduco session (claude-dispatch): working.
+            # Registered on the five lifecycle events below with one timeout,
+            # above the hook's 3 s watchdog. A no-op outside abduco.
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/session-state.js";
+              timeout = 5;
+            }
+          ];
+        }
+      ];
+      # needs-you, for the session-state hook. No matcher: every
+      # notification type means the session is waiting on a human.
+      Notification = [
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/session-state.js";
+              timeout = 5;
+            }
           ];
         }
       ];
@@ -978,6 +999,12 @@ in
               # du PostToolUse EnterWorktree.
               type = "command";
               command = "bash ~/.claude/hooks/worktree-env-sync.sh";
+              timeout = 5;
+            }
+            # session-state: idle (after a compaction, the state it had).
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/session-state.js";
               timeout = 5;
             }
           ];
@@ -1019,6 +1046,14 @@ in
               timeout = 5;
               async = true;
             }
+            # session-state: done. Synchronous so the file lands before the
+            # process exits; its `timeout` also lifts the 1.5 s SessionEnd
+            # budget (hooks reference), as the two entries above already do.
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/session-state.js";
+              timeout = 5;
+            }
           ];
         }
       ];
@@ -1049,6 +1084,16 @@ in
               type = "command";
               command = "${node} ~/.claude/hooks/quality-gate.js";
               timeout = 10;
+            }
+          ];
+        }
+        # session-state: waiting.
+        {
+          hooks = [
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/session-state.js";
+              timeout = 5;
             }
           ];
         }

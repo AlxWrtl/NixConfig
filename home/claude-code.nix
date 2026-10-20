@@ -98,6 +98,9 @@ let
     jqBin = "${pkgs.jq}/bin/jq";
     gitBin = "${pkgs.git}/bin/git";
   };
+  # Per-session state of an abduco session (dispatched agents), for
+  # apex-board and the deck to read: see the header of the hook.
+  hookSessionState = builtins.readFile ./claude-code/hooks/session-state.js;
   inherit (agents)
     agentFrontend
     agentBackend
@@ -291,6 +294,10 @@ let
     };
     "${claudeDir}/hooks/worktree-env-sync.sh" = {
       text = hookWorktreeEnvSync;
+      executable = true;
+    };
+    "${claudeDir}/hooks/session-state.js" = {
+      text = hookSessionState;
       executable = true;
     };
   };

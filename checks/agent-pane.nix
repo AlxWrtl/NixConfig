@@ -71,11 +71,11 @@ let
   stubAbduco = pkgs.writeShellScript "abduco-stub" ''
     if [ "$#" -eq 0 ]; then
       printf 'Active sessions (on host stub)\n'
-      printf '* 2026-10-21 10:00:00\t101\tt1\n'
-      printf '  2026-10-21 10:00:01\t102\tt2\n'
-      printf '  2026-10-21 10:00:02\t103\tquits\n'
-      printf '+ 2026-10-21 10:00:03\t104\tgone\n'
-      printf '  2026-10-21 10:00:04\t105\tbad-json\n'
+      printf '* Wed\t 2026-10-21 10:00:00\t101\tt1\n'
+      printf '  Wed\t 2026-10-21 10:00:01\t102\tt2\n'
+      printf '  Wed\t 2026-10-21 10:00:02\t103\tquits\n'
+      printf '+ Wed\t 2026-10-21 10:00:03\t104\tgone\n'
+      printf '  Wed\t 2026-10-21 10:00:04\t105\tbad-json\n'
       exit 0
     fi
     printf '%s\n' "$$" >>"''${STUB_PIDS:?STUB_PIDS unset}"

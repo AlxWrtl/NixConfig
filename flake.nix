@@ -56,6 +56,7 @@
         '';
         system-config = self.darwinConfigurations."alex-mbp".system;
         agent-instructions = import ./checks/agent-instructions.nix { inherit pkgs; };
+        agent-pane = import ./checks/agent-pane.nix { inherit pkgs; };
         apex-board = import ./checks/apex-board.nix { inherit pkgs; };
         apex-consistency = import ./checks/apex-consistency.nix { inherit pkgs; };
         apex-health = import ./checks/apex-health.nix { inherit pkgs; };

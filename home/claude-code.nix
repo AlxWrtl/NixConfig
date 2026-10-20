@@ -31,6 +31,7 @@ let
   apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
   apexTier = import ./claude-code/apex-tier.nix { inherit pkgs; };
   apexHealth = import ./claude-code/apex-health.nix { inherit pkgs; };
+  apexBoard = import ./claude-code/apex-board.nix { inherit pkgs; };
   claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
   claudeBg = import ./claude-code/claude-bg.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
@@ -48,6 +49,7 @@ let
   inherit (apexVerifyExternal) apexVerifyExternalPkg;
   inherit (apexTier) apexTierPkg;
   inherit (apexHealth) apexHealthPkg;
+  inherit (apexBoard) apexBoardPkg;
   inherit (claudeDispatch) claudeDispatchPkg;
   inherit (claudeBg) claudeBgPkg;
   inherit (graphifyReindex) graphifyReindexPkg;
@@ -355,6 +357,7 @@ in
       apexVerifyExternalPkg
       apexTierPkg
       apexHealthPkg
+      apexBoardPkg
       claudeDispatchPkg
       claudeBgPkg
       graphifyReindexPkg

@@ -179,7 +179,8 @@ in
 
     ## Initialize State
 
-    Record the following:
+    First create `00-context.md` per [step-00b-save.md](step-00b-save.md),
+    with 00-init `running`; then record the following in it:
     - **Task**: the user's request (everything after flags)
     - **Tier**: from the SKILL.md tier gate, with its `Files:` and
       `Est-lines:` lines
@@ -262,7 +263,7 @@ in
     ## Progress
     | Step | Status | Notes |
     |------|--------|-------|
-    | 00-init | complete | |
+    | 00-init | running | |
     | 01-analyze | pending | |
     | 02-plan | pending | |
     | 03-execute | pending | |
@@ -279,7 +280,11 @@ in
 
     When 01-analyze is skipped (files known, ROUTING.md), mark it `skipped`.
 
-    After each step completes, update this progress table.
+    Write this file as init STARTS, before the baseline, and keep the table
+    live: a step goes `running` before its work begins and `complete` when
+    it ends, one edit each, never batched at ship time. apex-board puts a
+    run in the column of its first `running` (else `pending`) step, so a
+    table written late or filled at the end shows only Execute and Terminé.
 
     `## Tokens` — one row per spawned agent, `tokens` copied from its
     task-notification `<usage><subagent_tokens>`. `coordinator context`:

@@ -24,7 +24,7 @@ const (
 
 var (
 	footerText = strings.Join([]string{"/apex <tâche>", "/apex -x <tâche>", "apex: +1 tour", "/deck"}, "   ")
-	keysBoard  = "←→↑↓ naviguer · ⏎ ouvrir · esc fermer · q quitter"
+	keysBoard  = "←→↑↓ naviguer · ⏎ ouvrir · esc fermer · a agents · q quitter"
 	cardBox    = lipgloss.RoundedBorder()
 )
 
@@ -49,6 +49,7 @@ const (
 	hitScrim
 	hitDoc
 	hitDrawer
+	hitTab // col: the tab index
 )
 
 type hit struct {
@@ -191,18 +192,7 @@ func cardRows(card *Card, cw int, selected bool) *rowsMemo {
 		}
 	}
 
-	edge := fgbg(border, P.bg)
-	rule := strings.Repeat(cardBox.Top, max(0, cw-2))
-	rows := make([][]cell, 0, len(body)+2)
-	rows = append(rows, padTo(cellsOf(cardBox.TopLeft+rule+cardBox.TopRight, edge), cw, P.bg))
-	for _, line := range body {
-		r := make([]cell, 0, cw)
-		r = append(r, cell{ch: cardBox.Left, w: 1, st: edge}, cell{ch: " ", w: 1, st: bgOnly(bg)})
-		r = append(r, padTo(line, iw, bg)...)
-		r = append(r, cell{ch: " ", w: 1, st: bgOnly(bg)}, cell{ch: cardBox.Right, w: 1, st: edge})
-		rows = append(rows, padTo(r, cw, P.bg))
-	}
-	rows = append(rows, padTo(cellsOf(cardBox.BottomLeft+rule+cardBox.BottomRight, edge), cw, P.bg))
+	rows := boxRows(body, cw, iw, border, bg)
 	// Terminé is the page's `.card.merged { opacity: .72 }`.
 	if card.Column == "done" {
 		for _, r := range rows {
@@ -216,6 +206,53 @@ func cardRows(card *Card, cw int, selected bool) *rowsMemo {
 	return &card.rows
 }
 
+// boxRows: body lines (iw wide) in a rounded box of exactly cw cells.
+func boxRows(body [][]cell, cw, iw int, border, bg rgb) [][]cell {
+	edge := fgbg(border, P.bg)
+	rule := strings.Repeat(cardBox.Top, max(0, cw-2))
+	rows := make([][]cell, 0, len(body)+2)
+	rows = append(rows, padTo(cellsOf(cardBox.TopLeft+rule+cardBox.TopRight, edge), cw, P.bg))
+	for _, line := range body {
+		r := make([]cell, 0, cw)
+		r = append(r, cell{ch: cardBox.Left, w: 1, st: edge}, cell{ch: " ", w: 1, st: bgOnly(bg)})
+		r = append(r, padTo(line, iw, bg)...)
+		r = append(r, cell{ch: " ", w: 1, st: bgOnly(bg)}, cell{ch: cardBox.Right, w: 1, st: edge})
+		rows = append(rows, padTo(r, cw, P.bg))
+	}
+	return append(rows, padTo(cellsOf(cardBox.BottomLeft+rule+cardBox.BottomRight, edge), cw, P.bg))
+}
+
+// tabCells: ` Runs ` and ` Agents `, the shown one lit, each with what waits on you (À toi /
+// Attend ta réponse); spans are each tab's [start, width] in the cells.
+func (m *Model) tabCells() ([]cell, [2][2]int) {
+	var out []cell
+	var spans [2][2]int
+	waits := [2]int{0, len(m.ag.board.cols[0])}
+	if g := m.groups["human"]; g != nil {
+		waits[tabRuns] = len(g.Cards)
+	}
+	for i, name := range []string{"Runs", "Agents"} {
+		if i > 0 {
+			out = append(out, cell{ch: " ", w: 1})
+		}
+		// The shown tab is lit and bracketed, so it reads without color too.
+		st, l, r := fg(P.muted), " ", " "
+		if m.tab == i {
+			st, l, r = fgbg(P.text, P.cardHover).bold(), "[", "]"
+		}
+		start := cellsWidth(out)
+		out = toCells(l+name+" ", st, out)
+		if waits[i] > 0 {
+			hs := st
+			hs.fg = P.human
+			out = toCells("● "+strconv.Itoa(waits[i])+" ", hs, out)
+		}
+		out[len(out)-1] = cell{ch: r, w: 1, st: st}
+		spans[i] = [2]int{start, cellsWidth(out) - start}
+	}
+	return out, spans
+}
+
 func (m *Model) drawHeader(g grid, W, y int) {
 	t := "APEX board"
 	if m.repo != "" {
@@ -223,21 +260,38 @@ func (m *Model) drawHeader(g grid, W, y int) {
 	}
 	title := cellsOf(t, fg(P.text).bold())
 	var status []cell
-	switch st := m.status; {
+	st, what := m.status, "runs/"
+	if m.tab == tabAgents {
+		st, what = m.ag.status, "jobs/"
+	}
+	switch {
 	case st == nil:
 		status = cellsOf("lecture…", fg(P.muted))
 	case st.ok:
-		status = toCells("runs/ · "+strconv.Itoa(st.count)+" · "+st.time, fg(P.muted), cellsOf("● ", fg(P.pass)))
+		status = toCells(what+" · "+strconv.Itoa(st.count)+" · "+st.time, fg(P.muted), cellsOf("● ", fg(P.pass)))
 	default:
 		status = toCells(st.err, fg(P.human), cellsOf("● ", fg(P.human)))
 	}
+	tabs, spans := m.tabCells()
+	tabsW := cellsWidth(tabs)
 	room := W - 2*margin
-	sw := min(cellsWidth(status), max(0, room-min(cellsWidth(title), 12)-2))
+	sw := min(cellsWidth(status), max(0, room-min(cellsWidth(title), 12)-3-tabsW-2))
 	tw := room
 	if sw > 0 {
 		tw -= sw + 2
 	}
-	g.put(margin, y, fitCells(title, tw))
+	// Title, then the tabs; too narrow for both, the tabs alone: they say which view is shown.
+	x := margin
+	if titleRoom := tw - tabsW - 3; titleRoom >= 4 {
+		x = g.put(margin, y, fitCells(title, titleRoom)) + 3
+	}
+	shown := fitCells(tabs, margin+tw-x)
+	g.put(x, y, shown)
+	for i, sp := range spans {
+		if w := min(sp[1], cellsWidth(shown)-sp[0]); w > 0 {
+			m.hits = append(m.hits, hit{x: x + sp[0], y: y, w: w, h: 1, kind: hitTab, col: i})
+		}
+	}
 	if sw > 0 {
 		sc := fitCells(status, sw)
 		g.put(W-margin-cellsWidth(sc), y, sc)
@@ -247,6 +301,10 @@ func (m *Model) drawHeader(g grid, W, y int) {
 // render draws the whole screen into m.frame (exactly height lines of width columns) and keeps
 // the hits and layout; the scrolls it settles on persist, as tui.js settle() did.
 func (m *Model) render() {
+	if m.tab == tabAgents {
+		m.renderAgents()
+		return
+	}
 	W, H := max(1, m.width), max(1, m.height)
 	m.g.reset(W, H, P.bg)
 	g := m.g
@@ -435,17 +493,23 @@ func (m *Model) render() {
 		m.drawDrawer(g, W, H, &view)
 	}
 	m.view = view
+	m.frame = frameOf(g)
+	m.dirty = false
+}
 
+// frameOf: the grid as the frame's ANSI lines.
+func frameOf(g grid) string {
 	var sb strings.Builder
-	sb.Grow(W * H * 4)
+	if len(g) > 0 {
+		sb.Grow(len(g) * len(g[0]) * 4)
+	}
 	for y, row := range g {
 		if y > 0 {
 			sb.WriteByte('\n')
 		}
 		serialize(&sb, row)
 	}
-	m.frame = sb.String()
-	m.dirty = false
+	return sb.String()
 }
 
 // ---- drawer ----------------------------------------------------------------

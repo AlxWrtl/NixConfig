@@ -21,7 +21,7 @@ let
 
   # Adding or removing a .js file changes this number on purpose: the count is
   # what proves the walk saw every file.
-  expectedFiles = 23;
+  expectedFiles = 24;
 
   eslintDir = "${eslint}/lib/node_modules/eslint";
 

@@ -59,6 +59,12 @@
 #      body D runs: the main checkout's ignored root .env files copied into a
 #      new worktree, never over a file there, never through a symlink, never
 #      one the main checkout tracks or the worktree does not ignore.
+#      The session-state run adds session-state.js, run with its own fixture
+#      HOME and ABDUCO_SESSION: the state per event, the first prompt kept as
+#      the intent, a 0600 file in a 0700 dir, stdout always empty; nothing
+#      written outside abduco, under a bad name, on malformed input, or
+#      through a symlinked state dir or file. Its one canary drops the
+#      ABDUCO_SESSION gate.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -508,6 +514,10 @@ let
     A-wes-ign-wt = {
       hook = "worktree-env-sync.sh";
       text = "\"$GIT\" -c core.fsmonitor=false -C \"$WT\" check-ignore -q -- \"$name\" 2>/dev/null || continue";
+    };
+    A-ss-gate = {
+      hook = "session-state.js";
+      text = "if (!NAME_RE.test(name)) return;";
     };
     A-wes-link = {
       hook = "worktree-env-sync.sh";
@@ -1217,6 +1227,19 @@ let
         }
       ];
     }
+    # session-state run. The ABDUCO_SESSION gate dropped: a session outside
+    # abduco writes a state file (named `.json`, the name being empty).
+    {
+      id = "M-ss-gate";
+      hook = "session-state.js";
+      kills = "ss-noabduco-silent";
+      swaps = [
+        {
+          anchor = "A-ss-gate";
+          to = ";";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -1367,6 +1390,17 @@ let
     "wes-malformed-silent"
     "wes-dangling-dest"
     "wes-fsmonitor-pwned"
+    "ss-prompt-working"
+    "ss-intent-truncated"
+    "ss-stop-waiting"
+    "ss-notify-end"
+    "ss-start-idle"
+    "ss-new-session-fresh"
+    "ss-noabduco-silent"
+    "ss-badname-silent"
+    "ss-malformed-silent"
+    "ss-symlink-dir"
+    "ss-symlink-file"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -1415,6 +1449,7 @@ let
     "lone-excluded-bash.js"
     "sandbox-escape-evidence.js"
     "worktree-env-sync.sh"
+    "session-state.js"
   ];
   timeoutsOf =
     n:
@@ -1673,6 +1708,47 @@ let
     }
     wes_snap() { (cd "$T" && ${pkgs.coreutils}/bin/ls -Ali --time-style=+%s && ${pkgs.coreutils}/bin/cat .env .dev.vars) 2>&1; }
 
+    # session-state: a fresh fixture HOME $H per label, the state dir $SF in
+    # it. ss_run $1 body, $2 ABDUCO_SESSION (absent from the env when empty),
+    # $3 stdin. The env is cleared as in run(): the variable reaches the hook
+    # only when the case passes it.
+    ss_home() { H="$root/ss/$lbl"; SF="$H/.claude/session-state"; rm -rf "$H"; mkdir -p "$H"; }
+    ss_run() {
+      printf '%s' "$3" > "$d/$lbl.in"
+      rc=0
+      if [ -n "$2" ]; then ab="ABDUCO_SESSION=$2"; else ab="SS_PROBE=1"; fi
+      (cd "$NOREPO" && env -i HOME="$H" PATH="${pkgs.coreutils}/bin" "$ab" ${pkgs.coreutils}/bin/timeout "$tmo" ${pkgs.nodejs_22}/bin/node "$1") \
+        < "$d/$lbl.in" > "$d/$lbl.out" 2> "$d/$lbl.err" || rc=$?
+    }
+    # $1 event, $2 session id (s1 when unset), $3 the prompt, the message or
+    # the SessionStart source, by event. Field names per the hooks reference.
+    ss_in() { ${jq} -cn --arg e "$1" --arg s "''${2-s1}" --arg x "''${3-}" '{hook_event_name:$e,session_id:$s,cwd:"/probe/cwd",transcript_path:"/probe/t.jsonl",permission_mode:"default"} + (if $e == "UserPromptSubmit" then {prompt:$x} elif $e == "Notification" then {message:$x,title:"Permission needed",notification_type:"permission_prompt"} elif $e == "SessionStart" then {source:(if $x == "" then "startup" else $x end)} elif $e == "SessionEnd" then {reason:"other"} else {stop_hook_active:false,last_assistant_message:"done"} end)'; }
+    # $1 body, $2 event, $3 session id, $4 payload text: as t1, silent.
+    ss_step() { ss_run "$1" t1 "$(ss_in "$2" "$3" "$4")"; is_silent || { why="$2: $why"; return 1; }; }
+    # $1 state, $2 event, $3 intent, $4 notice, $5 session id (s1 when
+    # unset): t1.json a regular 0600 file in a 0700 dir, holding exactly
+    # these, and no temp file beside it.
+    is_state() {
+      f="$SF/t1.json"
+      if [ ! -f "$f" ] || [ -L "$f" ]; then why="no regular file $f, expected state '$1'"; kind=mismatch; return 1; fi
+      ${jq} -e --arg st "$1" --arg ev "$2" --arg it "$3" --arg no "$4" --arg sid "''${5-s1}" \
+        '.name == "t1" and .state == $st and .event == $ev and .intent == $it and .notice == $no and .sessionId == $sid and .cwd == "/probe/cwd" and .transcriptPath == "/probe/t.jsonl" and (.updatedAt | test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z$"))' \
+        "$f" > /dev/null 2>&1 || { why="state file $(${pkgs.coreutils}/bin/cat "$f"), expected state '$1' event '$2' intent '$3' notice '$4'"; kind=mismatch; return 1; }
+      [ "$(${pkgs.coreutils}/bin/stat -c %a "$SF")" = 700 ] || { why="state dir mode $(${pkgs.coreutils}/bin/stat -c %a "$SF"), expected 700"; return 1; }
+      [ "$(${pkgs.coreutils}/bin/stat -c %a "$f")" = 600 ] || { why="state file mode $(${pkgs.coreutils}/bin/stat -c %a "$f"), expected 600"; return 1; }
+      ss_notmp
+    }
+    ss_notmp() {
+      for t in "$SF"/.*.tmp; do
+        if [ -e "$t" ] || [ -L "$t" ]; then why="temp file left in the state dir: $t"; return 1; fi
+      done
+    }
+    # Nothing at all under $H: no dir, no file. A write is the PWNED kind.
+    ss_nothing() {
+      left=$(${pkgs.findutils}/bin/find "$H" -mindepth 1 2> /dev/null)
+      [ -z "$left" ] || { why="written where nothing was due: $left"; kind=pwned; return 1; }
+    }
+
     # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
     # $tmo is the host's timeout for the hook under test (probe_case sets it);
     # 124 is `timeout` killing it, which the host reads as no decision.
@@ -1751,6 +1827,7 @@ let
         le-*) tmo=${hostTimeout "lone-excluded-bash.js"} ;;
         se-*) tmo=${hostTimeout "sandbox-escape-evidence.js"} ;;
         wes-*) tmo=${hostTimeout "worktree-env-sync.sh"} ;;
+        ss-*) tmo=${hostTimeout "session-state.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -2251,6 +2328,82 @@ let
           wes_run "$2" SessionStart "$T"
           if [ -e "$W/fsmonitor-ran" ]; then why="the repo's core.fsmonitor command ran"; kind=pwned; return 1; fi
           is_synced SessionStart ;;
+        # session-state run: each case starts from an empty fixture HOME.
+        ss-prompt-working)
+          ss_home
+          ss_step "$2" UserPromptSubmit s1 "$(printf 'Fix the\nbuild')" || return 1
+          is_state working UserPromptSubmit "Fix the build" "" ;;
+        # 600 code points, a newline among them: one line of 500.
+        ss-intent-truncated)
+          ss_home
+          ss_run "$2" t1 "$(${jq} -cn '{hook_event_name:"UserPromptSubmit",session_id:"s1",cwd:"/probe/cwd",transcript_path:"/probe/t.jsonl",prompt:("a\nb" + ("x" * 597))}')"
+          is_silent || return 1
+          ${jq} -e '(.intent | length) == 500 and (.intent | startswith("a bxx")) and (.intent | test("\n") | not)' "$SF/t1.json" > /dev/null 2>&1 \
+            || { why="intent not one line of 500: $(${pkgs.coreutils}/bin/cat "$SF/t1.json" 2> /dev/null)"; kind=mismatch; return 1; } ;;
+        ss-stop-waiting)
+          ss_home
+          ss_step "$2" UserPromptSubmit s1 "Fix the build" || return 1
+          ss_step "$2" Stop s1 || return 1
+          is_state waiting Stop "Fix the build" "" ;;
+        # A notice set, cleared by the next prompt, which leaves the intent.
+        ss-notify-end)
+          ss_home
+          ss_step "$2" UserPromptSubmit s1 "First task" || return 1
+          ss_step "$2" Notification s1 "$(printf 'Claude needs\nyour permission')" || return 1
+          is_state needs-you Notification "First task" "Claude needs your permission" || return 1
+          ss_step "$2" UserPromptSubmit s1 "Second task" || return 1
+          is_state working UserPromptSubmit "First task" "" || return 1
+          ss_step "$2" SessionEnd s1 || return 1
+          is_state done SessionEnd "First task" "" ;;
+        # idle at startup; a compaction mid-turn keeps the state it had.
+        ss-start-idle)
+          ss_home
+          ss_step "$2" SessionStart s1 || return 1
+          is_state idle SessionStart "" "" || return 1
+          ss_step "$2" UserPromptSubmit s1 "Fix the build" || return 1
+          ss_step "$2" SessionStart s1 compact || return 1
+          is_state working SessionStart "Fix the build" "" ;;
+        # Another session id under the same name starts fresh.
+        ss-new-session-fresh)
+          ss_home
+          ss_step "$2" UserPromptSubmit s0 "Old task" || return 1
+          ss_step "$2" Notification s0 "Old notice" || return 1
+          ss_step "$2" UserPromptSubmit s1 "New task" || return 1
+          is_state working UserPromptSubmit "New task" "" s1 ;;
+        # No ABDUCO_SESSION: a plain session, nothing written.
+        ss-noabduco-silent)
+          ss_home
+          ss_run "$2" "" "$(ss_in UserPromptSubmit s1 "Fix the build")"; is_silent || return 1
+          ss_nothing ;;
+        ss-badname-silent)
+          ss_home
+          for bad in ../x -x X1 a/b; do
+            ss_run "$2" "$bad" "$(ss_in UserPromptSubmit s1 "Fix the build")"; is_silent || { why="name '$bad': $why"; return 1; }
+            ss_nothing || { why="name '$bad': $why"; return 1; }
+          done ;;
+        ss-malformed-silent)
+          ss_home
+          ss_run "$2" t1 "$malformed"; is_silent || return 1
+          ss_nothing ;;
+        # The state dir a symlink out of HOME/.claude: never written through.
+        ss-symlink-dir)
+          ss_home
+          mkdir -p "$H/.claude" "$H/elsewhere" && ln -s "$H/elsewhere" "$SF" || { why="cannot plant the state-dir symlink"; return 1; }
+          ss_run "$2" t1 "$(ss_in UserPromptSubmit s1 "Fix the build")"; is_silent || return 1
+          left=$(${pkgs.findutils}/bin/find "$H/elsewhere" -mindepth 1)
+          [ -z "$left" ] || { why="written through the symlinked state dir: $left"; kind=pwned; return 1; }
+          [ -L "$SF" ] || { why="the state-dir symlink was replaced"; kind=pwned; return 1; } ;;
+        # The state file a symlink: its target untouched, the link left.
+        ss-symlink-file)
+          ss_home
+          mkdir -p "$SF" "$H/elsewhere" && chmod 700 "$SF" \
+            && printf 'keep\n' > "$H/elsewhere/target" \
+            && ln -s "$H/elsewhere/target" "$SF/t1.json" \
+            || { why="cannot plant the state-file symlink"; return 1; }
+          ss_run "$2" t1 "$(ss_in UserPromptSubmit s1 "Fix the build")"; is_silent || return 1
+          [ "$(${pkgs.coreutils}/bin/cat "$H/elsewhere/target")" = keep ] || { why="written through the symlinked state file"; kind=pwned; return 1; }
+          [ -L "$SF/t1.json" ] || { why="the state-file symlink was replaced"; kind=pwned; return 1; }
+          ss_notmp ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -2267,6 +2420,7 @@ let
         le-*) echo ${hookFile "lone-excluded-bash.js"} ;;
         se-*) echo ${hookFile "sandbox-escape-evidence.js"} ;;
         wes-*) echo ${hookFile "worktree-env-sync.sh"} ;;
+        ss-*) echo ${hookFile "session-state.js"} ;;
       esac
     }
 

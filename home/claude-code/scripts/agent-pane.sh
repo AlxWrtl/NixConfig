@@ -12,7 +12,8 @@
 # restoring the terminal, so the pane does (`stty sane`, leave the alternate
 # screen, show the cursor). A client that exits on its own (Ctrl+\ detach,
 # session ended) is not restarted until the file changes: no reattach loop.
-# Session list = `abduco` with no argument: `<mark> <date>\t<pid>\t<name>`,
+# Session list = `abduco` with no argument: `<mark> <day>\t <date> <time>\t<pid>\t<name>`
+# (its strftime `%a%t %F %T` holds a TAB), so name = last field, pid = the one before;
 # mark `*` = a client attached, `+` = command ended (not attachable).
 # State and intent come from ~/.claude/session-state/<name>.json
 # (hooks/session-state.js), control characters blanked before printing.
@@ -60,11 +61,17 @@ read_target() {
 # Sets rows (one `<mark>\t<name>` per session, list order) and live (the
 # names that can be attached, mark other than `+`, space-delimited).
 list_sessions() {
-  local listing head pid sname
+  local listing line head pid sname
+  local -a f
   rows=()
   live=" "
   listing=$("$abduco_bin" 2>/dev/null </dev/null) || true
-  while IFS=$'\t' read -r head pid sname; do
+  while IFS= read -r line; do
+    IFS=$'\t' read -r -a f <<<"$line"
+    if [ "${#f[@]}" -lt 3 ]; then continue; fi
+    head=${f[0]}
+    pid=${f[${#f[@]} - 2]}
+    sname=${f[${#f[@]} - 1]}
     if [ -z "${sname:-}" ] || [ -z "${pid:-}" ]; then continue; fi
     rows+=("${head:0:1}"$'\t'"$sname")
     if [ "${head:0:1}" != + ]; then live+="$sname "; fi

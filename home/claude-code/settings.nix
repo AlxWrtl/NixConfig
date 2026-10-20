@@ -79,6 +79,10 @@ in
       mode = "hold";
       autoSubmit = false; # franglais : relecture avant envoi
     };
+    # Background agents/daemon off (`claude agents`, --bg, /background): a
+    # daemon-hosted session loses the mic (anthropics/claude-code#86217);
+    # sessions run under abduco instead (claude-dispatch). Seeded, not forced.
+    disableAgentView = true;
     skipDangerousModePermissionPrompt = true;
 
     # Rings BEL instead of a desktop notification (Ghostty OSC): Ghostty shows
@@ -150,12 +154,14 @@ in
         "sudo *"
         "darwin-rebuild *"
         "codex *"
-        # claude-dispatch: `claude --bg` sandboxed → EPERM mkdir ~/.claude/jobs
-        # (measured 2026-10-15, built-in protection). Wrapper, never
-        # "claude *"/"claude --bg *": claude takes ~20 flags that widen the
+        # claude-dispatch: sandboxed `abduco -n` → EPERM on create-session
+        # (its socket, measured 2026-10-20), and a sandboxed abduco server would
+        # pass its Seatbelt profile to the session. Wrapper, never
+        # "claude *"/"abduco *": claude takes ~20 flags that widen the
         # launched session (--dangerously-skip-permissions, --settings,
-        # --add-dir, --mcp-config, --bare…); the wrapper fixes them to
-        # --bg --name. Still classifier-reviewed (auto mode).
+        # --add-dir, --mcp-config, --bare…); the wrapper fixes argv to
+        # `abduco -n <name> claude --worktree <name> --name <name>`. Still
+        # classifier-reviewed (auto mode).
         "claude-dispatch *"
         # claude-bg: sandboxed `claude respawn` → "background service exited
         # before it became reachable", `claude logs` → ECONNREFUSED on the daemon

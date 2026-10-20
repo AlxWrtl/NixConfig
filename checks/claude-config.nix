@@ -611,6 +611,11 @@ let
       msg = "settings.nix `voice` is missing, or one of: enabled != true, mode not in {hold, toggle}, autoSubmit not a boolean — la dictée /voice dépend entièrement de ce bloc, et la clé legacy `voiceEnabled` est supprimée du live par la passe jq d'activation (del(.voiceEnabled)), donc il n'y a plus de filet : si ce bloc saute, la dictée meurt SILENCIEUSEMENT au prochain rebuild, sans erreur ni warning";
     }
     {
+      name = "A29 settings: disableAgentView is true (Claude's background daemon off)";
+      ok = (settingsAttrs.disableAgentView or null) == true;
+      msg = "settings.nix `disableAgentView` is missing or not true — sessions hosted by Claude's background daemon (`claude agents`, --bg, /background) lose the microphone (anthropics/claude-code#86217): voice dictation dies there silently. Sessions run under abduco instead (claude-dispatch); keep the daemon off";
+    }
+    {
       name = "A9 scrapling: skill version matches the activation pin";
       ok = scraplingPin != null && scraplingSkillPins != [ ] && scraplingDrift == [ ];
       msg =
@@ -665,7 +670,7 @@ let
       msg =
         "sandbox.excludedCommands is missing: "
         + builtins.concatStringsSep ", " missingExcluded
-        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`claude --bg`) hits EPERM on ~/.claude/jobs, and claude-bg (`claude respawn`/`logs`/`stop`/`--bg --resume`) a dead daemon socket; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
+        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`abduco -n`) hits EPERM on create-session (its socket) and a sandboxed abduco server would pass its Seatbelt profile to the session, and claude-bg (`claude respawn`/`logs`/`stop`/`--bg --resume`) a dead daemon socket; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
     }
     {
       name = "A14b sandbox: bare nix flake check is excluded, no wildcard, the daemon socket stays closed";
@@ -691,7 +696,7 @@ let
         )
         + "sandbox.excludedCommands entries running `claude` itself: "
         + builtins.concatStringsSep ", " claudeExcluded
-        + " — claude takes ~20 flags that widen the launched session (--dangerously-skip-permissions, --settings, --add-dir, --mcp-config, --bare…), so an unsandboxed `claude *` / `claude --bg *` is an unbounded deny-list. Background launches go through `claude-dispatch *`, which fixes the flags to --bg --name; respawn/logs/status/resume go through `claude-bg *`, which fixes argv to `respawn|logs <8-hex id>` / `daemon status`, or for resume `stop <id>` then `--bg --resume <uuid>` with only a re-checked --name/--model/--permission-mode (never bypassPermissions) and a fixed prompt";
+        + " — claude takes ~20 flags that widen the launched session (--dangerously-skip-permissions, --settings, --add-dir, --mcp-config, --bare…), so an unsandboxed `claude *` / `claude --bg *` is an unbounded deny-list. Background launches go through `claude-dispatch *`, which fixes argv to `abduco -n <name> claude --worktree <name> --name <name>`; respawn/logs/status/resume go through `claude-bg *`, which fixes argv to `respawn|logs <8-hex id>` / `daemon status`, or for resume `stop <id>` then `--bg --resume <uuid>` with only a re-checked --name/--model/--permission-mode (never bypassPermissions) and a fixed prompt";
     }
     {
       name = "A14c skills: caveman names force-push and history rewrite as irreversible, not push or merge";

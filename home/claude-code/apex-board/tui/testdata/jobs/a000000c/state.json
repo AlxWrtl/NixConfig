@@ -1,1 +1,1 @@
-{"name":"pick-db","nameSource":"user","state":"blocked","tempo":"active","needs":null,"block":{"questions":[{"question":"Quelle base : Postgres ou SQLite ?"}]},"intent":"choisit la base","detail":"","cwd":"/Users/u/projects/Delta","updatedAt":"2026-10-20T11:54:00.000Z"}
+{"name":"pick-db","nameSource":"user","state":"blocked","tempo":"idle","needs":null,"block":{"questions":[{"question":"Quelle base : Postgres ou SQLite ?"}]},"intent":"choisit la base","detail":"","cwd":"/Users/u/projects/Delta","updatedAt":"2026-10-20T11:54:00.000Z"}

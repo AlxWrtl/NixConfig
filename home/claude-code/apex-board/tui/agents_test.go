@@ -37,14 +37,6 @@ func newJobsFixture(t *testing.T) *jobsFixture {
 		mustDo(t, os.MkdirAll(filepath.Dir(p), 0o755))
 		mustDo(t, os.WriteFile(p, []byte(text), 0o600))
 	}
-	for _, id := range []string{"a0000002", "a000000c", "a000000d"} {
-		data, err := os.ReadFile(filepath.Join(f.jobs, id, "state.json"))
-		mustDo(t, err)
-		if !strings.Contains(string(data), `"tempo":"active"`) {
-			t.Fatalf("%s: no active tempo to idle", id)
-		}
-		put(id+"/state.json", strings.Replace(string(data), `"tempo":"active"`, `"tempo":"idle"`, 1))
-	}
 	// Control chars and secrets, written here: raw control bytes are no valid JSON in a file.
 	put("a000000a/state.json", `{"name":null,"nameSource":"auto","state":"working","tempo":"active","intent":"explore le cache","detail":"lit \u001b[31mrouge\u0007 avec token=abcdef123456 et ghp_abcdefghijklmnop","cwd":"/Users/u/projects/Gamma/","updatedAt":"2026-10-20T11:59:30.000Z"}`)
 	put("a000000a/timeline.jsonl", `{"at":"2026-10-20T11:59:30.000Z","state":"working","detail":"lecture"}`+"\n")

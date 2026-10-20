@@ -174,6 +174,71 @@ func TestJSSemantics(t *testing.T) {
 	}
 }
 
+// deliveredRun: test.js's run() on a live run of the given Progress rows.
+func deliveredRun(rows, extra string, files []string, budget Budget, verdict string) *Card {
+	text := "# APEX: synthetic\nTier: Standard\nBranch: feat/x\n" + extra + "\n## Progress\n| Step | Status | Notes |\n|------|--------|-------|\n" + rows
+	now, ms := float64(parityNow), float64(parityNow-3600*1000)
+	in := &RunInput{ID: "r", Context: &text, MtimeMs: &ms, Files: files, Budget: &budget}
+	if verdict != "" {
+		in.Verdict = &verdict
+	}
+	return deriveRun(in, now)
+}
+
+func chipKeys(c *Card) []string {
+	keys := make([]string, len(c.Chips))
+	for i, ch := range c.Chips {
+		keys[i] = ch.Key
+	}
+	return keys
+}
+
+func TestDeliveredReserve(t *testing.T) {
+	fail1 := `{"verdict":"FAIL","findings":[{}]}`
+	pr := []string{"00-context.md", "pr.md"}
+	// pr.md, budget 2/2, ext FAIL → Terminé, one reserve chip naming both.
+	c := deliveredRun("| 03-execute | pending | |\n", "", pr, Budget{2, 0}, fail1)
+	if c.Column != "done" || c.Flag != nil || len(c.Reasons) != 0 || len(c.Hints) != 0 {
+		t.Fatalf("shipped reserve %+v", c)
+	}
+	if !slices.Equal(chipKeys(c), []string{"tier", "ext", "corr1", "corr2", "reserve"}) ||
+		c.Chips[4] != (Chip{"reserve", "livré avec réserve", "info", "livré avec réserve : budget de correction épuisé (2/2) · vérif externe FAIL · 1 findings"}) {
+		t.Fatalf("shipped reserve chips %+v", c.Chips)
+	}
+	// 09-finish done, no pr.md, budget spent → Terminé, reserve chip.
+	c = deliveredRun("| 09-finish | complete | |\n| 09b-note | pending | |\n", "", []string{"00-context.md"}, Budget{3, 1}, "")
+	if c.Column != "done" || c.Flag != nil || len(c.Reasons) != 0 || c.Chips[len(c.Chips)-1].Title != "livré avec réserve : budget de correction épuisé (3/3)" {
+		t.Fatalf("09-finish reserve %+v", c)
+	}
+	// 09-finish not done: not delivered, the spent budget waits for the user.
+	c = deliveredRun("| 09-finish | in progress | |\n", "", []string{"00-context.md"}, Budget{2, 0}, "")
+	if c.Column != "human" || slices.Contains(chipKeys(c), "reserve") {
+		t.Fatalf("09-finish open %+v", c)
+	}
+	// Delivered with a failed step or a BLOCKED line → still À toi.
+	c = deliveredRun("| 04-validate | failed | |\n| 09-finish | complete | |\n", "", pr, Budget{}, `{"verdict":"FAIL"}`)
+	if c.Column != "human" || c.Flag == nil || *c.Flag != "à toi" || !slices.Equal(c.Reasons, []string{"étape 04-validate en échec"}) {
+		t.Fatalf("delivered failed %+v", c)
+	}
+	if c := deliveredRun("| 03-execute | in progress | |\n", "BLOCKED: waiting for the user", []string{"commit.txt"}, Budget{}, ""); c.Column != "human" {
+		t.Fatalf("delivered blocked %+v", c)
+	}
+	// Not delivered, budget spent or ext FAIL → À toi, no reserve chip.
+	for _, c := range []*Card{
+		deliveredRun("| 03-execute | in progress | |\n", "", []string{"00-context.md"}, Budget{2, 0}, ""),
+		deliveredRun("| 03-execute | in progress | |\n", "", []string{"00-context.md"}, Budget{}, `{"verdict":"FAIL"}`),
+	} {
+		if c.Column != "human" || slices.Contains(chipKeys(c), "reserve") {
+			t.Fatalf("not delivered %+v", c)
+		}
+	}
+	// Delivered with nothing wrong → no reserve chip.
+	c = deliveredRun("| 03-execute | pending | |\n", "", pr, Budget{1, 0}, `{"verdict":"PASS","findings":[]}`)
+	if c.Column != "done" || !slices.Equal(chipKeys(c), []string{"tier", "ext", "corr1", "corr2"}) {
+		t.Fatalf("delivered clean %+v", c)
+	}
+}
+
 func TestGroupRunsCap(t *testing.T) {
 	var cards []*Card
 	for i := range 35 {

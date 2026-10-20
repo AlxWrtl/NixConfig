@@ -338,6 +338,21 @@ func shipped(files []string) bool {
 	return slices.Contains(files, "pr.md") || slices.Contains(files, "commit.txt")
 }
 
+// delivered: it shipped, or its Progress table has a 09-finish step done.
+func delivered(ctx *Context, files []string) bool {
+	if shipped(files) {
+		return true
+	}
+	if ctx != nil {
+		for _, s := range ctx.Steps {
+			if strings.HasPrefix(s.Step, "09-finish") && s.Kind == "done" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // ---- directory index, budget, verdict -----------------------------------
 
 var (
@@ -525,7 +540,22 @@ func isLive(mtimeMs *float64, now float64) bool {
 
 type reason struct{ text, hint string }
 
-func humanReasons(ctx *Context, budget Budget, verdict *Verdict) []reason {
+// reserveReasons: a spent correction budget and a verdict not PASS, each with its hint.
+func reserveReasons(budget Budget, verdict *Verdict) []reason {
+	reasons := []reason{}
+	limit := MaxRounds + budget.Grants
+	if budget.Rounds >= limit {
+		reasons = append(reasons, reason{"budget de correction épuisé (" + strconv.Itoa(budget.Rounds) + "/" + strconv.Itoa(limit) + ")", hintGrant})
+	}
+	if verdict != nil && verdict.Verdict != "PASS" {
+		reasons = append(reasons, reason{"vérif externe " + verdict.Verdict + findingsText(verdict), hintExt})
+	}
+	return reasons
+}
+
+// humanReasons: a delivered run's reserves (budget, verdict) are no such reason: they go to its
+// `reserve` chip.
+func humanReasons(ctx *Context, budget Budget, verdict *Verdict, isDelivered bool) []reason {
 	reasons := []reason{}
 	if ctx != nil {
 		for _, s := range ctx.Steps {
@@ -540,12 +570,8 @@ func humanReasons(ctx *Context, budget Budget, verdict *Verdict) []reason {
 			reasons = append(reasons, reason{utf16Slice(*ctx.Blocked, 120), hintSession})
 		}
 	}
-	limit := MaxRounds + budget.Grants
-	if budget.Rounds >= limit {
-		reasons = append(reasons, reason{"budget de correction épuisé (" + strconv.Itoa(budget.Rounds) + "/" + strconv.Itoa(limit) + ")", hintGrant})
-	}
-	if verdict != nil && verdict.Verdict != "PASS" {
-		reasons = append(reasons, reason{"vérif externe " + verdict.Verdict + findingsText(verdict), hintExt})
+	if !isDelivered {
+		reasons = append(reasons, reserveReasons(budget, verdict)...)
 	}
 	return reasons
 }
@@ -597,10 +623,11 @@ func workColumn(ctx *Context, files []string) work {
 	return work{column: col, finished: col == "done"}
 }
 
-// Chip is one chip of a card's row: tier · ext · corr1 · corr2 (· one more per grant).
+// Chip is one chip of a card's row: tier · ext · corr1 · corr2 (· one more per grant)
+// (· reserve, delivered with reserves).
 type Chip struct{ Key, Label, State, Title string }
 
-func chipsOf(ctx *Context, budget Budget, verdict *Verdict) []Chip {
+func chipsOf(ctx *Context, budget Budget, verdict *Verdict, isDelivered bool) []Chip {
 	tier := ""
 	if ctx != nil && ctx.Tier != nil {
 		tier = *ctx.Tier
@@ -631,6 +658,15 @@ func chipsOf(ctx *Context, budget Budget, verdict *Verdict) []Chip {
 		}
 		k := "corr" + strconv.Itoa(n)
 		chips = append(chips, Chip{Key: k, Label: k, State: st, Title: "tour de correction " + strconv.Itoa(n) + " : " + word + granted})
+	}
+	if isDelivered {
+		if reserves := reserveReasons(budget, verdict); len(reserves) > 0 {
+			texts := make([]string, len(reserves))
+			for i, r := range reserves {
+				texts[i] = r.text
+			}
+			chips = append(chips, Chip{Key: "reserve", Label: "livré avec réserve", State: "info", Title: "livré avec réserve : " + strings.Join(texts, " · ")})
+		}
 	}
 	return chips
 }
@@ -678,7 +714,9 @@ type Card struct {
 }
 
 // deriveRun: 1. live = mtime < 6 h; 2. live and failed / BLOCKED / budget spent / ext not
-// PASS → À toi; 3. not live → Terminé (flag `inactif` unless finished); 4-5. workColumn.
+// PASS → À toi, except budget spent / ext not PASS on a delivered run (pr.md, commit.txt or
+// 09-finish done): Terminé with a « livré avec réserve » chip; 3. not live → Terminé (flag
+// `inactif` unless finished); 4-5. workColumn.
 func deriveRun(input *RunInput, now float64) *Card {
 	ctx := input.context()
 	files := input.Files
@@ -692,9 +730,10 @@ func deriveRun(input *RunInput, now float64) *Card {
 	}
 	live := isLive(input.MtimeMs, now)
 	w := workColumn(ctx, files)
+	isDelivered := delivered(ctx, files)
 	var reasons []reason
 	if live {
-		reasons = humanReasons(ctx, budget, verdict)
+		reasons = humanReasons(ctx, budget, verdict, isDelivered)
 	}
 	hints := []string{}
 	for _, r := range reasons {
@@ -725,7 +764,7 @@ func deriveRun(input *RunInput, now float64) *Card {
 	} else if !live && !w.finished {
 		flag = strp("inactif")
 	}
-	card := &Card{ID: input.ID, Title: input.ID, MtimeMs: input.MtimeMs, Live: live, Column: column, Current: w.current, Finished: w.finished, Flag: flag, Hints: hints, Chips: chipsOf(ctx, budget, verdict)}
+	card := &Card{ID: input.ID, Title: input.ID, MtimeMs: input.MtimeMs, Live: live, Column: column, Current: w.current, Finished: w.finished, Flag: flag, Hints: hints, Chips: chipsOf(ctx, budget, verdict, isDelivered)}
 	if ctx != nil {
 		card.Title, card.Tier, card.Branch = ctx.Title, ctx.Tier, ctx.Branch
 	}

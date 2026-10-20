@@ -143,6 +143,9 @@
   /** A run that shipped: its pr.md or commit.txt is there. */
   const shipped = (files) => files.includes('pr.md') || files.includes('commit.txt')
 
+  /** A run that delivered: it shipped, or its Progress table has a 09-finish step done. */
+  const delivered = (ctx, files) => shipped(files) || ((ctx && ctx.steps) || []).some((s) => s.step.startsWith('09-finish') && s.kind === 'done')
+
   // ---- directory index, budget, verdict -----------------------------------
 
   const ENTITIES = { '&amp;': '&', '&lt;': '<', '&gt;': '>', '&quot;': '"', '&#x27;': "'", '&#39;': "'" }
@@ -223,20 +226,30 @@
 
   const isLive = (mtimeMs, now) => typeof mtimeMs === 'number' && !Number.isNaN(mtimeMs) && now - mtimeMs < STALE_MS
 
-  /** Why a live run waits for the user, each with its hint; empty when it does not. */
-  function humanReasons(ctx, budget, verdict) {
+  /** A spent correction budget and a verdict not PASS, each with its hint; empty when neither. */
+  function reserveReasons(budget, verdict) {
     const reasons = []
-    for (const s of (ctx && ctx.steps) || []) {
-      if (s.kind === 'failed') reasons.push({ text: `étape ${s.step} en échec`, hint: HINT_SESSION })
-      if (s.kind === 'blocked') reasons.push({ text: `étape ${s.step} bloquée`, hint: HINT_SESSION })
-    }
-    if (ctx && ctx.blocked) reasons.push({ text: ctx.blocked.slice(0, 120), hint: HINT_SESSION })
     const cap = MAX_ROUNDS + budget.grants
     if (budget.rounds >= cap) reasons.push({ text: `budget de correction épuisé (${budget.rounds}/${cap})`, hint: HINT_GRANT })
     if (verdict && verdict.verdict !== 'PASS') {
       const findings = verdict.findings > 0 ? ` · ${verdict.findings} findings` : ''
       reasons.push({ text: `vérif externe ${verdict.verdict}${findings}`, hint: HINT_EXT })
     }
+    return reasons
+  }
+
+  /**
+   * Why a live run waits for the user, each with its hint; empty when it does not. A delivered
+   * run's reserves (budget, verdict) are no such reason: they go to its `reserve` chip.
+   */
+  function humanReasons(ctx, budget, verdict, isDelivered) {
+    const reasons = []
+    for (const s of (ctx && ctx.steps) || []) {
+      if (s.kind === 'failed') reasons.push({ text: `étape ${s.step} en échec`, hint: HINT_SESSION })
+      if (s.kind === 'blocked') reasons.push({ text: `étape ${s.step} bloquée`, hint: HINT_SESSION })
+    }
+    if (ctx && ctx.blocked) reasons.push({ text: ctx.blocked.slice(0, 120), hint: HINT_SESSION })
+    if (!isDelivered) reasons.push(...reserveReasons(budget, verdict))
     return reasons
   }
 
@@ -261,8 +274,8 @@
     return { column, finished: column === 'done', current: null }
   }
 
-  /** The chips row: tier · ext · corr1 · corr2 (· one more per grant). */
-  function chipsOf(ctx, budget, verdict) {
+  /** The chips row: tier · ext · corr1 · corr2 (· one more per grant) (· reserve, delivered with reserves). */
+  function chipsOf(ctx, budget, verdict, isDelivered) {
     const chips = [{ key: 'tier', label: (ctx && ctx.tier) || 'tier', state: ctx && ctx.tier ? 'info' : 'unset', title: `tier : ${(ctx && ctx.tier) || 'inconnu'}` }]
     if (verdict === null) chips.push({ key: 'ext', label: 'ext', state: 'unset', title: 'vérif externe : aucune' })
     else {
@@ -274,6 +287,8 @@
       const used = budget.rounds >= n
       chips.push({ key: `corr${n}`, label: `corr${n}`, state: used ? 'used' : 'unset', title: `tour de correction ${n} : ${used ? 'utilisé' : 'libre'}${n > MAX_ROUNDS ? ' (accordé)' : ''}` })
     }
+    const reserves = isDelivered ? reserveReasons(budget, verdict) : []
+    if (reserves.length > 0) chips.push({ key: 'reserve', label: 'livré avec réserve', state: 'info', title: `livré avec réserve : ${reserves.map((r) => r.text).join(' · ')}` })
     return chips
   }
 
@@ -281,8 +296,10 @@
    * A run's card: `input` = { id, context (text or null), mtimeMs (Last-Modified of 00-context.md,
    * or null), files (top-level names), budget ({ rounds, grants } or undefined), verdict (text of
    * the external verify file, or null) }.
-   * 1. live = mtime < 6 h; 2. live and failed / BLOCKED / budget spent / ext not PASS → À toi;
-   * 3. not live → Terminé (flag `inactif` unless finished); 4-5. workColumn.
+   * 1. live = mtime < 6 h; 2. live and failed / BLOCKED / budget spent / ext not PASS → À toi,
+   * except budget spent / ext not PASS on a delivered run (pr.md, commit.txt or 09-finish done):
+   * Terminé with a « livré avec réserve » chip; 3. not live → Terminé (flag `inactif` unless
+   * finished); 4-5. workColumn.
    */
   function deriveRun(input, now) {
     const ctx = typeof input.context === 'string' ? parseContext(input.context, input.id) : null
@@ -291,7 +308,8 @@
     const verdict = typeof input.verdict === 'string' ? parseVerdict(input.verdict) : null
     const live = isLive(input.mtimeMs, now)
     const work = workColumn(ctx, files)
-    const reasons = live ? humanReasons(ctx, budget, verdict) : []
+    const isDelivered = delivered(ctx, files)
+    const reasons = live ? humanReasons(ctx, budget, verdict, isDelivered) : []
     const hints = [...new Set(reasons.map((r) => r.hint))].sort((a, b) => (b === HINT_GRANT) - (a === HINT_GRANT))
     const column = reasons.length > 0 ? 'human' : live ? work.column : 'done'
     const flag = column === 'human' ? 'à toi' : !live && !work.finished ? 'inactif' : null
@@ -308,7 +326,7 @@
       flag,
       reasons: reasons.map((r) => r.text),
       hints,
-      chips: chipsOf(ctx, budget, verdict),
+      chips: chipsOf(ctx, budget, verdict, isDelivered),
     }
   }
 

@@ -284,6 +284,59 @@ test('ext: PASS live → no À toi; FAIL / BLOCKED / ERROR live → À toi; unre
   assert.strictEqual(half.chips[1].state, 'unset')
 })
 
+test('delivered (pr.md), live, budget 2/2 and ext FAIL → Terminé, chip livré avec réserve', () => {
+  const r = run({ context: WRANGLER, files: WRANGLER_FILES, verdict: WORKTREE_VERDICT, budget: { rounds: 2, grants: 0 } })
+  assert.strictEqual(r.column, 'done')
+  assert.strictEqual(r.flag, null)
+  assert.deepStrictEqual(r.reasons, [])
+  assert.deepStrictEqual(r.hints, [])
+  assert.deepStrictEqual(r.chips.map((c) => [c.key, c.state]), [['tier', 'info'], ['ext', 'fail'], ['corr1', 'used'], ['corr2', 'used'], ['reserve', 'info']])
+  const reserve = r.chips[4]
+  assert.strictEqual(reserve.label, 'livré avec réserve')
+  assert.strictEqual(reserve.title, 'livré avec réserve : budget de correction épuisé (2/2) · vérif externe FAIL · 1 findings')
+  const idle = run({ context: WRANGLER, files: WRANGLER_FILES, verdict: WORKTREE_VERDICT, mtimeMs: IDLE })
+  assert.strictEqual(idle.column, 'done')
+  assert.strictEqual(idle.chips[idle.chips.length - 1].title, 'livré avec réserve : vérif externe FAIL · 1 findings')
+})
+
+test('delivered (09-finish done, no pr.md), live, budget spent → Terminé, reserve chip', () => {
+  const text = ctx([['00-init', 'complete'], ['08-run-tests', 'complete'], ['09-finish', 'complete'], ['09b-note', 'pending']])
+  const r = run({ context: text, files: ['00-context.md', '02-plan.md'], budget: { rounds: 3, grants: 1 } })
+  assert.strictEqual(r.column, 'done')
+  assert.strictEqual(r.flag, null)
+  assert.deepStrictEqual(r.reasons, [])
+  assert.deepStrictEqual(r.chips.map((c) => c.key), ['tier', 'ext', 'corr1', 'corr2', 'corr3', 'reserve'])
+  assert.strictEqual(r.chips[5].title, 'livré avec réserve : budget de correction épuisé (3/3)')
+  // 09-finish not done yet: not delivered, the spent budget still waits for the user.
+  const open = run({ context: ctx([['08-run-tests', 'complete'], ['09-finish', 'in progress']]), budget: { rounds: 2, grants: 0 } })
+  assert.strictEqual(open.column, 'human')
+  assert.deepStrictEqual(open.reasons, ['budget de correction épuisé (2/2)'])
+})
+
+test('delivered with a failed step or a BLOCKED line → still À toi, reserves stay chips', () => {
+  const failed = run({ context: ctx([['04-validate', 'failed'], ['09-finish', 'complete']]), files: ['00-context.md', 'pr.md'], verdict: JSON.stringify({ verdict: 'FAIL' }) })
+  assert.strictEqual(failed.column, 'human')
+  assert.strictEqual(failed.flag, 'à toi')
+  assert.deepStrictEqual(failed.reasons, ['étape 04-validate en échec'])
+  assert.strictEqual(failed.chips[failed.chips.length - 1].key, 'reserve')
+  const blocked = run({ context: ctx([['03-execute', 'in progress']], 'BLOCKED: waiting for the user'), files: ['00-context.md', 'commit.txt'] })
+  assert.strictEqual(blocked.column, 'human')
+})
+
+test('not delivered, live, budget spent or ext FAIL → À toi, no reserve chip', () => {
+  for (const over of [{ budget: { rounds: 2, grants: 0 } }, { verdict: JSON.stringify({ verdict: 'FAIL' }) }]) {
+    const r = run({ context: ctx([['03-execute', 'in progress']]), ...over })
+    assert.strictEqual(r.column, 'human')
+    assert.ok(!r.chips.some((c) => c.key === 'reserve'))
+  }
+})
+
+test('delivered with nothing wrong → no reserve chip', () => {
+  const r = run({ context: WRANGLER, files: WRANGLER_FILES, verdict: PASS, budget: { rounds: 1, grants: 0 } })
+  assert.strictEqual(r.column, 'done')
+  assert.deepStrictEqual(r.chips.map((c) => c.key), ['tier', 'ext', 'corr1', 'corr2'])
+})
+
 test('current step NN mapping: running first, else first pending', () => {
   const cases = [
     ['00-init', 'init'], ['01-analyze', 'plan'], ['01b-obsidian', 'plan'], ['02-plan', 'plan'], ['02c-verify', 'plan'],

@@ -10,7 +10,9 @@
 #
 # The page dir's store path replaces `@boardDir@` in the script; a missing
 # placeholder throws at eval, so a renamed one cannot ship a board that points
-# nowhere. writeShellApplication prepends `set -euo pipefail` and runs
+# nowhere. `apex-board --tui` execs node on tui.js (copied next to the page,
+# tui-test.js stays out): the same board drawn in the terminal, no server.
+# writeShellApplication prepends `set -euo pipefail` and runs
 # shellcheck at build time, so a regression in the script fails the rebuild.
 { pkgs }:
 let
@@ -19,6 +21,7 @@ let
     cp ${./apex-board/index.html} $out/index.html
     cp ${./apex-board/board.js} $out/board.js
     cp ${./apex-board/serve.py} $out/serve.py
+    cp ${./apex-board/tui.js} $out/tui.js
   '';
 
   script = builtins.readFile ./scripts/apex-board.sh;
@@ -32,6 +35,7 @@ in
       pkgs.coreutils
       pkgs.git
       pkgs.jq
+      pkgs.nodejs
     ];
     text =
       if text == script then

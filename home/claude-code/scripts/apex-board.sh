@@ -1,6 +1,7 @@
-# apex-board — serve the APEX run board of one repo on 127.0.0.1.
+# apex-board — serve the APEX run board of one repo on 127.0.0.1, or draw it
+# in the terminal with --tui.
 #
-# usage: apex-board [--port N] [--no-open] [--dry-run] [repo]
+# usage: apex-board [--tui] [--port N] [--no-open] [--dry-run] [repo]
 #
 # repo defaults to the git toplevel of the cwd; exit 1 if it holds no
 # `.claude/output/apex` directory. READ-ONLY: the served root is a temp dir of
@@ -22,15 +23,24 @@
 #   budget: empty dir            (when ~/.claude/apex-correction-budget is absent)
 #   meta.json: <compact json>
 # checks/apex-board.nix asserts this format.
+#
+# --tui: no server, no temp root, no port: exec node on tui.js (next to the page
+# in the store) with the runs dir, the budget dir ("" when absent) and the repo
+# name; tui.js reads the disk itself, read-only, and never leaves the runs dir.
+# --port and --no-open are ignored. With --dry-run it prints and stops:
+#   tui: node <board_dir>/tui.js
+#   runs: <repo>/.claude/output/apex
+#   budget: <dir> | none
 
 board_dir="@boardDir@"
 port=8765
 open_page=1
 dry_run=0
+tui=0
 repo=""
 
 usage() {
-  echo "usage: apex-board [--port N] [--no-open] [--dry-run] [repo]" >&2
+  echo "usage: apex-board [--tui] [--port N] [--no-open] [--dry-run] [repo]" >&2
   exit 2
 }
 
@@ -49,6 +59,10 @@ while [ $# -gt 0 ]; do
     dry_run=1
     shift
     ;;
+  --tui)
+    tui=1
+    shift
+    ;;
   -h | --help)
     usage
     ;;
@@ -64,15 +78,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-case "$port" in
-'' | *[!0-9]*)
-  echo "apex-board: --port needs an integer in 1-65535" >&2
-  usage
-  ;;
-esac
-if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-  echo "apex-board: --port needs an integer in 1-65535" >&2
-  usage
+if [ "$tui" -eq 0 ]; then
+  case "$port" in
+  '' | *[!0-9]*)
+    echo "apex-board: --port needs an integer in 1-65535" >&2
+    usage
+    ;;
+  esac
+  if [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
+    echo "apex-board: --port needs an integer in 1-65535" >&2
+    usage
+  fi
 fi
 
 if [ -z "$repo" ]; then
@@ -89,6 +105,22 @@ runs="$repo/.claude/output/apex"
 if [ ! -d "$runs" ]; then
   echo "apex-board: no APEX runs here: $runs is not a directory" >&2
   exit 1
+fi
+
+budget_src="${HOME:-}/.claude/apex-correction-budget"
+
+if [ "$tui" -eq 1 ]; then
+  budget_dir=""
+  if [ -n "${HOME:-}" ] && [ -d "$budget_src" ]; then
+    budget_dir="$budget_src"
+  fi
+  if [ "$dry_run" -eq 1 ]; then
+    printf 'tui: node %s\n' "$board_dir/tui.js"
+    printf 'runs: %s\n' "$runs"
+    printf 'budget: %s\n' "${budget_dir:-none}"
+    exit 0
+  fi
+  exec node "$board_dir/tui.js" "$runs" "$budget_dir" "$(basename "$repo")"
 fi
 
 root="$(mktemp -d "${TMPDIR:-/tmp}/apex-board.XXXXXX")"
@@ -113,7 +145,6 @@ trap 'exit 143' TERM
 cp "$board_dir/index.html" "$root/index.html"
 cp "$board_dir/board.js" "$root/board.js"
 ln -s "$runs" "$root/runs"
-budget_src="${HOME:-}/.claude/apex-correction-budget"
 if [ -n "${HOME:-}" ] && [ -d "$budget_src" ]; then
   ln -s "$budget_src" "$root/budget"
 else

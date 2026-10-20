@@ -372,6 +372,28 @@ func TestTickPulsesLiveDot(t *testing.T) {
 	}
 }
 
+func TestDoneCardHasNoLiveDot(t *testing.T) {
+	hasDot := func(c *Card) bool {
+		for _, row := range cardRows(c, 40, false).rows {
+			for _, cl := range row {
+				if cl.ch == "●" {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	if !hasDot(&Card{ID: "w", Title: "w", Live: true, Column: "execute"}) {
+		t.Fatal("a live card at work lost its dot")
+	}
+	if hasDot(&Card{ID: "d", Title: "d", Live: true, Column: "done"}) {
+		t.Fatal("a live Terminé card carries the pulsing dot")
+	}
+	if (&Card{Live: true, Column: "done"}).pulses() {
+		t.Fatal("a live Terminé card pulses")
+	}
+}
+
 // ---- keys and mouse ---------------------------------------------------------------
 
 func key(code rune) tea.KeyPressMsg { return tea.KeyPressMsg{Code: code} }

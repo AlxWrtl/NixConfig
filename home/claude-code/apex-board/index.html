@@ -359,7 +359,7 @@ function card(c) {
     <button class="card ${c.live ? 'live' : ''} ${human ? 'human' : ''} ${c.column === 'done' ? 'merged' : ''}"
             data-run="${esc(c.id)}" aria-haspopup="dialog">
       <div class="card-top">
-        ${c.live ? '<span class="pulse" role="img" aria-label="actif"></span>' : ''}
+        ${c.live && c.column !== 'done' ? '<span class="pulse" role="img" aria-label="actif"></span>' : ''}
         <span class="num">${esc(c.id)}</span>
         ${flag}
       </div>

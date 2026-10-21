@@ -433,7 +433,9 @@ process.stdin.on("end", () => {
           if (!inRepo.has(dir)) {
             let ok = true;
             if (++probes <= 3) {
-              try { execSync("git rev-parse --show-toplevel", { cwd: dir, stdio: "pipe" }); } catch { ok = false; }
+              let p = dir;
+              while (!isDir(p) && path.dirname(p) !== p) p = path.dirname(p);
+              try { execSync("git rev-parse --show-toplevel", { cwd: p, stdio: "pipe" }); } catch { ok = false; }
             }
             inRepo.set(dir, ok);
           }
@@ -613,9 +615,15 @@ process.stdin.on("end", () => {
       if (/\/\.claude\/projects\/[^/]+\/memory\//.test(resolved)) process.exit(0);
 
       // Outside any git repo — scratchpad, /tmp, $TMPDIR. Not project work.
+      // Asked from the nearest directory that exists: a new file in a new
+      // subdir has none yet, git cannot start there, and the write passed
+      // as outside any repo.
+      let probeDir = path.dirname(resolved);
+      const isDir = d => { try { return fs.statSync(d).isDirectory(); } catch { return false; } };
+      while (!isDir(probeDir) && path.dirname(probeDir) !== probeDir) probeDir = path.dirname(probeDir);
       try {
         execSync("git rev-parse --is-inside-work-tree", {
-          cwd: path.dirname(resolved), stdio: "pipe"
+          cwd: probeDir, stdio: "pipe"
         });
       } catch { process.exit(0); }
     }

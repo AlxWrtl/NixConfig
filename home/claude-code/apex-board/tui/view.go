@@ -5,6 +5,7 @@ package main
 // map and each column's layout, so a mouse event is resolved without drawing again.
 
 import (
+	"slices"
 	"strconv"
 	"strings"
 
@@ -51,8 +52,12 @@ const (
 	hitDrawer
 	hitTab  // col: the tab index
 	hitStop // an agent card's ×: col, idx, id as hitCard
-	hitNew  // the Agents footer's « + nouvel agent »
+	hitNew     // the Agents footer's « + nouvel agent »
+	hitRefresh // either footer's « ↻ actualiser »: a poll now, as `r`
 )
+
+// refreshLabel: the button both footers draw before their keys, under a hitRefresh.
+const refreshLabel = "↻ actualiser (r)"
 
 type hit struct {
 	x, y, w, h int
@@ -477,7 +482,8 @@ func (m *Model) render() {
 	if tall {
 		g.put(margin, H-2, fitCells(cellsOf(footerText, fg(P.muted)), W-2*margin))
 	}
-	keys := cellsOf(keysBoard, fg(P.faint))
+	btn := cellsOf(refreshLabel, fg(P.active).bold())
+	keys := toCells(" · "+keysBoard, fg(P.faint), slices.Clone(btn))
 	var where []cell
 	if nVis < n {
 		where = cellsOf("colonnes "+strconv.Itoa(first+1)+"-"+strconv.Itoa(first+nVis)+"/"+strconv.Itoa(n), fg(P.faint))
@@ -486,13 +492,16 @@ func (m *Model) render() {
 	if len(where) > 0 {
 		kw -= cellsWidth(where) + 2
 	}
-	if kw > 8 {
-		g.put(margin, H-1, fitCells(keys, kw))
-		if len(where) > 0 {
-			g.put(W-margin-cellsWidth(where), H-1, where)
-		}
-	} else {
-		g.put(margin, H-1, fitCells(keys, W-2*margin))
+	if kw <= 8 {
+		kw, where = W-2*margin, nil
+	}
+	shown := fitCells(keys, kw)
+	g.put(margin, H-1, shown)
+	if w := min(cellsWidth(btn), cellsWidth(shown)); w > 0 && m.drawer == nil {
+		m.hits = append(m.hits, hit{x: margin, y: H - 1, w: w, h: 1, kind: hitRefresh})
+	}
+	if len(where) > 0 {
+		g.put(W-margin-cellsWidth(where), H-1, where)
 	}
 
 	if m.drawer != nil {

@@ -598,3 +598,31 @@ func TestResumeRefusals(t *testing.T) {
 		t.Fatalf("refused launch: launches %v picks %q note %q", *failing, *picks, m.ag.note)
 	}
 }
+
+// « ↻ actualiser » is drawn under its hit in both footers, and a click on it polls as `r`.
+func TestRefreshButton(t *testing.T) {
+	check := func(name string, m *Model) {
+		t.Helper()
+		m.polling = false
+		m.View()
+		h := findHit(m, hitRefresh, "")
+		if h == nil {
+			t.Fatalf("%s: no « ↻ actualiser » hit", name)
+		}
+		row := []rune(plain(m.View().Content)[h.y])
+		if got := string(row[h.x : h.x+h.w]); got != refreshLabel {
+			t.Fatalf("%s: hit over %q", name, got)
+		}
+		cmd := send(m, tea.MouseClickMsg{X: h.x + 1, Y: h.y, Button: tea.MouseLeft})
+		if cmd == nil || !m.polling {
+			t.Fatalf("%s: click did not poll (Cmd %v, polling %v)", name, cmd != nil, m.polling)
+		}
+	}
+	m, _ := newAgentModel(t)
+	stubLaunch(t, nil)
+	check("agents", m)
+	if h := findHit(m, hitNew, ""); h == nil || h.x+h.w >= findHit(m, hitRefresh, "").x {
+		t.Fatal("agents: « + nouvel agent » missing or overlapping « ↻ actualiser »")
+	}
+	check("runs", newFixture(t).model(t, 180, 50))
+}

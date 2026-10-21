@@ -12,6 +12,9 @@
 # restoring the terminal, so the pane does (`stty sane`, leave the alternate
 # screen, show the cursor). A client that exits on its own (Ctrl+\ detach,
 # session ended) is not restarted until the file changes: no reattach loop.
+# Each attach shrinks the tty one row, then restores it and sends the client
+# SIGWINCH: Node emits 'resize' only on a changed size, so a reattach at the
+# same size never repaints Claude over the cleared screen.
 # Session list = `abduco` with no argument: `<mark> <day>\t <date> <time>\t<pid>\t<name>`
 # (its strftime `%a%t %F %T` holds a TAB), so name = last field, pid = the one before;
 # mark `*` = a client attached, `+` = command ended (not attachable).
@@ -126,9 +129,23 @@ wait_change() {
 # Attach to $1 until the target changes (return 0) or the client exits on
 # its own (return 1).
 attach() {
+  local size
   printf '\e[H\e[2J'
+  # tty_rows = the rows to restore (global: cleanup restores them if the pane
+  # dies mid-jiggle); empty when headless or the shrink failed.
+  size=$(stty size 2>/dev/null) || size=""
+  if [[ ${size%% *} =~ ^[1-9][0-9]*$ ]] && [ "${size%% *}" -gt 1 ] &&
+    stty rows "$((${size%% *} - 1))" 2>/dev/null; then
+    tty_rows=${size%% *}
+  fi
   "$abduco_bin" -a "$1" <&0 &
   child=$!
+  if [ -n "$tty_rows" ]; then
+    sleep 0.3
+    stty rows "$tty_rows" 2>/dev/null || true
+    tty_rows=""
+    kill -WINCH "$child" 2>/dev/null || true
+  fi
   while kill -0 "$child" 2>/dev/null; do
     sleep 0.3
     read_target
@@ -146,10 +163,14 @@ attach() {
   return 1
 }
 
-# EXIT trap: detach the client if one runs (default signal = TERM), restore
-# the terminal.
+# EXIT trap: undo an unfinished jiggle, detach the client if one runs
+# (default signal = TERM), restore the terminal.
 cleanup() {
   set +e
+  if [ -n "$tty_rows" ]; then
+    stty rows "$tty_rows" 2>/dev/null
+    tty_rows=""
+  fi
   if [ -n "$child" ]; then
     kill "$child" 2>/dev/null
     wait "$child" 2>/dev/null
@@ -160,6 +181,7 @@ cleanup() {
 pane() {
   local header left=""
   child=""
+  tty_rows=""
   trap cleanup EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT

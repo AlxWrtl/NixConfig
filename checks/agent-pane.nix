@@ -9,6 +9,9 @@
 #     reattaches, a client that exits on its own is not restarted until the
 #     file changes, a target with no live session (absent, or `+` = ended)
 #     attaches nothing and lists the sessions with their state and intent;
+#   - on a tty, each attach shrinks it one row before the client starts,
+#     restores it, then sends the client SIGWINCH (Claude repaints only on a
+#     changed size); headless, no jiggle;
 #   - abduco is only ever called as `abduco` (list) or `abduco -a <name>`.
 #
 # Runtime suite: the BUILT script against a stub abduco that lists a fixed
@@ -19,8 +22,11 @@
 # through pick, then stopped with SIGTERM: exit 143, the client detached,
 # the terminal-restore sequence last on stdout. The pick and usage cases
 # (p01-p13) also run against the real package (pick never calls abduco).
+# j01 runs a variant whose `stty` is a stub (size `40 100`, logs `rows <n>`):
+# log = `rows 39`, `-a t1`, `rows 40`, `WINCH t1`.
 # Canaries: C1 drops pick's name check (p03 `../x` red), C2 drops the
-# SIGTERM to the old client on a change (a05 red: no `TERM t1`). A canary
+# SIGTERM to the old client on a change (a05 red: no `TERM t1`), C3 drops the
+# row restore after the attach (j01 red: no `rows 40`). A canary
 # that survives, or dies at another case, fails the check. Anchors and
 # `@abduco@` must occur exactly once in the script, and the name rule must
 # be claude-dispatch's: an eval-time throw otherwise.
@@ -66,8 +72,27 @@ let
   c1Text = mutate "C1" "  [[ $1 =~ $name_re ]] || die 'name must match ${nameRule}'\n" "";
   c2Text = mutate "C2" "      kill -TERM \"$child\" 2>/dev/null || true\n" "";
 
-  # Lists five sessions; `-a <name>` traps TERM first, then logs the call,
-  # so a TERM sent after the log line is always recorded.
+  # Jiggle variant: every `stty ` call goes to a stub that answers `size` with
+  # `40 100` and logs `rows <n>` into the abduco log, so the order against
+  # `-a <name>` shows. C3 drops the restore after the attach.
+  stubStty = pkgs.writeShellScript "stty-stub" ''
+    case "$1" in
+      size) printf '40 100\n' ;;
+      rows) printf 'rows %s\n' "$2" >>"''${STUB_LOG:?STUB_LOG unset}" ;;
+    esac
+    exit 0
+  '';
+  withSttyStub =
+    text:
+    let
+      out = builtins.replaceStrings [ "stty " ] [ "${stubStty} " ] text;
+    in
+    if out == text then throw "agent-pane check: no `stty ` call in the script to stub" else out;
+  jText = withSttyStub source;
+  c3Text = withSttyStub (mutate "C3" "    stty rows \"$tty_rows\" 2>/dev/null || true\n" "");
+
+  # Lists five sessions; `-a <name>` traps TERM and WINCH first, then logs the
+  # call, so a signal sent after the log line is always recorded.
   stubAbduco = pkgs.writeShellScript "abduco-stub" ''
     if [ "$#" -eq 0 ]; then
       printf 'Active sessions (on host stub)\n'
@@ -81,6 +106,7 @@ let
     printf '%s\n' "$$" >>"''${STUB_PIDS:?STUB_PIDS unset}"
     if [ "$1" = -a ] && [ "$#" -eq 2 ] && [ "$2" != quits ]; then
       trap 'printf "TERM %s\n" "$2" >>"$STUB_LOG"; exit 0' TERM
+      trap 'printf "WINCH %s\n" "$2" >>"$STUB_LOG"' WINCH
       printf '%s\n' "$*" >>"''${STUB_LOG:?STUB_LOG unset}"
       while :; do sleep 0.05; done
     fi
@@ -96,8 +122,10 @@ let
   stubbed = withStub null;
   c1 = withStub c1Text;
   c2 = withStub c2Text;
+  jiggle = withStub jText;
+  c3 = withStub c3Text;
 
-  # suite <agent-pane binary> <work dir> <all|pick> — prints `PASS <id>` per
+  # suite <agent-pane binary> <work dir> <all|pick|jiggle> — prints `PASS <id>` per
   # case; the first failure prints `FAIL <id>: <reason>` and exits 1.
   suite = pkgs.writeShellScript "agent-pane-suite" ''
     set -u
@@ -177,7 +205,10 @@ let
     echo "PASS $case"
     reject p13 --bogus
     [ ! -s "$work/out" ] || fail "unknown argument printed on stdout"
-    [ "$only" = all ] || { echo ok; exit 0; }
+    case "$only" in
+      all | jiggle) ;;
+      *) echo ok; exit 0 ;;
+    esac
 
     # ---- the pane, headless, against the stub
     sd="$HOME/.claude/session-state"
@@ -205,6 +236,20 @@ let
       printf '%s\n' "$@" | cmp -s - "$STUB_LOG" || fail "abduco log is [$(tr '\n' '|' <"$STUB_LOG")], expected [$(printf '%s|' "$@")]"
     }
     restore=$(printf '\033[?1049l\033[?25h')
+
+    # Jiggle variant (stty stubbed at 40 rows): shrink before the client
+    # starts, restore after, then SIGWINCH to the client.
+    if [ "$only" = jiggle ]; then
+      case=j01
+      wait_for "$out" "agent-pane — no agent selected" 1 "no idle header without a target"
+      "$bin" pick t1
+      wait_for "$STUB_LOG" "WINCH t1" 1 "no SIGWINCH to the t1 client after the attach"
+      log_is "rows 39" "-a t1" "rows 40" "WINCH t1"
+      echo "PASS $case"
+      stop_all
+      echo ok
+      exit 0
+    fi
 
     case=a01
     wait_for "$out" "agent-pane — no agent selected" 1 "no idle header without a target"
@@ -322,9 +367,17 @@ pkgs.runCommand "agent-pane-check" { } ''
   for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13; do
     grep -qx "PASS $r" real.log || { echo "agent-pane: case $r did not run against the real package"; exit 1; }
   done
+  ${suite} ${jiggle}/bin/agent-pane "$TMPDIR/jiggle" jiggle >jiggle.log 2>&1 || {
+    cat jiggle.log
+    echo "agent-pane: jiggle suite FAILED against the stubbed stty"
+    exit 1
+  }
+  cat jiggle.log
+  grep -qx "PASS j01" jiggle.log || { echo "agent-pane: case j01 did not run against the stubbed stty"; exit 1; }
 
+  # canary <id> <binary> <expected first failing case> [suite mode, default all]
   canary() {
-    if ${suite} "$2" "$TMPDIR/$1" all >"$1.log" 2>&1; then
+    if ${suite} "$2" "$TMPDIR/$1" "''${4:-all}" >"$1.log" 2>&1; then
       cat "$1.log"
       echo "agent-pane: canary $1 SURVIVED — the suite cannot see its fault"
       exit 1
@@ -342,7 +395,8 @@ pkgs.runCommand "agent-pane-check" { } ''
   }
   canary C1 ${c1}/bin/agent-pane p03
   canary C2 ${c2}/bin/agent-pane a05
+  canary C3 ${c3}/bin/agent-pane j01 jiggle
 
-  echo "agent-pane: runtime cases and canaries C1, C2 — OK"
+  echo "agent-pane: runtime cases and canaries C1, C2, C3 — OK"
   touch $out
 ''

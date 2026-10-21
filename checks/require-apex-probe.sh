@@ -149,6 +149,10 @@
 #   m81 the SendMessage forward scan dropped (a continued agent keeps its spawn).
 #   m82 a SendMessage to an unknown name no longer voids the anchor.
 #   m83 the meta file opened blocking: a FIFO hangs the hook.
+#   m84 the compaction summary line counts as a user turn again.
+#   m85 any truthy isCompactSummary skips the line (`"true"`, `1`).
+#   m86 the summary line opens the gate instead of being skipped.
+#   m87 the summary recognised by its text, not by its flag.
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
@@ -163,7 +167,7 @@
 #
 # usage: require-apex-probe.sh [hook.js]
 #        require-apex-probe.sh --mutants
-#        require-apex-probe.sh --mutant m1..m83
+#        require-apex-probe.sh --mutant m1..m87
 
 set -euo pipefail
 
@@ -177,7 +181,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87"
 
 MODE="run"
 ONE_MUTANT=""
@@ -398,6 +402,10 @@ M80_EXPECT="sub-tool-use-not-assistant"
 M81_EXPECT="sub-continued-after-user-turn sub-sendmessage-unknown-name"
 M82_EXPECT="sub-sendmessage-unknown-name"
 M83_EXPECT="sub-meta-fifo"
+M84_EXPECT="compact-summary-after-apex"
+M85_EXPECT="compact-flag-number compact-flag-string"
+M86_EXPECT="compact-summary-after-user-turn compact-summary-at-file-top"
+M87_EXPECT="compact-flag-number compact-flag-string compact-text-without-flag"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -524,6 +532,10 @@ build_mutant() { # build_mutant <mN> <destination>
     m81) from='for (let i = end + 1; i < lines.length && end !== -1; i++)' to='for (let i = lines.length; i < 0; i++)' ;;
     m82) from='{ end = -1; break; }' to='{ }' ;;
     m83) from='fs.constants.O_NONBLOCK | fs.constants.O_RDONLY' to='fs.constants.O_RDONLY' ;;
+    m84) from='if (msg.isCompactSummary === true) continue;' to='' ;;
+    m85) from='if (msg.isCompactSummary === true) continue;' to='if (msg.isCompactSummary) continue;' ;;
+    m86) from='if (msg.isCompactSummary === true) continue;' to='if (msg.isCompactSummary === true) return true;' ;;
+    m87) from='if (msg.isCompactSummary === true) continue;' to='if (/^This session is being continued/.test(String(msg.message && msg.message.content))) continue;' ;;
   esac
   if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
@@ -681,6 +693,32 @@ printf '%s\n' '{"type":"user","message":{"role":"user","content":"please edit th
   cat "$T_NOAPEX"
   printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"apex"}}]}}'
 } > "$T_APEX"
+
+# Compaction fixtures. The summary the harness writes after /compact is a
+# `type:"user"` line flagged isCompactSummary:true, appended to the SAME jsonl:
+# it is not a user turn, so the walk must go on above it. Only a boolean true
+# skips it; the text alone, or a non-boolean flag, is a real turn.
+C_TEXT='This session is being continued from a previous conversation that ran out of context.'
+compact_line() { # compact_line <isCompactSummary JSON value, or "" to omit the flag>
+  if [ -n "$1" ]; then
+    printf '{"type":"user","isCompactSummary":%s,"isVisibleInTranscriptOnly":true,"userType":"external","message":{"role":"user","content":"%s"}}\n' "$1" "$C_TEXT"
+  else
+    printf '{"type":"user","userType":"external","message":{"role":"user","content":"%s"}}\n' "$C_TEXT"
+  fi
+}
+T_CMP_APEX="$WORK/transcript-compact-apex.jsonl"
+T_CMP_USER="$WORK/transcript-compact-user.jsonl"
+T_CMP_TEXT="$WORK/transcript-compact-text.jsonl"
+T_CMP_STR="$WORK/transcript-compact-string.jsonl"
+T_CMP_NUM="$WORK/transcript-compact-number.jsonl"
+{ cat "$T_APEX"; compact_line true; } > "$T_CMP_APEX"
+{ cat "$T_NOAPEX"; compact_line true; } > "$T_CMP_USER"
+{ cat "$T_APEX"; compact_line ""; } > "$T_CMP_TEXT"
+{ cat "$T_APEX"; compact_line '"true"'; } > "$T_CMP_STR"
+{ cat "$T_APEX"; compact_line 1; } > "$T_CMP_NUM"
+# A file that STARTS at the compaction: nothing above the summary, deny.
+T_CMP_TOP="$WORK/transcript-compact-top.jsonl"
+compact_line true > "$T_CMP_TOP"
 
 # Subagent fixtures. A hook fired inside a subagent carries `agent_id`, while
 # `transcript_path` is the PARENT's: a user turn typed after the spawn must not
@@ -1065,6 +1103,14 @@ check_sub sub-tool-use-not-assistant deny "$REPO" "$SUBD/sysline.jsonl" subsys '
 check_sub sub-spawned-before-apex pass "$REPO" "$SUBD/early.jsonl" subearly 'echo x > src/a.ts'
 check_sub sub-meta-fifo deny "$REPO" "$T_SUB" subfifo 'echo x > src/a.ts'
 check sub-no-agent-id deny "$REPO" "$T_SUB" 'echo x > src/a.ts'
+# --- compaction summary: skipped by the walk, flag decides, not the text ----
+# ctl-redirect's command again: these cases grade the transcript walk alone.
+check compact-summary-after-apex pass "$REPO" "$T_CMP_APEX" 'echo x > src/a.ts'
+check compact-summary-after-user-turn deny "$REPO" "$T_CMP_USER" 'echo x > src/a.ts'
+check compact-text-without-flag deny "$REPO" "$T_CMP_TEXT" 'echo x > src/a.ts'
+check compact-flag-string deny "$REPO" "$T_CMP_STR" 'echo x > src/a.ts'
+check compact-flag-number deny "$REPO" "$T_CMP_NUM" 'echo x > src/a.ts'
+check compact-summary-at-file-top deny "$REPO" "$T_CMP_TOP" 'echo x > src/a.ts'
 # --- codex exec: denied unless an explicit, unwidened `-s read-only` --------
 check codex-exec-default deny "$REPO" "$T_NOAPEX" 'codex exec "fix it"'
 check codex-e-alias deny "$REPO" "$T_NOAPEX" 'codex e -m m "x"'

@@ -1233,6 +1233,8 @@ func (m *Model) clickAgents(h *hit) tea.Cmd {
 		return m.stopAgent(a.board.cols[h.col][h.idx], armed)
 	case hitNew:
 		return m.newAgentCmd()
+	case hitRefresh:
+		return m.pollCmd()
 	}
 	return nil
 }
@@ -1277,7 +1279,7 @@ func (m *Model) wheelAgents(h *hit, dir int) {
 
 // ---- view ----------------------------------------------------------------------
 
-var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · x éteindre · c reprendre · r relire · a runs · q quitter"
+var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · x éteindre · c reprendre · a runs · q quitter"
 
 // newAgentLabel: the footer's button, first on the keys row, under a hitNew.
 const newAgentLabel = "+ nouvel agent (n)"
@@ -1549,7 +1551,8 @@ func (m *Model) renderAgents() {
 		info = cellsOf("colonnes "+strconv.Itoa(first+1)+"-"+strconv.Itoa(first+nVis)+"/"+strconv.Itoa(n), fg(P.faint))
 	}
 	btn := cellsOf(newAgentLabel, fg(P.active).bold())
-	keys := toCells(" · "+keysAgents, fg(P.faint), slices.Clone(btn))
+	ref := cellsOf(refreshLabel, fg(P.active).bold())
+	keys := toCells(" · "+keysAgents, fg(P.faint), append(toCells(" · ", fg(P.faint), slices.Clone(btn)), ref...))
 	kw := W - 2*margin
 	if len(info) > 0 {
 		kw -= min(cellsWidth(info), kw/2) + 2
@@ -1558,6 +1561,10 @@ func (m *Model) renderAgents() {
 	g.put(margin, H-1, shownKeys)
 	if w := min(cellsWidth(btn), cellsWidth(shownKeys)); w > 0 {
 		m.hits = append(m.hits, hit{x: margin, y: H - 1, w: w, h: 1, kind: hitNew})
+	}
+	rx := cellsWidth(btn) + 3
+	if w := min(cellsWidth(ref), cellsWidth(shownKeys)-rx); w > 0 {
+		m.hits = append(m.hits, hit{x: margin + rx, y: H - 1, w: w, h: 1, kind: hitRefresh})
 	}
 	if len(info) > 0 && kw > 8 {
 		iw := W - 2*margin - kw - 2

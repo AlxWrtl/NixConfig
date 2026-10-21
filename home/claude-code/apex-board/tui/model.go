@@ -498,6 +498,9 @@ func (m *Model) click(x, y int) tea.Cmd {
 		if h.kind == hitCard {
 			return m.openDrawer(h.col, h.idx, h.id)
 		}
+		if h.kind == hitRefresh {
+			return m.pollCmd()
+		}
 		return nil
 	}
 	switch h.kind {

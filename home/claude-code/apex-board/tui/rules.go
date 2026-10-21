@@ -681,7 +681,8 @@ type RunInput struct {
 	Budget  *Budget
 	Verdict *string
 
-	parsed *Context // parseContext of Context, kept across polls while the run is unchanged
+	parsed *Context   // parseContext of Context, kept across polls while the run is unchanged
+	source *runSource // the agent whose runs dir holds it; nil for the board's own
 }
 
 func (r *RunInput) context() *Context {
@@ -710,7 +711,19 @@ type Card struct {
 	Hints    []string
 	Chips    []Chip
 
+	// Key is the card's identity (selection, drawer): ID for the board's own runs,
+	// `<agent>/<id>` for an agent's (runSource.key); "" reads as ID.
+	Key    string
+	source *runSource
+
 	rows rowsMemo // drawn rows, see cardRows
+}
+
+func (c *Card) key() string {
+	if c.Key == "" {
+		return c.ID
+	}
+	return c.Key
 }
 
 // deriveRun: 1. live = mtime < 6 h; 2. live and failed / BLOCKED / budget spent / ext not
@@ -765,6 +778,7 @@ func deriveRun(input *RunInput, now float64) *Card {
 		flag = strp("inactif")
 	}
 	card := &Card{ID: input.ID, Title: input.ID, MtimeMs: input.MtimeMs, Live: live, Column: column, Current: w.current, Finished: w.finished, Flag: flag, Hints: hints, Chips: chipsOf(ctx, budget, verdict, isDelivered)}
+	card.Key, card.source = input.source.key(input.ID), input.source
 	if ctx != nil {
 		card.Title, card.Tier, card.Branch = ctx.Title, ctx.Tier, ctx.Branch
 	}

@@ -36,8 +36,10 @@ type selState struct {
 }
 
 type drawerState struct {
-	id         string
-	files      []string // nil while loading
+	id         string     // the card's key
+	run        string     // its run id ("" reads as id)
+	src        *runSource // its agent source, nil for the board's own runs
+	files      []string   // nil while loading
 	tones      map[string]string
 	path       string
 	hasPath    bool
@@ -84,7 +86,7 @@ type Model struct {
 func newModel(runsDir, budgetDir, repo string, width, height int) *Model {
 	m := &Model{
 		repo: repo, width: width, height: height, tick: true, follow: true, dirty: true,
-		runsDir: runsDir, budgetDir: budgetDir, reader: &Reader{RunsDir: runsDir, BudgetDir: budgetDir},
+		runsDir: runsDir, budgetDir: budgetDir, reader: &Reader{RunsDir: runsDir, BudgetDir: budgetDir, Agents: true},
 	}
 	m.setRuns(nil, 0)
 	return m
@@ -112,7 +114,7 @@ func (m *Model) selection() selection {
 	if m.sel != nil {
 		if m.sel.id != "" {
 			for c := range Columns {
-				if i := slices.IndexFunc(m.columnCards(c), func(x *Card) bool { return x.ID == m.sel.id }); i >= 0 {
+				if i := slices.IndexFunc(m.columnCards(c), func(x *Card) bool { return x.key() == m.sel.id }); i >= 0 {
 					return selection{c, i}
 				}
 			}
@@ -194,16 +196,24 @@ func (m *Model) drawerCmd() tea.Cmd {
 	if d == nil {
 		return nil
 	}
-	runsDir, id, want := m.runsDir, d.id, ""
+	runsDir, src, id, run, want := m.runsDir, d.src, d.id, d.runID(), ""
 	if d.hasPath {
 		want = d.path
 	}
-	return func() tea.Msg { return drawerMsg{id: id, want: want, data: loadDrawer(runsDir, id, want)} }
+	return func() tea.Msg { return drawerMsg{id: id, want: want, data: loadDrawerFrom(runsDir, src, run, want)} }
+}
+
+// runID: the drawer's run dir name in its source.
+func (d *drawerState) runID() string {
+	if d.run == "" {
+		return d.id
+	}
+	return d.run
 }
 
 func (m *Model) docCmd() tea.Cmd {
-	runsDir, id, p := m.runsDir, m.drawer.id, m.drawer.path
-	return func() tea.Msg { return docMsg{id: id, path: p, doc: loadDoc(runsDir, id, p)} }
+	runsDir, src, id, run, p := m.runsDir, m.drawer.src, m.drawer.id, m.drawer.runID(), m.drawer.path
+	return func() tea.Msg { return docMsg{id: id, path: p, doc: loadDocFrom(runsDir, src, run, p)} }
 }
 
 // Init: first poll now, then every pollEvery after each result; the clock tick.
@@ -361,7 +371,7 @@ func (m *Model) pick(c, i int) {
 	}
 	m.sel = &selState{col: c, idx: max(idx, 0)}
 	if idx >= 0 {
-		m.sel.id = list[idx].ID
+		m.sel.id = list[idx].key()
 	}
 	m.follow, m.dirty = true, true
 }
@@ -369,6 +379,9 @@ func (m *Model) pick(c, i int) {
 func (m *Model) openDrawer(col, idx int, id string) tea.Cmd {
 	m.sel = &selState{col: col, idx: idx, id: id}
 	m.drawer = &drawerState{id: id, tones: map[string]string{}, focus: "files"}
+	if c := m.cardByID(id); c != nil {
+		m.drawer.run, m.drawer.src = c.ID, c.source
+	}
 	m.follow, m.dirty = true, true
 	return m.drawerCmd()
 }
@@ -402,7 +415,7 @@ func (m *Model) keyBoard(ev string) tea.Cmd {
 		m.pick(sel.col, sel.idx+pageCards)
 	case "enter":
 		if sel.idx >= 0 {
-			return m.openDrawer(sel.col, sel.idx, m.columnCards(sel.col)[sel.idx].ID)
+			return m.openDrawer(sel.col, sel.idx, m.columnCards(sel.col)[sel.idx].key())
 		}
 	case "r":
 		return m.pollCmd()

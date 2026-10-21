@@ -189,6 +189,9 @@ func cardRows(card *Card, cw int, selected bool) *rowsMemo {
 		top = append(top, flag...)
 	}
 	body = append(body, top)
+	if l := card.source.label(); l != "" {
+		body = append(body, fitCells(cellsOf(l, st(P.active)), iw))
+	}
 	body = append(body, wrapText(card.Title, iw, 3, st(P.text))...)
 	if card.Branch != nil {
 		body = append(body, fitCells(cellsOf(*card.Branch, st(P.faint)), iw))
@@ -381,7 +384,7 @@ func (m *Model) render() {
 			items[i] = rows
 			lay.tops = append(lay.tops, top)
 			lay.heights = append(lay.heights, len(rows.rows))
-			lay.ids = append(lay.ids, card.ID)
+			lay.ids = append(lay.ids, card.key())
 			top += len(rows.rows)
 		}
 		total := top
@@ -603,7 +606,7 @@ func (m *Model) docLines(d *drawerState, w int) []mdLine {
 
 func (m *Model) cardByID(id string) *Card {
 	for _, c := range m.cards {
-		if c.ID == id {
+		if c.key() == id {
 			return c
 		}
 	}
@@ -649,7 +652,11 @@ func (m *Model) drawDrawer(g grid, W, H int, view *viewInfo) {
 	headW := max(1, closeX-2-left)
 	num := d.id
 	if card != nil {
-		parts := []string{card.ID, labelOf(card.Column)}
+		parts := []string{card.ID}
+		if l := card.source.label(); l != "" {
+			parts = append(parts, l)
+		}
+		parts = append(parts, labelOf(card.Column))
 		if card.Current != nil && *card.Current != "" {
 			parts = append(parts, *card.Current)
 		}

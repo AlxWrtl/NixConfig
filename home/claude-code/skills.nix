@@ -2333,6 +2333,7 @@ in
        # APEX: {task}
        Tier: Direct
        Flags: {resolved flags}
+       Branch: {branch} (trunk: {trunk})
        Files: {path}, {path}
        Est-lines: {N}
        Baseline: {gate} -> {green | red: check | skipped: reason}

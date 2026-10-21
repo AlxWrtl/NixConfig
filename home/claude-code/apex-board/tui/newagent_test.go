@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -625,4 +626,316 @@ func TestRefreshButton(t *testing.T) {
 		t.Fatal("agents: « + nouvel agent » missing or overlapping « ↻ actualiser »")
 	}
 	check("runs", newFixture(t).model(t, 180, 50))
+}
+
+// ---- the pane's slot -------------------------------------------------------------
+
+// withSlot: paneSlot as slot for the test's length.
+func withSlot(t testing.TB, slot string) {
+	t.Helper()
+	prev := paneSlot
+	paneSlot = slot
+	t.Cleanup(func() { paneSlot = prev })
+}
+
+// With a slot: Enter runs exactly [agentPaneBin, --slot, <slot>, pick, name], then [agentPaneBin,
+// --slot, <slot>, alive], then one osascript whose argv item is `<pane> --slot <slot>` (only
+// shell-plain characters, never in the script); stop keeps its bare argv; the footer names the
+// slot. Without one: today's argv exactly.
+func TestPaneSlotArgv(t *testing.T) {
+	for _, slot := range []string{"ttys012", ""} {
+		withSlot(t, slot)
+		f := newSessionsFixture(t)
+		m := agentsModel(t, f, 180, 50)
+		picks := stubPick(t, nil)
+		pc := stubPane(t, false, nil, nil)
+		bin := agentPaneBin
+		send(m, send(m, key(tea.KeyEnter))())
+		wantPick, wantAlive, wantCmd := []string{bin, "pick", "ask-needs"}, []string{bin, "alive"}, bin
+		if slot != "" {
+			wantPick = []string{bin, "--slot", slot, "pick", "ask-needs"}
+			wantAlive = []string{bin, "--slot", slot, "alive"}
+			wantCmd = bin + " --slot " + slot
+		}
+		if len(*picks) != 1 || !slices.Equal((*picks)[0], wantPick) {
+			t.Fatalf("slot %q: picks %q", slot, *picks)
+		}
+		if len(pc.alive) != 1 || !slices.Equal(pc.alive[0], wantAlive) {
+			t.Fatalf("slot %q: alive %q", slot, pc.alive)
+		}
+		if len(pc.open) != 1 || !slices.Equal(pc.open[0], openPaneArgv(wantCmd)) || pc.open[0][len(pc.open[0])-1] != wantCmd {
+			t.Fatalf("slot %q: open %q", slot, pc.open)
+		}
+		if !regexp.MustCompile(`^[A-Za-z0-9._+/ -]+$`).MatchString(wantCmd) || paneCommand(bin) != wantCmd {
+			t.Fatalf("slot %q: command %q", slot, paneCommand(bin))
+		}
+		for _, line := range paneScript {
+			if strings.Contains(line, "--slot") || strings.Contains(line, bin) {
+				t.Fatalf("script line %q holds the command", line)
+			}
+		}
+		*picks = nil
+		send(m, char('x'))
+		send(m, send(m, char('x'))())
+		if len(*picks) != 1 || !slices.Equal((*picks)[0], []string{bin, "stop", "ask-needs"}) {
+			t.Fatalf("slot %q: stop %q", slot, *picks)
+		}
+		m.dirty = true
+		footer := plain(m.View().Content)[49]
+		if got := strings.Contains(footer, "panneau ttys012"); got != (slot != "") {
+			t.Fatalf("slot %q: footer %q", slot, footer)
+		}
+	}
+}
+
+// `n` with a slot: the launched agent is picked into that slot, the pane's alive asked there.
+func TestNewAgentSlot(t *testing.T) {
+	withSlot(t, "ttys003")
+	m, _ := newAgentModel(t)
+	stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+	pc := stubPane(t, true, nil, nil)
+	send(m, send(m, char('n'))())
+	if len(*picks) != 1 || len((*picks)[0]) != 5 || !slices.Equal((*picks)[0][:4], []string{agentPaneBin, "--slot", "ttys003", "pick"}) || !blankName.MatchString((*picks)[0][4]) {
+		t.Fatalf("picks %q", *picks)
+	}
+	if len(pc.alive) != 1 || !slices.Equal(pc.alive[0], []string{agentPaneBin, "--slot", "ttys003", "alive"}) || len(pc.open) != 0 {
+		t.Fatalf("alive %q open %q", pc.alive, pc.open)
+	}
+}
+
+// A slot the shell could split, or an unsafe path: no split, the footer says it; the hand
+// command names the slot.
+func TestPaneSlotUnsafe(t *testing.T) {
+	stubPick(t, nil)
+	for _, slot := range []string{"a;b", "-x", "TTY", "a b"} {
+		withSlot(t, slot)
+		pc := stubPane(t, false, nil, nil)
+		if paneCommand(agentPaneBin) != "" || ensurePane(agentPaneBin) != "chemin d'agent-pane non sûr" || len(pc.open) != 0 {
+			t.Fatalf("slot %q: command %q open %q", slot, paneCommand(agentPaneBin), pc.open)
+		}
+	}
+	withSlot(t, "ttys012")
+	if paneCommand("/nix/store/x y/bin/agent-pane") != "" || paneCommand("bin/agent-pane") != "" {
+		t.Fatal("unsafe path composed")
+	}
+	if got := paneNote("x"); got != " · pane : x — lance agent-pane --slot ttys012 à la main" {
+		t.Fatalf("note %q", got)
+	}
+}
+
+// ttySlot / devName: a tty char device under /dev is found by its Rdev; /dev/null (no tty name)
+// and a regular file give none.
+func TestTTYSlot(t *testing.T) {
+	null, err := os.Open("/dev/null")
+	mustDo(t, err)
+	defer null.Close()
+	if s := ttySlot(null); s != "" {
+		t.Fatalf("/dev/null slot %q", s)
+	}
+	reg, err := os.Open("newagent_test.go")
+	mustDo(t, err)
+	defer reg.Close()
+	if s := ttySlot(reg); s != "" {
+		t.Fatalf("regular file slot %q", s)
+	}
+	if s := devName(t.TempDir(), 0); s != "" {
+		t.Fatalf("empty dir: %q", s)
+	}
+	entries, err := os.ReadDir("/dev")
+	mustDo(t, err)
+	for _, e := range entries {
+		fi, err := os.Lstat(filepath.Join("/dev", e.Name()))
+		if err != nil || !strings.HasPrefix(e.Name(), "tty") || !validName(e.Name()) || fi.Mode()&os.ModeCharDevice == 0 {
+			continue
+		}
+		rdev := uint64(fi.Sys().(*syscall.Stat_t).Rdev)
+		if got := devName("/dev", rdev); got == "" || !validName(got) {
+			t.Fatalf("%s: devName %q", e.Name(), got)
+		}
+		return
+	}
+	t.Skip("no tty device under /dev")
+}
+
+// ---- `N`: a generic agent ----------------------------------------------------------
+
+// stubGenericRoot: genericRoot answers root for the test's length.
+func stubGenericRoot(t testing.TB, root string) {
+	t.Helper()
+	prev := genericRoot
+	genericRoot = func() string { return root }
+	t.Cleanup(func() { genericRoot = prev })
+}
+
+// `N` off the UI goroutine: genericRoot made 0700, then <root>/<name>, exactly env -u
+// CLAUDE_CODE_CHILD_SESSION abduco -n <name> claude --name <name> there, then the pick; a second
+// `N` while it runs launches nothing; the footer says it and the card is selected.
+func TestGenericKey(t *testing.T) {
+	m, _ := newAgentModel(t)
+	root := filepath.Join(t.TempDir(), "agents")
+	stubGenericRoot(t, root)
+	stubResumeBins(t)
+	launches := stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+	cmd := send(m, char('N'))
+	if cmd == nil || len(*launches) != 0 || m.ag.note != "générique : lancement…" || !m.ag.launching {
+		t.Fatalf("N: Cmd %v launches %d note %q", cmd != nil, len(*launches), m.ag.note)
+	}
+	if again := send(m, char('n')); again != nil || m.ag.note != "nouvel agent : un lancement est en cours" {
+		t.Fatalf("n while N runs: Cmd %v note %q", again != nil, m.ag.note)
+	}
+	if again := send(m, char('N')); again != nil || m.ag.note != "générique : un lancement est en cours" {
+		t.Fatalf("second N: Cmd %v note %q", again != nil, m.ag.note)
+	}
+	if _, err := os.Lstat(root); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("root made on the UI goroutine")
+	}
+	msg := cmd()
+	if len(*launches) != 1 {
+		t.Fatalf("launches %+v", *launches)
+	}
+	l := (*launches)[0]
+	name := filepath.Base(l.dir)
+	want := []string{"/usr/bin/env", "-u", "CLAUDE_CODE_CHILD_SESSION", abducoBin, "-n", name, claudeBin, "--name", name}
+	if !blankName.MatchString(name) || l.dir != filepath.Join(root, name) || !slices.Equal(l.argv, want) {
+		t.Fatalf("launch %+v", l)
+	}
+	for p, mode := range map[string]os.FileMode{root: 0o700, l.dir: 0o700} {
+		fi, err := os.Lstat(p)
+		if err != nil || !fi.IsDir() || fi.Mode().Perm() != mode {
+			t.Fatalf("%s: %v %v", p, fi, err)
+		}
+	}
+	if len(*picks) != 1 || !slices.Equal((*picks)[0], []string{agentPaneBin, "pick", name}) {
+		t.Fatalf("picks %q", *picks)
+	}
+	send(m, msg)
+	if m.ag.note != "générique : "+name || m.ag.launching || m.ag.sel == nil || m.ag.sel.id != name {
+		t.Fatalf("after: note %q launching %v sel %+v", m.ag.note, m.ag.launching, m.ag.sel)
+	}
+	// A second one: root kept, the name's dir taken gets the suffix.
+	*launches = nil
+	at := time.Date(2026, 1, 1, 1, 2, 3, 0, time.Local) // not the first launch's second
+	mustDo(t, os.Mkdir(filepath.Join(root, "agent-"+at.Format("150405")), 0o700))
+	if msg := launchGeneric(abducoBin, claudeBin, agentPaneBin, root, "", at); msg.err != "" || msg.name != "agent-"+at.Format("150405")+"-2" || len(*launches) != 1 {
+		t.Fatalf("taken dir: %+v launches %v", msg, *launches)
+	}
+}
+
+// genericRoot a link (even to a dir) or a file, or relative: refused, nothing created, nothing
+// launched; no binary: a note; a refused launch removes its empty dir and says stderr's line.
+func TestGenericRefusals(t *testing.T) {
+	stubResumeBins(t)
+	launches := stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+	stubAbduco(t, []byte("Active sessions (on host x)\n"), nil)
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "target")
+	mustDo(t, os.Mkdir(target, 0o700))
+	link := filepath.Join(tmp, "link")
+	mustDo(t, os.Symlink(target, link))
+	file := filepath.Join(tmp, "file")
+	mustDo(t, os.WriteFile(file, nil, 0o600))
+	for _, root := range []string{link, file, "agents"} {
+		msg := launchGeneric(abducoBin, claudeBin, agentPaneBin, root, "", time.Now())
+		if msg.err == "" || msg.name != "" || !msg.generic {
+			t.Fatalf("%s: %+v", root, msg)
+		}
+	}
+	if entries, _ := os.ReadDir(target); len(entries) != 0 {
+		t.Fatalf("created through the link: %v", entries)
+	}
+	if len(*launches) != 0 || len(*picks) != 0 {
+		t.Fatalf("launched %v picked %q", *launches, *picks)
+	}
+
+	m, _ := newAgentModel(t)
+	stubGenericRoot(t, link)
+	send(m, send(m, char('N'))())
+	if len(*launches) != 0 || !strings.HasPrefix(m.ag.note, "générique : ") || !strings.Contains(m.ag.note, "lien ou pas un dossier") || m.ag.launching {
+		t.Fatalf("linked root: launches %v note %q", *launches, m.ag.note)
+	}
+	stubGenericRoot(t, "")
+	if cmd := send(m, char('N')); cmd != nil || m.ag.note != "générique : dossier inconnu, rien lancé" {
+		t.Fatalf("no root: note %q", m.ag.note)
+	}
+	claudeBin = ""
+	if cmd := send(m, char('N')); cmd != nil || m.ag.note != "générique : binaire absent, rien lancé" {
+		t.Fatalf("no claude: note %q", m.ag.note)
+	}
+	claudeBin = "/opt/homebrew/bin/claude"
+
+	root := filepath.Join(tmp, "agents")
+	stubGenericRoot(t, root)
+	failing := stubLaunch(t, errors.New("create-session: Address already in use"))
+	send(m, send(m, char('N'))())
+	if len(*failing) != 1 || len(*picks) != 0 {
+		t.Fatalf("refused launch: launches %v picks %q", *failing, *picks)
+	}
+	name := filepath.Base((*failing)[0].dir)
+	if m.ag.note != "abduco -n "+name+" : create-session: Address already in use" {
+		t.Fatalf("refused launch note %q", m.ag.note)
+	}
+	if _, err := os.Lstat((*failing)[0].dir); !errors.Is(err, os.ErrNotExist) {
+		t.Fatal("a refused launch left its dir")
+	}
+}
+
+// genericTaken: listed, a state file, an entry at <root>/<name> (a link too); free otherwise.
+func TestGenericTaken(t *testing.T) {
+	root, sessions := t.TempDir(), t.TempDir()
+	mustDo(t, os.WriteFile(filepath.Join(sessions, "agent-000002.json"), []byte("{}"), 0o600))
+	mustDo(t, os.Mkdir(filepath.Join(root, "agent-000003"), 0o700))
+	mustDo(t, os.Symlink("/nowhere", filepath.Join(root, "agent-000005")))
+	is := genericTaken(root, sessions, map[string]bool{"agent-000001": true})
+	for n, want := range map[string]bool{"agent-000001": true, "agent-000002": true, "agent-000003": true, "agent-000004": false, "agent-000005": true} {
+		if is(n) != want {
+			t.Errorf("genericTaken(%q) = %v", n, !want)
+		}
+	}
+}
+
+// `c` on a closed generic agent: Resumable only for exactly <genericRoot>/<name>; the resume argv
+// in that dir.
+func TestResumeGeneric(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "agents")
+	stubGenericRoot(t, root)
+	dir := filepath.Join(root, "g1")
+	mustDo(t, os.MkdirAll(dir, 0o700))
+	for cwd, want := range map[string]bool{
+		dir: true, dir + "/": false, filepath.Join(dir, "sub"): false, filepath.Join(root, "g2"): false,
+		root: false, root + "/x/../g1": false, "agents/g1": false,
+	} {
+		in := sessionInput{Name: "g1", State: "done", Live: liveAbsent, Cwd: cwd}
+		if got := deriveAgent(&in, testNow).Resumable; got != want {
+			t.Errorf("cwd %q: Resumable %v", cwd, got)
+		}
+	}
+	a := deriveAgent(&sessionInput{Name: "g1", State: "done", Live: liveAbsent, Cwd: dir, UpdatedAt: testNow}, testNow)
+	m := resumeModel(t, a)
+	withTranscript(t, stubResumeBins(t), dir)
+	launches := stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+	send(m, send(m, char('c'))())
+	want := []string{"/usr/bin/env", "-u", "CLAUDE_CODE_CHILD_SESSION", abducoBin, "-n", "g1", claudeBin, "--continue", "--name", "g1"}
+	if len(*launches) != 1 || (*launches)[0].dir != dir || !slices.Equal((*launches)[0].argv, want) {
+		t.Fatalf("launches %+v", *launches)
+	}
+	if len(*picks) != 1 || !slices.Equal((*picks)[0], []string{agentPaneBin, "pick", "g1"}) || m.ag.note != "reprise : g1" {
+		t.Fatalf("picks %q note %q", *picks, m.ag.note)
+	}
+}
+
+// A board started in a worktree (runsDir under `<repo>/.claude/worktrees/<x>`): `n` launches in
+// the main repo, never in the worktree (a worktree of a worktree).
+func TestNewAgentFromWorktree(t *testing.T) {
+	m, repo := newAgentModel(t)
+	m.runsDir = filepath.Join(repo, ".claude", "worktrees", "w1", ".claude", "output", "apex")
+	launches := stubLaunch(t, nil)
+	stubPick(t, nil)
+	send(m, send(m, char('n'))())
+	if len(*launches) != 1 || (*launches)[0].dir != repo || (*launches)[0].argv[1] != "--blank" {
+		t.Fatalf("launches %+v, want dir %s", *launches, repo)
+	}
 }

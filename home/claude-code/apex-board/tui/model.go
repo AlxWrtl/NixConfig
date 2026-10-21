@@ -328,6 +328,10 @@ func keyName(k tea.KeyPressMsg) string {
 		return "pgdn"
 	case "shift+tab":
 		return "tab"
+	case "shift+n": // a press reported without its text (kitty keyboard)
+		return "N"
+	case "shift+p":
+		return "P"
 	case "ctrl+c":
 		return "ctrl-c"
 	default:

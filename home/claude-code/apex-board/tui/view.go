@@ -50,10 +50,11 @@ const (
 	hitScrim
 	hitDoc
 	hitDrawer
-	hitTab  // col: the tab index
-	hitStop // an agent card's ×: col, idx, id as hitCard
+	hitTab     // col: the tab index
+	hitStop    // an agent card's ×: col, idx, id as hitCard
 	hitNew     // the Agents footer's « + nouvel agent »
 	hitRefresh // either footer's « ↻ actualiser »: a poll now, as `r`
+	hitGroup   // an Agents group's header: id its key, idx its index
 )
 
 // refreshLabel: the button both footers draw before their keys, under a hitRefresh.

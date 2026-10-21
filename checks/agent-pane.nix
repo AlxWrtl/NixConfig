@@ -21,7 +21,11 @@
 #     never inherits it; `alive` exits 0 only while another process holds
 #     that lock (1 for no file, a free lock, a lock that cannot be opened),
 #     prints nothing, and exits 2 on an argument. The board opens a pane on
-#     exit 1.
+#     exit 1;
+#   - `--slot <id>` (one pane per board tab) moves target and lock to
+#     slots/<id>/ (0700) and nowhere else: two slots pick, detach and lock
+#     apart, the global files untouched; stop takes it and ignores it; a bad
+#     or missing id exits 2 with nothing created.
 #
 # Runtime suite: the BUILT script against a stub abduco that lists a fixed
 # set of sessions (`*`, ` `, `+` rows) and, on `-a <name>`, logs the call and
@@ -38,13 +42,19 @@
 # and `kill -0` sees it gone).
 # j01 runs a variant whose `stty` is a stub (size `40 100`, logs `rows <n>`):
 # log = `rows 39`, `-a t1`, `rows 40`, `WINCH t1`.
+# Slots: t01 (two slot picks, the global target intact) and t04 (bad ids,
+# the state tree unchanged) also run against the real package; t05 (stop
+# with a slot) and the two slot panes t02 (a pick on a detaches only a's
+# client) and t03 (alive per slot) run against the stub.
 # Canaries: C1 drops pick's name check (p03 `../x` red), C2 drops the
 # SIGTERM to the old client on a change (a05 red: no `TERM t1`), C3 drops the
 # row restore after the attach (j01 red: no `rows 40`), C4 turns stop's exact
 # match into a substring one (s05 red: `t` kills t1), C5 drops alive's
 # conflict check (l02 red: a free lock counts as a pane), C6 lets the client
 # inherit the lock fd (w03 red: the orphaned client keeps it), C7 drops the
-# XDG_CACHE_HOME default (e01 red: abduco sees it unset). A canary
+# XDG_CACHE_HOME default (e01 red: abduco sees it unset), C8 parses the slot
+# but keeps the global paths (t01 red: no slot target), C9 drops the slot's
+# name check (t04 red: `../x` creates a dir). A canary
 # that survives, or dies at another case, fails the check. Anchors and
 # `@abduco@` must occur exactly once in the script, and the name rule must
 # be claude-dispatch's: an eval-time throw otherwise.
@@ -97,6 +107,8 @@ let
   c6Text =
     mutate "C6" "  \"$abduco_bin\" -a \"$1\" <&0 9>&- &\n"
       "  \"$abduco_bin\" -a \"$1\" <&0 &\n";
+  c8Text = mutate "C8" "if [ -n \"$slot\" ]; then pane_dir=\"$state_dir/slots/$slot\"; fi\n" "";
+  c9Text = mutate "C9" "  [[ $2 =~ $name_re ]] || die \"slot must match $name_re\"\n" "";
 
   # Jiggle variant: every `stty ` call goes to a stub that answers `size` with
   # `40 100` and logs `rows <n>` into the abduco log, so the order against
@@ -154,6 +166,8 @@ let
   c5 = withStub c5Text;
   c6 = withStub c6Text;
   c7 = withStub c7Text;
+  c8 = withStub c8Text;
+  c9 = withStub c9Text;
   jiggle = withStub jText;
   c3 = withStub c3Text;
 
@@ -237,6 +251,46 @@ let
     echo "PASS $case"
     reject p13 --bogus
     [ ! -s "$work/out" ] || fail "unknown argument printed on stdout"
+
+    # ---- slots: `--slot <id> pick` writes slots/<id>/target (dirs 0700, no
+    # temp file left), one per slot, the global target untouched.
+    sl="$XDG_STATE_HOME/agent-pane/slots"
+    mode() { ls -ld "$1" | cut -c1-10; }
+    # slot_is <slot> <name>: line 1 = name, a nonce, nothing else in a 0700 dir.
+    slot_is() {
+      [ "$(sed -n 1p "$sl/$1/target" 2>/dev/null)" = "$2" ] || fail "slot $1: target line 1 is not $2: $(sed -n 1p "$sl/$1/target" 2>/dev/null)"
+      [ -n "$(sed -n 2p "$sl/$1/target")" ] || fail "slot $1: no nonce on line 2"
+      [ "$(ls -A "$sl/$1")" = target ] || fail "slot $1 holds more than the target: $(ls -A "$sl/$1")"
+      [ "$(mode "$sl/$1")" = drwx------ ] || fail "slot $1 dir is not 0700"
+    }
+    run t01 --slot a pick t1
+    [ "$rc" = 0 ] || fail "--slot a pick t1: exit $rc, expected 0"
+    run t01 --slot b pick t2
+    [ "$rc" = 0 ] || fail "--slot b pick t2: exit $rc, expected 0"
+    slot_is a t1
+    slot_is b t2
+    [ "$(mode "$sl")" = drwx------ ] || fail "slots dir is not 0700"
+    cmp -s "$work/saved" "$tf" || fail "a slot pick changed the global target: $(tr '\n' ' ' <"$tf")"
+    [ "$(ls -A "$XDG_STATE_HOME/agent-pane" | tr '\n' ' ')" = "slots target " ] || fail "state dir holds more than slots and the target: $(ls -A "$XDG_STATE_HOME/agent-pane")"
+    echo "PASS $case"
+
+    # A bad or missing slot id: exit 2, a reason, nothing created or changed.
+    rm -f "$sl"/a/target "$sl"/b/target
+    rmdir "$sl"/a "$sl"/b "$sl"
+    state_tree() { (cd "$XDG_STATE_HOME" && find . | LC_ALL=C sort); }
+    state_tree >"$work/tree"
+    bad_slot() {
+      run t04 "$@"
+      [ "$rc" = 2 ] || fail "$*: exit $rc, expected 2"
+      [ -s "$work/err" ] || fail "$*: no reason on stderr"
+      state_tree | cmp -s - "$work/tree" || fail "$*: the state tree changed: $(state_tree | tr '\n' ' ')"
+      cmp -s "$work/saved" "$tf" || fail "$*: the global target changed"
+    }
+    bad_slot --slot ../x pick t1
+    bad_slot --slot -x pick t1
+    bad_slot --slot "" pick t1
+    bad_slot --slot
+    echo "PASS $case"
 
     # ---- alive: 0 only while another process holds the flock on pane.lock,
     # else 1, nothing printed. The holder is a sleep that keeps fd 9 (exec),
@@ -333,6 +387,18 @@ let
       done
       alive "$p2" || fail "stop t1 killed t2's process"
       list_only
+      echo "PASS $case"
+      # stop takes --slot and ignores it: sessions are global, no slot dir.
+      run t05 --slot a stop t2
+      [ "$rc" = 0 ] || fail "--slot a stop t2: exit $rc, expected 0"
+      i=0
+      while alive "$p2"; do
+        i=$((i + 1))
+        [ "$i" -lt 50 ] || fail "t2's process survived --slot a stop t2 (waited 5 s)"
+        sleep 0.1
+      done
+      list_only
+      [ ! -e "$sl" ] || fail "stop created a slot dir"
       echo "PASS $case"
       kill "$p2" 2>/dev/null
       unset STUB_T1_PID STUB_T2_PID
@@ -497,6 +563,90 @@ let
       sleep 0.1
     done
     alive_is w03 1
+
+    # ---- two slot panes, a and b: a pick on a detaches and reattaches only
+    # a's client, b keeps its own; alive sees each slot's lock, not the
+    # global one. The w03 client is ended first and the log emptied.
+    case=t02
+    stop_all
+    i=0
+    while kill -0 "$client" 2>/dev/null; do
+      i=$((i + 1))
+      [ "$i" -lt 50 ] || fail "the w03 client survived (waited 5 s)"
+      sleep 0.1
+    done
+    : >"$STUB_LOG"
+    "$bin" --slot a </dev/null >"$work/pane-a.out" 2>>"$work/pane.err" &
+    pane_a=$!
+    "$bin" --slot b </dev/null >"$work/pane-b.out" 2>>"$work/pane.err" &
+    pane_b=$!
+    printf '%s\n' "$pane_a" "$pane_b" >>"$STUB_PIDS"
+    pane=$pane_a
+    # wait_slot_lock <slot>: `alive --slot <slot>` sees that pane's lock (15 s).
+    wait_slot_lock() {
+      local i=0
+      until "$bin" --slot "$1" alive 2>/dev/null; do
+        i=$((i + 1))
+        [ "$i" -lt 150 ] || fail "alive --slot $1 never saw slot $1's pane"
+        sleep 0.1
+      done
+    }
+    wait_slot_lock a
+    wait_slot_lock b
+    "$bin" --slot a pick t1
+    "$bin" --slot b pick t2
+    wait_for "$STUB_LOG" "-a t1" 1 "pick --slot a t1 did not attach t1"
+    wait_for "$STUB_LOG" "-a t2" 1 "pick --slot b t2 did not attach t2"
+    "$bin" --slot a pick t1
+    wait_for "$STUB_LOG" "TERM t1" 1 "a re-pick on slot a did not detach a's client"
+    wait_for "$STUB_LOG" "-a t1" 2 "a re-pick on slot a did not reattach"
+    sleep 1
+    [ "$(grep -cx 'TERM t2' "$STUB_LOG")" = 0 ] || fail "a pick on slot a detached b's client"
+    [ "$(n_a t2)" = 1 ] || fail "b's client was attached $(n_a t2) times, expected once"
+    [ "$(n_a t1)" = 2 ] || fail "a's client was attached $(n_a t1) times, expected twice"
+    kill -0 "$pane_b" 2>/dev/null || fail "b's pane exited"
+    echo "PASS $case"
+
+    # stop_pane <pid>: SIGTERM, then wait until it is gone (10 s).
+    stop_pane() {
+      local i=0
+      kill -TERM "$1" 2>/dev/null
+      while kill -0 "$1" 2>/dev/null; do
+        i=$((i + 1))
+        [ "$i" -lt 100 ] || fail "a slot pane survived SIGTERM (waited 10 s)"
+        sleep 0.1
+      done
+      wait "$1" 2>/dev/null
+    }
+    # alive_in <expected exit> [--slot <slot>]: that exit, nothing printed.
+    alive_in() {
+      local want="$1"
+      shift
+      run "$case" "$@" alive
+      [ "$rc" = "$want" ] || fail "$* alive: exit $rc, expected $want"
+      [ ! -s "$work/out" ] && [ ! -s "$work/err" ] || fail "$* alive printed something"
+    }
+    # free_wait <args...>: up to 3 s for `<args> alive` to see a free lock.
+    free_wait() {
+      local i=0
+      while "$bin" "$@" alive 2>/dev/null; do
+        i=$((i + 1))
+        [ "$i" -lt 30 ] || break
+        sleep 0.1
+      done
+    }
+    case=t03
+    stop_pane "$pane_b"
+    free_wait --slot b
+    [ -f "$sl/a/pane.lock" ] || fail "slot a's lock is not at slots/a/pane.lock"
+    alive_in 0 --slot a
+    alive_in 1 --slot b
+    alive_in 1
+    stop_pane "$pane_a"
+    pane=""
+    free_wait --slot a
+    alive_in 1 --slot a
+    echo "PASS $case"
     stop_all
     echo ok
   '';
@@ -528,10 +678,10 @@ pkgs.runCommand "agent-pane-check" { } ''
     echo "agent-pane: pick suite FAILED against the real package"
     exit 1
   }
-  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 l01 l02 l03 l04 l05 l06 s01 s02 s03 s04 s05 e01 a01 w01 a02 a03 a04 a05 a06 a07 a08 a09 w02 a10 w03; do
+  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 t01 t04 l01 l02 l03 l04 l05 l06 s01 s02 s03 s04 s05 e01 t05 a01 w01 a02 a03 a04 a05 a06 a07 a08 a09 w02 a10 w03 t02 t03; do
     grep -qx "PASS $r" stub.log || { echo "agent-pane: case $r did not run against the stub"; exit 1; }
   done
-  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 l01 l02 l03 l04 l05 l06; do
+  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 t01 t04 l01 l02 l03 l04 l05 l06; do
     grep -qx "PASS $r" real.log || { echo "agent-pane: case $r did not run against the real package"; exit 1; }
   done
   ${suite} ${jiggle}/bin/agent-pane "$TMPDIR/jiggle" jiggle >jiggle.log 2>&1 || {
@@ -567,7 +717,9 @@ pkgs.runCommand "agent-pane-check" { } ''
   canary C5 ${c5}/bin/agent-pane l02
   canary C6 ${c6}/bin/agent-pane w03
   canary C7 ${c7}/bin/agent-pane e01
+  canary C8 ${c8}/bin/agent-pane t01
+  canary C9 ${c9}/bin/agent-pane t04
 
-  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4, C5, C6, C7 — OK"
+  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4, C5, C6, C7, C8, C9 — OK"
   touch $out
 ''

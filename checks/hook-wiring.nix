@@ -80,6 +80,18 @@
 #      an OPEN PR, a failed gh, a failed tool, another command or malformed
 #      input; the value flags' values never read as the selector. One canary
 #      per branch.
+#      The worktree-live-guard run adds worktree-in-use.js, run as a copy
+#      whose one `const LSOF` literal points at a fake lsof (the build
+#      sandbox has no /usr/sbin and no process info): a `git worktree
+#      remove` or `rm -r` of a real worktree that a real `sleep` has as cwd
+#      denied, naming its pid and command, by path, -C, cd, env -C, $PWD,
+#      name (looked up before a plain directory of that name), symlink,
+#      parent, braces, or a glob under rm or remove; a non-shell direct
+#      parent in the target denied; a missing, hung or bad-exit lsof, or one
+#      not listing the hook, denied once a shape matched; a free worktree,
+#      prune, a held non-checkout dir, a name-prefix sibling, the hook's own
+#      parent shell, `$VAR`, malformed input and a non-shape with no lsof at
+#      all allowed. One canary per branch.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -621,6 +633,78 @@ let
     A-apr-wx = {
       hook = "apex-pr-record.js";
       text = "fs.writeFileSync(path.join(r.dir, \"pr.md\"), body, { flag: \"wx\" });";
+    };
+    A-wh-failopen = {
+      hook = "worktree-in-use.js";
+      text = "try { data = JSON.parse(input); } catch { allow(); return; }";
+    };
+    A-wh-blind = {
+      hook = "worktree-in-use.js";
+      text = "if (ls.broken) denyBlind(ls.why);";
+    };
+    A-wh-holder = {
+      hook = "worktree-in-use.js";
+      text = "const t = targets.find((x) => holds(x, p.cwd));";
+    };
+    A-wh-self = {
+      hook = "worktree-in-use.js";
+      text = "const isSelf = (p) => p.pid === process.pid || p.pid === child || p.ppid === process.pid || (p.pid === process.ppid && SHELLS.includes(base(p.cmd).replace(/^-/, \"\")));";
+    };
+    A-wh-checkout = {
+      hook = "worktree-in-use.js";
+      text = "if (hasGit(d)) return true;";
+    };
+    A-wh-prefix = {
+      hook = "worktree-in-use.js";
+      text = "return c === r || c.startsWith(r + \"/\");";
+    };
+    A-wh-realpath = {
+      hook = "worktree-in-use.js";
+      text = "const real = fs.realpathSync.native(p);";
+    };
+    A-wh-suffix = {
+      hook = "worktree-in-use.js";
+      text = "if (p.endsWith(want)) {";
+    };
+    A-wh-cd = {
+      hook = "worktree-in-use.js";
+      text = "return place(a, cur);";
+    };
+    A-wh-C = {
+      hook = "worktree-in-use.js";
+      text = "dir = place(a, dir);";
+    };
+    A-wh-glob = {
+      hook = "worktree-in-use.js";
+      text = "if (!hasGlob(w)) {";
+    };
+    A-wh-brace = {
+      hook = "worktree-in-use.js";
+      text = "if (!x.brace[i] || x.val[i] !== \"{\") continue;";
+    };
+    A-wh-remove-glob = {
+      hook = "worktree-in-use.js";
+      text = "if (hasGlob(b)) { for (const g of globWords(b, cur)) resolveWt(g, dir, out); continue; }";
+    };
+    A-wh-suffix-first = {
+      hook = "worktree-in-use.js";
+      text = "if (real !== null) out.push({ path: real, kind: \"remove\" });";
+    };
+    A-wh-env-C = {
+      hook = "worktree-in-use.js";
+      text = "if (chdir.includes(o)) { here = words[k + 1] === undefined ? null : place(words[k + 1], here); k += 2; continue; }";
+    };
+    A-wh-pwd = {
+      hook = "worktree-in-use.js";
+      text = "const words = raw.map((w) => (w.pwd ? atPwd(w, cur) : w));";
+    };
+    A-wh-noself = {
+      hook = "worktree-in-use.js";
+      text = "if (!procs.some((x) => x.pid === process.pid)) return";
+    };
+    A-wh-badexit = {
+      hook = "worktree-in-use.js";
+      text = "if (r.status !== 0 && r.status !== 1) return";
     };
   };
 
@@ -1610,6 +1694,237 @@ let
         }
       ];
     }
+    # Malformed input denied: every Bash call pays for an unreadable payload.
+    {
+      id = "M-wh-failopen";
+      hook = "worktree-in-use.js";
+      kills = "wh-malformed";
+      swaps = [
+        {
+          anchor = "A-wh-failopen";
+          to = "try { data = JSON.parse(input); } catch { deny(\"BLOCKED: malformed\"); return; }";
+        }
+      ];
+    }
+    # A liveness read that failed allows: a missing lsof clears the removal.
+    {
+      id = "M-wh-blind";
+      hook = "worktree-in-use.js";
+      kills = "wh-lsof-missing-deny";
+      swaps = [
+        {
+          anchor = "A-wh-blind";
+          to = "if (ls.broken) allow();";
+        }
+      ];
+    }
+    # No holder match: the held worktree goes.
+    {
+      id = "M-wh-holder";
+      hook = "worktree-in-use.js";
+      kills = "wh-remove-held";
+      swaps = [
+        {
+          anchor = "A-wh-holder";
+          to = "const t = undefined;";
+        }
+      ];
+    }
+    # No self-exclusion: the hook, its lsof and its parent shell hold their
+    # own cwd, so a session can never remove the worktree it sits in.
+    {
+      id = "M-wh-self";
+      hook = "worktree-in-use.js";
+      kills = "wh-self-cwd";
+      swaps = [
+        {
+          anchor = "A-wh-self";
+          to = "const isSelf = (p) => false;";
+        }
+      ];
+    }
+    # No checkout test: `rm -r` of a held worktree reads as a plain directory.
+    {
+      id = "M-wh-checkout";
+      hook = "worktree-in-use.js";
+      kills = "wh-rm-held";
+      swaps = [
+        {
+          anchor = "A-wh-checkout";
+          to = "if (false) return true;";
+        }
+      ];
+    }
+    # String prefix for ancestry: wts/hel is held because wts/held is.
+    {
+      id = "M-wh-prefix";
+      hook = "worktree-in-use.js";
+      kills = "wh-sibling";
+      swaps = [
+        {
+          anchor = "A-wh-prefix";
+          to = "return c.startsWith(r);";
+        }
+      ];
+    }
+    # No realpath: a symlinked spelling never meets lsof's physical cwd.
+    {
+      id = "M-wh-realpath";
+      hook = "worktree-in-use.js";
+      kills = "wh-remove-symlink-held";
+      swaps = [
+        {
+          anchor = "A-wh-realpath";
+          to = "const real = p;";
+        }
+      ];
+    }
+    # No suffix lookup: a bare worktree name is never placed.
+    {
+      id = "M-wh-suffix";
+      hook = "worktree-in-use.js";
+      kills = "wh-remove-suffix-held";
+      swaps = [
+        {
+          anchor = "A-wh-suffix";
+          to = "if (false) {";
+        }
+      ];
+    }
+    # `cd` ignored: the incident's `cd main && git worktree remove ../wt`
+    # resolves against the old cwd.
+    {
+      id = "M-wh-cd";
+      hook = "worktree-in-use.js";
+      kills = "wh-incident-chain";
+      swaps = [
+        {
+          anchor = "A-wh-cd";
+          to = "return cur;";
+        }
+      ];
+    }
+    # `git -C` ignored: the target resolves against the session cwd.
+    {
+      id = "M-wh-C";
+      hook = "worktree-in-use.js";
+      kills = "wh-remove-C-force-held";
+      swaps = [
+        {
+          anchor = "A-wh-C";
+          to = "dir = cur;";
+        }
+      ];
+    }
+    # No glob expansion: `rm -rf wts/held*` names a path that does not exist.
+    {
+      id = "M-wh-glob";
+      hook = "worktree-in-use.js";
+      kills = "wh-rm-glob-held";
+      swaps = [
+        {
+          anchor = "A-wh-glob";
+          to = "if (true) {";
+        }
+      ];
+    }
+    # No brace expansion: `wts/{held,free}` names a path that does not exist.
+    {
+      id = "M-wh-brace";
+      hook = "worktree-in-use.js";
+      kills = "wh-brace-held";
+      swaps = [
+        {
+          anchor = "A-wh-brace";
+          to = "if (true) continue;";
+        }
+      ];
+    }
+    # A glob in the remove target dropped: `wts/hel?` lets held go.
+    {
+      id = "M-wh-remove-glob";
+      hook = "worktree-in-use.js";
+      kills = "wh-remove-glob-held";
+      swaps = [
+        {
+          anchor = "A-wh-remove-glob";
+          to = "if (hasGlob(b)) continue;";
+        }
+      ];
+    }
+    # Path before name: a plain sub/held stops the lookup git does first.
+    {
+      id = "M-wh-suffix-first";
+      hook = "worktree-in-use.js";
+      kills = "wh-suffix-over-plain-dir";
+      swaps = [
+        {
+          anchor = "A-wh-suffix-first";
+          to = "if (real !== null) { out.push({ path: real, kind: \"remove\" }); return; }";
+        }
+      ];
+    }
+    # `env -C` ignored: the target resolves against the session cwd.
+    {
+      id = "M-wh-env-C";
+      hook = "worktree-in-use.js";
+      kills = "wh-env-C-held";
+      swaps = [
+        {
+          anchor = "A-wh-env-C";
+          to = "if (chdir.includes(o)) { k += 2; continue; }";
+        }
+      ];
+    }
+    # `$PWD` never placed: `cd wts && rm -rf $PWD/held` goes through.
+    {
+      id = "M-wh-pwd";
+      hook = "worktree-in-use.js";
+      kills = "wh-pwd-held";
+      swaps = [
+        {
+          anchor = "A-wh-pwd";
+          to = "const words = raw;";
+        }
+      ];
+    }
+    # The direct parent excluded whatever it is: a Claude session (node)
+    # removes the worktree it runs in.
+    {
+      id = "M-wh-selfparent";
+      hook = "worktree-in-use.js";
+      kills = "wh-self-nonshell-parent";
+      swaps = [
+        {
+          anchor = "A-wh-self";
+          to = "const isSelf = (p) => p.pid === process.pid || p.pid === child || p.ppid === process.pid || p.pid === process.ppid;";
+        }
+      ];
+    }
+    # A listing without the hook in it trusted: it cleared nobody.
+    {
+      id = "M-wh-noself";
+      hook = "worktree-in-use.js";
+      kills = "wh-lsof-noself-deny";
+      swaps = [
+        {
+          anchor = "A-wh-noself";
+          to = "if (false) return";
+        }
+      ];
+    }
+    # An lsof that exited 2 read as a listing.
+    {
+      id = "M-wh-badexit";
+      hook = "worktree-in-use.js";
+      kills = "wh-lsof-badexit-deny";
+      swaps = [
+        {
+          anchor = "A-wh-badexit";
+          to = "if (false) return";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -1798,6 +2113,33 @@ let
     "apr-multi-write"
     "apr-selector-args"
     "apr-noselector-write"
+    "wh-remove-held"
+    "wh-remove-C-force-held"
+    "wh-remove-suffix-held"
+    "wh-remove-symlink-held"
+    "wh-rm-held"
+    "wh-rm-parent-held"
+    "wh-rm-glob-held"
+    "wh-incident-chain"
+    "wh-lsof-missing-deny"
+    "wh-lsof-hung-deny"
+    "wh-remove-free"
+    "wh-prune"
+    "wh-rm-plain-held"
+    "wh-sibling"
+    "wh-self-cwd"
+    "wh-unrelated"
+    "wh-var"
+    "wh-malformed"
+    "wh-nomatch-lsof-missing"
+    "wh-brace-held"
+    "wh-remove-glob-held"
+    "wh-suffix-over-plain-dir"
+    "wh-env-C-held"
+    "wh-pwd-held"
+    "wh-self-nonshell-parent"
+    "wh-lsof-noself-deny"
+    "wh-lsof-badexit-deny"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -1815,6 +2157,13 @@ let
     "protect-main.js"
     "block-main-bash.js"
   ];
+
+  # worktree-in-use.js reads liveness from lsof at one absolute path; the wh
+  # cases run a copy with that literal, and only that literal, repointed at a
+  # fake (the build sandbox has no /usr/sbin and no process info). Counted
+  # here at eval (D7), and again on each body at run time.
+  whLsofLit = "const LSOF = \"/usr/sbin/lsof\";";
+  whLsofMiscount = occurrences whLsofLit (bodyText "worktree-in-use.js") != 1;
 
   bodyText = n: bodies.${n} or "";
   missingAnchors = builtins.filter (
@@ -1848,6 +2197,7 @@ let
     "worktree-env-sync.sh"
     "session-state.js"
     "apex-pr-record.js"
+    "worktree-in-use.js"
   ];
   timeoutsOf =
     n:
@@ -2229,6 +2579,112 @@ let
       [ "$got" = "$1" ] || { why="gh called with '$got', expected '$1'"; kind=mismatch; return 1; }
     }
 
+    # worktree-in-use: a repo $WR with a commit and four linked worktrees
+    # under $WH/wts — held (a real sleep has it as cwd), free, held2 and hel
+    # (a string prefix of held, held by nobody) — a symlink $WH/link-held to
+    # held, $WH/plain/sub, no checkout, the cwd of a second real sleep, and
+    # $WR/sub/held, a plain directory sharing held's name.
+    # All paths physical: lsof reports getcwd's path. The sleeps outlive
+    # every case and canary, and are reaped on exit, the stdenv exit handler
+    # chained.
+    WH="$root/wh"
+    mkdir -p "$WH/wts" "$WH/plain/sub"
+    WH=$(cd "$WH" && pwd -P)
+    WR="$WH/repo"
+    {
+      g init -q -b master "$WR" &&
+        g -C "$WR" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q --allow-empty -m probe &&
+        g -C "$WR" worktree add -q -b wt-held "$WH/wts/held" &&
+        g -C "$WR" worktree add -q -b wt-free "$WH/wts/free" &&
+        g -C "$WR" worktree add -q -b wt-held2 "$WH/wts/held2" &&
+        g -C "$WR" worktree add -q -b wt-hel "$WH/wts/hel" &&
+        ln -s "$WH/wts/held" "$WH/link-held" &&
+        mkdir -p "$WR/sub/held" &&
+        [ -f "$WH/wts/held/.git" ] && [ ! -e "$WH/plain/.git" ] && [ ! -e "$WH/.git" ]
+    } || { echo "hook-wiring: worktree-in-use fixture could not be built" >&2; exit 1; }
+    (cd "$WH/wts/held" && exec ${pkgs.coreutils}/bin/sleep 3600) < /dev/null > /dev/null 2>&1 &
+    WH_HOLD=$!
+    (cd "$WH/plain/sub" && exec ${pkgs.coreutils}/bin/sleep 3600) < /dev/null > /dev/null 2>&1 &
+    WH_PLAIN=$!
+    wh_reap() { kill "$WH_HOLD" "$WH_PLAIN" 2> /dev/null || true; }
+    trap 'wh_rc=$?; set +e; wh_reap; if declare -F exitHandler > /dev/null; then (exit "$wh_rc"); exitHandler; fi; exit "$wh_rc"' EXIT
+    # The other processes lsof would list, in `lsof -FpcRn` order (p, R, c,
+    # f, n): launchd at /, then the two sleeps.
+    printf 'p%s\nR%s\nc%s\nfcwd\nn%s\n' \
+      1 0 launchd / \
+      "$WH_HOLD" "$$" sleep "$WH/wts/held" \
+      "$WH_PLAIN" "$$" sleep "$WH/plain/sub" > "$WH/records"
+    # The fake lsof logs its argv, then prints itself (the hook's lsof
+    # child), the hook ($PPID, with the parent and cwd wh_run's shell
+    # recorded), that shell, and the records above. The hung one never
+    # answers; $WH/no-such-lsof does not exist. badexit-lsof prints the same
+    # listing and exits 2; noself-lsof leaves out itself and the hook.
+    wh_lsof_head=('#!${pkgs.bash}/bin/bash' \
+      "here='$WH'" \
+      'printf "%s\n" "$*" >> "$here/lsof.log"')
+    wh_lsof_self=('pp=""; pc=""' \
+      'while IFS= read -r l; do case "$l" in p*) pp=''${l#p} ;; n*) pc=''${l#n} ;; esac; done < "$here/parent.rec"' \
+      'printf "p%s\nR%s\nclsof\nfcwd\nn%s\n" "$$" "$PPID" "$(pwd -P)"' \
+      'printf "p%s\nR%s\ncnode\nfcwd\nn%s\n" "$PPID" "$pp" "$pc"')
+    printf '%s\n' "''${wh_lsof_head[@]}" "''${wh_lsof_self[@]}" \
+      'exec ${pkgs.coreutils}/bin/cat "$here/parent.rec" "$here/records"' > "$WH/lsof"
+    printf '%s\n' "''${wh_lsof_head[@]}" "''${wh_lsof_self[@]}" \
+      '${pkgs.coreutils}/bin/cat "$here/parent.rec" "$here/records"' 'exit 2' > "$WH/badexit-lsof"
+    printf '%s\n' "''${wh_lsof_head[@]}" \
+      'exec ${pkgs.coreutils}/bin/cat "$here/parent.rec" "$here/records"' > "$WH/noself-lsof"
+    printf '%s\n' '#!${pkgs.bash}/bin/bash' 'exec ${pkgs.coreutils}/bin/sleep 30' > "$WH/hang-lsof"
+    chmod +x "$WH/lsof" "$WH/hang-lsof" "$WH/badexit-lsof" "$WH/noself-lsof"
+    WH_LIT=${lib.escapeShellArg whLsofLit}
+    # $1 body, $2 lsof path. Writes the copy with the lsof literal, found
+    # exactly once, repointed at $2; leaves its path in $wb.
+    wh_body() {
+      wsrc=$(cat "$1") || { why="cannot read $1"; return 1; }
+      wrest=''${wsrc#*"$WH_LIT"}
+      [ "$wrest" != "$wsrc" ] || { why="lsof literal missing: $WH_LIT is not in $1"; return 1; }
+      case "$wrest" in *"$WH_LIT"*) why="lsof literal occurs more than once in $1"; return 1 ;; esac
+      wrep="const LSOF = \"$2\";"
+      wb="$d/$lbl.wh.js"
+      printf '%s\n' "''${wsrc/"$WH_LIT"/"$wrep"}" > "$wb"
+    }
+    # $1 command, $2 session cwd.
+    wh_in() { ${jq} -cn --arg c "$1" --arg w "$2" '{hook_event_name:"PreToolUse",session_id:"probe",cwd:$w,tool_name:"Bash",tool_input:{command:$c,description:"probe"}}'; }
+    # $1 body, $2 cwd, $3 stdin. As run(), but the hook's direct parent is a
+    # bash that first writes its own lsof record to $WH/parent.rec (and so
+    # never execs node: `exit` is its last command), its command recorded as
+    # $wh_pcmd (bash unless a case says otherwise). The lsof log is cleared.
+    wh_pcmd=bash
+    wh_run() {
+      printf '%s' "$3" > "$d/$lbl.in"
+      rc=0
+      : > "$WH/lsof.log"
+      (cd "$2" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH="$GITBIN:${pkgs.coreutils}/bin" ${pkgs.coreutils}/bin/timeout "$tmo" \
+        ${pkgs.bash}/bin/bash -c 'printf "p%s\nR%s\nc%s\nfcwd\nn%s\n" "$$" "$PPID" "$4" "$(pwd -P)" > "$1" && "$2" "$3"; exit $?' \
+        wh-parent "$WH/parent.rec" ${pkgs.nodejs_22}/bin/node "$1" "$wh_pcmd") \
+        < "$d/$lbl.in" > "$d/$lbl.out" 2> "$d/$lbl.err" || rc=$?
+    }
+    # $1 body, $2 lsof path, $3 cwd (the session's too), $4 command: the
+    # copy, run.
+    wh_case() {
+      wh_body "$1" "$2" || return 1
+      wh_run "$wb" "$3" "$(wh_in "$4" "$3")"
+    }
+    # Denied for the held worktree: the sleep named by pid and command.
+    wh_held() {
+      is_deny "pid $WH_HOLD" || return 1
+      case "$reason" in
+        *"pid $WH_HOLD"[!0-9]* | *"pid $WH_HOLD") ;;
+        *) why="denied, but the reason names no 'pid $WH_HOLD' (only a longer pid): $reason"; return 1 ;;
+      esac
+      case "$reason" in
+        *sleep*) ;;
+        *) why="denied, but the reason does not name the holder's command 'sleep': $reason"; return 1 ;;
+      esac
+    }
+    # An allow after a matched shape must come from a liveness read.
+    wh_called() {
+      [ -s "$WH/lsof.log" ] || { why="allowed without ever calling lsof: a matched shape must read liveness before it allows"; return 1; }
+    }
+
     # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
     # $tmo is the host's timeout for the hook under test (probe_case sets it);
     # 124 is `timeout` killing it, which the host reads as no decision.
@@ -2309,6 +2765,7 @@ let
         wes-*) tmo=${hostTimeout "worktree-env-sync.sh"} ;;
         ss-*) tmo=${hostTimeout "session-state.js"} ;;
         apr-*) tmo=${hostTimeout "apex-pr-record.js"} ;;
+        wh-*) tmo=${hostTimeout "worktree-in-use.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -3093,6 +3550,90 @@ let
           apr_quiet || return 1
           apr_gh "pr view $APR_JSON" || return 1
           apr_has s1 ;;
+        # worktree-in-use: denied while the sleep has wts/held as cwd, however
+        # the target is spelled.
+        wh-remove-held)
+          wh_case "$2" "$WH/lsof" "$WR" "git worktree remove $WH/wts/held"; wh_held ;;
+        # Relative to the -C dir, not to the cwd.
+        wh-remove-C-force-held)
+          wh_case "$2" "$WH/lsof" "$NOREPO" "git -C $WR worktree remove --force ../wts/held"; wh_held ;;
+        # A bare name, resolved by `git worktree list --porcelain` suffix.
+        wh-remove-suffix-held)
+          wh_case "$2" "$WH/lsof" "$WR" "git worktree remove held"; wh_held ;;
+        wh-remove-symlink-held)
+          wh_case "$2" "$WH/lsof" "$WR" "git worktree remove --force $WH/link-held"; wh_held ;;
+        wh-rm-held)
+          wh_case "$2" "$WH/lsof" "$WR" "rm -rf $WH/wts/held"; wh_held ;;
+        # The parent of the worktree: its .git sits between the target and the cwd.
+        wh-rm-parent-held)
+          wh_case "$2" "$WH/lsof" "$WR" "rm -rf $WH/wts"; wh_held ;;
+        wh-rm-glob-held)
+          wh_case "$2" "$WH/lsof" "$WR" "rm -rf $WH/wts/held*"; wh_held ;;
+        # The incident's shape: cd into the main checkout, remove, drop the branch.
+        wh-incident-chain)
+          wh_case "$2" "$WH/lsof" "$NOREPO" "cd $WR && git worktree remove --force ../wts/held && git branch -D wt-held"; wh_held ;;
+        # A matched shape on a FREE worktree with no liveness read: fail closed.
+        wh-lsof-missing-deny)
+          wh_case "$2" "$WH/no-such-lsof" "$WR" "git worktree remove $WH/wts/free"; is_deny "lsof" ;;
+        wh-lsof-hung-deny)
+          wh_case "$2" "$WH/hang-lsof" "$WR" "git worktree remove $WH/wts/free"; is_deny "lsof" ;;
+        # Positive control: shape matched, lsof read, own pid present, nobody holds it.
+        wh-remove-free)
+          wh_case "$2" "$WH/lsof" "$WR" "git worktree remove $WH/wts/free"; is_allow || return 1; wh_called ;;
+        wh-prune)
+          wh_case "$2" "$WH/lsof" "$WR" "git worktree prune"; is_allow ;;
+        # The sleep holds plain/sub, but no .git sits between plain and it.
+        wh-rm-plain-held)
+          wh_case "$2" "$WH/lsof" "$WR" "rm -rf $WH/plain"; is_allow ;;
+        # wts/hel is a string prefix of the held wts/held, not its ancestor.
+        wh-sibling)
+          wh_case "$2" "$WH/lsof" "$WR" "git worktree remove --force $WH/wts/hel"; is_allow || return 1; wh_called ;;
+        # Inside held2 only the hook, its lsof child and its direct parent
+        # shell (bash, from wh_run) have it as cwd: none is a holder.
+        wh-self-cwd)
+          wh_case "$2" "$WH/lsof" "$WH/wts/held2" "git worktree remove --force $WH/wts/held2"; is_allow || return 1; wh_called ;;
+        wh-unrelated)
+          wh_case "$2" "$WH/lsof" "$WR" "ls $WH/wts/held && git status"; is_allow ;;
+        # A target the hook cannot resolve: a net, not a barrier.
+        wh-var)
+          wh_case "$2" "$WH/lsof" "$WR" "git worktree remove --force \$WT && rm -rf \$WT"; is_allow ;;
+        wh-malformed)
+          wh_body "$2" "$WH/lsof" || return 1
+          wh_run "$wb" "$WR" "$malformed"; is_allow ;;
+        # No shape (a listing, a non-recursive rm): allowed before any lsof.
+        wh-nomatch-lsof-missing)
+          wh_case "$2" "$WH/no-such-lsof" "$WR" "git worktree list && rm -f $WH/wts/held"; is_allow ;;
+        # Unquoted braces expand, as bash and zsh do, before the rm reads them.
+        wh-brace-held)
+          wh_case "$2" "$WH/lsof" "$WR" "rm -rf $WH/wts/{held,free}"; wh_held ;;
+        # The shell globs a remove target too: hel? is held.
+        wh-remove-glob-held)
+          wh_case "$2" "$WH/lsof" "$WR" "git worktree remove --force $WH/wts/hel?"; wh_held ;;
+        # git looks `held` up as a worktree name BEFORE as the plain sub/held.
+        wh-suffix-over-plain-dir)
+          wh_case "$2" "$WH/lsof" "$WR/sub" "git worktree remove --force held"; wh_held ;;
+        # `env -C` runs git from the main checkout: ../wts/held from there.
+        wh-env-C-held)
+          wh_case "$2" "$WH/lsof" "$NOREPO" "env -C $WR git worktree remove --force ../wts/held"; wh_held ;;
+        # $PWD is where the cd left the shell, not the session cwd.
+        wh-pwd-held)
+          wh_case "$2" "$WH/lsof" "$WR" "cd $WH/wts && rm -rf \$PWD/held"; wh_held ;;
+        # The direct parent is no shell (a Claude session, node) and sits in
+        # held2: it is a holder, named by its pid.
+        wh-self-nonshell-parent)
+          wh_pcmd=node
+          wh_case "$2" "$WH/lsof" "$WH/wts/held2" "git worktree remove --force $WH/wts/held2"
+          wh_pcmd=bash
+          wpp=""
+          while IFS= read -r l; do case "$l" in p*) wpp=''${l#p} ;; esac; done < "$WH/parent.rec"
+          [ -n "$wpp" ] || { why="no parent record written"; return 1; }
+          is_deny "pid $wpp node" ;;
+        # A listing that does not show the hook itself saw too little.
+        wh-lsof-noself-deny)
+          wh_case "$2" "$WH/noself-lsof" "$WR" "git worktree remove $WH/wts/free"; is_deny "own process" ;;
+        # Same listing as lsof, exit status 2.
+        wh-lsof-badexit-deny)
+          wh_case "$2" "$WH/badexit-lsof" "$WR" "git worktree remove $WH/wts/free"; is_deny "lsof exited 2" ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -3111,6 +3652,7 @@ let
         wes-*) echo ${hookFile "worktree-env-sync.sh"} ;;
         ss-*) echo ${hookFile "session-state.js"} ;;
         apr-*) echo ${hookFile "apex-pr-record.js"} ;;
+        wh-*) echo ${hookFile "worktree-in-use.js"} ;;
       esac
     }
 
@@ -3252,6 +3794,11 @@ let
       name = "D6 grant: correction-budget.js carries correction-grant's token line verbatim";
       ok = hasInfix anchors.A-cg-token.text (bodyText "correction-budget.js");
       msg = "correction-budget.js lacks `${anchors.A-cg-token.text}`. It denies a CronCreate/ScheduleWakeup prompt carrying the grant token by that same regex; a drift lets the model schedule a line the grant hook accepts as the user's";
+    }
+    {
+      name = "D7 lsof seam: worktree-in-use.js carries its lsof path literal exactly once";
+      ok = !whLsofMiscount;
+      msg = "`${whLsofLit}` is not in exactly one line of the installed worktree-in-use.js (home/claude-code/hooks.nix, hooks.hookWorktreeInUse; occurrences: ${toString (occurrences whLsofLit (bodyText "worktree-in-use.js"))}). The wh cases repoint that one literal at a fake lsof; missing, they run the real path the build sandbox lacks, and twice, the copy is only half repointed";
     }
   ];
 

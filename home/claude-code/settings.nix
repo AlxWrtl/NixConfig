@@ -798,6 +798,21 @@ in
         }
         {
           matcher = "Bash";
+          # No `if`: it holds one rule, and both `git worktree remove` and
+          # `rm -r` are watched. Denies removing a worktree a live process
+          # still has as cwd. Fail-closed once a shape matched: the timeout
+          # stays above the hook's own 3 s watchdog, or a host kill would
+          # turn its deny into an allow.
+          hooks = [
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/worktree-in-use.js";
+              timeout = 5;
+            }
+          ];
+        }
+        {
+          matcher = "Bash";
           # Denies a dangerouslyDisableSandbox call that no sandbox error,
           # user ask or allowlisted command justifies. Fail-open.
           hooks = [

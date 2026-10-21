@@ -91,6 +91,17 @@ in
   # decision 2026-10-11). Fail-open: a workflow hook, not a barrier.
   hookLoneExcludedBash = builtins.readFile ./hooks/lone-excluded-bash.js;
 
+  # PreToolUse on Bash: `git worktree remove` / `rm -r` of a worktree (or of
+  # a tree holding a checkout) that a live process still has as cwd is
+  # denied, the holders named by pid. 2026-10-21: a Preliz session removed
+  # agent-135738's worktree with --force while that agent ran in its abduco
+  # pane; git checks only for uncommitted changes, never for a process
+  # inside. Liveness is one lsof call, made only once a shape matched.
+  # Fail-open before the match, FAIL-CLOSED after it (lsof missing, hung or
+  # unreadable denies). Its lsof path is one literal the hook-wiring check
+  # repoints at a fake; checks/worktree-in-use-probe.sh runs the real one.
+  hookWorktreeInUse = builtins.readFile ./hooks/worktree-in-use.js;
+
   # PreToolUse on Bash: a call asking dangerouslyDisableSandbox is denied
   # unless the newest Bash result batch in the transcript shows sandbox
   # evidence (EPERM, Operation not permitted, sandbox_violations…), the

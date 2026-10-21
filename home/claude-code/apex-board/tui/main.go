@@ -21,11 +21,11 @@ import (
 	"github.com/charmbracelet/x/term"
 )
 
-// abducoBin, agentPaneBin and dispatchBin (claude-dispatch): store paths, set by -X ldflags in
-// apex-board.nix (no PATH lookup). Empty (a bare `go build`): abduco is not asked (liveness
-// unknown, said in the tab), and a pick, a stop or a new agent says the binary is missing,
-// nothing run.
-var abducoBin, agentPaneBin, dispatchBin string
+// abducoBin, agentPaneBin, dispatchBin (claude-dispatch) and claudeBin: absolute paths, set by -X
+// ldflags in apex-board.nix (no PATH lookup). Empty (a bare `go build`): abduco is not asked
+// (liveness unknown, said in the tab), and a pick, a stop, a new agent or a resume says the binary
+// is missing, nothing run.
+var abducoBin, agentPaneBin, dispatchBin, claudeBin string
 
 func main() { os.Exit(run(os.Args[1:])) }
 

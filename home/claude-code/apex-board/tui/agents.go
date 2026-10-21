@@ -25,7 +25,9 @@ package main
 // session with no prompt, in its own worktree as a dispatched one), then picks it: the user types
 // the first prompt in the top pane, and the card takes it as its title. After any pick that
 // succeeded, `agent-pane alive`: when no pane runs, osascript opens one, a Ghostty split above the
-// board (ensurePane); a failure only says so in the footer.
+// board (ensurePane); a failure only says so in the footer. `c` on a closed agent (its claude
+// exited, abduco no longer lists it) brings its conversation back: `abduco -n <name> claude
+// --continue --name <name>` in its worktree, then the same pick (resumeAgent).
 
 import (
 	"bytes"
@@ -428,6 +430,7 @@ type Agent struct {
 	Title, Mission, Current       string
 	Asking, Stale                 bool
 	Stoppable                     bool // abduco lists it: there is a session to stop
+	Resumable                     bool // abduco answered without it, cwd its worktree: `c` continues it
 	UpdatedAt                     float64
 	Age                           string
 	Chips                         []Chip
@@ -510,6 +513,8 @@ func deriveAgent(s *sessionInput, now float64) *Agent {
 		Kind: kind, Column: col, Mission: s.Intent, Stale: stale, UpdatedAt: s.UpdatedAt, Age: ageText(now, s.UpdatedAt), Chips: chips,
 		// Not listed or abduco silent: nothing to stop, no × (fail-closed on the action).
 		Stoppable: s.noState || s.Live == liveRunning || s.Live == liveEnded,
+		// Absent only: an ended (`+`) session still holds its name (abduco -n would refuse it).
+		Resumable: !s.noState && s.Live == liveAbsent && isWorktreeOf(s.Cwd, s.Name),
 	}
 	a.Title = a.Mission
 	if a.Title == "" {
@@ -611,9 +616,13 @@ type pickMsg struct{ name, err, paneErr string }
 // stopMsg: the outcome of `agent-pane stop <name>`; err "" when it succeeded.
 type stopMsg struct{ name, err string }
 
-// newAgentMsg: the outcome of `n`: the name launched ("" when none was picked), the launch's
-// error, then the pick's (tried only after a launch that succeeded), then ensurePane's.
-type newAgentMsg struct{ name, err, pickErr, paneErr string }
+// newAgentMsg: the outcome of `n` (or of `c`, resume set): the name launched ("" when none was
+// picked), the launch's error, then the pick's (tried only after a launch that succeeded), then
+// ensurePane's.
+type newAgentMsg struct {
+	name, err, pickErr, paneErr string
+	resume                      bool
+}
 
 // runPick runs argv (agent-pane pick or stop, no shell): runQuiet. A variable so the tests never
 // run it.
@@ -807,13 +816,51 @@ func launchAgent(bin, pane, repo, sessionsDir string, now time.Time) newAgentMsg
 	if err := runLaunch(repo, []string{bin, "--blank", name}); err != nil {
 		return newAgentMsg{name: name, err: err.Error()}
 	}
+	return pickLaunched(pane, newAgentMsg{name: name})
+}
+
+// pickLaunched: after a launch that succeeded, `agent-pane pick <name>` then ensurePane, into msg.
+func pickLaunched(pane string, msg newAgentMsg) newAgentMsg {
 	if pane == "" {
-		return newAgentMsg{name: name, pickErr: "binaire absent"}
+		msg.pickErr = "binaire absent"
+		return msg
 	}
-	if err := runPick([]string{pane, "pick", name}); err != nil {
-		return newAgentMsg{name: name, pickErr: err.Error()}
+	if err := runPick([]string{pane, "pick", msg.name}); err != nil {
+		msg.pickErr = err.Error()
+		return msg
 	}
-	return newAgentMsg{name: name, paneErr: ensurePane(pane)}
+	msg.paneErr = ensurePane(pane)
+	return msg
+}
+
+// isWorktreeOf: cwd is exactly `<abs repo>/.claude/worktrees/<name>`, where `claude --worktree
+// <name>` (claude-dispatch) puts the session: only there does `claude --continue` find this
+// agent's conversation.
+func isWorktreeOf(cwd, name string) bool {
+	repo, ok := strings.CutSuffix(cwd, "/.claude/worktrees/"+name)
+	return ok && validName(name) && repo != "" && filepath.IsAbs(cwd) && filepath.Clean(cwd) == cwd
+}
+
+// resumeAgent runs in resumeCmd's Cmd: `abduco -n <name> claude --continue --name <name>` in the
+// worktree, then pickLaunched. claude-dispatch's launch minus --worktree (the cwd is the worktree)
+// and minus a prompt: --continue reopens the most recent conversation there, not the state file's
+// sessionId, which another claude run in that dir (a hook's `claude -p`) can have overwritten
+// (measured 2026-10-21). CLAUDE_CODE_CHILD_SESSION is dropped as claude-dispatch does. Not through
+// claude-dispatch: it is the sandbox-excluded allow-list, a resume mode there would widen what a
+// sandboxed session launches; the board runs in the user's terminal, outside the sandbox; a
+// worktree that is gone, or a link, launches nothing.
+func resumeAgent(abduco, claude, pane, name, cwd string) newAgentMsg {
+	msg := newAgentMsg{name: name, resume: true}
+	if fi, err := os.Lstat(cwd); err != nil || !fi.IsDir() {
+		msg.err = "worktree absent ou lien : " + cwd
+		return msg
+	}
+	argv := []string{"/usr/bin/env", "-u", "CLAUDE_CODE_CHILD_SESSION", abduco, "-n", name, claude, "--continue", "--name", name}
+	if err := runLaunch(cwd, argv); err != nil {
+		msg.err = err.Error()
+		return msg
+	}
+	return pickLaunched(pane, msg)
 }
 
 // setSessionsDir turns the Agents tab on, reading dir at each poll.
@@ -948,21 +995,46 @@ func (m *Model) newAgentCmd() tea.Cmd {
 	return func() tea.Msg { return launchAgent(bin, pane, repo, sessionsDir, time.Now()) }
 }
 
+// resumeCmd: `c` on the selected card: resumeAgent in a Cmd, off the UI goroutine, when the card
+// is Resumable; else the footer says why. One launch at a time, `n`'s guard.
+func (m *Model) resumeCmd(ag *Agent) tea.Cmd {
+	a := &m.ag
+	m.dirty = true
+	switch {
+	case !ag.Resumable:
+		a.note = ag.Name + " : rien à reprendre (session encore listée, abduco muet ou hors worktree)"
+		return nil
+	case a.launching:
+		a.note = "reprise : un lancement est en cours"
+		return nil
+	case abducoBin == "" || claudeBin == "":
+		a.note = "reprise : binaire absent, rien lancé"
+		return nil
+	}
+	abduco, claude, pane, name, cwd := abducoBin, claudeBin, agentPaneBin, ag.Name, ag.Cwd
+	a.launching, a.note = true, "reprise de "+name+"…"
+	return func() tea.Msg { return resumeAgent(abduco, claude, pane, name, cwd) }
+}
+
 // applyNewAgent: the footer says it, the new card is selected, and a poll at once draws it.
 func (m *Model) applyNewAgent(msg newAgentMsg) tea.Cmd {
 	a := &m.ag
 	a.launching, m.dirty = false, true
+	label, launch := "nouvel agent : ", "claude-dispatch --blank "
+	if msg.resume {
+		label, launch = "reprise : ", "reprise de "
+	}
 	switch {
 	case msg.name == "":
-		a.note = "nouvel agent : " + msg.err
+		a.note = label + msg.err
 	case msg.err != "":
-		a.note = "claude-dispatch --blank " + msg.name + " : " + msg.err
+		a.note = launch + msg.name + " : " + msg.err
 	case msg.pickErr != "":
-		a.note = "nouvel agent : " + msg.name + " · agent-pane pick : " + msg.pickErr
+		a.note = label + msg.name + " · agent-pane pick : " + msg.pickErr
 	case msg.paneErr != "":
-		a.note = "nouvel agent : " + msg.name + paneNote(msg.paneErr)
+		a.note = label + msg.name + paneNote(msg.paneErr)
 	default:
-		a.note = "nouvel agent : " + msg.name
+		a.note = label + msg.name
 	}
 	if msg.name != "" && msg.err == "" {
 		a.sel, a.follow = &selState{id: msg.name}, true
@@ -1079,6 +1151,10 @@ func (m *Model) keyAgents(ev string) tea.Cmd {
 		}
 	case "n":
 		return m.newAgentCmd()
+	case "c":
+		if sel.idx >= 0 {
+			return m.resumeCmd(a.board.cols[sel.col][sel.idx])
+		}
 	case "r":
 		return m.pollCmd()
 	}
@@ -1155,7 +1231,7 @@ func (m *Model) wheelAgents(h *hit, dir int) {
 
 // ---- view ----------------------------------------------------------------------
 
-var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · x éteindre · r relire · a runs · q quitter"
+var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · x éteindre · c reprendre · r relire · a runs · q quitter"
 
 // newAgentLabel: the footer's button, first on the keys row, under a hitNew.
 const newAgentLabel = "+ nouvel agent (n)"

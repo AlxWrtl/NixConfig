@@ -65,6 +65,12 @@
 #      written outside abduco, under a bad name, on malformed input, or
 #      through a symlinked state dir or file. Its one canary drops the
 #      ABDUCO_SESSION gate.
+#      The apex-output run adds protect-main's APEX run-state exemption: a
+#      file git ignores and does not track under its own repo's
+#      `.claude/output/apex/` allowed on master, a new run dir, another cwd
+#      and another case included; a force-added tracked file there, an
+#      ignored file elsewhere, a repo that ignores nothing, a symlink or
+#      hardlink out and a nested repo on master denied.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -342,6 +348,34 @@ let
     A12 = {
       hook = "protect-main.js";
       text = "ti.file_path || ti.notebook_path";
+    };
+    A-pm-apex-prefix = {
+      hook = "protect-main.js";
+      text = "if (!realTarget.startsWith(realTop + path.sep + APEX_OUT)) return false;";
+    };
+    A-pm-apex-ignore = {
+      hook = "protect-main.js";
+      text = "return gitBroken(ig) === null && ig.status === 0;";
+    };
+    A-pm-apex-nlink = {
+      hook = "protect-main.js";
+      text = "if (fs.lstatSync(realTarget).nlink > 1) return false;";
+    };
+    A-pm-apex-cwd = {
+      hook = "protect-main.js";
+      text = "if (!isApexOutput(realTop, realTarget)) deny(";
+    };
+    A-pm-apex-file = {
+      hook = "protect-main.js";
+      text = "&& !isApexOutput(home, realTarget)";
+    };
+    A-pm-apex-fsmonitor = {
+      hook = "protect-main.js";
+      text = "git([\"-c\", \"core.fsmonitor=false\", \"check-ignore\", \"-q\", \"--\", realTarget], realTop)";
+    };
+    A-pm-apex-sep = {
+      hook = "protect-main.js";
+      text = "const APEX_OUT = path.join(\".claude\", \"output\", \"apex\") + path.sep;";
     };
     A13 = {
       hook = "block-main-bash.js";
@@ -723,6 +757,107 @@ let
         {
           anchor = "A13";
           to = "function isVaultTop(dir) { return false;";
+        }
+      ];
+    }
+    # The apex-output run. No prefix test: every ignored file of a repo on
+    # master is writable, `.claude/settings.local.json` included.
+    {
+      id = "M-pm-apex-prefix";
+      hook = "protect-main.js";
+      kills = "pm-apex-ignored-outside";
+      swaps = [
+        {
+          anchor = "A-pm-apex-prefix";
+          to = "if (false) return false;";
+        }
+      ];
+    }
+    # Any check-ignore answer counts: a force-added TRACKED file there passes.
+    {
+      id = "M-pm-apex-ignore";
+      hook = "protect-main.js";
+      kills = "pm-apex-tracked";
+      swaps = [
+        {
+          anchor = "A-pm-apex-ignore";
+          to = "return gitBroken(ig) === null;";
+        }
+      ];
+    }
+    # No link count: a hardlink of a tracked file writes through to it.
+    {
+      id = "M-pm-apex-nlink";
+      hook = "protect-main.js";
+      kills = "pm-apex-hardlink";
+      swaps = [
+        {
+          anchor = "A-pm-apex-nlink";
+          to = "if (false) return false;";
+        }
+      ];
+    }
+    # The cwd site keeps its deny: run state is refused from its own repo.
+    # Killed on an ALLOW case, as an over-block.
+    {
+      id = "M-pm-apex-cwd";
+      hook = "protect-main.js";
+      kills = "pm-apex-new";
+      swaps = [
+        {
+          anchor = "A-pm-apex-cwd";
+          to = "if (true) deny(";
+        }
+      ];
+    }
+    # The cwd site allows instead of falling through: a nested repo on
+    # master under the ignored dir is never asked.
+    {
+      id = "M-pm-apex-fallthrough";
+      hook = "protect-main.js";
+      kills = "pm-apex-nested";
+      swaps = [
+        {
+          anchor = "A-pm-apex-cwd";
+          to = "if (isApexOutput(realTop, realTarget)) allow(); deny(";
+        }
+      ];
+    }
+    # The file site keeps its deny: run state is refused from another cwd.
+    # Killed on an ALLOW case, as an over-block.
+    {
+      id = "M-pm-apex-file";
+      hook = "protect-main.js";
+      kills = "pm-apex-crosscwd";
+      swaps = [
+        {
+          anchor = "A-pm-apex-file";
+          to = "";
+        }
+      ];
+    }
+    # The fsmonitor override dropped from check-ignore: the target repo's
+    # core.fsmonitor command runs, outside the sandbox.
+    {
+      id = "M-pm-apex-fsmonitor";
+      hook = "protect-main.js";
+      kills = "pm-apex-fsmonitor-pwned";
+      swaps = [
+        {
+          anchor = "A-pm-apex-fsmonitor";
+          to = "git([\"check-ignore\", \"-q\", \"--\", realTarget], realTop)";
+        }
+      ];
+    }
+    # No separator after `apex`: a sibling `apexfoo/` reads as run state.
+    {
+      id = "M-pm-apex-sep";
+      hook = "protect-main.js";
+      kills = "pm-apex-sibling";
+      swaps = [
+        {
+          anchor = "A-pm-apex-sep";
+          to = "const APEX_OUT = path.join(\".claude\", \"output\", \"apex\");";
         }
       ];
     }
@@ -1264,6 +1399,19 @@ let
     "pm-notebook-outside"
     "pm-vault-main"
     "pm-vault-crosscwd"
+    "pm-apex-new"
+    "pm-apex-existing"
+    "pm-apex-crosscwd"
+    "pm-apex-norepo-cwd"
+    "pm-apex-case"
+    "pm-apex-tracked"
+    "pm-apex-ignored-outside"
+    "pm-apex-unignored"
+    "pm-apex-symlink"
+    "pm-apex-hardlink"
+    "pm-apex-nested"
+    "pm-apex-fsmonitor-pwned"
+    "pm-apex-sibling"
     "bb-master-commit"
     "bb-master-malformed"
     "bb-master-nogit"
@@ -1499,6 +1647,31 @@ let
     g -C "$DETACHED" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q --allow-empty -m probe
     g -C "$DETACHED" checkout -q --detach
     ln -s "$MASTER" "$LINK"
+    # APEX run state. APEXR, on master, ignores `.claude/`; under its
+    # `.claude/output/apex/` sit a force-added tracked file, an untracked
+    # one, a symlink to its tracked src/, a hardlink of a tracked file and a
+    # nested repo on master. UNIG is on master and ignores nothing. The last
+    # two lines prove the ignore split the cases rest on.
+    APEXR="$root/apexr"
+    APEXO="$APEXR/.claude/output/apex"
+    UNIG="$root/unig"
+    {
+      g init -q -b master "$APEXR" &&
+        mkdir -p "$APEXR/src" "$APEXO/forced" "$APEXO/old" "$APEXO/hl" &&
+        printf '%s\n' '.claude/' > "$APEXR/.gitignore" &&
+        printf 'x\n' > "$APEXR/src/a.ts" &&
+        printf 'x\n' > "$APEXO/forced/00-context.md" &&
+        printf 'x\n' > "$APEXO/old/00-context.md" &&
+        g -C "$APEXR" add .gitignore src/a.ts &&
+        g -C "$APEXR" add -f .claude/output/apex/forced/00-context.md &&
+        g -C "$APEXR" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q -m probe &&
+        ln -s "$APEXR/src" "$APEXO/lnk" &&
+        ln "$APEXR/src/a.ts" "$APEXO/hl/00-context.md" &&
+        g init -q -b master "$APEXO/nest" &&
+        g init -q -b master "$UNIG" &&
+        g -C "$APEXR" check-ignore -q -- .claude/output/apex/new/00-context.md &&
+        ! g -C "$APEXR" check-ignore -q -- .claude/output/apex/forced/00-context.md
+    } || { echo "hook-wiring: apex fixture could not be built" >&2; exit 1; }
     # Dangling, outside the repo, aimed INTO it: a Write there lands in MASTER.
     ln -s "$MASTER/dangling-target.ts" "$NOREPO/dangling"
     # `exec`: SIGKILL on timeout must reach the sleeper, not orphan it on the pipe.
@@ -1877,6 +2050,58 @@ let
         pm-vault-crosscwd)
           vaultify "$2" || return 1
           run "$lbl" "$vb" "$FEAT" "$GITBIN" "$(pm_in "$VAULT/n.md")"; is_allow ;;
+        # APEX run state on master: ignored and untracked under the file's own
+        # repo's .claude/output/apex/ is allowed, from any cwd.
+        pm-apex-new)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXO/new-run/00-context.md")"; is_allow ;;
+        pm-apex-existing)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXO/old/00-context.md")"; is_allow ;;
+        pm-apex-crosscwd)
+          run "$lbl" "$2" "$FEAT" "$GITBIN" "$(pm_in "$APEXO/old/00-context.md")"; is_allow ;;
+        pm-apex-norepo-cwd)
+          run "$lbl" "$2" "$NOREPO" "$GITBIN" "$(pm_in "$APEXO/new-run/00-context.md")"; is_allow ;;
+        pm-apex-case)
+          # As pm-master-case: skipped, and said, where it does not exist.
+          if [ ! -e "$APEXR/.CLAUDE" ]; then
+            echo "hook-wiring: $1 skipped — $APEXR/.CLAUDE does not exist, this filesystem is case-sensitive"
+            return 0
+          fi
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXR/.CLAUDE/output/apex/old/00-context.md")"; is_allow ;;
+        # Everything else there, or like it elsewhere, stays denied.
+        pm-apex-tracked)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXO/forced/00-context.md")"; is_deny "BLOCKED: on master." ;;
+        pm-apex-ignored-outside)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXR/.claude/settings.local.json")"; is_deny "BLOCKED: on master." ;;
+        pm-apex-unignored)
+          run "$lbl" "$2" "$UNIG" "$GITBIN" "$(pm_in "$UNIG/.claude/output/apex/r/00-context.md")"; is_deny "BLOCKED: on master." ;;
+        pm-apex-symlink)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXO/lnk/new.ts")"; is_deny "BLOCKED: on master." ;;
+        pm-apex-hardlink)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXO/hl/00-context.md")"; is_deny "BLOCKED: on master." ;;
+        pm-apex-nested)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXO/nest/x.md")"; is_deny "BLOCKED: on master." ;;
+        # The file's repo has a core.fsmonitor script that leaves a marker:
+        # never run. The bare check-ignore first proves it fires on an index
+        # read here. One repo per body, so no run sees another's marker.
+        pm-apex-fsmonitor-pwned)
+          A="$root/apexfs.$lbl"
+          {
+            g init -q -b master "$A" &&
+              printf '%s\n' '.claude/' > "$A/.gitignore" &&
+              g -C "$A" add .gitignore &&
+              g -C "$A" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q -m probe &&
+              printf '#!%s\n%s %s\n' ${pkgs.bash}/bin/bash ${pkgs.coreutils}/bin/touch "$A.ran" > "$A.fsmonitor" &&
+              chmod 755 "$A.fsmonitor" &&
+              g -C "$A" config core.fsmonitor "$A.fsmonitor" &&
+              { g -C "$A" check-ignore -q -- .claude/output/apex/r/00-context.md 2> /dev/null; [ -e "$A.ran" ]; } &&
+              rm -f "$A.ran"
+          } || { why="fsmonitor fixture: the script did not run on a bare check-ignore"; return 1; }
+          run "$lbl" "$2" "$FEAT" "$GITBIN" "$(pm_in "$A/.claude/output/apex/r/00-context.md")"
+          if [ -e "$A.ran" ]; then why="the repo's core.fsmonitor command ran"; kind=pwned; return 1; fi
+          is_allow ;;
+        # A sibling of apex/ whose name only starts with it is not run state.
+        pm-apex-sibling)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXR/.claude/output/apexfoo/x.md")"; is_deny "BLOCKED: on master." ;;
         bb-master-commit)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "git commit -m x")"; is_deny "BLOCKED: on master." ;;
         bb-master-malformed)

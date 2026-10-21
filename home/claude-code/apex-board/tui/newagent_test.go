@@ -1,7 +1,8 @@
 package main
 
-// The Agents tab's `n` / « + nouvel agent »: runLaunch, runPick and abducoList are stubbed, so no
-// process is ever started (TestRunLaunchNoBinary only names a binary that is not there).
+// The Agents tab's `n` / « + nouvel agent »: runLaunch, runPick, runAlive, runOpenPane and
+// abducoList are stubbed, so no process is ever started (TestRunLaunchNoBinary only names a binary
+// that is not there; TestRunAlive runs /bin/sh scripts of its temp dir).
 
 import (
 	"errors"
@@ -237,6 +238,118 @@ func TestRepoOf(t *testing.T) {
 func TestRunLaunchNoBinary(t *testing.T) {
 	if err := runLaunch(t.TempDir(), []string{filepath.Join(t.TempDir(), "claude-dispatch"), "--blank", "agent-000000"}); err == nil {
 		t.Fatal("a missing binary launched")
+	}
+}
+
+// `n` with no pane running: pick, then [agentPaneBin, alive], then exactly one osascript call
+// whose last argv item is the agent-pane path and whose script never holds it.
+func TestNewAgentOpensPane(t *testing.T) {
+	m, _ := newAgentModel(t)
+	stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+	pc := stubPane(t, false, nil, nil)
+	var order []string
+	pick, alive, open := runPick, runAlive, runOpenPane
+	runPick = func(a []string) error { order = append(order, "pick"); return pick(a) }
+	runAlive = func(a []string) (bool, error) { order = append(order, "alive"); return alive(a) }
+	runOpenPane = func(a []string) error { order = append(order, "open"); return open(a) }
+	msg := send(m, char('n'))()
+	if !slices.Equal(order, []string{"pick", "alive", "open"}) || len(*picks) != 1 {
+		t.Fatalf("order %q", order)
+	}
+	name := (*picks)[0][2]
+	if len(pc.alive) != 1 || !slices.Equal(pc.alive[0], []string{agentPaneBin, "alive"}) || len(pc.open) != 1 {
+		t.Fatalf("alive %q open %q", pc.alive, pc.open)
+	}
+	o := pc.open[0]
+	if o[0] != "/usr/bin/osascript" || o[len(o)-1] != agentPaneBin || len(o) != 2*len(paneScript)+2 {
+		t.Fatalf("osascript argv %q", o)
+	}
+	for i := 1; i < len(o)-1; i += 2 {
+		if o[i] != "-e" || o[i+1] != paneScript[i/2] || strings.Contains(o[i+1], agentPaneBin) {
+			t.Fatalf("argv %d: %q %q", i, o[i], o[i+1])
+		}
+	}
+	script := strings.Join(paneScript, "\n")
+	for _, want := range []string{"on run argv", `tell application "Ghostty"`, "set command of cfg to item 1 of argv", "split t direction up with configuration cfg"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("script lacks %q", want)
+		}
+	}
+	send(m, msg)
+	if m.ag.note != "nouvel agent : "+name || m.ag.sel == nil || m.ag.sel.id != name {
+		t.Fatalf("note %q sel %+v", m.ag.note, m.ag.sel)
+	}
+}
+
+// `n` with a pane running asks alive and opens nothing; a failed alive or split, or a path the
+// shell would split, only says so in the footer: the agent stays launched, picked and selected.
+func TestNewAgentPaneOutcomes(t *testing.T) {
+	m, _ := newAgentModel(t)
+	launches := stubLaunch(t, nil)
+	stubPick(t, nil)
+	pc := stubPane(t, true, nil, nil)
+	send(m, send(m, char('n'))())
+	if len(pc.alive) != 1 || len(pc.open) != 0 || !strings.HasPrefix(m.ag.note, "nouvel agent : agent-") || strings.Contains(m.ag.note, "pane") {
+		t.Fatalf("pane runs: alive %q open %q note %q", pc.alive, pc.open, m.ag.note)
+	}
+	for _, c := range []struct {
+		alive    bool
+		aliveErr error
+		openErr  error
+		bin      string
+		opens    int
+		tail     string
+	}{
+		{false, nil, errors.New("execution error: Ghostty got an error: Can’t get window 1. (-1728)"), "", 1, " · pane : osascript : execution error: Ghostty got an error: Can’t get window 1. (-1728) — lance agent-pane à la main"},
+		{false, errors.New("usage: agent-pane"), nil, "", 0, " · pane : agent-pane alive : usage: agent-pane — lance agent-pane à la main"},
+		{false, nil, nil, "/nix/store/x y/bin/agent-pane", 0, " · pane : chemin d'agent-pane non sûr — lance agent-pane à la main"},
+	} {
+		pc := stubPane(t, c.alive, c.aliveErr, c.openErr)
+		if c.bin != "" {
+			agentPaneBin = c.bin
+		}
+		*launches = nil
+		m.ag.sel = nil
+		send(m, send(m, char('n'))())
+		agentPaneBin = "/nix/store/x-agent-pane/bin/agent-pane"
+		if len(*launches) != 1 || len(pc.open) != c.opens || !strings.HasPrefix(m.ag.note, "nouvel agent : agent-") || !strings.HasSuffix(m.ag.note, c.tail) {
+			t.Fatalf("%+v: launches %d open %d note %q", c, len(*launches), len(pc.open), m.ag.note)
+		}
+		if m.ag.sel == nil || !strings.HasPrefix(m.ag.sel.id, "agent-") {
+			t.Fatalf("%+v: launched agent not selected: %+v", c, m.ag.sel)
+		}
+	}
+}
+
+// runAlive on real processes (/bin/sh scripts): exit 0 = a pane, exit 1 = none, any other exit
+// or no binary = an error carrying stderr's first line.
+func TestRunAlive(t *testing.T) {
+	dir := t.TempDir()
+	script := func(name, body string) string {
+		p := filepath.Join(dir, name)
+		mustDo(t, os.WriteFile(p, []byte("#!/bin/sh\n"+body+"\n"), 0o700))
+		return p
+	}
+	for _, c := range []struct {
+		argv  []string
+		alive bool
+		err   string
+	}{
+		{[]string{script("zero", "exit 0"), "alive"}, true, ""},
+		{[]string{script("one", "exit 1"), "alive"}, false, ""},
+		{[]string{script("two", "echo 'usage: agent-pane' >&2; exit 2"), "alive"}, false, "usage: agent-pane"},
+		{[]string{filepath.Join(dir, "none"), "alive"}, false, "no such file"},
+	} {
+		alive, err := runAlive(c.argv)
+		switch {
+		case alive != c.alive:
+			t.Errorf("%s: alive %v", c.argv[0], alive)
+		case c.err == "" && err != nil:
+			t.Errorf("%s: error %v", c.argv[0], err)
+		case c.err != "" && (err == nil || !strings.Contains(err.Error(), c.err)):
+			t.Errorf("%s: error %v, want %q", c.argv[0], err, c.err)
+		}
 	}
 }
 

@@ -2,12 +2,11 @@
 "use strict";
 
 // The sandbox-excluded commands (settings.nix excludedCommands: git
-// push/commit/pull/fetch, gh, claude-dispatch, claude-bg) leave the sandbox only when
+// push/commit/pull/fetch, gh, claude-dispatch) leave the sandbox only when
 // the Bash call is made of them alone. `cd x && git push`, `git -C x push`, a
 // pipe, `$(...)`, a heredoc or a file redirection keep the WHOLE call
 // sandboxed, where the keychain and ~/.ssh are denied: the network or signing
-// step fails (x509, no SSH key; EPERM on the abduco socket (create-session) for claude-dispatch,
-// a dead daemon socket for claude-bg)
+// step fails (x509, no SSH key; EPERM on the abduco socket (create-session) for claude-dispatch)
 // and the retry turns into a permission prompt. Refusing that
 // shape up front, with the fix in the reason, costs one retry instead.
 //
@@ -47,9 +46,9 @@ const KEYWORDS = ["if", "then", "else", "elif", "do", "while", "until", "!", "{"
 const SHELLS = ["sh", "bash", "zsh", "dash", "ksh"];
 // git global options that take their value as the NEXT word.
 const GIT_ARG_OPTS = ["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"];
-// Cheap gate: no `git`, `gh`, `claude-dispatch` or `claude-bg` word anywhere,
+// Cheap gate: no `git`, `gh` or `claude-dispatch` word anywhere,
 // nothing to lex.
-const PREFILTER = /\bg(?:it|h)\b|\bclaude-(?:dispatch|bg)\b/;
+const PREFILTER = /\bg(?:it|h)\b|\bclaude-dispatch\b/;
 const ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 const CAUSE = {
@@ -367,7 +366,7 @@ function segTargets(words, depth) {
   if (k >= words.length) return [];
   const cmd = base(words[k].val);
   if (cmd === "gh") return ["gh"];
-  if (cmd === "claude-dispatch" || cmd === "claude-bg") return [cmd];
+  if (cmd === "claude-dispatch") return [cmd];
   if (cmd === "git") {
     let j = k + 1;
     while (j < words.length) {
@@ -398,13 +397,13 @@ function targetsOf(r, depth) {
 }
 
 // Clean = what an excludedCommands entry matches: `git` then the verb, or
-// `gh` / `claude-dispatch` / `claude-bg`, literal words at the head of the
+// `gh` / `claude-dispatch`, literal words at the head of the
 // segment.
 function isCleanTarget(words) {
   const w0 = words[0];
   const w1 = words[1];
   if (w0 === undefined || !w0.plain) return false;
-  if (w0.val === "gh" || w0.val === "claude-dispatch" || w0.val === "claude-bg") return true;
+  if (w0.val === "gh" || w0.val === "claude-dispatch") return true;
   return w0.val === "git" && w1 !== undefined && w1.plain && VERBS.includes(w1.val);
 }
 
@@ -445,7 +444,7 @@ function main() {
   let v;
   try { v = decide(cmd); } catch { allow(); return; }
   if (v === null) { allow(); return; }
-  deny("BLOCKED: `" + safe(v.target) + "` leaves the sandbox only when the Bash call is that command alone; here it runs " + v.cause + ", so the whole call stays sandboxed and its network or signing step fails. Run it ALONE in its own Bash call, from the project root: the cwd resets after each call, so neither cd nor git -C can help, and a repo outside the project root has no unsandboxed form (let the sandboxed call fail, then answer the permission prompt). Pass a message by file (git commit -F <file>, gh ... --body-file <file>), filter gh output with --jq instead of a pipe. Give claude-dispatch its brief inline as one quoted line, never through $(...) or a file. Give claude-bg its id as a plain word. Lone git push/commit/pull/fetch, gh, claude-dispatch and claude-bg commands may still be joined with &&.");
+  deny("BLOCKED: `" + safe(v.target) + "` leaves the sandbox only when the Bash call is that command alone; here it runs " + v.cause + ", so the whole call stays sandboxed and its network or signing step fails. Run it ALONE in its own Bash call, from the project root: the cwd resets after each call, so neither cd nor git -C can help, and a repo outside the project root has no unsandboxed form (let the sandboxed call fail, then answer the permission prompt). Pass a message by file (git commit -F <file>, gh ... --body-file <file>), filter gh output with --jq instead of a pipe. Give claude-dispatch its brief inline as one quoted line, never through $(...) or a file. Lone git push/commit/pull/fetch, gh and claude-dispatch commands may still be joined with &&.");
 }
 
 function start() {

@@ -32,8 +32,7 @@
 # exception, the scan must flag the call in another file (C5), a second call
 # in pick.ts that survives the strip (C6), another subcommand (C7), the
 # aliases `$['process']` and `{ process: p } = $` (C9),
-# `Reflect.get($, 'pro' + 'cess')` (C10) and the retired `claude-bg resume`
-# call planted in pick.ts (C11); it must pass the call alone in pick.ts (C8),
+# `Reflect.get($, 'pro' + 'cess')` (C10); it must pass the call alone in pick.ts (C8),
 # or the exception would only hold with the call gone.
 { pkgs }:
 
@@ -146,8 +145,6 @@ let
   # anything else keeps every noun it holds.
   pickFile = "deck/hooks/pick.ts";
   pickNeedle = "$.process.run(['/etc/profiles/per-user/alx/bin/agent-pane', 'pick', name], { timeoutMs: 5000 })";
-  # The call it replaced (PR 4a): must no longer pass anywhere (C11).
-  retiredNeedle = "$.process.run(['/etc/profiles/per-user/alx/bin/claude-bg', 'resume', id], { timeoutMs: 60000 })";
   allowedText =
     path: text:
     if path == pickFile && count "$.process" text == 1 && count pickNeedle text == 1 then
@@ -291,15 +288,6 @@ let
       name = "C10 the M5 scan flags a Reflect.get on the engine";
       ok = nounsIn "deck/hooks/core.ts" "Reflect.get($, 'pro' + 'cess')" == [ "Reflect.get($" ];
       msg = "a computed Reflect.get($, …) alias of $.process is no longer flagged";
-    }
-    {
-      name = "C11 the M5 scan flags the retired claude-bg resume call in ${pickFile}";
-      ok =
-        nounsIn pickFile "const r = await ${retiredNeedle}" == [
-          "$.process"
-          "process"
-        ];
-      msg = "the claude-bg resume call would still pass the scan in pick.ts";
     }
     {
       name = "C2 the M4 filter flags a .js file";

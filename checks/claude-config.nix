@@ -285,7 +285,6 @@ let
     "darwin-rebuild *"
     "codex *"
     "claude-dispatch *"
-    "claude-bg *"
     "gh *"
     "git push *"
     "git commit *"
@@ -295,8 +294,7 @@ let
   missingExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) requiredExcluded;
 
   # `claude` itself never leaves the sandbox: its ~20 widening flags make any
-  # `claude …` exclusion a deny-list. Only the claude-dispatch and claude-bg
-  # wrappers do.
+  # `claude …` exclusion a deny-list. Only the claude-dispatch wrapper does.
   # The predicate is proven live on fixed samples, so a regex that matches
   # nothing cannot pass the check vacuously.
   isClaudeEntry = c: builtins.match "(.*/)?claude([ *].*)?" c != null;
@@ -310,10 +308,25 @@ let
     ]
     && !(builtins.any isClaudeEntry [
       "claude-dispatch *"
-      "claude-bg *"
       "codex *"
     ]);
   claudeExcluded = builtins.filter isClaudeEntry excludedCommands;
+
+  # claude-bg tended jobs of Claude's background daemon, off since #299: the
+  # wrapper is gone, and an exclusion left for its name would let any binary
+  # called claude-bg on PATH run unsandboxed.
+  isRetiredBgEntry = c: builtins.match "(.*/)?claude-bg([ *].*)?" c != null;
+  retiredBgPredicateLive =
+    builtins.all isRetiredBgEntry [
+      "claude-bg"
+      "claude-bg *"
+      "/etc/profiles/per-user/alx/bin/claude-bg *"
+    ]
+    && !(builtins.any isRetiredBgEntry [
+      "claude-dispatch *"
+      "claude *"
+    ]);
+  retiredBgExcluded = builtins.filter isRetiredBgEntry excludedCommands;
 
   requiredNixExcluded = [ "nix flake check" ];
   missingNixExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) requiredNixExcluded;
@@ -670,7 +683,7 @@ let
       msg =
         "sandbox.excludedCommands is missing: "
         + builtins.concatStringsSep ", " missingExcluded
-        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`abduco -n`) hits EPERM on create-session (its socket) and a sandboxed abduco server would pass its Seatbelt profile to the session, and claude-bg (`claude respawn`/`logs`/`stop`/`--bg --resume`) a dead daemon socket; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
+        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`abduco -n`) hits EPERM on create-session (its socket) and a sandboxed abduco server would pass its Seatbelt profile to the session; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
     }
     {
       name = "A14b sandbox: bare nix flake check is excluded, no wildcard, the daemon socket stays closed";
@@ -688,7 +701,7 @@ let
         + " — sandboxed, `nix flake check` fails with EPERM on the nix daemon socket and on the ~/.cache/nix sqlite, so the verify step cannot run it. The fix is excluding that one command, never opening the socket: the user is in trusted-users (@admin), so allowUnixSockets on the daemon socket hands every sandboxed command a root-equivalent channel";
     }
     {
-      name = "A14d sandbox: no `claude …` entry in excludedCommands, only the claude-dispatch and claude-bg wrappers";
+      name = "A14d sandbox: no `claude …` entry in excludedCommands, only the claude-dispatch wrapper";
       ok = claudePredicateLive && claudeExcluded == [ ];
       msg =
         (
@@ -696,7 +709,21 @@ let
         )
         + "sandbox.excludedCommands entries running `claude` itself: "
         + builtins.concatStringsSep ", " claudeExcluded
-        + " — claude takes ~20 flags that widen the launched session (--dangerously-skip-permissions, --settings, --add-dir, --mcp-config, --bare…), so an unsandboxed `claude *` / `claude --bg *` is an unbounded deny-list. Background launches go through `claude-dispatch *`, which fixes argv to `abduco -n <name> claude --worktree <name> --name <name>`; respawn/logs/status/resume go through `claude-bg *`, which fixes argv to `respawn|logs <8-hex id>` / `daemon status`, or for resume `stop <id>` then `--bg --resume <uuid>` with only a re-checked --name/--model/--permission-mode (never bypassPermissions) and a fixed prompt";
+        + " — claude takes ~20 flags that widen the launched session (--dangerously-skip-permissions, --settings, --add-dir, --mcp-config, --bare…), so an unsandboxed `claude *` / `claude --bg *` is an unbounded deny-list. Background launches go through `claude-dispatch *`, which fixes argv to `abduco -n <name> claude --worktree <name> --name <name>`";
+    }
+    {
+      name = "A14e sandbox: the retired claude-bg wrapper is not in excludedCommands";
+      ok = retiredBgPredicateLive && retiredBgExcluded == [ ];
+      msg =
+        (
+          if retiredBgPredicateLive then
+            ""
+          else
+            "the isRetiredBgEntry predicate no longer separates its samples / "
+        )
+        + "sandbox.excludedCommands still lets out: "
+        + builtins.concatStringsSep ", " retiredBgExcluded
+        + " — claude-bg tended jobs of Claude's background daemon, off since #299 (disableAgentView); the wrapper is gone, and an exclusion left for its name lets any binary called claude-bg on PATH run unsandboxed";
     }
     {
       name = "A14c skills: caveman names force-push and history rewrite as irreversible, not push or merge";

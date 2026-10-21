@@ -62,7 +62,6 @@
         apex-health = import ./checks/apex-health.nix { inherit pkgs; };
         apex-plan-provenance = import ./checks/apex-plan-provenance.nix { inherit pkgs; };
         apex-tier = import ./checks/apex-tier.nix { inherit pkgs; };
-        claude-bg = import ./checks/claude-bg.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
         claude-dispatch = import ./checks/claude-dispatch.nix { inherit pkgs; };
         claude-mods = import ./checks/claude-mods.nix { inherit pkgs; };

@@ -15,10 +15,12 @@
 # parity with board.js is checks/apex-board.nix's job (node is not here).
 # Its Agents tab lists the dispatched sessions (session-state files and
 # abduco's list); Enter runs `agent-pane pick <name>`, `x` or the card's ×
-# `agent-pane stop <name>` once confirmed (a second `x`/×): both binaries are
-# baked in by store path (-X ldflags), never looked up on PATH. abduco comes
-# from the same pkgs as claude-dispatch (same socket dir); agent-pane.nix is
-# imported here as in home/claude-code.nix (pure: same derivation).
+# `agent-pane stop <name>` once confirmed (a second `x`/×), `n` or its
+# « + nouvel agent » `claude-dispatch --blank agent-HHMMSS` in the board's
+# repo then a pick: the three binaries are baked in by store path (-X
+# ldflags), never looked up on PATH. abduco comes from the same pkgs as
+# claude-dispatch (same socket dir); agent-pane.nix and claude-dispatch.nix
+# are imported here as in home/claude-code.nix (pure: same derivations).
 #
 # The page dir's and the binary's store paths replace `@boardDir@` and
 # `@tuiBin@` in the script; a missing placeholder throws at eval, so a renamed
@@ -28,6 +30,7 @@
 { pkgs }:
 let
   agentPane = import ./agent-pane.nix { inherit pkgs; };
+  dispatch = import ./claude-dispatch.nix { inherit pkgs; };
 
   boardDir = pkgs.runCommand "apex-board-page" { } ''
     mkdir -p $out
@@ -48,6 +51,7 @@ let
       "-w"
       "-X main.abducoBin=${pkgs.abduco}/bin/abduco"
       "-X main.agentPaneBin=${agentPane.agentPanePkg}/bin/agent-pane"
+      "-X main.dispatchBin=${dispatch.claudeDispatchPkg}/bin/claude-dispatch"
     ];
     postInstall = ''
       mv $out/bin/tui $out/bin/apex-board-tui

@@ -51,6 +51,7 @@ const (
 	hitDrawer
 	hitTab  // col: the tab index
 	hitStop // an agent card's ×: col, idx, id as hitCard
+	hitNew  // the Agents footer's « + nouvel agent »
 )
 
 type hit struct {

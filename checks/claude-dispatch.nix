@@ -3,6 +3,8 @@
 # from the sandbox. It is an allow-list, so it only holds while:
 #   - abduco gets exactly `-n <name> <claude> --worktree <name> --name <name> "[claude-dispatch] <brief>"`,
 #     nothing else, and claude is never called directly;
+#   - `--blank <name>` (apex-board's `n`) gives abduco the same argv with
+#     nothing after `--name <name>`, and its name goes through the same rule;
 #   - wrong arity, a bad name, an empty / blank / one-word / dash-led / multi-line /
 #     oversize brief exit 2 BEFORE abduco is called;
 #   - shell metacharacters in the brief reach abduco literally.
@@ -11,20 +13,25 @@
 # claude that record who was called and its argv (NUL-separated). r01-r04
 # accept, r05-r23 reject, r24 calls the wrapper with CLAUDE_CODE_CHILD_SESSION=1
 # and requires abduco to see it unset (an inherited marker turns transcript
-# saving off in the dispatched session, claude 2.1.305). The rejects also run
+# saving off in the dispatched session, claude 2.1.305). r25 accepts
+# `--blank <name>`, r30 is r24 for it, r26-r29 and r31 reject a blank call
+# (no name, bad names, an extra word, `--blank` as the name); r06, a lone
+# name, still rejects: blank has to be asked for. The rejects also run
 # against the real package (store abduco, /opt/homebrew/bin/claude): a reject
 # never reaches abduco, so a regression there exits non-2 and goes red.
 # Real-abduco probe: the wrapper with the store abduco and an argv-recording
 # claude stub, socket in the build dir: abduco must exit 0 and claude get
 # `--worktree p --name p "[claude-dispatch] <brief>"` (getopt stops at the
-# name). A mutant with `--worktree` before the name dies there with
+# name), and `--blank q` must give claude `--worktree q --name q` alone. A
+# mutant with `--worktree` before the name dies there with
 # `abduco: illegal option -- -` (shown by hand 2026-10-21, not a canary).
-# Canaries: seven mutants of the script go through the same suite and must
+# Canaries: eight mutants of the script go through the same suite and must
 # FAIL at their case — C1 drops the leading-dash rule (r15), C2 widens the
 # name regex (r08), C3 adds a permission flag to claude (r01), C4 drops the
 # `[claude-dispatch] ` marker (r01), C5 reverts to `claude --bg` (r01), C6
 # adds an abduco flag (r01), C7 drops the CLAUDE_CODE_CHILD_SESSION unset
-# (r24). A canary that survives, or dies at another case, fails the check.
+# (r24), C8 gives the blank session a prompt (r25). A canary that survives,
+# or dies at another case, fails the check.
 # Anchors, `@abduco@` and `@claude@` must occur exactly once
 # in the script, `--bg` never: an eval-time throw otherwise.
 { pkgs }:
@@ -86,6 +93,7 @@ let
   c5Text = mutate "C5" launch ": \"$abduco_bin\"; exec \"$claude_bin\" --bg --worktree";
   c6Text = mutate "C6" "\"$abduco_bin\" -n" "\"$abduco_bin\" -f -n";
   c7Text = mutate "C7" "unset CLAUDE_CODE_CHILD_SESSION\n" "";
+  c8Text = mutate "C8" "brief=()" "brief=(\"[claude-dispatch] \")";
 
   # Each stub records `<who>` then its argv, NUL-separated, so a wrapper that
   # execs claude directly cannot pass for one that goes through abduco.
@@ -127,6 +135,7 @@ let
   c5 = withStubs c5Text;
   c6 = withStubs c6Text;
   c7 = withStubs c7Text;
+  c8 = withStubs c8Text;
 
   # suite <claude-dispatch binary> <work dir> <all|rejects> — prints
   # `PASS rNN` per case; the first failure prints `FAIL rNN: <reason>` and
@@ -164,6 +173,17 @@ let
       cmp -s "$work/want" "$STUB_LOG" || fail "argv differs from abduco -n <name> <claude> --worktree <name> --name <name> [claude-dispatch] <brief>"
       echo "PASS $case"
     }
+    # blank <id> <name>: `--blank <name>` exits 0, abduco called (not claude)
+    # with argv exactly -n <name> <claude> --worktree <name> --name <name>:
+    # no prompt, no marker, not even an empty argv entry.
+    blank() {
+      run "$1" --blank "$2"
+      [ "$rc" = 0 ] || fail "exit $rc, expected 0"
+      [ -e "$STUB_LOG" ] || fail "abduco not called"
+      printf '%s\0' abduco -n "$2" ${stubClaude} --worktree "$2" --name "$2" >"$work/want"
+      cmp -s "$work/want" "$STUB_LOG" || fail "argv differs from abduco -n <name> <claude> --worktree <name> --name <name> (blank: nothing after the name)"
+      echo "PASS $case"
+    }
     # reject <id> <args...>: neither abduco nor claude called, exit 2, a reason on stderr.
     reject() {
       run "$@"
@@ -195,6 +215,8 @@ let
       accept r04 fix-a "x; touch $work/pwned \$(id)"
       [ ! -e "$work/pwned" ] || fail "the brief was evaluated by a shell"
       child r24 fix-a "fix the typo"
+      blank r25 agent-153012
+      child r30 --blank agent-153012
     fi
 
     reject r05
@@ -216,6 +238,11 @@ let
     reject r21 fix-a "a $(printf '%07999d' 0)"
     reject r22 fix-a ' '
     reject r23 fix-a '  x'
+    reject r26 --blank
+    reject r27 --blank Fix
+    reject r28 --blank -x
+    reject r29 --blank fix-a extra
+    reject r31 --blank --blank
     echo ok
   '';
 in
@@ -254,10 +281,10 @@ pkgs.runCommand "claude-dispatch-check" { } ''
     echo "claude-dispatch: reject suite FAILED against the real wrapper"
     exit 1
   }
-  for r in r01 r02 r03 r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24; do
+  for r in r01 r02 r03 r04 r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r24 r25 r26 r27 r28 r29 r30 r31; do
     grep -qx "PASS $r" stub.log || { echo "claude-dispatch: case $r did not run against the stubs"; exit 1; }
   done
-  for r in r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23; do
+  for r in r05 r06 r07 r08 r09 r10 r11 r12 r13 r14 r15 r16 r17 r18 r19 r20 r21 r22 r23 r26 r27 r28 r29 r31; do
     grep -qx "PASS $r" real.log || { echo "claude-dispatch: case $r did not run against the real wrapper"; exit 1; }
   done
 
@@ -290,6 +317,33 @@ pkgs.runCommand "claude-dispatch-check" { } ''
   fi
   echo "claude-dispatch: real abduco probe — claude got --worktree p --name p [claude-dispatch] <brief>"
 
+  # The same probe for `--blank q`: the session must start with no prompt.
+  export PROBE_OUT="$TMPDIR/probe-blank.argv"
+  probe_rc=0
+  HOME="$TMPDIR/nohome" ABDUCO_SOCKET_DIR="$TMPDIR/s" \
+    ${realAbduco}/bin/claude-dispatch --blank q </dev/null >probe-blank.log 2>&1 || probe_rc=$?
+  if [ "$probe_rc" != 0 ]; then
+    cat probe-blank.log
+    echo "claude-dispatch: real abduco exited $probe_rc on --blank (expected 0)"
+    exit 1
+  fi
+  i=0
+  while [ ! -e "$PROBE_OUT" ] && [ "$i" -lt 100 ]; do
+    sleep 0.1
+    i=$((i + 1))
+  done
+  if [ ! -e "$PROBE_OUT" ]; then
+    cat probe-blank.log
+    echo "claude-dispatch: real abduco never ran the claude stub for --blank (waited 10 s)"
+    exit 1
+  fi
+  printf '%s\0' --worktree q --name q >probe-blank.want
+  if ! cmp -s probe-blank.want "$PROBE_OUT"; then
+    echo "claude-dispatch: real abduco passed claude on --blank: $(tr '\0' ' ' <"$PROBE_OUT")"
+    exit 1
+  fi
+  echo "claude-dispatch: real abduco probe — --blank q gave claude --worktree q --name q alone"
+
   canary() {
     if ${suite} "$2" "$TMPDIR/$1" all >"$1.log" 2>&1; then
       cat "$1.log"
@@ -314,7 +368,8 @@ pkgs.runCommand "claude-dispatch-check" { } ''
   canary C5 ${c5}/bin/claude-dispatch r01
   canary C6 ${c6}/bin/claude-dispatch r01
   canary C7 ${c7}/bin/claude-dispatch r24
+  canary C8 ${c8}/bin/claude-dispatch r25
 
-  echo "claude-dispatch: 24 runtime cases, 7 canaries — OK"
+  echo "claude-dispatch: 31 runtime cases, 8 canaries — OK"
   touch $out
 ''

@@ -477,15 +477,21 @@ func TestPick(t *testing.T) {
 	}
 }
 
-// nameRow: the text of id's name row (the card's second row), within its card.
+// nameRow: the text of id's title row (the card's second row, the ×'s), within its card.
 func nameRow(t *testing.T, m *Model, id string) string {
+	t.Helper()
+	return cardRow(t, m, id, 1)
+}
+
+// cardRow: the text of id's row r (0 = its top border), within its card.
+func cardRow(t *testing.T, m *Model, id string, r int) string {
 	t.Helper()
 	m.View()
 	card := findHit(m, hitCard, id)
 	if card == nil {
 		t.Fatalf("%s not drawn", id)
 	}
-	line := []rune(plain(m.View().Content)[card.y+1])
+	line := []rune(plain(m.View().Content)[card.y+r])
 	return string(line[card.x : card.x+card.w])
 }
 
@@ -740,8 +746,12 @@ func TestRenderAgents(t *testing.T) {
 	if !strings.Contains(frame, "\x1b[0;38;2;255;121;198") {
 		t.Fatal("no human truecolor")
 	}
-	// The × on a listed session's name row, beside the whole name; none on a closed one.
-	if r := nameRow(t, m, "ask-needs"); !strings.Contains(r, "ask-needs") || !strings.HasSuffix(strings.TrimRight(r, " │"), "×") {
+	// The × on a listed session's title row, beside the whole title (its first prompt), the name
+	// leading the row below; none on a closed one.
+	if r := nameRow(t, m, "ask-needs"); !strings.Contains(r, "corrige le login qui boucle") || !strings.HasSuffix(strings.TrimRight(r, " │"), "×") {
+		t.Fatalf("listed title row %q", r)
+	}
+	if r := cardRow(t, m, "ask-needs", 2); !strings.Contains(r, "ask-needs · Beta") {
 		t.Fatalf("listed name row %q", r)
 	}
 	if r := nameRow(t, m, "closed"); strings.Contains(r, "×") {

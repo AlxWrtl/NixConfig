@@ -160,6 +160,9 @@
 #   m92 any truthy humanTurn counts (`"true"`).
 #   m93 a top-level isMeta queued line counts as a human turn.
 #   m94 a human-flagged queued line counts whatever its commandMode.
+#   m95 a Write's repo check starts in its missing parent dir (no walk up).
+#   m96 the walk up climbs one level only (two missing levels pass).
+#   m97 the codex door's repo check starts in its missing dir (no walk up).
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
@@ -174,7 +177,7 @@
 #
 # usage: require-apex-probe.sh [hook.js]
 #        require-apex-probe.sh --mutants
-#        require-apex-probe.sh --mutant m1..m94
+#        require-apex-probe.sh --mutant m1..m97
 
 set -euo pipefail
 
@@ -188,7 +191,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97"
 
 MODE="run"
 ONE_MUTANT=""
@@ -368,13 +371,13 @@ M39_EXPECT="script-env-home"
 M40_EXPECT="script-cd-chain script-cd-relative"
 M41_EXPECT="node-r-then-e-write python-W-ignore-c-write script-W-ignore"
 M42_EXPECT="script-quoted-var-bare-tail"
-M43_EXPECT="codex-C-repo-from-nogit codex-cd-repo-subdir codex-cd-temp-C-repo codex-cd-temp-danger codex-cd-temp-config-danger codex-cd-temp-profile-danger codex-after-separator codex-e-alias codex-exec-default codex-read-only-in-prompt codex-resume-default codex-ro-bypass codex-ro-config-sandbox codex-ro-profile codex-workspace-write codex-C-nonrepo-from-repo codex-cd-temp-C-nonrepo codex-subshell-cd codex-dollar-cd codex-cd-missing-dir codex-cd-dash codex-cd-nontemp codex-cd-temp-gitrepo codex-unread-cd codex-add-dir codex-yolo-temp codex-quoted-danger-temp codex-C-quoted-pwd-then-c codex-C-quoted-repo-from-nogit codex-attached-C codex-backslash-newline codex-ro-then-bsnl-danger codex-ro-then-ww codex-subst-in-dquotes codex-five-calls codex-five-exec-calls codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed codex-double-dash-ro codex-c-key-leading-blank"
+M43_EXPECT="codex-C-repo-from-nogit codex-cd-repo-subdir codex-cd-temp-C-repo codex-cd-temp-danger codex-cd-temp-config-danger codex-cd-temp-profile-danger codex-after-separator codex-e-alias codex-exec-default codex-read-only-in-prompt codex-resume-default codex-ro-bypass codex-ro-config-sandbox codex-ro-profile codex-workspace-write codex-C-nonrepo-from-repo codex-cd-temp-C-nonrepo codex-subshell-cd codex-dollar-cd codex-cd-missing-dir codex-cd-dash codex-cd-nontemp codex-cd-temp-gitrepo codex-unread-cd codex-add-dir codex-yolo-temp codex-quoted-danger-temp codex-C-quoted-pwd-then-c codex-C-quoted-repo-from-nogit codex-attached-C codex-backslash-newline codex-ro-then-bsnl-danger codex-ro-then-ww codex-subst-in-dquotes codex-five-calls codex-five-exec-calls codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed codex-double-dash-ro codex-c-key-leading-blank codex-cd-new-dir-in-repo-from-nogit codex-C-new-dir-in-repo-from-nogit"
 M44_EXPECT="codex-ro-bypass codex-ro-config-sandbox codex-ro-profile codex-ro-then-bsnl-danger"
 M45_EXPECT="codex-read-only-in-prompt"
 M46_EXPECT="codex-exec-help"
-M47_EXPECT="codex-C-repo-from-nogit codex-C-quoted-repo-from-nogit codex-attached-C"
+M47_EXPECT="codex-C-repo-from-nogit codex-C-quoted-repo-from-nogit codex-attached-C codex-C-new-dir-in-repo-from-nogit"
 M48_EXPECT="script-cd-pwd"
-M49_EXPECT="codex-cd-repo-subdir"
+M49_EXPECT="codex-cd-repo-subdir codex-cd-new-dir-in-repo-from-nogit"
 M50_EXPECT="codex-cd-temp-danger codex-cd-temp-config-danger codex-cd-temp-profile-danger codex-add-dir codex-yolo-temp codex-quoted-danger-temp codex-c-key-leading-blank"
 M51_EXPECT="codex-cd-temp-config-danger codex-c-key-leading-blank"
 M52_EXPECT="codex-cd-temp-profile-danger"
@@ -384,7 +387,7 @@ M55_EXPECT="codex-cd-dash"
 M56_EXPECT="codex-cd-missing-dir"
 M57_EXPECT="codex-cd-nontemp"
 M58_EXPECT="codex-after-separator codex-backslash-newline codex-cd-repo-subdir codex-cd-temp-gitrepo codex-e-alias codex-exec-default codex-five-calls codex-read-only-in-prompt codex-resume-default codex-ro-then-ww codex-subst-in-dquotes codex-workspace-write codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed codex-double-dash-ro"
-M59_EXPECT="codex-attached-C codex-C-quoted-repo-from-nogit codex-C-repo-from-nogit codex-cd-temp-C-nonrepo codex-cd-temp-C-repo"
+M59_EXPECT="codex-attached-C codex-C-quoted-repo-from-nogit codex-C-repo-from-nogit codex-cd-temp-C-nonrepo codex-cd-temp-C-repo codex-C-new-dir-in-repo-from-nogit"
 M60_EXPECT="codex-unread-cd"
 M61_EXPECT="codex-backslash-newline codex-ro-then-bsnl-danger codex-ro-bsnl"
 M62_EXPECT="codex-add-dir codex-yolo-temp"
@@ -420,6 +423,9 @@ M91_EXPECT="queued-meta-human"
 M92_EXPECT="queued-humanturn-string"
 M93_EXPECT="queued-meta-top"
 M94_EXPECT="queued-human-flag-notification-mode"
+M95_EXPECT="write-new-dir-in-repo"
+M96_EXPECT="write-new-dir-in-repo"
+M97_EXPECT="codex-cd-new-dir-in-repo-from-nogit codex-C-new-dir-in-repo-from-nogit"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -557,6 +563,9 @@ build_mutant() { # build_mutant <mN> <destination>
     m92) from='a.humanTurn === true' to='a.humanTurn' ;;
     m93) from=' && q.isMeta !== true ' to=' ' ;;
     m94) from=' && a.commandMode === "prompt"' to='' ;;
+    m95) from='      while (!isDir(probeDir) && path.dirname(probeDir) !== probeDir) probeDir = path.dirname(probeDir);' to='' ;;
+    m96) from='while (!isDir(probeDir) &&' to='if (!isDir(probeDir) &&' ;;
+    m97) from='              while (!isDir(p) && path.dirname(p) !== p) p = path.dirname(p);' to='' ;;
   esac
   if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
@@ -984,6 +993,21 @@ check_sub() {
   grade "$label" "$kind" "$RUN_RC" "$out" "$err"
 }
 
+# check_write <label> <kind> <cwd> <transcript> <file_path> — `check` for the
+# Write door: a Write tool call, the target in tool_input.file_path.
+check_write() {
+  local label="$1" kind="$2" cwd="$3" tr="$4" fp="$5" pay out err
+  NCASES=$((NCASES + 1))
+  pay="$WORK/out/$label.json"
+  out="$WORK/out/$label.stdout"
+  err="$WORK/out/$label.stderr"
+  "$JQ" -n --arg f "$fp" --arg t "$tr" \
+    '{hook_event_name:"PreToolUse",tool_name:"Write",tool_input:{file_path:$f,content:"x"},transcript_path:$t,permission_mode:"bypassPermissions"}' \
+    > "$pay"
+  run_raw "$cwd" "$pay" "$out" "$err"
+  grade "$label" "$kind" "$RUN_RC" "$out" "$err"
+}
+
 RUN_RC=0
 RUN_MS=0
 # The hook's $TMPDIR: `set` (the fixture dir), `unset`, or `empty` (TMPDIR=).
@@ -1143,6 +1167,34 @@ check apex-already-ran pass "$REPO" "$T_APEX" "python3 -c \"open('package.json',
 check apex-already-ran-script pass "$REPO" "$T_APEX" "python3 $EXT/edit.py"
 check outside-git-inline pass "$NOGIT" "$T_NOAPEX" "python3 -c \"open('package.json', 'w').write('{}')\""
 check outside-git-script pass "$NOGIT" "$T_NOAPEX" "python3 $EXT/edit.py"
+# --- a write into a directory that does not exist yet -----------------------
+# The hook never runs the command and never creates a directory: every new-*
+# dir below is absent when it is graded (asserted here, a case that lied about
+# it would grade nothing). The repo that will hold the file decides, not the
+# missing directory itself.
+for d in "$REPO/new-a" "$REPO/new-c" "$NOGIT/new-b"; do
+  [ ! -e "$d" ] || {
+    echo "probe: $d exists — the new-dir cases would lie" >&2
+    exit 2
+  }
+done
+# Control: the same Write into a directory that exists denies, APEX passes.
+check_write write-existing-dir-in-repo deny "$REPO" "$T_NOAPEX" "$REPO/tools/new.txt"
+check_write write-existing-dir-apex pass "$REPO" "$T_APEX" "$REPO/tools/new.txt"
+check_write write-new-dir-in-repo deny "$REPO" "$T_NOAPEX" "$REPO/new-a/sub/file.txt"
+check_write write-new-dir-in-repo-apex pass "$REPO" "$T_APEX" "$REPO/new-a/sub/file.txt"
+# Outside any repo a missing directory stays a pass.
+check_write write-new-dir-outside-repo pass "$NOGIT" "$T_NOAPEX" "$NOGIT/new-b/file.txt"
+# The Bash door: `mkdir -p` has not run when the hook looks, so `cd` and the
+# redirect name a directory that is not there yet. Control rows: the cwd is
+# the repo, so they deny without the fix too; the codex rows below need it.
+check bash-mkdir-cd-new-dir-in-repo deny "$REPO" "$T_NOAPEX" "mkdir -p $REPO/new-c && cd $REPO/new-c && echo x > f"
+check bash-mkdir-cd-new-dir-apex pass "$REPO" "$T_APEX" "mkdir -p $REPO/new-c && cd $REPO/new-c && echo x > f"
+check bash-mkdir-cd-new-dir-outside-repo pass "$NOGIT" "$T_NOAPEX" "mkdir -p $NOGIT/new-b && cd $NOGIT/new-b && echo x > f"
+# The codex door judges a dir that `mkdir -p` creates in the same command by
+# the repo that will contain it, from a non-repo cwd too.
+check codex-cd-new-dir-in-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "mkdir -p $REPO/nc && cd $REPO/nc && codex exec --full-auto 'fix'"
+check codex-C-new-dir-in-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "mkdir -p $REPO/nc && codex exec -C $REPO/nc -s workspace-write 'fix'"
 # --- subagents: the walk starts at the spawn, else falls back to the end -----
 # The command is ctl-redirect's, a shape no mutant touches: these cases grade
 # the transcript walk alone.

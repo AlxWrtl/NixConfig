@@ -10,7 +10,9 @@
 // belongs to (run 61): the cwd alone let a feature or non-repo cwd edit a
 // file in another repo sitting on master. The file's repo is read from its
 // nearest existing directory; it allows when that is no repo, a branch
-// that is not protected (detached counts as not), or the vault.
+// that is not protected (detached counts as not), the vault, or a file git
+// ignores and does not track under that repo's `.claude/output/apex/`
+// (APEX run state, updated after a merge).
 //
 // Two time bounds, because a JS timer cannot fire while spawnSync blocks:
 // an unref'd watchdog for a stdin that never closes, and a wall-clock
@@ -202,6 +204,27 @@ function isVaultTop(dir) {
   }
 }
 
+// APEX run state (.claude/output/apex/<run>/) is the one ignored subtree a
+// protected branch may still write: the coordinator updates its run after
+// the merge. Strictly under <file's toplevel>/.claude/output/apex/, ignored
+// by git (check-ignore never reports a TRACKED file: a `git add -f` there
+// stays denied), one link only. Any failure is false.
+const APEX_OUT = path.join(".claude", "output", "apex") + path.sep;
+function isApexOutput(dir, realTarget) {
+  const top = git(["rev-parse", "--show-toplevel"], dir);
+  if (gitBroken(top) !== null || top.status !== 0) return false;
+  const t = String(top.stdout || "").replace(/\n$/, "");
+  if (t === "") return false;
+  const realTop = realpathish(t);
+  if (realTop === null) return false;
+  if (!realTarget.startsWith(realTop + path.sep + APEX_OUT)) return false;
+  try { if (fs.lstatSync(realTarget).nlink > 1) return false; } catch (e) { if (!e || e.code !== "ENOENT") return false; }
+  // check-ignore reads the index, which starts the repo's core.fsmonitor
+  // command, outside the sandbox: off, as worktree-env-sync.sh does.
+  const ig = git(["-c", "core.fsmonitor=false", "check-ignore", "-q", "--", realTarget], realTop);
+  return gitBroken(ig) === null && ig.status === 0;
+}
+
 let input = "";
 let ran = false;
 
@@ -248,7 +271,9 @@ function main() {
     if (realTop === null) { denyOnBranch("the target path could not be resolved"); return; }
     if (realTarget === realTop || realTarget.startsWith(realTop + path.sep)) {
       if (isVaultTop(realTop)) allow();
-      deny("BLOCKED: on " + safe(branchSeen) + ". " + CUT);
+      // APEX run state is exempt: no deny here; the file's own repo decides
+      // below (a nested repo under the ignored dir still reads as ignored).
+      if (!isApexOutput(realTop, realTarget)) deny("BLOCKED: on " + safe(branchSeen) + ". " + CUT);
     }
   }
 
@@ -257,7 +282,7 @@ function main() {
   if (home === null) { denyOnBranch("no existing directory holds the target path"); return; }
   const f = branchOf(home);
   if (f.kind === "broken") denyUnverifiable(f.why + " in the repository the file belongs to");
-  if (f.kind === "branch" && PROTECTED.indexOf(f.branch) !== -1 && !isVaultTop(home)) {
+  if (f.kind === "branch" && PROTECTED.indexOf(f.branch) !== -1 && !isVaultTop(home) && !isApexOutput(home, realTarget)) {
     deny("BLOCKED: on " + safe(f.branch) + ". " + CUT);
   }
   allow();

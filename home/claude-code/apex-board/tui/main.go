@@ -7,8 +7,8 @@ package main
 //	apex-board-tui [--sessions DIR] --agents-snapshot <width> <height>   (one Agents frame, text)
 //
 // The Agents tab reads $HOME/.claude/session-state unless --sessions names another dir (tests, the
-// check), and asks abduco which sessions run. Read-only but for one action: Enter on a session
-// runs `agent-pane pick <name>`, the board stays open. Bubble Tea restores the terminal on q,
+// check), and asks abduco which sessions run. Read-only but for its actions (agents.go): Enter on
+// a session runs `agent-pane --slot <tty> pick <name>`, the board stays open. Bubble Tea restores the terminal on q,
 // Ctrl-C, SIGTERM, SIGHUP and a panic.
 
 import (
@@ -91,6 +91,8 @@ func run(args []string) int {
 		fmt.Fprintln(os.Stderr, "apex-board --tui: needs a terminal on stdin and stdout")
 		return 1
 	}
+	// The board's own agent pane: its tty's name, else none (the global pane).
+	paneSlot = ttySlot(os.Stdin)
 	w, h, err := term.GetSize(os.Stdout.Fd())
 	if err != nil {
 		w, h = 80, 24

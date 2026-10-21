@@ -18,7 +18,9 @@
 # `agent-pane stop <name>` once confirmed (a second `x`/×), `n` or its
 # « + nouvel agent » `claude-dispatch --blank agent-HHMMSS` in the board's
 # repo then a pick, `c` on a closed agent `abduco -n <name> claude --continue`
-# in its worktree then a pick: the binaries are baked in by path (-X
+# in its worktree then a pick, `N` a generic agent in `~/agents/<name>`;
+# pick, alive and the split carry `--slot <board tty>` so each board drives
+# its own agent-pane; the binaries are baked in by path (-X
 # ldflags; claude at claude-dispatch's /opt/homebrew path), never looked up
 # on PATH. abduco comes from the same pkgs as
 # claude-dispatch (same socket dir); agent-pane.nix and claude-dispatch.nix

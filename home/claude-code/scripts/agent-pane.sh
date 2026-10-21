@@ -29,13 +29,20 @@
 # so it never keeps it. `agent-pane alive`
 # (the board, before opening a pane): exit 0 when that lock is held, 1 when it
 # is free or cannot be tried; prints nothing. No pid file: a pid can be reused.
+# `--slot <id>` as the first argument gives one board tab its own pane: its
+# target and lock live in `$state_dir/slots/<id>/` (dirs 0700; slots/ and not
+# <id>/ directly, so a slot named `target` cannot collide with the global
+# file). <id> follows the name rule; a bad or missing one exits 2 before
+# anything is created. stop takes it and ignores it (sessions are global).
+# Without it, target and lock are the global files above.
 # abduco is called by absolute path (substituted at build time); PATH is the
 # package's own (coreutils, jq, flock).
 abduco_bin="@abduco@"
 name_re='^[a-z0-9][a-z0-9-]{0,47}$'
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane"
-target_file="$state_dir/target"
-lock_file="$state_dir/pane.lock"
+# slot, pane_dir, target_file and lock_file are set once the arguments are
+# parsed (end of file).
+slot=""
 session_dir="$HOME/.claude/session-state"
 # abduco's socket dir follows XDG_CACHE_HOME (sessions live in ~/.cache/abduco).
 # A pane Ghostty opens for the board (`login … bash --noprofile`) has no
@@ -45,19 +52,23 @@ export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 
 usage() {
   printf '%s\n' \
-    'usage: agent-pane              show the picked abduco session (run it in the top pane)' \
-    '       agent-pane pick <name>  pick the session the pane shows' \
-    '       agent-pane stop <name>  end the session (TERM to its abduco server)' \
-    '       agent-pane alive        exit 0 if a pane runs, 1 if none' \
+    'usage: agent-pane [--slot <id>]              show the picked abduco session (run it in the top pane)' \
+    '       agent-pane [--slot <id>] pick <name>  pick the session the pane shows' \
+    '       agent-pane [--slot <id>] stop <name>  end the session (TERM to its abduco server)' \
+    '       agent-pane [--slot <id>] alive        exit 0 if a pane runs, 1 if none' \
+    '--slot <id>: the pane of one board tab (its own target and lock); stop ignores it.' \
     'In the pane: Ctrl+\ detaches, Ctrl+C on the session list quits.'
 }
 die() { printf 'agent-pane: %s\n' "$1" >&2; exit 2; }
 # The request was valid, its target is not there (or would not die).
 die1() { printf 'agent-pane: %s\n' "$1" >&2; exit 1; }
 
+make_dir() { [ -d "$1" ] || mkdir -m 700 "$1" || [ -d "$1" ]; }
+# The base dir, then with a slot slots/ and slots/<id>/, each 0700 when made.
 make_state_dir() {
   mkdir -p "${state_dir%/*}"
-  [ -d "$state_dir" ] || mkdir -m 700 "$state_dir" || [ -d "$state_dir" ]
+  make_dir "$state_dir" || return 1
+  [ -z "$slot" ] || { make_dir "$state_dir/slots" && make_dir "$pane_dir"; }
 }
 
 pick() {
@@ -65,7 +76,7 @@ pick() {
   [[ $1 =~ $name_re ]] || die 'name must match ^[a-z0-9][a-z0-9-]{0,47}$'
   make_state_dir
   local tmp
-  tmp=$(mktemp "$state_dir/.target.XXXXXX")
+  tmp=$(mktemp "$pane_dir/.target.XXXXXX")
   if ! printf '%s\n%s\n' "$1" "$EPOCHREALTIME-$$" >"$tmp" || ! mv -f "$tmp" "$target_file"; then
     rm -f "$tmp"
     die "cannot write $target_file"
@@ -267,6 +278,18 @@ pane() {
     wait_change
   done
 }
+
+# The slot is checked before any command runs, so a bad one creates nothing.
+if [ "$#" -gt 0 ] && [ "$1" = --slot ]; then
+  [ "$#" -ge 2 ] || die '--slot needs an id'
+  [[ $2 =~ $name_re ]] || die "slot must match $name_re"
+  slot=$2
+  shift 2
+fi
+pane_dir=$state_dir
+if [ -n "$slot" ]; then pane_dir="$state_dir/slots/$slot"; fi
+target_file="$pane_dir/target"
+lock_file="$pane_dir/pane.lock"
 
 if [ "$#" -eq 0 ]; then
   pane

@@ -71,6 +71,15 @@
 #      and another case included; a force-added tracked file there, an
 #      ignored file elsewhere, a repo that ignores nothing, a symlink or
 #      hardlink out and a nested repo on master denied.
+#      The apex-pr-record run adds apex-pr-record.js, run against a fixture
+#      repo of APEX runs and a stub gh: after a lone `gh pr merge` that
+#      merged, pr.md written in the run whose `Branch:` line names the head
+#      (every such run), else in a run with no `Branch:` line naming it in
+#      its first 12 lines; nothing over an existing pr.md, beside a
+#      commit.txt, on a prefix of the name, for a run on another branch, on
+#      an OPEN PR, a failed gh, a failed tool, another command or malformed
+#      input; the value flags' values never read as the selector. One canary
+#      per branch.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -556,6 +565,58 @@ let
     A-wes-link = {
       hook = "worktree-env-sync.sh";
       text = "if cp -p \"$src\" \"$tmp\" 2>/dev/null && ln -n \"$tmp\" \"$dst\" 2>/dev/null; then LIST=\"$LIST, $name\"; fi";
+    };
+    A-apr-cmd = {
+      hook = "apex-pr-record.js";
+      text = "if (!w || w[0] !== \"gh\" || w[1] !== \"pr\" || w[2] !== \"merge\") return;";
+    };
+    A-apr-failed = {
+      hook = "apex-pr-record.js";
+      text = "if (toolFailed(data.tool_response)) return;";
+    };
+    A-apr-state = {
+      hook = "apex-pr-record.js";
+      text = "if (!pr || pr.state !== \"MERGED\") return;";
+    };
+    A-apr-valueflags = {
+      hook = "apex-pr-record.js";
+      text = "if (VALUE_FLAGS.has(a)) {";
+    };
+    A-apr-branchline = {
+      hook = "apex-pr-record.js";
+      text = "let hits = runs.filter(r => r.lines.some(l => branchLine(l, head)));";
+    };
+    A-apr-prefix = {
+      hook = "apex-pr-record.js";
+      text = "return rest.startsWith(head) && /^(\\s|$)/.test(rest.slice(head.length));";
+    };
+    A-apr-branchless = {
+      hook = "apex-pr-record.js";
+      text = "const unbranched = runs.filter(r => !r.lines.some(l => l.startsWith(\"Branch:\")));";
+    };
+    A-apr-fallback = {
+      hook = "apex-pr-record.js";
+      text = "if (hits.length === 0) hits = unbranched";
+    };
+    A-apr-header = {
+      hook = "apex-pr-record.js";
+      text = "const HEADER_LINES = 12;";
+    };
+    A-apr-token = {
+      hook = "apex-pr-record.js";
+      text = "if (endsToken(after)) return true;";
+    };
+    A-apr-multi = {
+      hook = "apex-pr-record.js";
+      text = "for (const r of hits) {";
+    };
+    A-apr-commit = {
+      hook = "apex-pr-record.js";
+      text = "if (present(path.join(r.dir, \"commit.txt\"))) continue;";
+    };
+    A-apr-wx = {
+      hook = "apex-pr-record.js";
+      text = "fs.writeFileSync(path.join(r.dir, \"pr.md\"), body, { flag: \"wx\" });";
     };
   };
 
@@ -1375,6 +1436,163 @@ let
         }
       ];
     }
+    # apex-pr-record run, one canary per write or no-write branch.
+    # Any command starting with gh read as a merge: `gh pr view 42` records.
+    {
+      id = "M-apr-cmd";
+      hook = "apex-pr-record.js";
+      kills = "apr-notmerge-silent";
+      swaps = [
+        {
+          anchor = "A-apr-cmd";
+          to = "if (!w) return;";
+        }
+      ];
+    }
+    # An interrupted merge call recorded all the same.
+    {
+      id = "M-apr-failed";
+      hook = "apex-pr-record.js";
+      kills = "apr-toolfailed-silent";
+      swaps = [
+        {
+          anchor = "A-apr-failed";
+          to = ";";
+        }
+      ];
+    }
+    # The state unread: `--auto`, still OPEN, recorded as merged.
+    {
+      id = "M-apr-state";
+      hook = "apex-pr-record.js";
+      kills = "apr-open-silent";
+      swaps = [
+        {
+          anchor = "A-apr-state";
+          to = "if (!pr) return;";
+        }
+      ];
+    }
+    # Value flags not skipped: `-b 'x y'` becomes the selector.
+    {
+      id = "M-apr-valueflags";
+      hook = "apex-pr-record.js";
+      kills = "apr-selector-args";
+      swaps = [
+        {
+          anchor = "A-apr-valueflags";
+          to = "if (false) {";
+        }
+      ];
+    }
+    # No `Branch:` match: the run that only names the branch gets pr.md.
+    {
+      id = "M-apr-branchline";
+      hook = "apex-pr-record.js";
+      kills = "apr-branch-write";
+      swaps = [
+        {
+          anchor = "A-apr-branchline";
+          to = "let hits = [];";
+        }
+      ];
+    }
+    # `Branch: feat/x-2` taken for feat/x.
+    {
+      id = "M-apr-prefix";
+      hook = "apex-pr-record.js";
+      kills = "apr-prefix-nomatch";
+      swaps = [
+        {
+          anchor = "A-apr-prefix";
+          to = "return rest.startsWith(head);";
+        }
+      ];
+    }
+    # A header naming feat/x-2 taken for feat/x.
+    {
+      id = "M-apr-token";
+      hook = "apex-pr-record.js";
+      kills = "apr-prefix-nomatch";
+      swaps = [
+        {
+          anchor = "A-apr-token";
+          to = "return true;";
+        }
+      ];
+    }
+    # The header fallback open to runs on another branch.
+    {
+      id = "M-apr-branchless";
+      hook = "apex-pr-record.js";
+      kills = "apr-otherbranch-silent";
+      swaps = [
+        {
+          anchor = "A-apr-branchless";
+          to = "const unbranched = runs;";
+        }
+      ];
+    }
+    # No header fallback: a run without a `Branch:` line is never recorded.
+    {
+      id = "M-apr-fallback";
+      hook = "apex-pr-record.js";
+      kills = "apr-header-write";
+      swaps = [
+        {
+          anchor = "A-apr-fallback";
+          to = "if (false) hits = unbranched";
+        }
+      ];
+    }
+    # The whole file read as header: a name on line 13 counts.
+    {
+      id = "M-apr-header";
+      hook = "apex-pr-record.js";
+      kills = "apr-header-late-silent";
+      swaps = [
+        {
+          anchor = "A-apr-header";
+          to = "const HEADER_LINES = 1000;";
+        }
+      ];
+    }
+    # First match only: the second run on the branch is left out.
+    {
+      id = "M-apr-multi";
+      hook = "apex-pr-record.js";
+      kills = "apr-multi-write";
+      swaps = [
+        {
+          anchor = "A-apr-multi";
+          to = "for (const r of hits.slice(0, 1)) {";
+        }
+      ];
+    }
+    # commit.txt ignored: a committed run gets pr.md too.
+    {
+      id = "M-apr-commit";
+      hook = "apex-pr-record.js";
+      kills = "apr-committxt-silent";
+      swaps = [
+        {
+          anchor = "A-apr-commit";
+          to = ";";
+        }
+      ];
+    }
+    # No O_EXCL: the existing pr.md overwritten.
+    {
+      id = "M-apr-wx";
+      hook = "apex-pr-record.js";
+      kills = "apr-existing-kept";
+      swaps = [
+        {
+          anchor = "A-apr-wx";
+          to = "fs.writeFileSync(path.join(r.dir, \"pr.md\"), body, { flag: \"w\" });";
+        }
+      ];
+    }
   ];
 
   # Order is the run order; a name here with no branch in `probe_case` below
@@ -1546,6 +1764,21 @@ let
     "ss-malformed-silent"
     "ss-symlink-dir"
     "ss-symlink-file"
+    "apr-branch-write"
+    "apr-header-write"
+    "apr-header-late-silent"
+    "apr-existing-kept"
+    "apr-committxt-silent"
+    "apr-open-silent"
+    "apr-ghfail-silent"
+    "apr-notmerge-silent"
+    "apr-toolfailed-silent"
+    "apr-malformed-silent"
+    "apr-prefix-nomatch"
+    "apr-otherbranch-silent"
+    "apr-multi-write"
+    "apr-selector-args"
+    "apr-noselector-write"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -1595,6 +1828,7 @@ let
     "sandbox-escape-evidence.js"
     "worktree-env-sync.sh"
     "session-state.js"
+    "apex-pr-record.js"
   ];
   timeoutsOf =
     n:
@@ -1919,6 +2153,63 @@ let
       [ -z "$left" ] || { why="written where nothing was due: $left"; kind=pwned; return 1; }
     }
 
+    # apex-pr-record: per label, a repo $AR (cwd $AR/sub) holding its runs
+    # under $ARO, and a stub gh in $AB that appends its argv to $AB/gh.log
+    # and prints $AB/view.json, or fails as on an HTTP error while $AB/fail
+    # exists. PATH = the stub, then git.
+    APR_LINE='#42 https://github.com/o/r/pull/42 — merged (abcdef12) — recorded by apex-pr-record'
+    APR_JSON='--json number,url,state,headRefName,mergeCommit'
+    apr_fixture() {
+      ab="$root/apr/$lbl"
+      AR="$ab/repo"
+      ARO="$AR/.claude/output/apex"
+      AB="$ab/bin"
+      rm -rf "$ab"
+      mkdir -p "$AB" "$AR/sub" \
+        && g init -q -b master "$AR" \
+        && mkdir -p "$ARO" \
+        && printf '%s\n' '#!${pkgs.bash}/bin/bash' \
+          'here="''${0%/*}"' \
+          'printf "%s\n" "$*" >> "$here/gh.log"' \
+          'if [ -e "$here/fail" ]; then echo "HTTP 502: Bad Gateway" >&2; exit 1; fi' \
+          'exec ${pkgs.coreutils}/bin/cat "$here/view.json"' > "$AB/gh" \
+        && chmod +x "$AB/gh" \
+        || { why="apex-pr-record fixture could not be built"; return 1; }
+    }
+    # $1 state, $2 head branch: what `gh pr view` says of PR 42.
+    apr_view() { ${jq} -cn --arg s "$1" --arg h "$2" '{number:42,url:"https://github.com/o/r/pull/42",state:$s,headRefName:$h,mergeCommit:{oid:"abcdef1234567890"}}' > "$AB/view.json"; }
+    # $1 run id, then the lines of its 00-context.md.
+    apr_ctx() { r="$ARO/$1"; shift; mkdir -p "$r" && printf '%s\n' "$@" > "$r/00-context.md"; }
+    # $1 command, $2 tool_response as raw JSON (a plain success when empty
+    # or unset), $3 event (PostToolUse when unset).
+    apr_in() { ${jq} -cn --arg c "$1" --arg w "$AR/sub" --arg r "''${2-}" --arg e "''${3-PostToolUse}" '{hook_event_name:$e,session_id:"probe",cwd:$w,tool_name:"Bash",tool_input:{command:$c,description:"probe"},tool_response:(if $r == "" then {stdout:"",stderr:"",interrupted:false,isImage:false} else ($r | fromjson) end)}'; }
+    # $1 body, $2 stdin.
+    apr_run() { run "$lbl" "$1" "$AR/sub" "$AB:$GITBIN" "$2"; }
+    # Exit 0, stdout empty; stderr too, unless $1 = noisy (gh's failure line).
+    apr_quiet() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.out" ] || { why="stdout not empty, expected silence"; return 1; }
+      [ "''${1-}" = noisy ] || [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+    }
+    # $1 run id: pr.md there, exactly the recorded line.
+    apr_has() {
+      f="$ARO/$1/pr.md"
+      [ -f "$f" ] || { why="no $1/pr.md, expected one"; kind=mismatch; return 1; }
+      got=$(${pkgs.coreutils}/bin/cat "$f")
+      [ "$got" = "$APR_LINE" ] || { why="$1/pr.md is '$got', expected '$APR_LINE'"; return 1; }
+    }
+    # Run ids where no pr.md was due: one there is the PWNED kind.
+    apr_none() {
+      for r in "$@"; do
+        if [ -e "$ARO/$r/pr.md" ] || [ -L "$ARO/$r/pr.md" ]; then why="pr.md written in $r, where none was due"; kind=pwned; return 1; fi
+      done
+    }
+    # $1 the one argv line gh was called with, empty for never called.
+    apr_gh() {
+      got=$(${pkgs.coreutils}/bin/cat "$AB/gh.log" 2> /dev/null) || got=""
+      [ "$got" = "$1" ] || { why="gh called with '$got', expected '$1'"; kind=mismatch; return 1; }
+    }
+
     # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
     # $tmo is the host's timeout for the hook under test (probe_case sets it);
     # 124 is `timeout` killing it, which the host reads as no decision.
@@ -1998,6 +2289,7 @@ let
         se-*) tmo=${hostTimeout "sandbox-escape-evidence.js"} ;;
         wes-*) tmo=${hostTimeout "worktree-env-sync.sh"} ;;
         ss-*) tmo=${hostTimeout "session-state.js"} ;;
+        apr-*) tmo=${hostTimeout "apex-pr-record.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -2622,6 +2914,153 @@ let
           [ "$(${pkgs.coreutils}/bin/cat "$H/elsewhere/target")" = keep ] || { why="written through the symlinked state file"; kind=pwned; return 1; }
           [ -L "$SF/t1.json" ] || { why="the state-file symlink was replaced"; kind=pwned; return 1; }
           ss_notmp ;;
+        # apex-pr-record run: each case its own repo, runs and gh stub. PR 42
+        # merged, unless the case says otherwise.
+        # The run on the `Branch:` line, not the one that only names it.
+        apr-branch-write)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx a1 "# APEX: one" "Tier: Standard" "Branch: feat/x (trunk: master c74dd29)"
+          apr_ctx a2 "# APEX: follow-up of feat/x" "Tier: Direct"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash --delete-branch")"
+          apr_quiet || return 1
+          apr_none a2 || return 1
+          apr_gh "pr view 42 $APR_JSON" || return 1
+          apr_has a1 ;;
+        # No `Branch:` line anywhere: the head named on line 12 counts...
+        apr-header-write)
+          apr_fixture || return 1
+          apr_view MERGED feat/h
+          apr_ctx h1 "# APEX: header only" x x x x x x x x x x "Continues feat/h."
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet || return 1
+          apr_has h1 ;;
+        # ...on line 13 it does not.
+        apr-header-late-silent)
+          apr_fixture || return 1
+          apr_view MERGED feat/h
+          apr_ctx h1 "# APEX: header only" x x x x x x x x x x x "Continues feat/h."
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet || return 1
+          apr_none h1 || return 1
+          apr_gh "pr view 42 $APR_JSON" ;;
+        apr-existing-kept)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx e1 "# APEX: one" "Branch: feat/x"
+          printf 'keep\n' > "$ARO/e1/pr.md"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet || return 1
+          [ "$(${pkgs.coreutils}/bin/cat "$ARO/e1/pr.md")" = keep ] || { why="the existing pr.md was overwritten"; kind=pwned; return 1; }
+          apr_gh "pr view 42 $APR_JSON" ;;
+        apr-committxt-silent)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx c1 "# APEX: one" "Branch: feat/x (trunk: master c74dd29)"
+          printf 'c74dd29\n' > "$ARO/c1/commit.txt"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet || return 1
+          apr_none c1 || return 1
+          apr_gh "pr view 42 $APR_JSON" ;;
+        # `--auto`: gh queues the merge and the PR stays OPEN.
+        apr-open-silent)
+          apr_fixture || return 1
+          apr_view OPEN feat/x
+          apr_ctx o1 "# APEX: one" "Branch: feat/x (trunk: master c74dd29)"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --auto --squash")"
+          apr_quiet || return 1
+          apr_none o1 || return 1
+          apr_gh "pr view 42 $APR_JSON" ;;
+        # gh fails: its line on stderr, nothing written.
+        apr-ghfail-silent)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          : > "$AB/fail"
+          apr_ctx g1 "# APEX: one" "Branch: feat/x (trunk: master c74dd29)"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet noisy || return 1
+          apr_none g1 || return 1
+          apr_gh "pr view 42 $APR_JSON" || return 1
+          grep -Fq "HTTP 502" "$d/$lbl.err" || { why="gh's failure not on stderr"; return 1; } ;;
+        # Not a lone `gh pr merge`: gh never called, nothing written.
+        apr-notmerge-silent)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx n1 "# APEX: one" "Branch: feat/x (trunk: master c74dd29)"
+          for ac in 'gh pr view 42' 'echo gh pr merge 42' 'gh pr merge 42 && echo done' 'gh pr merge 42 | cat' \
+            'gh pr merge $(echo 42)' 'gh pr merged 42' "$(printf 'gh pr merge 42\ngit pull')"; do
+            apr_run "$2" "$(apr_in "$ac")"
+            apr_quiet || { why="'$ac': $why"; return 1; }
+            apr_none n1 || { why="'$ac': $why"; return 1; }
+            apr_gh "" || { why="'$ac': $why"; return 1; }
+          done ;;
+        # An interrupted call, and the failure event: nothing.
+        apr-toolfailed-silent)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx f1 "# APEX: one" "Branch: feat/x (trunk: master c74dd29)"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash" '{"stdout":"","stderr":"","interrupted":true,"isImage":false}')"
+          apr_quiet || return 1
+          apr_none f1 || return 1
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash" "" PostToolUseFailure)"
+          apr_quiet || return 1
+          apr_none f1 || return 1
+          apr_gh "" ;;
+        apr-malformed-silent)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx m1 "# APEX: one" "Branch: feat/x (trunk: master c74dd29)"
+          apr_run "$2" "$malformed"
+          apr_quiet || return 1
+          apr_none m1 || return 1
+          apr_gh "" ;;
+        # feat/x merged: a run on feat/x-2, by its `Branch:` line or by a
+        # header naming it, is not that run.
+        apr-prefix-nomatch)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx p1 "# APEX: next" "Branch: feat/x-2 (trunk: master c74dd29)"
+          apr_ctx p2 "# APEX: feat/x-2 follow-up" "Tier: Direct"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet || return 1
+          apr_none p1 p2 || return 1
+          apr_gh "pr view 42 $APR_JSON" ;;
+        # A run on another branch that names the head in its header.
+        apr-otherbranch-silent)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx o1 "# APEX: after feat/x" "Branch: fix/y (trunk: master c74dd29)"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet || return 1
+          apr_none o1 || return 1
+          apr_gh "pr view 42 $APR_JSON" ;;
+        apr-multi-write)
+          apr_fixture || return 1
+          apr_view MERGED feat/m
+          apr_ctx m1 "# APEX: one" "Branch: feat/m"
+          apr_ctx m2 "# APEX: two" "Branch: feat/m (trunk: master c74dd29)"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet || return 1
+          apr_has m1 || return 1
+          apr_has m2 ;;
+        # Values of -b, --subject= and -R skipped, -R passed on: PR 42.
+        apr-selector-args)
+          apr_fixture || return 1
+          apr_view MERGED feat/s
+          apr_ctx s1 "# APEX: one" "Branch: feat/s"
+          apr_run "$2" "$(apr_in "gh pr merge --squash -b 'x y' --subject=s -R o/r 42 --delete-branch")"
+          apr_quiet || return 1
+          apr_gh "pr view 42 -R o/r $APR_JSON" || return 1
+          apr_has s1 ;;
+        # No selector: gh resolves the current branch.
+        apr-noselector-write)
+          apr_fixture || return 1
+          apr_view MERGED feat/s
+          apr_ctx s1 "# APEX: one" "Branch: feat/s"
+          apr_run "$2" "$(apr_in "gh pr merge --squash")"
+          apr_quiet || return 1
+          apr_gh "pr view $APR_JSON" || return 1
+          apr_has s1 ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -2639,6 +3078,7 @@ let
         se-*) echo ${hookFile "sandbox-escape-evidence.js"} ;;
         wes-*) echo ${hookFile "worktree-env-sync.sh"} ;;
         ss-*) echo ${hookFile "session-state.js"} ;;
+        apr-*) echo ${hookFile "apex-pr-record.js"} ;;
       esac
     }
 

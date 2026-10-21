@@ -391,6 +391,9 @@ in
 
   hookCircuitBreakerReset = builtins.readFile ./hooks/circuit-breaker-reset.js;
 
+  # After a `gh pr merge` that merged: pr.md in the APEX run of that branch.
+  hookApexPrRecord = builtins.readFile ./hooks/apex-pr-record.js;
+
   hookStopFailure = builtins.readFile ./hooks/stop-failure.sh;
 
   # Encrypted off-machine snapshot at session end. Detached with nohup for the

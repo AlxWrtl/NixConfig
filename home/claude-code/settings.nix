@@ -84,6 +84,10 @@ in
     # sessions run under abduco instead (claude-dispatch). Seeded, not forced.
     disableAgentView = true;
     skipDangerousModePermissionPrompt = true;
+    # Every interactive session (abduco ones included) registers its own
+    # Remote Control session; `claude -p` is not covered. Seeded, not forced:
+    # a /config choice survives rebuilds.
+    remoteControlAtStartup = true;
 
     # Rings BEL instead of a desktop notification (Ghostty OSC): Ghostty shows
     # it as a 🔔 tab-title prefix + split border (bell-features, ghostty.nix),

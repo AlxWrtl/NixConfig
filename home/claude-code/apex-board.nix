@@ -14,7 +14,8 @@
 # terminal, no server, no node. `go test` runs in its checkPhase; the byte
 # parity with board.js is checks/apex-board.nix's job (node is not here).
 # Its Agents tab lists the dispatched sessions (session-state files and
-# abduco's list) and Enter runs `agent-pane pick <name>`: both binaries are
+# abduco's list); Enter runs `agent-pane pick <name>`, `x` or the card's ×
+# `agent-pane stop <name>` once confirmed (a second `x`/×): both binaries are
 # baked in by store path (-X ldflags), never looked up on PATH. abduco comes
 # from the same pkgs as claude-dispatch (same socket dir); agent-pane.nix is
 # imported here as in home/claude-code.nix (pure: same derivation).

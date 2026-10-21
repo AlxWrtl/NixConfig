@@ -49,7 +49,8 @@ const (
 	hitScrim
 	hitDoc
 	hitDrawer
-	hitTab // col: the tab index
+	hitTab  // col: the tab index
+	hitStop // an agent card's ×: col, idx, id as hitCard
 )
 
 type hit struct {
@@ -92,6 +93,7 @@ type viewInfo struct {
 type rowsMemo struct {
 	cw     int
 	sel    bool
+	armed  bool // agent cards: the × lit (a stop asked)
 	rows   [][]cell
 	dotOff cell
 }

@@ -16,11 +16,11 @@
 #      mod no refusal or rewrite token either (`deny`, `permissionDecision`,
 #      `decision:`, `updatedToolOutput`, `preventContinuation`) nor the bare
 #      word `process`: the mods observe, they never refuse, rewrite or stop a
-#      call. One exception, the deck's « ↻ relancer »: the exact
-#      `$.process.run([…claude-bg, 'resume', id], …)` call is stripped before
-#      the scan in deck/hooks/resume.ts only, and only while it is that file's
+#      call. One exception, the deck's « ↗ afficher »: the exact
+#      `$.process.run([…agent-pane, 'pick', name], …)` call is stripped before
+#      the scan in deck/hooks/pick.ts only, and only while it is that file's
 #      single `$.process`;
-#   M5b that call occurs exactly once in deck/hooks/resume.ts;
+#   M5b that call occurs exactly once in deck/hooks/pick.ts;
 #   M6 settings env CLAUDE_CODE_PLUGIN_DIRS is exactly the absolute
 #      ~/.claude/mods/<name> folders of mods.nix, ":"-joined, recomputed here
 #      rather than read back through mods.pluginDirs;
@@ -28,12 +28,13 @@
 #      excluded) and home/claude-code.nix hands it the source folder.
 # Canaries: the M5 scan must flag `$.audio.speak`, and a `deny` and a
 # `permissionDecision` in the deck mod's hooks, M4 a .js name, and M1 an extra name, or the check fails: a
-# scan that stopped matching would otherwise be green forever. For the resume
+# scan that stopped matching would otherwise be green forever. For the pick
 # exception, the scan must flag the call in another file (C5), a second call
-# in resume.ts that survives the strip (C6), another subcommand (C7), the
-# aliases `$['process']` and `{ process: p } = $` (C9) and
-# `Reflect.get($, 'pro' + 'cess')` (C10); it must pass the call alone in
-# resume.ts (C8), or the exception would only hold with the call gone.
+# in pick.ts that survives the strip (C6), another subcommand (C7), the
+# aliases `$['process']` and `{ process: p } = $` (C9),
+# `Reflect.get($, 'pro' + 'cess')` (C10) and the retired `claude-bg resume`
+# call planted in pick.ts (C11); it must pass the call alone in pick.ts (C8),
+# or the exception would only hold with the call gone.
 { pkgs }:
 
 let
@@ -139,15 +140,18 @@ let
     needle: hay:
     (builtins.stringLength hay - builtins.stringLength (builtins.replaceStrings [ needle ] [ "" ] hay))
     / builtins.stringLength needle;
-  # The one host command of any mod: the deck's « ↻ relancer » runs the
-  # claude-bg allow-list wrapper. Only this exact call, once, in this one file,
-  # and no other `$.process` there; anything else keeps every noun it holds.
-  resumeFile = "deck/hooks/resume.ts";
-  resumeNeedle = "$.process.run(['/etc/profiles/per-user/alx/bin/claude-bg', 'resume', id], { timeoutMs: 60000 })";
+  # The one host command of any mod: the deck's « ↗ afficher » runs
+  # `agent-pane pick <name>` (the name checked before, in the same file). Only
+  # this exact call, once, in this one file, and no other `$.process` there;
+  # anything else keeps every noun it holds.
+  pickFile = "deck/hooks/pick.ts";
+  pickNeedle = "$.process.run(['/etc/profiles/per-user/alx/bin/agent-pane', 'pick', name], { timeoutMs: 5000 })";
+  # The call it replaced (PR 4a): must no longer pass anywhere (C11).
+  retiredNeedle = "$.process.run(['/etc/profiles/per-user/alx/bin/claude-bg', 'resume', id], { timeoutMs: 60000 })";
   allowedText =
     path: text:
-    if path == resumeFile && count "$.process" text == 1 && count resumeNeedle text == 1 then
-      builtins.replaceStrings [ resumeNeedle ] [ "" ] text
+    if path == pickFile && count "$.process" text == 1 && count pickNeedle text == 1 then
+      builtins.replaceStrings [ pickNeedle ] [ "" ] text
     else
       text;
   nounsIn =
@@ -155,9 +159,9 @@ let
     builtins.filter (n: hasInfix n (allowedText path text)) (
       forbidden ++ lib.optionals (isHooksModule path) hookResultNouns
     );
-  resumeText =
-    if builtins.pathExists (root + "/${resumeFile}") then
-      builtins.readFile (root + "/${resumeFile}")
+  pickText =
+    if builtins.pathExists (root + "/${pickFile}") then
+      builtins.readFile (root + "/${pickFile}")
     else
       "";
   scan = lib.concatMap (
@@ -211,9 +215,9 @@ let
       msg = "found ${builtins.toJSON scan}";
     }
     {
-      name = "M5b the deck's resume call is in ${resumeFile}, exactly once";
-      ok = count resumeNeedle resumeText == 1;
-      msg = "${resumeFile} holds the claude-bg resume call ${toString (count resumeNeedle resumeText)} times (missing file = 0), expected exactly once: ${resumeNeedle}";
+      name = "M5b the deck's pick call is in ${pickFile}, exactly once";
+      ok = count pickNeedle pickText == 1;
+      msg = "${pickFile} holds the agent-pane pick call ${toString (count pickNeedle pickText)} times (missing file = 0), expected exactly once: ${pickNeedle}";
     }
     {
       name = "M6 settings env CLAUDE_CODE_PLUGIN_DIRS = the mods folders";
@@ -240,38 +244,37 @@ let
       msg = "the refusal-token scan no longer covers the deck mod";
     }
     {
-      name = "C5 the M5 scan flags the resume call outside ${resumeFile}";
+      name = "C5 the M5 scan flags the pick call outside ${pickFile}";
       ok =
-        nounsIn "deck/hooks/register.tsx" "const r = await ${resumeNeedle}" == [
+        nounsIn "deck/hooks/register.tsx" "const r = await ${pickNeedle}" == [
           "$.process"
           "process"
         ];
-      msg = "the resume exception is no longer bound to its one file";
+      msg = "the pick exception is no longer bound to its one file";
     }
     {
-      name = "C6 the M5 scan flags a second call in ${resumeFile} that survives the strip";
+      name = "C6 the M5 scan flags a second call in ${pickFile} that survives the strip";
       ok =
-        nounsIn resumeFile "const r = await ${resumeNeedle}\nawait $.process.run(['sh'])" == [
+        nounsIn pickFile "const r = await ${pickNeedle}\nawait $.process.run(['sh'])" == [
           "$.process"
           "process"
         ];
-      msg = "a second call in resume.ts that survives the strip is no longer flagged";
+      msg = "a second call in pick.ts that survives the strip is no longer flagged";
     }
     {
-      name = "C7 the M5 scan flags another claude-bg subcommand in ${resumeFile}";
+      name = "C7 the M5 scan flags another agent-pane subcommand in ${pickFile}";
       ok =
-        nounsIn resumeFile (
-          "const r = await " + builtins.replaceStrings [ "'resume'" ] [ "'stop'" ] resumeNeedle
-        ) == [
+        nounsIn pickFile ("const r = await " + builtins.replaceStrings [ "'pick'" ] [ "'list'" ] pickNeedle)
+        == [
           "$.process"
           "process"
         ];
-      msg = "the resume exception no longer requires the exact argv";
+      msg = "the pick exception no longer requires the exact argv";
     }
     {
-      name = "C8 the M5 scan passes the resume call alone in ${resumeFile}";
-      ok = nounsIn resumeFile "const r = await ${resumeNeedle}" == [ ];
-      msg = "the resume exception no longer strips the one allowed call — M5 could only pass with it gone";
+      name = "C8 the M5 scan passes the pick call alone in ${pickFile}";
+      ok = nounsIn pickFile "const r = await ${pickNeedle}" == [ ];
+      msg = "the pick exception no longer strips the one allowed call — M5 could only pass with it gone";
     }
     {
       name = "C9 the M5 scan flags computed and destructured $.process aliases";
@@ -288,6 +291,15 @@ let
       name = "C10 the M5 scan flags a Reflect.get on the engine";
       ok = nounsIn "deck/hooks/core.ts" "Reflect.get($, 'pro' + 'cess')" == [ "Reflect.get($" ];
       msg = "a computed Reflect.get($, …) alias of $.process is no longer flagged";
+    }
+    {
+      name = "C11 the M5 scan flags the retired claude-bg resume call in ${pickFile}";
+      ok =
+        nounsIn pickFile "const r = await ${retiredNeedle}" == [
+          "$.process"
+          "process"
+        ];
+      msg = "the claude-bg resume call would still pass the scan in pick.ts";
     }
     {
       name = "C2 the M4 filter flags a .js file";

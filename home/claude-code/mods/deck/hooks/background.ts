@@ -1,45 +1,35 @@
 // Pure helpers for the background agents panel: no `$`, no clock, no I/O. Each session is one
-// ~/.claude/jobs/<id>/state.json, a format the engine does not document: parsed defensively, an
-// entry that does not read is skipped rather than drawn wrong.
-import type { DeckBgAgent, DeckBgEvent, DeckBgKind } from '../types'
+// ~/.claude/session-state/<name>.json, written by hooks/session-state.js for an abduco session
+// that claude-dispatch named: parsed defensively, an entry that does not read is skipped rather
+// than drawn wrong.
+import type { DeckBgAgent, DeckBgKind } from '../types'
 
 import { redact } from './core'
 
 export type { DeckBgKind }
 
-/** Timeline steps an unfolded row shows. */
-export const BG_TIMELINE = 5
+/** A session name as claude-dispatch gives it and session-state.js checks it. */
+export const SESSION_NAME = /^[a-z0-9][a-z0-9-]{0,47}$/
 
-/** A finished session older than this leaves the panel. */
+/** A session silent this long leaves the panel, a finished one included. */
 export const BG_KEEP_MS = 24 * 60 * 60 * 1000
 
 /** The panel's order: what waits on you first, what ended last. */
-export const BG_ORDER: readonly DeckBgKind[] = ['needs-you', 'stalled', 'failed', 'working', 'other', 'stopped', 'done']
+export const BG_ORDER: readonly DeckBgKind[] = ['needs-you', 'waiting', 'idle', 'working', 'other', 'done']
 
 /**
- * The engine's state word as the panel groups it; a word it does not know is `other`. A `tempo`
- * of `active` (exact case) is `working` whatever the state: the session runs a turn now. A
- * `working` state whose `tempo` is `blocked`, both exact case as the claude-bg wrapper compares
- * them, is `needs-you` when it `asks` (a pending question: a non-empty `needs` or
- * `block.questions`), else `stalled`.
+ * The state word as session-state.js writes it (exact case): Notification `needs-you`, Stop
+ * `waiting`, SessionStart `idle`, UserPromptSubmit `working`, SessionEnd `done`; any other word
+ * is `other`.
  */
-export function bgKind(state: string, tempo = '', asks = false): DeckBgKind {
-  if (tempo === 'active') return 'working'
-  if (state === 'working' && tempo === 'blocked') return asks ? 'needs-you' : 'stalled'
-  switch (state.toLowerCase()) {
+export function sessionKind(state: string): DeckBgKind {
+  switch (state) {
+    case 'needs-you':
+    case 'waiting':
+    case 'idle':
     case 'working':
-      return 'working'
-    case 'blocked':
-      return 'needs-you'
     case 'done':
-    case 'completed':
-      return 'done'
-    case 'failed':
-    case 'error':
-      return 'failed'
-    case 'stopped':
-    case 'killed':
-      return 'stopped'
+      return state
     default:
       return 'other'
   }
@@ -63,108 +53,46 @@ export const inProject = (list: DeckBgAgent[], cwd: string): DeckBgAgent[] => {
   return list.filter(a => rootOf(a.cwd) === root || rootOf(a.cwd).startsWith(`${root}/`))
 }
 
-/** One state.json (its `tempo`, `needs` and `block.questions` read for `stalled` or `needs-you`), or null when it is no JSON object or lacks a string `state` or `cwd`. */
-export function parseJobState(id: string, text: string): DeckBgAgent | null {
+/**
+ * One `<name>.json` (`name` its file stem), or null when the stem is no session name, the text
+ * no JSON object, `state` or `cwd` no string, or its own `name` another than the stem.
+ */
+export function parseSessionState(name: string, text: string): DeckBgAgent | null {
+  if (!SESSION_NAME.test(name)) return null
   let value: unknown
   try {
     value = JSON.parse(text)
   } catch {
-    // Half-written or not JSON: skipped this poll.
+    // Not JSON (the writer renames whole files, so never half a file): skipped this poll.
     return null
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null
   const state: unknown = Reflect.get(value, 'state')
   const cwd: unknown = Reflect.get(value, 'cwd')
   if (typeof state !== 'string' || typeof cwd !== 'string') return null
-  const name: unknown = Reflect.get(value, 'name')
-  const detail: unknown = Reflect.get(value, 'detail')
-  const updated: unknown = Reflect.get(value, 'updatedAt')
+  if (Reflect.get(value, 'name') !== name) return null
+  const notice: unknown = Reflect.get(value, 'notice')
   const intent: unknown = Reflect.get(value, 'intent')
-  const tokens: unknown = Reflect.get(value, 'tokens')
-  const tempo: unknown = Reflect.get(value, 'tempo')
-  const needs: unknown = Reflect.get(value, 'needs')
-  const block: unknown = Reflect.get(value, 'block')
-  const questions: unknown = typeof block === 'object' && block !== null ? Reflect.get(block, 'questions') : undefined
-  const asks = (typeof needs === 'string' && needs !== '') || (Array.isArray(questions) && questions.length > 0)
+  const updated: unknown = Reflect.get(value, 'updatedAt')
   const at = typeof updated === 'string' ? Date.parse(updated) : Number.NaN
   return {
-    id,
-    name: typeof name === 'string' && oneLine(name) !== '' ? oneLine(name) : id,
+    id: name,
+    name,
     cwd,
     project: projectOf(cwd),
     state,
-    kind: bgKind(state, typeof tempo === 'string' ? tempo : '', asks),
-    detail: typeof detail === 'string' ? redact(oneLine(detail)) : '',
+    kind: sessionKind(state),
+    detail: typeof notice === 'string' ? redact(oneLine(notice)) : '',
     intent: typeof intent === 'string' ? redact(oneLine(intent)) : '',
-    tokens: typeof tokens === 'number' && Number.isFinite(tokens) ? tokens : null,
     updatedAt: Number.isFinite(at) ? at : 0,
   }
 }
 
 /**
- * A timeline.jsonl's last `max` steps, oldest first: a line that does not read, has no ISO `at` or
- * no non-empty `detail` is skipped; a detail repeated on the next line folds into its first.
+ * Without the sessions silent over BG_KEEP_MS: a finished one, or one whose session died without
+ * its SessionEnd (the deck does not ask abduco).
  */
-export function parseTimeline(text: string, max: number): DeckBgEvent[] {
-  const events: DeckBgEvent[] = []
-  for (const line of text.split('\n')) {
-    if (line.trim() === '') continue
-    let value: unknown
-    try {
-      value = JSON.parse(line)
-    } catch {
-      // Half-written last line or not JSON: skipped.
-      continue
-    }
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
-    const rawAt: unknown = Reflect.get(value, 'at')
-    const rawDetail: unknown = Reflect.get(value, 'detail')
-    const rawState: unknown = Reflect.get(value, 'state')
-    const at = typeof rawAt === 'string' ? Date.parse(rawAt) : Number.NaN
-    const detail = typeof rawDetail === 'string' ? redact(oneLine(rawDetail)) : ''
-    if (!Number.isFinite(at) || detail === '') continue
-    if (events[events.length - 1]?.detail === detail) continue
-    events.push({ at, state: typeof rawState === 'string' ? oneLine(rawState) : '', detail })
-  }
-  return max > 0 ? events.slice(-max) : []
-}
-
-/**
- * What a needs-you session waits on, from its timeline.jsonl: the last paragraph (parts split on a
- * blank line) of the last line with a non-empty `text` (an agent reply), one line and redacted.
- * Without a reply, `detail` (already one line and redacted), unless it equals the `detail` of a
- * line without `text` (a user prompt): a prompt echo gives ''. A line that does not read is skipped.
- */
-export function waitingText(timeline: string, detail: string): string {
-  let reply = ''
-  const prompts = new Set<string>()
-  for (const line of timeline.split('\n')) {
-    if (line.trim() === '') continue
-    let value: unknown
-    try {
-      value = JSON.parse(line)
-    } catch {
-      // Half-written last line or not JSON: skipped.
-      continue
-    }
-    if (typeof value !== 'object' || value === null || Array.isArray(value)) continue
-    const rawText: unknown = Reflect.get(value, 'text')
-    const text = typeof rawText === 'string' ? rawText.trim() : ''
-    if (text !== '') {
-      reply = text
-      continue
-    }
-    const rawDetail: unknown = Reflect.get(value, 'detail')
-    if (typeof rawDetail === 'string') prompts.add(redact(oneLine(rawDetail)))
-  }
-  const last = redact(oneLine(reply.split(/\n[ \t]*\n/).filter(p => p.trim() !== '').pop() ?? ''))
-  if (last !== '') return last
-  return prompts.has(detail) ? '' : detail
-}
-
-/** Without the finished sessions (done, stopped) last updated over BG_KEEP_MS ago. */
-export const recentBg = (list: DeckBgAgent[], now: number): DeckBgAgent[] =>
-  list.filter(a => !((a.kind === 'done' || a.kind === 'stopped') && now - a.updatedAt > BG_KEEP_MS))
+export const recentBg = (list: DeckBgAgent[], now: number): DeckBgAgent[] => list.filter(a => now - a.updatedAt <= BG_KEEP_MS)
 
 /** In BG_ORDER, newest update first within a kind. */
 export const sortBg = (list: DeckBgAgent[]): DeckBgAgent[] =>
@@ -172,7 +100,7 @@ export const sortBg = (list: DeckBgAgent[]): DeckBgAgent[] =>
 
 /** How many sessions of each kind. */
 export function bgCounts(list: DeckBgAgent[]): Record<DeckBgKind, number> {
-  const counts: Record<DeckBgKind, number> = { 'needs-you': 0, stalled: 0, working: 0, failed: 0, done: 0, stopped: 0, other: 0 }
+  const counts: Record<DeckBgKind, number> = { 'needs-you': 0, waiting: 0, idle: 0, working: 0, other: 0, done: 0 }
   for (const a of list) counts[a.kind] += 1
   return counts
 }

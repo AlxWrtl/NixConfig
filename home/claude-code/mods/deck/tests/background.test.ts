@@ -1,185 +1,86 @@
-// The background agents panel: the pure readers of ~/.claude/jobs/<id>/state.json, then the
-// panel drawn from mocked jobs folders, polled only while the pane is open.
+// The background agents panel: the pure readers of ~/.claude/session-state/<name>.json, then the
+// panel drawn from a mocked session-state folder, polled only while the pane is open.
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { BG_KEEP_MS, BG_TIMELINE, bgCounts, bgKind, bgSummary, bgWord, inProject, parseJobState, parseTimeline, projectOf, recentBg, sortBg, waitingText } from '../hooks/background'
+import { BG_KEEP_MS, SESSION_NAME, bgCounts, bgSummary, bgWord, inProject, parseSessionState, projectOf, recentBg, sessionKind, sortBg } from '../hooks/background'
 import type { DeckBgAgent } from '../types'
 
 const NOW = 1_000_000_000_000
 
-const job = (o: Partial<DeckBgAgent> & Pick<DeckBgAgent, 'id' | 'state'>): DeckBgAgent => ({
+const row = (o: Partial<DeckBgAgent> & Pick<DeckBgAgent, 'id' | 'state'>): DeckBgAgent => ({
   name: o.id,
   cwd: '/p/x',
   project: 'x',
-  kind: bgKind(o.state),
+  kind: sessionKind(o.state),
   detail: '',
   intent: '',
-  tokens: null,
   updatedAt: NOW,
   ...o,
 })
 
 // ---------------------------------------------------------------- pure
 
-test('state words map to kinds; an unknown word is other and shows as itself', () => {
-  expect(['working', 'blocked', 'done', 'completed', 'failed', 'error', 'stopped', 'killed', 'paused'].map(s => bgKind(s))).toEqual([
-    'working',
+test('the five state words are their kinds, exact case; any other word is other and shows as itself', () => {
+  expect(['needs-you', 'waiting', 'idle', 'working', 'done', 'Working', 'blocked', 'stalled', ''].map(sessionKind)).toEqual([
     'needs-you',
+    'waiting',
+    'idle',
+    'working',
     'done',
-    'done',
-    'failed',
-    'failed',
-    'stopped',
-    'stopped',
+    'other',
+    'other',
+    'other',
     'other',
   ])
-  expect(bgWord({ kind: 'needs-you', state: 'blocked' })).toBe('needs you')
+  expect(bgWord({ kind: 'needs-you', state: 'needs-you' })).toBe('needs you')
   expect(bgWord({ kind: 'other', state: 'paused' })).toBe('paused')
-  expect(bgWord({ kind: 'done', state: 'completed' })).toBe('done')
+  expect(bgWord({ kind: 'waiting', state: 'waiting' })).toBe('waiting')
 })
 
-test('a working state whose tempo is blocked is stalled, shown as its kind, sorted after needs-you', () => {
-  expect([bgKind('working', 'blocked'), bgKind('working', 'idle'), bgKind('blocked', 'blocked'), bgKind('working')]).toEqual(['stalled', 'working', 'needs-you', 'working'])
-  // Exact case only, as the wrapper compares: anything else is not resumable, so not stalled.
-  expect([bgKind('Working', 'BLOCKED'), bgKind('working', 'Blocked'), bgKind('WORKING', 'blocked')]).toEqual(['working', 'working', 'working'])
-  const parsed = parseJobState('ab12cd34', JSON.stringify({ state: 'working', tempo: 'blocked', cwd: '/x' }))
-  expect(parsed?.kind).toBe('stalled')
-  expect(parseJobState('ab12cd34', JSON.stringify({ state: 'working', tempo: 3, cwd: '/x' }))?.kind).toBe('working')
-  expect(bgWord({ kind: 'stalled', state: 'working' })).toBe('stalled')
-  const list = [job({ id: 'w', state: 'working' }), job({ id: 's', state: 'working', kind: 'stalled' }), job({ id: 'n', state: 'blocked' })]
-  expect(sortBg(list).map(a => a.id)).toEqual(['n', 's', 'w'])
-  expect(bgSummary(list).map(p => p.text)).toEqual(['1 needs you', '1 stalled', '1 working'])
+test('a session name is claude-dispatch\'s rule', () => {
+  expect(['fix-vin', 'a', '0-x', 'a'.repeat(48)].every(n => SESSION_NAME.test(n))).toBe(true)
+  expect(['', '-x', 'Fix', 'a_b', 'a.b', '.fix.json.1.2.tmp', 'a'.repeat(49), 'a b', 'a\n'].some(n => SESSION_NAME.test(n))).toBe(false)
 })
 
-// Shape of a live state.json waiting on an AskUserQuestion (job d591f567): working, tempo blocked,
-// the question in `needs` and in `block.questions`.
-const ASKING = {
-  state: 'working',
-  tempo: 'blocked',
-  cwd: '/x',
-  needs: 'answer: Je pousse avec --no-verify ? (Oui, --no-verify (Recommandé) · Non, je pousse moi-même)',
-  block: {
-    questions: [
-      {
-        question: 'Je pousse avec --no-verify ?',
-        options: [
-          { label: 'Oui, --no-verify (Recommandé)', description: 'Ne saute que l’étape base de données.' },
-          { label: 'Non, je pousse moi-même', description: 'Je m’arrête ici.' },
-        ],
-      },
-    ],
-  },
+// The file session-state.js writes, as it writes it.
+const STATE = {
+  name: 'fix-vin',
+  state: 'needs-you',
+  event: 'Notification',
+  updatedAt: '2026-10-20T09:00:00.000Z',
+  cwd: '/Users/a/projects/Preliz/.claude/worktrees/fix-vin',
+  sessionId: 'a0000000-0000-4000-8000-000000000000',
+  transcriptPath: '/x.jsonl',
+  intent: 'Fix the\n  VIN  decoder',
+  notice: 'Claude needs your permission to use Bash',
 }
 
-test('a tempo of active is working whatever the state; exact case only', () => {
-  expect([bgKind('blocked', 'active'), bgKind('done', 'active'), bgKind('working', 'active', true), bgKind('paused', 'active')]).toEqual([
-    'working',
-    'working',
-    'working',
-    'working',
-  ])
-  expect([bgKind('blocked', 'Active'), bgKind('working', 'ACTIVE', true)]).toEqual(['needs-you', 'working'])
-  expect(parseJobState('a', JSON.stringify({ state: 'blocked', tempo: 'active', cwd: '/x' }))?.kind).toBe('working')
-})
-
-test('a working session blocked on a question (needs, or block.questions) needs you, never stalled', () => {
-  expect(parseJobState('d591f567', JSON.stringify(ASKING))?.kind).toBe('needs-you')
-  expect(parseJobState('a', JSON.stringify({ ...ASKING, block: undefined }))?.kind).toBe('needs-you')
-  expect(parseJobState('a', JSON.stringify({ ...ASKING, needs: undefined }))?.kind).toBe('needs-you')
-  expect(parseJobState('a', JSON.stringify({ ...ASKING, needs: null }))?.kind).toBe('needs-you')
-  expect([bgKind('working', 'blocked', true), bgKind('working', 'blocked', false)]).toEqual(['needs-you', 'stalled'])
-  // Neither a question nor a non-empty `needs`: stalled, whatever the empty shape.
-  const bare = { state: 'working', tempo: 'blocked', cwd: '/x' }
-  for (const rest of [{}, { needs: null, block: null }, { needs: '' }, { block: { questions: [] } }, { needs: '', block: {} }, { needs: 3, block: { questions: 'x' } }]) {
-    expect(parseJobState('a', JSON.stringify({ ...bare, ...rest }))?.kind).toBe('stalled')
-  }
-})
-
-test('a state.json parses defensively: no object, no string state or cwd → null', () => {
-  const ok = parseJobState(
-    'ab12cd34',
-    JSON.stringify({ state: 'blocked', name: 'Fais le\nsmoke', cwd: '/Users/a/projects/carpress-ai', detail: 'wants  approval', updatedAt: '2026-08-06T05:42:11.089Z', extra: 1 }),
-  )
-  expect(ok).toEqual({
-    id: 'ab12cd34',
-    name: 'Fais le smoke',
-    cwd: '/Users/a/projects/carpress-ai',
-    project: 'carpress-ai',
-    state: 'blocked',
+test('a state file parses defensively: no object, no string state or cwd, a name not its stem → null', () => {
+  expect(parseSessionState('fix-vin', JSON.stringify(STATE))).toEqual({
+    id: 'fix-vin',
+    name: 'fix-vin',
+    cwd: STATE.cwd,
+    project: 'Preliz',
+    state: 'needs-you',
     kind: 'needs-you',
-    detail: 'wants approval',
-    intent: '',
-    tokens: null,
-    updatedAt: Date.parse('2026-08-06T05:42:11.089Z'),
+    detail: 'Claude needs your permission to use Bash',
+    intent: 'Fix the VIN decoder',
+    updatedAt: Date.parse('2026-10-20T09:00:00.000Z'),
   })
-  expect(parseJobState('a', '{not json')).toBe(null)
-  expect(parseJobState('a', '[]')).toBe(null)
-  expect(parseJobState('a', 'null')).toBe(null)
-  expect(parseJobState('a', JSON.stringify({ state: 'working' }))).toBe(null)
-  expect(parseJobState('a', JSON.stringify({ state: 3, cwd: '/x' }))).toBe(null)
-  const bare = parseJobState('ff00', JSON.stringify({ state: 'working', cwd: '/x/y', name: '  ', updatedAt: 'soon' }))
-  expect([bare?.name, bare?.updatedAt, bare?.detail]).toEqual(['ff00', 0, ''])
-  // A credential in the status line is masked before it reaches state.
-  expect(parseJobState('a', JSON.stringify({ state: 'blocked', cwd: '/x', detail: 'export API_KEY=sk-abcdefghijkl1234' }))?.detail).not.toContain('abcdefghijkl')
-})
-
-test('intent and tokens are read when present: intent one line and redacted, tokens a finite number else null', () => {
-  const full = parseJobState('a', JSON.stringify({ state: 'working', cwd: '/x', intent: 'Fix the\n  login  page', tokens: 54002 }))
-  expect([full?.intent, full?.tokens]).toEqual(['Fix the login page', 54002])
-  const bare = parseJobState('a', JSON.stringify({ state: 'working', cwd: '/x' }))
-  expect([bare?.intent, bare?.tokens]).toEqual(['', null])
-  expect(parseJobState('a', JSON.stringify({ state: 'working', cwd: '/x', intent: 3, tokens: '54002' }))?.tokens).toBe(null)
-  expect(parseJobState('a', JSON.stringify({ state: 'working', cwd: '/x', intent: 'use API_KEY=sk-abcdefghijkl1234' }))?.intent).not.toContain('abcdefghijkl')
-})
-
-const tl = (at: string, detail: unknown, state = 'working') => JSON.stringify({ at, state, detail, text: '' })
-
-test('a timeline keeps its last steps oldest first: broken lines, empty details and bad dates skipped, repeats folded', () => {
-  const text = [
-    tl('2026-10-15T10:59:03.541Z', ''),
-    tl('2026-10-15T10:59:20.962Z', 'Finding guard  assertions'),
-    '{half',
-    tl('2026-10-15T10:59:30.000Z', 'Finding guard assertions'),
-    tl('soon', 'no date'),
-    tl('2026-10-15T11:00:01.809Z', 'Checking e2e'),
-    JSON.stringify([1]),
-    tl('2026-10-15T11:00:02.000Z', 42),
-    tl('2026-10-15T11:01:00.000Z', 'export API_KEY=sk-abcdefghijkl1234'),
-    '',
-  ].join('\n')
-  const events = parseTimeline(text, 10)
-  expect(events.map(e => e.detail.slice(0, 14))).toEqual(['Finding guard ', 'Checking e2e', 'export API_KEY'])
-  expect(events[0]?.at).toBe(Date.parse('2026-10-15T10:59:20.962Z')) // a repeat keeps its first time
-  expect(events[2]?.detail).not.toContain('abcdefghijkl')
-  expect(events.every((e, i) => i === 0 || (events[i - 1]?.at ?? 0) < e.at)).toBe(true)
-  const many = Array.from({ length: 9 }, (_, i) => tl(new Date(NOW + i * 1000).toISOString(), `step ${i}`)).join('\n')
-  expect(parseTimeline(many, BG_TIMELINE).map(e => e.detail)).toEqual(['step 4', 'step 5', 'step 6', 'step 7', 'step 8'])
-  expect(parseTimeline('', 5)).toEqual([])
-})
-
-// A user prompt line (no `text`), then an agent reply line (`detail` a summary, `text` the reply).
-const ask = (detail: string) => JSON.stringify({ at: '2026-10-20T09:00:00.000Z', state: 'working', detail })
-const reply = (detail: string, text: string) => JSON.stringify({ at: '2026-10-20T09:01:00.000Z', state: 'blocked', detail, text })
-
-test('the waiting text is the last paragraph of the agent\'s last reply, one line', () => {
-  const turn = [ask('donne moi la prochaine card'), reply('Card found', 'J\'ai lu le board.\n\nLa card #12   est prête.\n  \nJe la prends ?\n\n')].join('\n')
-  expect(waitingText(turn, 'Card found')).toBe('Je la prends ?')
-  expect(waitingText(reply('x', 'Une\nseule   partie'), 'x')).toBe('Une seule partie') // whitespace collapsed
-  // A prompt after the reply: still the reply, never the prompt.
-  const later = [reply('Plan ready', 'Le plan est prêt.\n\nOn y va ?'), ask('et la suite ?')].join('\n')
-  expect(waitingText(later, 'et la suite ?')).toBe('On y va ?')
-  // A later reply wins; a half-written or non-object line is skipped.
-  expect(waitingText([reply('a', 'premier'), reply('b', 'second'), '{"text":"half', JSON.stringify(['x']), '42'].join('\n'), 'b')).toBe('second')
-  expect(waitingText(reply('k', 'Done.\n\nexport API_KEY=sk-abcdefghijkl1234'), 'k')).not.toContain('abcdefghijkl')
-})
-
-test('without a reply the waiting text is the detail, unless it echoes a prompt', () => {
-  expect(waitingText(ask('donne moi la prochaine card'), 'donne moi la prochaine card')).toBe('')
-  expect(waitingText([ask('donne  moi\nla card'), '{half'].join('\n'), 'donne moi la card')).toBe('') // compared one line
-  expect(waitingText(ask('donne moi la prochaine card'), 'approve the plan')).toBe('approve the plan')
-  expect(waitingText('', 'approve the plan')).toBe('approve the plan')
-  expect(waitingText(reply('x', '   \n\n  '), 'approve the plan')).toBe('approve the plan') // a blank reply is none
+  expect(parseSessionState('fix-vin', '{not json')).toBe(null)
+  expect(parseSessionState('fix-vin', '[]')).toBe(null)
+  expect(parseSessionState('fix-vin', 'null')).toBe(null)
+  expect(parseSessionState('fix-vin', JSON.stringify({ ...STATE, cwd: undefined }))).toBe(null)
+  expect(parseSessionState('fix-vin', JSON.stringify({ ...STATE, state: 3 }))).toBe(null)
+  expect(parseSessionState('other', JSON.stringify(STATE))).toBe(null) // name ≠ stem
+  expect(parseSessionState('fix-vin', JSON.stringify({ ...STATE, name: undefined }))).toBe(null)
+  expect(parseSessionState('-x', JSON.stringify({ ...STATE, name: '-x' }))).toBe(null) // no session name
+  const bare = parseSessionState('fix-vin', JSON.stringify({ name: 'fix-vin', state: 'paused', cwd: '/x', updatedAt: 'soon', intent: 3 }))
+  expect([bare?.kind, bare?.updatedAt, bare?.detail, bare?.intent]).toEqual(['other', 0, '', ''])
+  // A credential in the notice or the intent is masked before it reaches state.
+  const leak = parseSessionState('fix-vin', JSON.stringify({ ...STATE, notice: 'export API_KEY=sk-abcdefghijkl1234', intent: 'use API_KEY=sk-abcdefghijkl1234' }))
+  expect(`${leak?.detail} ${leak?.intent}`).not.toContain('abcdefghijkl')
 })
 
 test('the project is the folder name, a worktree read as its repo', () => {
@@ -189,39 +90,41 @@ test('the project is the folder name, a worktree read as its repo', () => {
   expect(projectOf('/')).toBe('/')
 })
 
-test('needs-you first, then failed, working, other, stopped, done; newest first within a kind', () => {
+test('needs-you first, then waiting, idle, working, other, done; newest first within a kind', () => {
   const list = [
-    job({ id: 'd', state: 'done' }),
-    job({ id: 'w-old', state: 'working', updatedAt: NOW - 10 }),
-    job({ id: 's', state: 'stopped' }),
-    job({ id: 'o', state: 'paused' }),
-    job({ id: 'n', state: 'blocked' }),
-    job({ id: 'w-new', state: 'working' }),
-    job({ id: 'f', state: 'failed' }),
+    row({ id: 'd', state: 'done' }),
+    row({ id: 'w-old', state: 'working', updatedAt: NOW - 10 }),
+    row({ id: 'i', state: 'idle' }),
+    row({ id: 'o', state: 'paused' }),
+    row({ id: 'n', state: 'needs-you' }),
+    row({ id: 'w-new', state: 'working' }),
+    row({ id: 'a', state: 'waiting' }),
   ]
-  expect(sortBg(list).map(a => a.id)).toEqual(['n', 'f', 'w-new', 'w-old', 'o', 's', 'd'])
-  expect(bgCounts(list)).toEqual({ 'needs-you': 1, stalled: 0, working: 2, failed: 1, done: 1, stopped: 1, other: 1 })
+  expect(sortBg(list).map(a => a.id)).toEqual(['n', 'a', 'i', 'w-new', 'w-old', 'o', 'd'])
+  expect(bgCounts(list)).toEqual({ 'needs-you': 1, waiting: 1, idle: 1, working: 2, other: 1, done: 1 })
+  expect(bgSummary(list).map(p => p.text)).toEqual(['1 needs you', '1 waiting', '1 idle', '2 working', '1 other', '1 done'])
   expect(bgSummary(list.slice(0, 2)).map(p => p.text)).toEqual(['1 working', '1 done'])
 })
 
-test('finished sessions leave after 24 h; the others stay however old', () => {
+test('a session silent over 24 h leaves, done or not; the others stay', () => {
   const old = NOW - BG_KEEP_MS - 1
   const list = [
-    job({ id: 'd', state: 'done', updatedAt: old }),
-    job({ id: 's', state: 'stopped', updatedAt: old }),
-    job({ id: 'n', state: 'blocked', updatedAt: old }),
-    job({ id: 'd-new', state: 'done', updatedAt: NOW - 1000 }),
+    row({ id: 'd', state: 'done', updatedAt: old }),
+    row({ id: 'w', state: 'working', updatedAt: old }),
+    row({ id: 'n', state: 'needs-you', updatedAt: old }),
+    row({ id: 'd-new', state: 'done', updatedAt: NOW - 1000 }),
+    row({ id: 'edge', state: 'waiting', updatedAt: NOW - BG_KEEP_MS }),
   ]
-  expect(recentBg(list, NOW).map(a => a.id)).toEqual(['n', 'd-new'])
+  expect(recentBg(list, NOW).map(a => a.id)).toEqual(['d-new', 'edge'])
 })
 
 test('only the sessions of the current project: its root, a subfolder, one of its worktrees', () => {
   const list = [
-    job({ id: 'root', state: 'working', cwd: '/p/repo' }),
-    job({ id: 'sub', state: 'working', cwd: '/p/repo/web' }),
-    job({ id: 'wt', state: 'working', cwd: '/p/repo/.claude/worktrees/x' }),
-    job({ id: 'other', state: 'working', cwd: '/p/other' }),
-    job({ id: 'prefix', state: 'working', cwd: '/p/repo-2' }),
+    row({ id: 'root', state: 'working', cwd: '/p/repo' }),
+    row({ id: 'sub', state: 'working', cwd: '/p/repo/web' }),
+    row({ id: 'wt', state: 'working', cwd: '/p/repo/.claude/worktrees/x' }),
+    row({ id: 'other', state: 'working', cwd: '/p/other' }),
+    row({ id: 'prefix', state: 'working', cwd: '/p/repo-2' }),
   ]
   expect(inProject(list, '/p/repo').map(a => a.id)).toEqual(['root', 'sub', 'wt'])
   expect(inProject(list, '/p/repo/.claude/worktrees/y').map(a => a.id)).toEqual(['root', 'sub', 'wt'])
@@ -229,16 +132,21 @@ test('only the sessions of the current project: its root, a subfolder, one of it
 
 // ---------------------------------------------------------------- through the hooks
 
-const ROOT = '/home/u/.claude/jobs'
+const ROOT = '/home/u/.claude/session-state'
 
-type Job = { id: string; mtimeMs: number; text?: string; timeline?: string }
+/** One listing entry: `text` absent = it vanishes before its read; `link` = a symbolic link. */
+type Entry = { name: string; mtimeMs: number; text?: string; link?: boolean; size?: number; kind?: 'file' | 'dir' | 'other' }
 
-type World = { jobs?: Job[]; listed: number; reads: number[]; timelineReads?: string[] }
+/** `entries` absent = no session-state folder; `rootLink` = the folder is a link. */
+type World = { entries?: Entry[]; rootLink?: boolean; listed: number; reads: string[] }
 
-// The session runs at the root of Preliz; a job's cwd defaults to that root.
+// The session runs at the root of Preliz; a session's cwd defaults to that root.
 const HERE = '/Users/a/projects/Preliz'
 
-const state = (o: Record<string, unknown>) => JSON.stringify({ cwd: HERE, updatedAt: new Date(NOW - 60_000).toISOString(), ...o })
+const state = (name: string, o: Record<string, unknown>) =>
+  JSON.stringify({ name, event: 'Stop', cwd: HERE, sessionId: 's', transcriptPath: '/t', intent: '', notice: '', updatedAt: new Date(NOW - 60_000).toISOString(), ...o })
+
+const file = (name: string, mtimeMs: number, o: Record<string, unknown>): Entry => ({ name: `${name}.json`, mtimeMs, text: state(name, o) })
 
 function world(on: On, w: World): void {
   on('session.start', () => ({ cwd: HERE }))
@@ -248,34 +156,31 @@ function world(on: On, w: World): void {
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200_000 }, rateLimits: [], cost: { usd: 1 } } }))
   on('agent.list', () => ({ value: [] }))
   on('fs.list', (_$, e) => {
-    if (e.path === ROOT && w.jobs !== undefined) {
+    if (e.path === ROOT && w.entries !== undefined) {
       w.listed += 1
-      w.reads.push(0)
       return {
-        value: [
-          { name: 'pins.json', kind: 'file' as const, size: 2, mtimeMs: NOW, isLink: false },
-          ...w.jobs.map(j => ({ name: j.id, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })),
-        ],
+        value: w.entries.map(x => ({
+          name: x.name,
+          kind: x.link === true ? ('other' as const) : (x.kind ?? ('file' as const)),
+          size: x.size ?? (x.text ?? '').length,
+          mtimeMs: x.mtimeMs,
+          isLink: x.link === true,
+        })),
       }
     }
     throw new Error('ENOENT')
   })
   on('fs.stat', (_$, e) => {
-    const j = w.jobs?.find(x => e.path === `${ROOT}/${x.id}`)
-    if (j === undefined) throw new Error('ENOENT')
-    return { value: { kind: 'dir', size: 0, mtimeMs: j.mtimeMs, isLink: false } }
+    if (e.path === ROOT && w.entries !== undefined) return { value: { kind: 'dir', size: 0, mtimeMs: 0, isLink: w.rootLink === true } }
+    const x = w.entries?.find(y => e.path === `${ROOT}/${y.name}`)
+    if (x === undefined) throw new Error('ENOENT')
+    return { value: { kind: x.kind ?? 'file', size: x.size ?? (x.text ?? '').length, mtimeMs: x.mtimeMs, isLink: x.link === true } }
   })
   on('fs.read', (_$, e) => {
-    if (e.path.startsWith(`${ROOT}/`)) w.reads[w.reads.length - 1] = (w.reads[w.reads.length - 1] ?? 0) + 1
-    const t = w.jobs?.find(x => e.path === `${ROOT}/${x.id}/timeline.jsonl`)
-    if (t !== undefined) {
-      w.timelineReads = [...(w.timelineReads ?? []), t.id]
-      if (t.timeline === undefined) throw new Error('ENOENT')
-      return { value: t.timeline }
-    }
-    const j = w.jobs?.find(x => e.path === `${ROOT}/${x.id}/state.json`)
-    if (j?.text === undefined) throw new Error('ENOENT')
-    return { value: j.text }
+    const x = w.entries?.find(y => e.path === `${ROOT}/${y.name}`)
+    if (x !== undefined) w.reads.push(x.name)
+    if (x?.text === undefined) throw new Error('ENOENT')
+    return { value: x.text }
   })
   on('ui.open', () => ({ value: { isPlaced: true } }))
   on('ui.close', () => ({ value: undefined }))
@@ -294,20 +199,20 @@ const pane = (bodyColumns: number, placement: 'dock' | 'inline' = 'dock') => ({
 const deck = { command: 'deck', args: '', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as const
 const START = { cwd: HERE, surface: 'terminal', isInteractive: true } as const
 
-const JOBS: Job[] = [
-  { id: 'aaaa0001', mtimeMs: NOW - 5000, text: state({ state: 'working', name: 'job working' }) },
-  { id: 'aaaa0002', mtimeMs: NOW - 4000, text: state({ state: 'blocked', name: 'job blocked', detail: 'approve the plan', cwd: `${HERE}/web` }) },
-  { id: 'aaaa0003', mtimeMs: NOW - 3000, text: state({ state: 'paused', name: 'job paused', cwd: `${HERE}/.claude/worktrees/wt` }) },
-  { id: 'aaaa0004', mtimeMs: NOW - 2000, text: state({ state: 'done', name: 'job ancient', updatedAt: new Date(NOW - BG_KEEP_MS - 60_000).toISOString() }) },
-  { id: 'aaaa0005', mtimeMs: NOW - 1000, text: '{half-written' },
-  { id: 'aaaa0006', mtimeMs: NOW - 500 },
+const SESSIONS: Entry[] = [
+  file('s-working', NOW - 5000, { state: 'working' }),
+  file('s-asks', NOW - 4000, { state: 'needs-you', notice: 'approve the plan', cwd: `${HERE}/web` }),
+  file('s-paused', NOW - 3000, { state: 'paused', cwd: `${HERE}/.claude/worktrees/wt` }),
+  file('s-ancient', NOW - 2000, { state: 'done', updatedAt: new Date(NOW - BG_KEEP_MS - 60_000).toISOString() }),
+  { name: 's-half.json', mtimeMs: NOW - 1000, text: '{not json' },
+  { name: 's-gone.json', mtimeMs: NOW - 500 },
   // Another project: read, then left out of this session's panel.
-  { id: 'aaaa0007', mtimeMs: NOW - 250, text: state({ state: 'working', name: 'job elsewhere', cwd: '/Users/a/projects/nix/.claude/worktrees/wt' }) },
+  file('s-elsewhere', NOW - 250, { state: 'working', cwd: '/Users/a/projects/nix/.claude/worktrees/wt' }),
 ]
 
-test('with the pane open, only the current project shows (root, subfolder, worktree): needs-you first with its status line, an unknown state by its word; bad entries skipped', async ($, on) => {
+test('with the pane open, only the current project shows (root, subfolder, worktree): needs-you first with its notice, an unknown state by its word; bad entries skipped', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const w: World = { jobs: JOBS, listed: 0, reads: [] }
+  const w: World = { entries: SESSIONS, listed: 0, reads: [] }
   world(on, w)
   await $.session.start(START)
   await $.command.run(deck)
@@ -315,44 +220,79 @@ test('with the pane open, only the current project shows (root, subfolder, workt
   for (const cols of [66, 120]) {
     const ui = await $.ui.mount(pane(cols))
     expect(await ui.find({ type: 'Text', text: /^background agents · 3$/ })).toBeDefined()
-    const names = (await ui.findAll({ type: 'Text', text: /^job / })).map(t => t.text)
-    expect(names).toEqual(['job blocked', 'job working', 'job paused'])
+    const names = (await ui.findAll({ type: 'Text', text: /^s-/ })).map(t => t.text)
+    expect(names).toEqual(['s-asks', 's-working', 's-paused'])
     expect(await ui.find({ type: 'Text', text: /^approve the plan$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^ paused$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^ needs you$/ })).toBeDefined()
     expect(await ui.findAll({ type: 'Text', text: /^ Preliz$/ })).toHaveLength(2) // the root, and a worktree read as its repo
     expect(await ui.find({ type: 'Text', text: /^ web$/ })).toBeDefined() // a subfolder shows by its own name
-    expect(await ui.find({ text: /job elsewhere/ })).toBeUndefined() // another project
+    expect(await ui.find({ text: /s-elsewhere/ })).toBeUndefined() // another project
     expect(await ui.find({ type: 'Text', text: /^ nix$/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: /^ 1m00s$/ })).toBeDefined() // age since updatedAt
-    expect(await ui.find({ text: /job ancient/ })).toBeUndefined()
+    expect(await ui.find({ text: /s-ancient/ })).toBeUndefined() // silent over 24 h
     await ui.unmount()
   }
 })
 
-test('at most 12 state.json reads per poll, the newest folders; 6 rows then +N more', async ($, on) => {
+test('links, dotted temp files, invalid stems, other kinds and oversized files are never read', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const many: Job[] = Array.from({ length: 15 }, (_, i) => ({
-    id: `bbbb${String(i).padStart(4, '0')}`,
-    mtimeMs: NOW - i * 1000,
-    text: state({ state: 'working', name: `job ${i}` }),
-  }))
-  const w: World = { jobs: many, listed: 0, reads: [] }
+  const entries: Entry[] = [
+    file('s-ok', NOW - 1000, { state: 'working' }),
+    { ...file('s-link', NOW - 900, { state: 'working' }), link: true },
+    { name: '.s-ok.json.123.456.tmp', mtimeMs: NOW - 800, text: state('s-ok', { state: 'done' }) },
+    { name: 'Bad_Name.json', mtimeMs: NOW - 700, text: state('Bad_Name', { state: 'working' }) },
+    { name: 's-ok.txt', mtimeMs: NOW - 600, text: state('s-ok', { state: 'working' }) },
+    { ...file('s-dir', NOW - 500, { state: 'working' }), kind: 'dir' },
+    { ...file('s-big', NOW - 400, { state: 'working' }), size: 64 * 1024 + 1 },
+    // Named by another stem inside: parsed, then dropped.
+    { name: 's-liar.json', mtimeMs: NOW - 300, text: state('s-ok', { state: 'working' }) },
+  ]
+  const w: World = { entries, listed: 0, reads: [] }
   world(on, w)
   await $.session.start(START)
   await $.command.run(deck)
   await clock.settle()
-  expect(w.reads.length > 0).toBe(true)
-  expect(w.reads.every(n => n <= 12)).toBe(true)
-  const ui = await $.ui.mount(pane(66))
-  expect(await ui.find({ type: 'Text', text: /^background agents · 12$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^job 0$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^job 12$/ })).toBeUndefined() // the 13th newest: never read
-  expect(await ui.find({ type: 'Text', text: /^\+6 more · claude agents$/ })).toBeDefined()
+  expect([...new Set(w.reads)].sort()).toEqual(['s-liar.json', 's-ok.json'])
+  const ui = await $.ui.mount(pane(80))
+  expect(await ui.find({ type: 'Text', text: /^background agents · 1$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^s-ok$/ })).toBeDefined()
   await ui.unmount()
 })
 
-test('no jobs folder: no panel and no error; the run scan still polls', async ($, on) => {
+test('a linked session-state folder is not listed', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w: World = { entries: SESSIONS, rootLink: true, listed: 0, reads: [] }
+  world(on, w)
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  expect([w.listed, w.reads.length]).toEqual([0, 0])
+  const ui = await $.ui.mount(pane(66))
+  expect(await ui.find({ text: /background agents/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+test('at most 12 reads per poll, the newest files; 6 rows then +N more', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const many: Entry[] = Array.from({ length: 15 }, (_, i) => file(`s-${i}`, NOW - i * 1000, { state: 'working' }))
+  const w: World = { entries: many, listed: 0, reads: [] }
+  world(on, w)
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  expect(w.listed > 0).toBe(true)
+  expect(w.reads.length <= 12 * w.listed).toBe(true)
+  expect(w.reads.includes('s-12.json')).toBe(false) // the 13th newest: never read
+  const ui = await $.ui.mount(pane(66))
+  expect(await ui.find({ type: 'Text', text: /^background agents · 12$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^s-0$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^s-12$/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /^\+6 more$/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test('no session-state folder: no panel and no error; the run scan still polls', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w: World = { listed: 0, reads: [] }
   world(on, w)
@@ -365,9 +305,9 @@ test('no jobs folder: no panel and no error; the run scan still polls', async ($
   await ui.unmount()
 })
 
-test('pane closed: a finished turn polls the run, never the jobs folder', async ($, on) => {
+test('pane closed: a finished turn polls the run, never the session-state folder', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const w: World = { jobs: JOBS, listed: 0, reads: [] }
+  const w: World = { entries: SESSIONS, listed: 0, reads: [] }
   world(on, w)
   await $.session.start(START)
   await $.turn.start({ text: 'go', turnId: 'T1' })
@@ -383,7 +323,7 @@ test('pane closed: a finished turn polls the run, never the jobs folder', async 
 
 test('panels config without background hides it', { options: { panels: 'main,agents,log' } }, async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  world(on, { jobs: JOBS, listed: 0, reads: [] })
+  world(on, { entries: SESSIONS, listed: 0, reads: [] })
   await $.session.start(START)
   await $.command.run(deck)
   await clock.settle()
@@ -397,7 +337,7 @@ test('panels config without background hides it', { options: { panels: 'main,age
 
 test('inline, one summary row in panel order', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  world(on, { jobs: JOBS, listed: 0, reads: [] })
+  world(on, { entries: SESSIONS, listed: 0, reads: [] })
   await $.session.start(START)
   await $.command.run(deck)
   await clock.settle()
@@ -409,94 +349,46 @@ test('inline, one summary row in panel order', async ($, on) => {
   await ui.unmount()
 })
 
-test('a row pressed unfolds intent, status, tokens and its last steps; pressed again it folds; only its timeline is read, besides the needs-you rows\' own', async ($, on) => {
+test('a row pressed unfolds its intent and notice; pressed again it folds; the other rows stay folded', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const at = (ms: number) => new Date(NOW - ms).toISOString()
-  const timeline = [tl(at(90_000), 'Finding guard assertions'), tl(at(80_000), 'Finding guard assertions'), tl(at(70_000), 'Checking e2e references'), '{half'].join('\n')
-  const jobs: Job[] = [
-    { id: 'cccc0001', mtimeMs: NOW - 2000, text: state({ state: 'working', name: 'job open', detail: 'Writing the note', intent: 'Shrink the ghost banner to a back button', tokens: 54002 }), timeline },
-    { id: 'cccc0002', mtimeMs: NOW - 1000, text: state({ state: 'blocked', name: 'job other', detail: 'approve the plan' }), timeline: tl(at(1000), 'other step') },
+  const entries: Entry[] = [
+    file('s-open', NOW - 2000, { state: 'waiting', intent: 'Shrink the ghost banner to a back button', notice: 'Claude is waiting for your input' }),
+    file('s-other', NOW - 1000, { state: 'working', intent: 'Other intent' }),
   ]
-  const w: World = { jobs, listed: 0, reads: [] }
-  world(on, w)
+  world(on, { entries, listed: 0, reads: [] })
   await $.session.start(START)
   await $.command.run(deck)
   await clock.settle()
-  const readsOf = (id: string) => (w.timelineReads ?? []).filter(x => x === id).length
-  expect(readsOf('cccc0001')).toBe(0) // nothing unfolded: no timeline read for a working row
-  expect(readsOf('cccc0002') > 0).toBe(true) // a needs-you row reads its own for its waiting text
   const ui = await $.ui.mount(pane(80))
   expect(await ui.find({ type: 'Text', text: /^click: details$/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /Shrink the ghost banner/ })).toBeUndefined()
-  await ui.press({ key: 'bg-cccc0001' })
+  expect(await ui.find({ type: 'Text', text: /^Claude is waiting/ })).toBeUndefined()
+  await ui.press({ key: 'bg-s-open' })
   await clock.settle()
   expect(await ui.find({ type: 'Text', text: /^Shrink the ghost banner to a back button$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^Writing the note$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^54k tok · cccc0001$/ })).toBeDefined()
-  expect(await ui.findAll({ type: 'Text', text: /^\d\d:\d\d Finding guard assertions$/ })).toHaveLength(1) // a repeat folded
-  expect(await ui.find({ type: 'Text', text: /^\d\d:\d\d Checking e2e references$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /other step/ })).toBeUndefined() // the other row stays folded
-  expect(await ui.find({ type: 'Text', text: /^approve the plan$/ })).toBeDefined()
-  expect(readsOf('cccc0001')).toBe(1)
-  await ui.press({ key: 'bg-cccc0001' })
+  expect(await ui.find({ type: 'Text', text: /^Claude is waiting for your input$/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /Other intent/ })).toBeUndefined()
+  await ui.press({ key: 'bg-s-open' })
   await clock.settle()
   expect(await ui.find({ type: 'Text', text: /Shrink the ghost banner/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /Checking e2e references/ })).toBeUndefined()
   await ui.unmount()
 })
 
-test('an unfolded row without a timeline file still shows its intent and tokens', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const jobs: Job[] = [{ id: 'dddd0001', mtimeMs: NOW - 2000, text: state({ state: 'working', name: 'job bare', intent: 'Do the thing' }) }]
-  world(on, { jobs, listed: 0, reads: [] })
-  await $.session.start(START)
-  await $.command.run(deck)
-  await clock.settle()
-  const ui = await $.ui.mount(pane(80))
-  await ui.press({ key: 'bg-dddd0001' })
-  await clock.settle()
-  expect(await ui.find({ type: 'Text', text: /^Do the thing$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /^dddd0001$/ })).toBeDefined() // no tokens: the id alone
-  await ui.unmount()
-})
-
-test('a needs-you row shows the agent\'s last reply, never its detail echoing the last prompt', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  const jobs: Job[] = [
-    {
-      id: 'gggg0001',
-      mtimeMs: NOW - 2000,
-      text: state({ state: 'blocked', name: 'job replied', detail: 'donne moi la prochaine card' }),
-      timeline: [reply('Card found', 'J\'ai lu le board.\n\nJe prends la card #12 ?'), ask('donne moi la prochaine card')].join('\n'),
-    },
-    { id: 'gggg0002', mtimeMs: NOW - 1000, text: state({ state: 'blocked', name: 'job asked', detail: 'et la suite ?' }), timeline: ask('et la suite ?') },
-  ]
-  world(on, { jobs, listed: 0, reads: [] })
-  await $.session.start(START)
-  await $.command.run(deck)
-  await clock.settle()
-  const ui = await $.ui.mount(pane(120))
-  expect(await ui.find({ type: 'Text', text: /^Je prends la card #12 \?$/ })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: /donne moi la prochaine card/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: /et la suite/ })).toBeUndefined()
-  await ui.unmount()
-})
-
-// ---------------------------------------------------------------- resume a stalled row
+// ---------------------------------------------------------------- « ↗ afficher »
 
 type Run = { argv: readonly string[]; timeoutMs: number | undefined }
 
-const STALLED: Job[] = [
-  { id: 'eeee0001', mtimeMs: NOW - 2000, text: state({ state: 'working', tempo: 'blocked', name: 'job stalled' }) },
-  { id: 'eeee0002', mtimeMs: NOW - 1000, text: state({ state: 'working', name: 'job running' }) },
+const PICKABLE: Entry[] = [
+  file('s-ended', NOW - 3000, { state: 'done' }),
+  file('s-waits', NOW - 2000, { state: 'waiting' }),
+  file('s-runs', NOW - 1000, { state: 'working' }),
 ]
 
-const BG_BIN = '/etc/profiles/per-user/alx/bin/claude-bg'
+const PANE_BIN = '/etc/profiles/per-user/alx/bin/agent-pane'
 
-test('« ↻ relancer » on a stalled row only: one wrapper run per id at a time, logged, the panel read again', async ($, on) => {
+test('« ↗ afficher » on every row not done: one agent-pane run per name at a time, exact argv, logged', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const w: World = { jobs: STALLED, listed: 0, reads: [] }
-  world(on, w)
+  world(on, { entries: PICKABLE, listed: 0, reads: [] })
   const calls: Run[] = []
   let release: () => void = () => undefined
   const gate = new Promise<void>(r => {
@@ -511,69 +403,44 @@ test('« ↻ relancer » on a stalled row only: one wrapper run per id at a time
   await $.command.run(deck)
   await clock.settle()
   const ui = await $.ui.mount(pane(120))
-  expect(await ui.findAll({ type: 'Text', text: /^ ↻ relancer$/ })).toHaveLength(1)
-  expect(await ui.find({ type: 'Text', text: /^ stalled$/ })).toBeDefined()
-  expect(await ui.find({ key: 'bg-resume-eeee0002' })).toBeUndefined()
-  const listedBefore = w.listed
-  const first = ui.press({ key: 'bg-resume-eeee0001' })
-  const second = ui.press({ key: 'bg-resume-eeee0001' })
+  expect(await ui.findAll({ type: 'Text', text: /^ ↗ afficher$/ })).toHaveLength(2)
+  expect(await ui.find({ key: 'bg-pick-s-waits' })).toBeDefined()
+  expect(await ui.find({ key: 'bg-pick-s-runs' })).toBeDefined()
+  expect(await ui.find({ key: 'bg-pick-s-ended' })).toBeUndefined() // done: nothing to show
+  const first = ui.press({ key: 'bg-pick-s-waits' })
+  const second = ui.press({ key: 'bg-pick-s-waits' })
   await clock.settle()
   release()
   await Promise.all([first, second])
   await clock.settle()
-  expect(calls).toEqual([{ argv: [BG_BIN, 'resume', 'eeee0001'], timeoutMs: 60000 }])
+  expect(calls).toEqual([{ argv: [PANE_BIN, 'pick', 's-waits'], timeoutMs: 5000 }])
   await ui.unmount()
   const log = await $.ui.mount(pane(120))
-  expect(await log.find({ type: 'Text', text: /eeee0001 relancé/ })).toBeDefined()
-  expect(w.listed > listedBefore).toBe(true)
+  expect(await log.find({ type: 'Text', text: /s-waits affichée en haut/ })).toBeDefined()
   await log.unmount()
 })
 
-test('a working row blocked on a question shows needs you and carries no « ↻ relancer »', async ($, on) => {
+test('a refused pick logs the exit code and agent-pane\'s first stderr line', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const jobs: Job[] = [
-    { id: 'ffff0001', mtimeMs: NOW - 2000, text: state({ ...ASKING, cwd: HERE, name: 'job asking' }) },
-    { id: 'ffff0002', mtimeMs: NOW - 1000, text: state({ state: 'working', tempo: 'blocked', name: 'job stalled' }) },
-  ]
-  world(on, { jobs, listed: 0, reads: [] })
-  const calls: string[][] = []
-  on('process.run', (_$, e) => {
-    calls.push([...e.argv])
-    return { value: { exitCode: 0, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }
-  })
-  await $.session.start(START)
-  await $.command.run(deck)
-  await clock.settle()
-  const ui = await $.ui.mount(pane(120))
-  expect(await ui.find({ type: 'Text', text: /^ needs you$/ })).toBeDefined()
-  expect(await ui.find({ key: 'bg-resume-ffff0001' })).toBeUndefined()
-  expect(await ui.find({ key: 'bg-resume-ffff0002' })).toBeDefined()
-  expect(await ui.findAll({ type: 'Text', text: /^ ↻ relancer$/ })).toHaveLength(1)
-  expect(calls).toEqual([])
-  await ui.unmount()
-})
-
-test('a refused resume logs the exit code and the wrapper\'s first stderr line', async ($, on) => {
-  const clock = mock.clock(on, { now: NOW })
-  world(on, { jobs: STALLED, listed: 0, reads: [] })
+  world(on, { entries: PICKABLE, listed: 0, reads: [] })
   on('process.run', () => ({
-    value: { exitCode: 2, stdout: '', stderr: '\nclaude-bg: job eeee0001 is working/idle, not stalled\n', isStdoutTruncated: false, isStderrTruncated: false },
+    value: { exitCode: 2, stdout: '', stderr: '\nagent-pane: cannot write /x/target\n', isStdoutTruncated: false, isStderrTruncated: false },
   }))
   await $.session.start(START)
   await $.command.run(deck)
   await clock.settle()
   const ui = await $.ui.mount(pane(120))
-  await ui.press({ key: 'bg-resume-eeee0001' })
+  await ui.press({ key: 'bg-pick-s-runs' })
   await clock.settle()
   await ui.unmount()
   const log = await $.ui.mount(pane(120))
-  expect(await log.find({ type: 'Text', text: /eeee0001 exit 2 · claude-bg:/ })).toBeDefined()
+  expect(await log.find({ type: 'Text', text: /s-runs exit 2 · agent-pane: cannot write/ })).toBeDefined()
   await log.unmount()
 })
 
-test('a resume whose command cannot start logs « échec ou pas de retour », not a silent drop', async ($, on) => {
+test('a pick whose command cannot start logs « échec ou pas de retour », not a silent drop', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  world(on, { jobs: STALLED, listed: 0, reads: [] })
+  world(on, { entries: PICKABLE, listed: 0, reads: [] })
   on('process.run', () => {
     throw new Error('spawn ENOENT')
   })
@@ -581,10 +448,10 @@ test('a resume whose command cannot start logs « échec ou pas de retour », no
   await $.command.run(deck)
   await clock.settle()
   const ui = await $.ui.mount(pane(120))
-  await ui.press({ key: 'bg-resume-eeee0001' })
+  await ui.press({ key: 'bg-pick-s-runs' })
   await clock.settle()
   await ui.unmount()
   const log = await $.ui.mount(pane(120))
-  expect(await log.find({ type: 'Text', text: /^eeee0001 échec ou pas de retour/ })).toBeDefined()
+  expect(await log.find({ type: 'Text', text: /^s-runs échec ou pas de retour/ })).toBeDefined()
   await log.unmount()
 })

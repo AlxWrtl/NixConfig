@@ -1,22 +1,27 @@
 package main
 
-// Agents tab: the user's Claude Code background sessions, every project, as a kanban
-// (Attend ta réponse · Travaille · Figé · Terminé). Source: ~/.claude/jobs/<id>/state.json and
-// its timeline.jsonl, a format the engine does not document, parsed defensively as the deck mod
-// does (home/claude-code/mods/deck/hooks/background.ts): bgKind, BG_ORDER, the 24 h keep of
-// finished sessions, the timeline folding and the secret masking are ported from there so the
-// deck panel and this tab agree; the board-only rules (hidden empty sessions, stale working)
-// say so where they sit.
+// Agents tab: the dispatched Claude Code sessions (claude-dispatch, one abduco session each), every
+// project, as a kanban (Attend ta réponse · Travaille · Figé · Terminé). Two sources merged at each
+// poll: ~/.claude/session-state/<name>.json, written by hooks/session-state.js on each hook event
+// (state idle / working / waiting / needs-you / done, intent, notice), and abduco's session list,
+// which says whether the session still runs: one killed without SessionEnd keeps its last state in
+// the file. The engine's jobs dir is no longer written since #299: it is not read. The masking and
+// projectOf are deck's (home/claude-code/mods/deck/hooks/), so the deck panel and this tab agree;
+// the board-only rules (liveness, stale working) say so where they sit.
 //
-// Read-only, as disk.go: only under the jobs dir's realpath; a job dir that is a link is not
-// listed; state.json and timeline.jsonl are opened O_NOFOLLOW | O_NONBLOCK and must be regular
-// files (a link is refused, never read); state.json is read up to 256 KB (larger is reported,
-// not parsed), the timeline's last 512 KB; control chars are drawn `?` by toCells. The reads run
-// in the poll's Cmd, off the UI goroutine; a session whose files did not change (size, mtime,
-// inode) keeps its parsed state.
+// Read-only, as disk.go: only `<name>.json` directly under the dir's realpath, name per
+// claude-dispatch's rule (validName: the writer's dotted temp files fail it); opened O_NOFOLLOW |
+// O_NONBLOCK and must be a regular file (a link is refused, never read); read up to 64 KB, the
+// writer's MAX_STATE (larger is reported, not parsed); control chars are drawn `?` by toCells. The
+// reads and the abduco call run in the poll's Cmd, off the UI goroutine; a file that did not change
+// (size, mtime, inode) keeps its parsed state.
+//
+// One action: Enter, `o` or a click on a card runs `agent-pane pick <name>` (argv, no shell): the
+// agent screen's top pane switches to that session, the board stays open.
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -35,15 +40,16 @@ import (
 )
 
 const (
-	maxStateBytes    = 256 * 1024
-	maxTimelineBytes = 512 * 1024
-	// Board-only: a working session silent this long is drawn Figé (deck keeps it `working`).
+	// The writer's MAX_STATE (hooks/session-state.js): a larger file is none it wrote.
+	maxStateBytes = 64 * 1024
+	// Board-only: a working session silent this long is drawn Figé.
 	staleMs = 15 * 60 * 1000
 	// deck's BG_KEEP_MS: a finished session older than this leaves the tab.
-	keepMs = 24 * 60 * 60 * 1000
-	// Timeline steps the drawer shows, newest first.
-	timelineMax    = 50
+	keepMs         = 24 * 60 * 60 * 1000
 	dispatchPrefix = "[claude-dispatch]"
+	// abduco answers a list at once; one that hangs must not hold the poll.
+	abducoTimeout = 2 * time.Second
+	pickTimeout   = 5 * time.Second
 )
 
 const (
@@ -51,43 +57,38 @@ const (
 	tabAgents
 )
 
-// ---- deck's mapping ------------------------------------------------------------
+// Liveness, from abduco's list (board-only: deck does not call abduco).
+const (
+	liveUnknown = iota // abduco did not answer: nothing is drawn ended
+	liveRunning
+	liveEnded  // mark `+`: the command exited, the session is not attachable
+	liveAbsent // not listed: the session is gone
+)
 
-// bgKind is deck's bgKind word for word: a `tempo` of `active` (exact case) is `working`
-// whatever the state (the session runs a turn now); a `working` state whose `tempo` is `blocked`
-// (exact case) is `needs-you` when it asks (a non-empty `needs` or `block.questions`), else
-// `stalled`; the other words are compared lowercased; a word it does not know is `other`.
-func bgKind(state, tempo string, asks bool) string {
-	if tempo == "active" {
-		return "working"
-	}
-	if state == "working" && tempo == "blocked" {
-		if asks {
-			return "needs-you"
-		}
-		return "stalled"
-	}
-	switch strings.ToLower(state) {
-	case "working":
-		return "working"
-	case "blocked":
-		return "needs-you"
-	case "done", "completed":
-		return "done"
-	case "failed", "error":
-		return "failed"
-	case "stopped", "killed":
-		return "stopped"
+// nameRe: claude-dispatch's session name rule, the one session-state.js and agent-pane check.
+var nameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,47}$`)
+
+// validName: only such a name is a session. It becomes the argv word of `agent-pane pick <name>`,
+// so `-x` or `--help` must never get there.
+func validName(s string) bool { return nameRe.MatchString(s) }
+
+// ---- kinds ---------------------------------------------------------------------
+
+// sessionKind: the writer's state word as the tab's kind; a word it does not write is `other`.
+func sessionKind(state string) string {
+	switch state {
+	case "needs-you", "waiting", "idle", "working", "done":
+		return state
 	}
 	return "other"
 }
 
-// bgOrder is deck's BG_ORDER: what waits on you first, what ended last.
-var bgOrder = []string{"needs-you", "stalled", "failed", "working", "other", "stopped", "done"}
+// bgOrder: what waits on you first, what ended last (deck's order of the same kinds).
+var bgOrder = []string{"needs-you", "waiting", "idle", "working", "other", "done"}
 
 type agentColumn struct{ Key, Label, Who string }
 
-// AgentColumns: deck's kinds folded into four columns, in BG_ORDER (see agentColumnOf).
+// AgentColumns: the kinds folded into four columns, in bgOrder (see agentColumnOf).
 var AgentColumns = []agentColumn{
 	{Key: "ask", Label: "Attend ta réponse", Who: "toi"},
 	{Key: "work", Label: "Travaille", Who: "agent"},
@@ -134,14 +135,14 @@ func projectOf(cwd string) string {
 
 // ---- parse ---------------------------------------------------------------------
 
-// jobInput: one state.json as the tab reads it (immutable once parsed: the reader caches it).
-type jobInput struct {
-	ID, Name, Cwd, Branch, State, Tempo string
-	Needs, Question, Intent, Detail     string
-	LastText                            string // the waiting text: the last reply's last paragraph, else detail unless it echoes a prompt
-	UpdatedAt                           float64
-	HasTimeline                         bool
-	asks                                bool
+// sessionInput: one state file as the tab reads it, and abduco's word on it. The parsed part is
+// cached by the reader and never mutated: each poll sets Live on a copy (withLiveness).
+type sessionInput struct {
+	Name, Cwd, State, Event string
+	Intent, Notice          string // one line, redacted
+	UpdatedAt               float64
+	Live                    int  // liveUnknown | liveRunning | liveEnded | liveAbsent
+	noState                 bool // listed by abduco as running, no state file
 }
 
 func strOf(v map[string]any, k string) string {
@@ -157,163 +158,114 @@ func isoMs(s string) float64 {
 	return float64(t.UnixMilli())
 }
 
-// firstQuestion: the first readable text of block.questions (a string, or an object's
-// question / text / header).
-func firstQuestion(qs []any) string {
-	for _, q := range qs {
-		switch q := q.(type) {
-		case string:
-			if s := oneLine(redact(q)); s != "" {
-				return s
-			}
-		case map[string]any:
-			for _, k := range []string{"question", "text", "header"} {
-				if s := oneLine(redact(strOf(q, k))); s != "" {
-					return s
-				}
-			}
-		}
-	}
-	return ""
-}
-
-// parseJobState: as deck's parseJobState, nil when it is no JSON object or lacks a string
-// `state` or `cwd`.
-func parseJobState(id string, data []byte) *jobInput {
+// parseSessionState: nil when it is no JSON object, lacks a string `state` or `cwd`, or its
+// `name` is not the file's stem (a file copied under another name is not that session).
+func parseSessionState(name string, data []byte) *sessionInput {
 	var v map[string]any
 	if json.Unmarshal(data, &v) != nil || v == nil {
 		return nil
 	}
 	state, ok1 := v["state"].(string)
 	cwd, ok2 := v["cwd"].(string)
-	if !ok1 || !ok2 {
+	if !ok1 || !ok2 || strOf(v, "name") != name {
 		return nil
 	}
 	intent := oneLine(redact(strOf(v, "intent")))
 	if rest, ok := strings.CutPrefix(intent, dispatchPrefix); ok {
 		intent = strings.TrimSpace(rest)
 	}
-	j := &jobInput{
-		ID: id, Name: oneLine(strOf(v, "name")), Cwd: cwd, Branch: oneLine(strOf(v, "worktreeBranch")),
-		State: state, Tempo: strOf(v, "tempo"), Needs: oneLine(redact(strOf(v, "needs"))),
-		Intent: intent, Detail: oneLine(redact(strOf(v, "detail"))), UpdatedAt: isoMs(strOf(v, "updatedAt")),
+	return &sessionInput{
+		Name: name, Cwd: cwd, State: state, Event: oneLine(strOf(v, "event")),
+		Intent: intent, Notice: oneLine(redact(strOf(v, "notice"))), UpdatedAt: isoMs(strOf(v, "updatedAt")),
 	}
-	j.asks = strOf(v, "needs") != ""
-	if b, ok := v["block"].(map[string]any); ok {
-		if qs, ok := b["questions"].([]any); ok && len(qs) > 0 {
-			j.asks, j.Question = true, firstQuestion(qs)
-		}
-	}
-	return j
 }
 
-func (j *jobInput) kind() string { return bgKind(j.State, j.Tempo, j.asks) }
-
-// neverStarted (board-only): a session that never got a prompt (no name and needs « send a
-// prompt to start », or no mission and no timeline). deck lists it as needs-you; the tab hides it
-// and counts it in the footer: these are the empty sessions the native view is full of.
-func (j *jobInput) neverStarted() bool {
-	if j.Name == "" && strings.Contains(strings.ToLower(j.Needs), "prompt to start") {
-		return true
-	}
-	return j.Intent == "" && !j.HasTimeline
+// abducoSession: one line of `abduco`'s list.
+type abducoSession struct {
+	Mark      byte // ' ', '*' (a client attached), '+' (command ended)
+	Pid, Name string
 }
 
-type timelineEvent struct {
-	At                  float64
-	State, Detail, Text string
+// parseAbduco reads `abduco`'s list as agent-pane's list_sessions does: `<mark> <day>\t <date>
+// <time>\t<pid>\t<name>` (its strftime holds a TAB), split on runs of TABs; a line of fewer than 3
+// fields (the header) or whose name fails validName is skipped. name = last field, pid = the one
+// before, mark = the first char.
+func parseAbduco(out []byte) []abducoSession {
+	var list []abducoSession
+	for line := range strings.SplitSeq(string(out), "\n") {
+		f := strings.FieldsFunc(line, func(r rune) bool { return r == '\t' })
+		if len(f) < 3 || !validName(f[len(f)-1]) {
+			continue
+		}
+		list = append(list, abducoSession{Mark: f[0][0], Pid: f[len(f)-2], Name: f[len(f)-1]})
+	}
+	return list
 }
 
-// parseTimeline: deck's parseTimeline, oldest first: a line that does not read, has no ISO
-// `at` or no non-empty `detail` is skipped; a detail repeated on the next line folds into its
-// first. Board-only: the folded line's reply `text` (deck draws none) replaces the first's.
-func parseTimeline(data []byte, limit int) []timelineEvent {
-	if limit <= 0 {
-		return nil
+// abducoList runs `abduco` with no argument (the list), stdin /dev/null, env inherited (its socket
+// dir); a variable so the tests never run it.
+var abducoList = func() ([]byte, error) {
+	if abducoBin == "" {
+		return nil, errors.New("binaire absent")
 	}
-	var out []timelineEvent
-	for line := range bytes.SplitSeq(data, []byte{'\n'}) {
-		if len(bytes.TrimSpace(line)) == 0 {
-			continue
+	ctx, cancel := context.WithTimeout(context.Background(), abducoTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, abducoBin)
+	cmd.WaitDelay = time.Second
+	out, err := cmd.Output()
+	if ctx.Err() != nil {
+		return nil, errors.New("pas de réponse en " + strconv.Itoa(int(abducoTimeout/time.Second)) + " s")
+	}
+	return out, err
+}
+
+// readAbduco: each listed session's liveness by name; an error when abduco did not answer.
+func readAbduco() (map[string]int, error) {
+	out, err := abducoList()
+	if err != nil {
+		return nil, err
+	}
+	live := map[string]int{}
+	for _, s := range parseAbduco(out) {
+		live[s.Name] = liveRunning
+		if s.Mark == '+' {
+			live[s.Name] = liveEnded
 		}
-		var v map[string]any
-		if json.Unmarshal(line, &v) != nil || v == nil {
-			continue
-		}
-		at := isoMs(strOf(v, "at"))
-		detail := oneLine(redact(strOf(v, "detail")))
-		if at == 0 || detail == "" {
-			continue
-		}
-		text := strings.TrimSpace(redact(strOf(v, "text")))
-		if n := len(out); n > 0 && out[n-1].Detail == detail {
-			if text != "" {
-				out[n-1].Text = text
+	}
+	return live, nil
+}
+
+// withLiveness: the sessions as this poll sees them, copies with Live set, then (sorted by name)
+// those abduco lists as running without a state file. live nil (abduco failed): Live stays
+// unknown, nothing is drawn ended (fail-open).
+func withLiveness(sessions []*sessionInput, live map[string]int) []*sessionInput {
+	out := make([]*sessionInput, 0, len(sessions)+len(live))
+	seen := map[string]bool{}
+	for _, s := range sessions {
+		c := *s
+		seen[c.Name] = true
+		if live != nil {
+			c.Live = liveAbsent
+			if l, ok := live[c.Name]; ok {
+				c.Live = l
 			}
-			continue
 		}
-		out = append(out, timelineEvent{At: at, State: oneLine(strOf(v, "state")), Detail: detail, Text: text})
+		out = append(out, &c)
 	}
-	if len(out) > limit {
-		out = out[len(out)-limit:]
+	var extra []string
+	for n, l := range live {
+		if l == liveRunning && !seen[n] {
+			extra = append(extra, n)
+		}
+	}
+	slices.Sort(extra)
+	for _, n := range extra {
+		out = append(out, &sessionInput{Name: n, Live: liveRunning, noState: true})
 	}
 	return out
 }
 
-// paragraphBreak: a blank line, as deck's waitingText splits a reply.
-var paragraphBreak = regexp.MustCompile(`\n[ \t]*\n`)
-
-// waitingText is deck's waitingText: what a needs-you session waits on, the last paragraph of the
-// timeline's last non-empty reply `text`, one line and redacted. Without a reply, `detail`
-// (already one line and redacted), unless it equals the `detail` of a line without `text` (a
-// user prompt): a prompt echo gives "". A line that does not read is skipped.
-func waitingText(data []byte, detail string) string {
-	reply := ""
-	prompts := map[string]bool{}
-	for line := range bytes.SplitSeq(data, []byte{'\n'}) {
-		var v map[string]any
-		if json.Unmarshal(line, &v) != nil || v == nil {
-			continue
-		}
-		if t := strings.TrimSpace(strOf(v, "text")); t != "" {
-			reply = t
-			continue
-		}
-		if d, ok := v["detail"].(string); ok {
-			prompts[oneLine(redact(d))] = true
-		}
-	}
-	parts := slices.DeleteFunc(paragraphBreak.Split(reply, -1), func(p string) bool { return strings.TrimSpace(p) == "" })
-	if len(parts) > 0 {
-		if last := oneLine(redact(parts[len(parts)-1])); last != "" {
-			return last
-		}
-	}
-	if prompts[detail] {
-		return ""
-	}
-	return detail
-}
-
 // ---- disk ----------------------------------------------------------------------
-
-// jobIDChars: the claude-bg wrapper's id alphabet (`^[0123456789abcdef]{8}$`), spelled out
-// rather than a range.
-const jobIDChars = "0123456789abcdef"
-
-// validJobID: exactly 8 chars of jobIDChars. Only such a dir is a session: its name becomes the
-// argv word of `claude attach <id>`, so a name like `--help` must never get there.
-func validJobID(id string) bool {
-	if len(id) != 8 {
-		return false
-	}
-	for i := 0; i < len(id); i++ {
-		if strings.IndexByte(jobIDChars, id[i]) < 0 {
-			return false
-		}
-	}
-	return true
-}
 
 var (
 	errNotRegular = errors.New("pas un fichier ordinaire : non lu")
@@ -360,34 +312,7 @@ func readState(p string) ([]byte, error) {
 	return data, nil
 }
 
-// readTail: a file's last limit bytes, from its first whole line.
-func readTail(p string, limit int64) ([]byte, error) {
-	f, fi, err := openNoFollow(p)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	off := max(0, fi.Size()-limit)
-	buf := make([]byte, fi.Size()-off)
-	n, err := f.ReadAt(buf, off)
-	if err != nil && !errors.Is(err, io.EOF) {
-		return nil, err
-	}
-	data := buf[:n]
-	if off > 0 {
-		i := bytes.IndexByte(data, '\n')
-		if i < 0 {
-			return nil, nil
-		}
-		data = data[i+1:]
-	}
-	return data, nil
-}
-
 func fileSig(fi fs.FileInfo) string {
-	if fi == nil {
-		return "-"
-	}
 	s := strconv.FormatInt(fi.Size(), 10) + ":" + strconv.FormatInt(fi.ModTime().UnixNano(), 10) + ":" + fi.Mode().String()
 	if st, ok := fi.Sys().(*syscall.Stat_t); ok {
 		s += ":" + strconv.FormatUint(st.Ino, 10) + ":" + strconv.FormatInt(int64(st.Dev), 10)
@@ -395,30 +320,29 @@ func fileSig(fi fs.FileInfo) string {
 	return s
 }
 
-// JobsReader reads the jobs dir, incrementally. Used from one goroutine at a time (the poll).
-type JobsReader struct {
+// SessionsReader reads the session-state dir, incrementally. Used from one goroutine at a time
+// (the poll).
+type SessionsReader struct {
 	Dir string
 
 	base  string
-	cache map[string]cachedJob
+	cache map[string]cachedSession
 }
 
-type cachedJob struct {
-	sig   string
-	job   *jobInput
-	empty bool
+type cachedSession struct {
+	sig  string
+	sess *sessionInput // nil: not a session (parseSessionState), skipped until the file changes
 }
 
-type jobsRead struct {
-	jobs     []*jobInput
-	empty    int // never started, or a dir without state.json
+type sessionsRead struct {
+	sessions []*sessionInput
 	problems []string
 }
 
-// Read is one poll: the sessions, how many are empty, what could not be read; the error of the
-// jobs dir itself (a missing one is no session).
-func (r *JobsReader) Read() (jobsRead, error) {
-	var out jobsRead
+// Read is one poll: the sessions, what could not be read; the error of the dir itself (a missing
+// one is no session).
+func (r *SessionsReader) Read() (sessionsRead, error) {
+	var out sessionsRead
 	entries, err := sortedEntries(r.Dir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
@@ -434,134 +358,73 @@ func (r *JobsReader) Read() (jobsRead, error) {
 	if base != r.base {
 		r.base, r.cache = base, nil
 	}
-	next := map[string]cachedJob{}
-	add := func(c cachedJob) {
-		if c.empty {
-			out.empty++
-		} else {
-			out.jobs = append(out.jobs, c.job)
-		}
-	}
+	next := map[string]cachedSession{}
+	problem := func(name, msg string) { out.problems = append(out.problems, name+" : "+msg) }
 	for _, e := range entries {
-		id := e.Name()
-		// A link (to a dir or not) is never listed; files (pins.json) are not sessions; a dir whose
-		// name is no job id (validJobID) is skipped: not counted, not reported, never read.
-		if !e.IsDir() || !validJobID(id) {
+		// Only `<name>.json` with a valid name: anything else (a temp file, `-x.json`, pins) is
+		// skipped, not counted, not reported, never read.
+		name, ok := strings.CutSuffix(e.Name(), ".json")
+		if !ok || !validName(name) {
 			continue
 		}
-		dir, where, err := realInside(base, filepath.Join(r.Dir, id))
-		if err != nil {
-			out.problems = append(out.problems, id+" : "+err.Error())
-			continue
-		}
-		if where != 1 {
-			continue
-		}
-		statePath, tlPath := filepath.Join(dir, "state.json"), filepath.Join(dir, "timeline.jsonl")
-		sfi, err := os.Lstat(statePath)
+		// Under the dir's realpath: name holds no `/`, so the file is directly in it.
+		p := filepath.Join(base, e.Name())
+		fi, err := os.Lstat(p)
 		switch {
 		case err != nil && isGone(err):
-			out.empty++ // only tmp/: a session that never wrote its state
-			continue
+			continue // renamed away since the listing
 		case err != nil:
-			out.problems = append(out.problems, id+" : "+err.Error())
+			problem(name, err.Error())
 			continue
-		case sfi.Mode()&fs.ModeSymlink != 0:
-			out.problems = append(out.problems, id+" : state.json est un lien : non lu")
+		case fi.Mode()&fs.ModeSymlink != 0:
+			problem(name, errLink.Error())
 			continue
-		case !sfi.Mode().IsRegular():
-			out.problems = append(out.problems, id+" : state.json "+errNotRegular.Error())
+		case !fi.Mode().IsRegular():
+			problem(name, errNotRegular.Error())
 			continue
-		case sfi.Size() > maxStateBytes:
-			out.problems = append(out.problems, id+" : state.json de "+strconv.FormatInt(sfi.Size()/1024, 10)+" Ko, "+errTooBig.Error())
-			continue
-		}
-		tfi, terr := os.Lstat(tlPath)
-		if terr != nil {
-			tfi = nil
-		}
-		hasTL := tfi != nil && tfi.Mode().IsRegular() && tfi.Size() > 0
-		sig := fileSig(sfi) + "|" + fileSig(tfi)
-		if c, ok := r.cache[id]; ok && c.sig == sig {
-			next[id] = c
-			add(c)
+		case fi.Size() > maxStateBytes:
+			problem(name, strconv.FormatInt(fi.Size()/1024, 10)+" Ko, "+errTooBig.Error())
 			continue
 		}
-		data, err := readState(statePath)
-		if err != nil {
-			if !isGone(err) {
-				out.problems = append(out.problems, id+" : state.json "+err.Error())
+		sig := fileSig(fi)
+		c, hit := r.cache[name]
+		if !hit || c.sig != sig {
+			data, err := readState(p)
+			if err != nil {
+				if !isGone(err) {
+					problem(name, err.Error())
+				}
+				continue
 			}
-			continue
+			c = cachedSession{sig: sig, sess: parseSessionState(name, data)}
 		}
-		j := parseJobState(id, data)
-		if j == nil {
-			continue // half-written or not a session: skipped this poll, as deck does
+		next[name] = c
+		if c.sess != nil {
+			out.sessions = append(out.sessions, c.sess)
 		}
-		j.HasTimeline = hasTL
-		if hasTL && j.kind() == "needs-you" && j.Needs == "" && j.Question == "" {
-			if tail, err := readTail(tlPath, maxTimelineBytes); err == nil {
-				j.LastText = waitingText(tail, j.Detail)
-			}
-		}
-		c := cachedJob{sig: sig, job: j, empty: j.neverStarted()}
-		next[id] = c
-		add(c)
 	}
 	r.cache = next
 	return out, nil
 }
 
-// loadAgentTimeline: the drawer's steps, newest first; a reason when it cannot be read.
-func loadAgentTimeline(jobsDir, id string) ([]timelineEvent, string) {
-	if !validJobID(id) {
-		return nil, "hors de jobs/ : non lu"
-	}
-	base, err := realRoot(jobsDir)
-	if err != nil {
-		return nil, err.Error()
-	}
-	p := filepath.Join(jobsDir, id)
-	if fi, err := os.Lstat(p); err != nil || !fi.IsDir() {
-		return nil, "session disparue"
-	}
-	real, where, err := realInside(base, p)
-	if err != nil || where != 1 {
-		return nil, "hors de jobs/ : non lu"
-	}
-	data, err := readTail(filepath.Join(real, "timeline.jsonl"), maxTimelineBytes)
-	if err != nil {
-		if isGone(err) {
-			return []timelineEvent{}, ""
-		}
-		return nil, "timeline.jsonl : " + err.Error()
-	}
-	ev := parseTimeline(data, timelineMax)
-	slices.Reverse(ev)
-	if ev == nil {
-		ev = []timelineEvent{}
-	}
-	return ev, ""
-}
-
 // ---- derive --------------------------------------------------------------------
 
-// Agent: one card of the tab, derived from a jobInput at a given now.
+// Agent: one card of the tab, derived from a sessionInput at a given now. ID is the session name.
 type Agent struct {
-	ID, Name, Project, Branch, Cwd, State, Tempo string
-	Kind, Column                                 string
-	Mission, Current                             string
-	Asking, Stale                                bool
-	UpdatedAt                                    float64
-	Age                                          string
-	Chips                                        []Chip
-	rows                                         rowsMemo
+	ID, Name, Project, Cwd, State string
+	Kind, Column                  string
+	Mission, Current              string
+	Asking, Stale                 bool
+	UpdatedAt                     float64
+	Age                           string
+	Chips                         []Chip
+	rows                          rowsMemo
 }
 
 type agentsBoard struct {
-	cols       [4][]*Agent
-	total      int
-	empty, old int
+	cols  [4][]*Agent
+	total int
+	old   int
 }
 
 func colIndex(key string) int {
@@ -587,55 +450,55 @@ func ageText(now, at float64) string {
 	return "il y a " + strconv.Itoa(mins/60/24) + " j"
 }
 
-// agentColumnOf: deck's kind to a column. needs-you → Attend ta réponse; working → Travaille,
-// Figé once silent over staleMs (board-only); stalled, failed and other (a state word deck does
-// not know: nothing says it moves) → Figé, failed with a red chip; stopped and done → Terminé,
-// stopped with a chip. The columns keep BG_ORDER: needs-you · stalled, failed · working · other
-// · stopped, done, with working moved before stalled so the active work sits next to the ask.
-func agentColumnOf(j *jobInput, kind string, now float64) (col string, stale bool, chips []Chip) {
+func infoChip(key, label string) []Chip { return []Chip{{Key: key, Label: label, State: "info"}} }
+
+// agentColumnOf: a session's kind and column. Liveness first (board-only): running in abduco
+// without a state file → Figé « sans état »; ended (`+`) or gone from the list while its state is
+// not done → Terminé with the reason (a done state needs none). Then the state: needs-you, waiting
+// (« à toi ») and idle (« pas encore lancée ») → Attend ta réponse; working → Travaille, Figé once
+// silent over staleMs (board-only); done → Terminé; a word the writer does not write → Figé, the
+// word as chip.
+func agentColumnOf(s *sessionInput, now float64) (kind, col string, stale bool, chips []Chip) {
+	kind = sessionKind(s.State)
+	switch {
+	case s.noState:
+		return "other", "stuck", false, infoChip("nostate", "sans état")
+	case s.Live == liveEnded && kind != "done":
+		return "done", "done", false, infoChip("ended", "commande terminée")
+	case s.Live == liveAbsent && kind != "done":
+		return "done", "done", false, infoChip("closed", "session fermée")
+	}
 	switch kind {
 	case "needs-you":
-		return "ask", false, nil
+		return kind, "ask", false, nil
+	case "waiting":
+		return kind, "ask", false, infoChip("waiting", "à toi")
+	case "idle":
+		return kind, "ask", false, infoChip("idle", "pas encore lancée")
 	case "working":
-		if j.UpdatedAt > 0 && now-j.UpdatedAt > staleMs {
-			return "stuck", true, []Chip{{Key: "stale", Label: "rien depuis " + strings.TrimPrefix(ageText(now, j.UpdatedAt), "il y a "), State: "info"}}
+		if s.UpdatedAt > 0 && now-s.UpdatedAt > staleMs {
+			return kind, "stuck", true, infoChip("stale", "rien depuis "+strings.TrimPrefix(ageText(now, s.UpdatedAt), "il y a "))
 		}
-		return "work", false, nil
-	case "stalled":
-		return "stuck", false, []Chip{{Key: "stalled", Label: "bloquée sans question", State: "info"}}
-	case "failed":
-		return "stuck", false, []Chip{{Key: "failed", Label: "échec", State: "fail"}}
-	case "stopped":
-		return "done", false, []Chip{{Key: "stopped", Label: "arrêtée", State: "info"}}
+		return kind, "work", false, nil
 	case "done":
-		return "done", false, nil
+		return kind, "done", false, nil
 	}
-	return "stuck", false, []Chip{{Key: "other", Label: j.State, State: "info"}}
+	word := oneLine(s.State)
+	if word == "" {
+		word = "état vide"
+	}
+	return kind, "stuck", false, infoChip("other", word)
 }
 
-func deriveAgent(j *jobInput, now float64) *Agent {
-	kind := j.kind()
-	col, stale, chips := agentColumnOf(j, kind, now)
+func deriveAgent(s *sessionInput, now float64) *Agent {
+	kind, col, stale, chips := agentColumnOf(s, now)
 	a := &Agent{
-		ID: j.ID, Name: j.Name, Project: projectOf(j.Cwd), Branch: j.Branch, Cwd: j.Cwd, State: j.State, Tempo: j.Tempo,
-		Kind: kind, Column: col, Mission: j.Intent, Stale: stale, UpdatedAt: j.UpdatedAt, Age: ageText(now, j.UpdatedAt), Chips: chips,
+		ID: s.Name, Name: s.Name, Project: projectOf(s.Cwd), Cwd: s.Cwd, State: s.State,
+		Kind: kind, Column: col, Mission: s.Intent, Stale: stale, UpdatedAt: s.UpdatedAt, Age: ageText(now, s.UpdatedAt), Chips: chips,
 	}
-	a.Current = j.Detail
-	if col == "ask" {
-		a.Asking = true
-		// With a timeline, its waiting text rather than a detail that may echo the last prompt (a
-		// timeline that does not read: no text).
-		said := j.Detail
-		if j.HasTimeline {
-			said = j.LastText
-		}
-		a.Current = ""
-		for _, s := range []string{j.Needs, j.Question, said} {
-			if s != "" {
-				a.Current = s
-				break
-			}
-		}
+	if kind == "needs-you" {
+		// The notice says what it waits on (a permission, an idle prompt).
+		a.Asking, a.Current = true, s.Notice
 	}
 	if a.Current == a.Mission {
 		a.Current = ""
@@ -643,13 +506,13 @@ func deriveAgent(j *jobInput, now float64) *Agent {
 	return a
 }
 
-// deriveAgents: the shown cards by column, in BG_ORDER then newest update first (deck's sortBg),
+// deriveAgents: the shown cards by column, in bgOrder then newest update first (deck's sortBg),
 // without the finished ones older than keepMs (deck's recentBg).
-func deriveAgents(jobs []*jobInput, empty int, now float64) agentsBoard {
-	b := agentsBoard{empty: empty}
-	for _, j := range jobs {
-		a := deriveAgent(j, now)
-		if (a.Kind == "done" || a.Kind == "stopped") && now-a.UpdatedAt > keepMs {
+func deriveAgents(sessions []*sessionInput, now float64) agentsBoard {
+	var b agentsBoard
+	for _, s := range sessions {
+		a := deriveAgent(s, now)
+		if a.Kind == "done" && now-a.UpdatedAt > keepMs {
 			b.old++
 			continue
 		}
@@ -683,35 +546,22 @@ func plural(n int, one, many string) string {
 
 // hiddenText: what the footer says the tab leaves out.
 func hiddenText(b agentsBoard) string {
-	var parts []string
-	if b.empty > 0 {
-		parts = append(parts, plural(b.empty, "session vide masquée", "sessions vides masquées"))
+	if b.old == 0 {
+		return ""
 	}
-	if b.old > 0 {
-		parts = append(parts, plural(b.old, "terminée depuis plus de 24 h masquée", "terminées depuis plus de 24 h masquées"))
-	}
-	return strings.Join(parts, " · ")
+	return plural(b.old, "terminée depuis plus de 24 h masquée", "terminées depuis plus de 24 h masquées")
 }
 
 // ---- state and events ----------------------------------------------------------
 
-type agentDrawer struct {
-	id       string
-	events   []timelineEvent // newest first; nil while loading
-	err      string
-	loadedAt float64 // the session's UpdatedAt the events were read for
-	scroll   int
-}
-
 type agentsView struct {
-	first, nVis, areaH         int
-	sel                        selection
-	docLines, bodyH, docScroll int
-	cols                       [4]colLayout
+	first, nVis, areaH int
+	sel                selection
+	cols               [4]colLayout
 }
 
 type agentsState struct {
-	reader   *JobsReader
+	reader   *SessionsReader
 	board    agentsBoard
 	status   *boardStatus
 	problems []string
@@ -720,9 +570,8 @@ type agentsState struct {
 	scroll   [4]int
 	hscroll  int
 	follow   bool
-	drawer   *agentDrawer
 	view     agentsView
-	note     string // a one-off footer message (claude not on PATH)
+	note     string // a one-off footer message: the outcome of a pick
 }
 
 type agentsPoll struct {
@@ -733,27 +582,42 @@ type agentsPoll struct {
 	err      error
 }
 
-type agentDrawerMsg struct {
-	id     string
-	at     float64
-	events []timelineEvent
-	err    string
+// pickMsg: the outcome of `agent-pane pick <name>`; err "" when it succeeded.
+type pickMsg struct{ name, err string }
+
+// runPick runs argv (no shell), stdin and stdout /dev/null, env inherited; the error carries
+// stderr's first line. A variable so the tests never run it.
+var runPick = func(argv []string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), pickTimeout)
+	defer cancel()
+	var stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Stderr = &stderr
+	cmd.WaitDelay = time.Second
+	err := cmd.Run()
+	switch {
+	case err == nil:
+		return nil
+	case ctx.Err() != nil:
+		return errors.New("pas de réponse en " + strconv.Itoa(int(pickTimeout/time.Second)) + " s")
+	}
+	if line, _, _ := strings.Cut(strings.TrimSpace(stderr.String()), "\n"); line != "" {
+		return errors.New(oneLine(line))
+	}
+	return err
 }
 
-// lookPath finds the claude binary `o` execs; a variable so the tests can stub it.
-var lookPath = exec.LookPath
-
-// setJobsDir turns the Agents tab on, reading dir at each poll.
-func (m *Model) setJobsDir(dir string) {
+// setSessionsDir turns the Agents tab on, reading dir at each poll.
+func (m *Model) setSessionsDir(dir string) {
 	if dir == "" {
 		m.ag.reader = nil
 		return
 	}
-	m.ag.reader = &JobsReader{Dir: dir}
+	m.ag.reader = &SessionsReader{Dir: dir}
 }
 
-// pollAgents runs in the poll's Cmd goroutine.
-func pollAgents(r *JobsReader) *agentsPoll {
+// pollAgents runs in the poll's Cmd goroutine: the state files, then abduco's list.
+func pollAgents(r *SessionsReader) *agentsPoll {
 	if r == nil {
 		return nil
 	}
@@ -762,62 +626,54 @@ func pollAgents(r *JobsReader) *agentsPoll {
 	if err != nil {
 		return &agentsPoll{err: err}
 	}
+	problems := read.problems
+	live, aerr := readAbduco()
+	if aerr != nil {
+		problems = append(slices.Clip(problems), "abduco : "+oneLine(aerr.Error())+" : sessions non vérifiées")
+	}
 	now := float64(t.UnixMilli())
-	return &agentsPoll{board: deriveAgents(read.jobs, read.empty, now), problems: read.problems, now: now, clock: t.Format("15:04:05")}
+	return &agentsPoll{board: deriveAgents(withLiveness(read.sessions, live), now), problems: problems, now: now, clock: t.Format("15:04:05")}
 }
 
-func (m *Model) applyAgents(p *agentsPoll) tea.Cmd {
+func (m *Model) applyAgents(p *agentsPoll) {
 	if p == nil {
-		return nil
+		return
 	}
 	a := &m.ag
 	m.dirty = true
 	if p.err != nil {
-		a.status = &boardStatus{err: "jobs/ illisible : " + p.err.Error()}
-		return nil
+		a.status = &boardStatus{err: "session-state/ illisible : " + p.err.Error()}
+		return
 	}
 	a.board, a.problems, a.now = p.board, p.problems, p.now
 	a.status = &boardStatus{ok: true, count: p.board.total, time: p.clock}
-	if d := a.drawer; d != nil {
-		if ag := m.agentByID(d.id); ag != nil && ag.UpdatedAt != d.loadedAt {
-			return m.agentDrawerCmd()
-		}
-	}
-	return nil
 }
 
-func (m *Model) agentByID(id string) *Agent {
-	for _, col := range m.ag.board.cols {
-		for _, a := range col {
-			if a.ID == id {
-				return a
-			}
-		}
-	}
-	return nil
-}
-
-func (m *Model) agentDrawerCmd() tea.Cmd {
-	d, r := m.ag.drawer, m.ag.reader
-	if d == nil || r == nil {
+// pickCmd: `agent-pane pick <name>` in a Cmd, off the UI goroutine; the footer says the outcome
+// (pickMsg). The name is checked again here (the readers already skip others): it is an argv word.
+func (m *Model) pickCmd(name string) tea.Cmd {
+	if !validName(name) {
 		return nil
 	}
-	dir, id, at := r.Dir, d.id, 0.0
-	if ag := m.agentByID(id); ag != nil {
-		at = ag.UpdatedAt
+	if agentPaneBin == "" {
+		m.ag.note, m.dirty = "agent-pane : binaire absent, rien lancé", true
+		return nil
 	}
+	argv := []string{agentPaneBin, "pick", name}
 	return func() tea.Msg {
-		ev, err := loadAgentTimeline(dir, id)
-		return agentDrawerMsg{id: id, at: at, events: ev, err: err}
+		if err := runPick(argv); err != nil {
+			return pickMsg{name: name, err: err.Error()}
+		}
+		return pickMsg{name: name}
 	}
 }
 
-func (m *Model) applyAgentDrawer(msg agentDrawerMsg) {
-	d := m.ag.drawer
-	if d == nil || d.id != msg.id {
-		return // closed, or another session opened since
+func (m *Model) applyPick(msg pickMsg) {
+	if msg.err != "" {
+		m.ag.note = "agent-pane pick " + msg.name + " : " + msg.err
+	} else {
+		m.ag.note = "affichée en haut : " + msg.name
 	}
-	d.events, d.err, d.loadedAt = msg.events, msg.err, msg.at
 	m.dirty = true
 }
 
@@ -864,35 +720,10 @@ func (m *Model) pickAgent(c, i int) {
 	a.follow, m.dirty = true, true
 }
 
-func (m *Model) openAgentDrawer(col, idx int, id string) tea.Cmd {
-	a := &m.ag
-	a.sel = &selState{col: col, idx: idx, id: id}
-	a.drawer = &agentDrawer{id: id}
-	a.follow, m.dirty = true, true
-	return m.agentDrawerCmd()
-}
-
-// attachTo: quit and let main exec `claude attach <id>`; without claude on PATH, say the command.
-// The id (the jobs dir name) and not the name: a part of a name also matches, an id is one session.
-func (m *Model) attachTo(id string) tea.Cmd {
-	if !validJobID(id) {
-		return nil
-	}
-	if _, err := lookPath("claude"); err != nil {
-		m.ag.note, m.dirty = "claude introuvable dans le PATH : lance  claude attach "+id, true
-		return nil
-	}
-	m.attach, m.quit = id, true
-	return tea.Quit
-}
-
 func (m *Model) keyAgents(ev string) tea.Cmd {
 	a := &m.ag
 	if a.note != "" {
 		a.note, m.dirty = "", true
-	}
-	if a.drawer != nil {
-		return m.keyAgentDrawer(ev)
 	}
 	sel := m.agentSelection()
 	row := max(sel.idx, 0)
@@ -919,54 +750,10 @@ func (m *Model) keyAgents(ev string) tea.Cmd {
 		m.pickAgent(sel.col, sel.idx-pageCards)
 	case "pgdn", "space":
 		m.pickAgent(sel.col, sel.idx+pageCards)
-	case "enter":
+	case "enter", "o":
 		if sel.idx >= 0 {
-			return m.openAgentDrawer(sel.col, sel.idx, a.board.cols[sel.col][sel.idx].ID)
+			return m.pickCmd(a.board.cols[sel.col][sel.idx].ID)
 		}
-	case "o":
-		if sel.idx >= 0 {
-			return m.attachTo(a.board.cols[sel.col][sel.idx].ID)
-		}
-	case "r":
-		return m.pollCmd()
-	}
-	return nil
-}
-
-func (m *Model) scrollAgentDrawer(n int) {
-	if m.dirty || m.frame == "" {
-		m.render()
-	}
-	v := m.ag.view
-	m.ag.drawer.scroll = clamp(v.docScroll+n, 0, max(0, v.docLines-v.bodyH))
-	m.dirty = true
-}
-
-func (m *Model) keyAgentDrawer(ev string) tea.Cmd {
-	d := m.ag.drawer
-	page := func() int {
-		if m.dirty || m.frame == "" {
-			m.render()
-		}
-		return max(1, m.ag.view.bodyH-2)
-	}
-	switch ev {
-	case "esc", "q":
-		m.ag.drawer, m.dirty = nil, true
-	case "up", "k":
-		m.scrollAgentDrawer(-1)
-	case "down", "j":
-		m.scrollAgentDrawer(1)
-	case "pgup":
-		m.scrollAgentDrawer(-page())
-	case "pgdn", "space":
-		m.scrollAgentDrawer(page())
-	case "home", "g":
-		m.scrollAgentDrawer(-far)
-	case "end", "G":
-		m.scrollAgentDrawer(far)
-	case "o":
-		return m.attachTo(d.id)
 	case "r":
 		return m.pollCmd()
 	}
@@ -975,34 +762,20 @@ func (m *Model) keyAgentDrawer(ev string) tea.Cmd {
 
 func (m *Model) clickAgents(h *hit) tea.Cmd {
 	a := &m.ag
-	if a.drawer == nil {
-		switch h.kind {
-		case hitTab:
-			m.setTab(h.col)
-		case hitCard:
-			return m.openAgentDrawer(h.col, h.idx, h.id)
-		}
-		return nil
-	}
-	if h.kind == hitClose || h.kind == hitScrim {
-		a.drawer, m.dirty = nil, true
+	switch h.kind {
+	case hitTab:
+		m.setTab(h.col)
+	case hitCard:
+		a.sel = &selState{col: h.col, idx: h.idx, id: h.id}
+		a.note, a.follow, m.dirty = "", true, true
+		return m.pickCmd(h.id)
 	}
 	return nil
 }
 
-// wheelAgents: as wheel on the runs board, for the agents columns and drawer.
+// wheelAgents: as wheel on the runs board, for the agents columns.
 func (m *Model) wheelAgents(h *hit, dir int) {
 	a := &m.ag
-	if a.drawer != nil {
-		if h.kind == hitScrim {
-			return
-		}
-		ds := clamp(a.view.docScroll+dir*wheelLines, 0, max(0, a.view.docLines-a.view.bodyH))
-		if ds != a.drawer.scroll {
-			a.drawer.scroll, a.view.docScroll, m.dirty = ds, ds, true
-		}
-		return
-	}
 	if (h.kind != hitCard && h.kind != hitCol) || h.col < 0 || h.col >= len(AgentColumns) {
 		return
 	}
@@ -1040,10 +813,10 @@ func (m *Model) wheelAgents(h *hit, dir int) {
 
 // ---- view ----------------------------------------------------------------------
 
-var keysAgents = "←→↑↓ naviguer · ⏎ ouvrir · o reprendre · a runs · q quitter"
+var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · r relire · a runs · q quitter"
 
-// agentRows: rows of exactly cw cells: rounded box, name, project · branch and age, mission,
-// the question (or the current step), chips.
+// agentRows: rows of exactly cw cells: rounded box, name, project and age, mission, the notice
+// (or what it does), chips.
 func agentRows(a *Agent, cw int, selected bool) *rowsMemo {
 	if m := &a.rows; m.rows != nil && m.cw == cw && m.sel == selected {
 		return m
@@ -1072,24 +845,16 @@ func agentRows(a *Agent, cw int, selected bool) *rowsMemo {
 		top = toCells("● ", st(P.active), top)
 	}
 	dotOff := cell{ch: "●", w: 1, st: st(P.faint)}
-	name, nameSt := a.Name, st(P.text).bold()
-	if name == "" {
-		name, nameSt = "sans nom · "+a.ID, st(P.muted)
-	}
-	top = append(top, fitCells(cellsOf(name, nameSt), iw-cellsWidth(top))...)
+	top = append(top, fitCells(cellsOf(a.Name, st(P.text).bold()), iw-cellsWidth(top))...)
 	body = append(body, top)
 
-	where := a.Project
-	if a.Branch != "" {
-		where += " · " + a.Branch
-	}
 	age := cellsOf(a.Age, st(P.muted))
 	if room := iw - cellsWidth(age) - 1; room >= 4 {
-		line := fitCells(cellsOf(where, st(P.faint)), room)
+		line := fitCells(cellsOf(a.Project, st(P.faint)), room)
 		line = append(line, spaces(iw-cellsWidth(line)-cellsWidth(age), bgOnly(bg))...)
 		body = append(body, append(line, age...))
 	} else {
-		body = append(body, fitCells(cellsOf(where, st(P.faint)), iw), fitCells(age, iw))
+		body = append(body, fitCells(cellsOf(a.Project, st(P.faint)), iw), fitCells(age, iw))
 	}
 	if a.Mission != "" {
 		body = append(body, wrapText(a.Mission, iw, 2, st(P.text))...)
@@ -1117,7 +882,7 @@ func agentRows(a *Agent, cw int, selected bool) *rowsMemo {
 	return &a.rows
 }
 
-// renderAgents is render for the Agents tab: same header, columns, footer and drawer layout.
+// renderAgents is render for the Agents tab: same header, columns and footer layout.
 func (m *Model) renderAgents() {
 	W, H := max(1, m.width), max(1, m.height)
 	m.g.reset(W, H, P.bg)
@@ -1293,183 +1058,15 @@ func (m *Model) renderAgents() {
 		g.put(W-margin-cellsWidth(ic), H-1, ic)
 	}
 
-	if a.drawer != nil {
-		m.drawAgentDrawer(g, W, H, &view)
-	}
 	a.view = view
 	m.frame = frameOf(g)
 	m.dirty = false
 }
 
-// stateWord: a timeline step's state in the tab's words.
-func stateWord(s string) (string, rgb) {
-	switch strings.ToLower(s) {
-	case "blocked":
-		return "attend", P.human
-	case "working":
-		return "travaille", P.active
-	case "done", "completed":
-		return "terminé", P.merged
-	case "failed", "error":
-		return "échec", P.human
-	case "stopped", "killed":
-		return "arrêtée", P.muted
-	}
-	return s, P.muted
-}
-
-// timelineLines: each step as `date state detail`, its reply text under it (3 lines at most).
-func timelineLines(evs []timelineEvent, w int) []mdLine {
-	const wordW = 10
-	var out []mdLine
-	for _, e := range evs {
-		stamp := time.UnixMilli(int64(e.At)).Format("02/01 15:04")
-		word, wc := stateWord(e.State)
-		prefix := cellsOf(stamp+" ", fg(P.faint))
-		prefix = append(prefix, padTo(cellsOf(word, fg(wc)), wordW, P.panel)...)
-		pw := cellsWidth(prefix)
-		indent := spaces(pw, bgOnly(P.panel))
-		rest := max(1, w-pw)
-		for i, l := range wrapCells(cellsOf(e.Detail, fg(P.text)), rest) {
-			lead := indent
-			if i == 0 {
-				lead = prefix
-			}
-			out = append(out, mdLine{cells: append(slices.Clone(lead), l...)})
-		}
-		if t := oneLine(e.Text); t != "" && t != e.Detail {
-			for _, l := range wrapText(t, rest, 3, fg(P.muted)) {
-				out = append(out, mdLine{cells: append(slices.Clone(indent), l...)})
-			}
-		}
-	}
-	return out
-}
-
-func (m *Model) drawAgentDrawer(g grid, W, H int, view *agentsView) {
-	d := m.ag.drawer
-	dw := min(drawerW, W)
-	x0 := W - dw
-	for y := range H {
-		for x := 0; x < x0; x++ {
-			g[y][x] = fadeCell(g[y][x], scrim, 0.45)
-		}
-		g.fillRow(y, x0, W, P.panel)
-	}
-	if x0 > 0 {
-		m.hits = append(m.hits, hit{x: 0, y: 0, w: x0, h: H, kind: hitScrim})
-	}
-	m.hits = append(m.hits, hit{x: x0, y: 0, w: dw, h: H, kind: hitDrawer})
-	cx := x0
-	if x0 > 0 {
-		for y := range H {
-			g.put(x0, y, cellsOf(cardBox.Left, fg(P.line)))
-		}
-		cx = x0 + 1
-	}
-	pad := 1
-	if dw >= 40 {
-		pad = 2
-	}
-	left, right := cx+pad, W-pad
-	ag := m.agentByID(d.id)
-
-	y := 0
-	if H >= 16 {
-		y = 1
-	}
-	closeX := right - 1
-	g.put(closeX, y, cellsOf("×", fg(P.muted).bold()))
-	m.hits = append(m.hits, hit{x: closeX - 1, y: max(0, y-1), w: 3, h: 3, kind: hitClose})
-	headW := max(1, closeX-2-left)
-	line := func(cells []cell) {
-		g.put(left, y, fitCells(cells, headW))
-		y++
-	}
-	wrapped := func(text string, n int, st style) {
-		for _, l := range wrapText(text, headW, n, st) {
-			g.put(left, y, l)
-			y++
-		}
-	}
-	if ag == nil {
-		line(cellsOf(d.id+" · session disparue", fg(P.muted)))
-	} else {
-		state := ag.State
-		if ag.Tempo != "" {
-			state += "/" + ag.Tempo
-		}
-		line(cellsOf(strings.Join([]string{ag.ID, AgentColumns[colIndex(ag.Column)].Label, state, ag.Age}, " · "), fg(P.muted)))
-		if ag.Name != "" {
-			wrapped(ag.Name, 2, fg(P.text).bold())
-		} else {
-			line(cellsOf("sans nom", fg(P.muted).bold()))
-		}
-		where := ag.Project
-		if ag.Branch != "" {
-			where += " · " + ag.Branch
-		}
-		line(cellsOf(where+" — "+ag.Cwd, fg(P.faint)))
-		if ag.Mission != "" {
-			wrapped("Mission : "+ag.Mission, 3, fg(P.text))
-		}
-		if ag.Current != "" {
-			if ag.Asking {
-				wrapped(ag.Current, 4, fg(P.human))
-			} else {
-				wrapped(ag.Current, 2, fg(P.muted))
-			}
-		}
-		line(toCells("claude attach "+ag.ID, fg(P.active).bold(), cellsOf("Reprendre : ", fg(P.muted))))
-	}
-	y++
-	g.put(cx, y, cellsOf(strings.Repeat(cardBox.Top, max(0, W-cx)), fg(P.line)))
-	bodyTop := y + 1
-	keysY := H - 1
-	bodyH := max(0, keysY-bodyTop)
-
-	bw := right - left
-	var tail []cell
-	if bw >= 1 && bodyH > 0 {
-		var lines []mdLine
-		switch {
-		case d.err != "":
-			lines = note(d.err, bw, P.human)
-		case d.events == nil:
-			lines = note("chargement…", bw, P.faint)
-		case len(d.events) == 0:
-			lines = note("Aucune étape dans la timeline.", bw, P.faint)
-		default:
-			lines = timelineLines(d.events, bw)
-		}
-		ds := clamp(d.scroll, 0, max(0, len(lines)-bodyH))
-		view.docLines, view.bodyH, view.docScroll = len(lines), bodyH, ds
-		for r := 0; r < bodyH && ds+r < len(lines); r++ {
-			g.putMax(left, bodyTop+r, lines[ds+r].cells, right)
-		}
-		m.hits = append(m.hits, hit{x: cx, y: bodyTop, w: W - cx, h: bodyH, kind: hitDoc})
-		if len(lines) > bodyH {
-			tail = cellsOf(strconv.Itoa(ds+1)+"-"+strconv.Itoa(min(ds+bodyH, len(lines)))+"/"+strconv.Itoa(len(lines)), fg(P.faint))
-		}
-	}
-	keys := cellsOf("↑↓ défiler · pgup/pgdn page · o reprendre ici · esc fermer", fg(P.faint))
-	if m.ag.note != "" {
-		keys = cellsOf(m.ag.note, fg(P.human))
-	}
-	kw := right - left
-	if len(tail) > 0 {
-		kw -= cellsWidth(tail) + 2
-	}
-	g.put(left, keysY, fitCells(keys, kw))
-	if len(tail) > 0 && kw > 0 {
-		g.put(right-cellsWidth(tail), keysY, tail)
-	}
-}
-
-// agentsSnapshot: one frame of the Agents tab read from jobsDir, ANSI stripped, no terminal
-// (for the coordinator and the check): --agents-snapshot <width> <height> [open].
-func agentsSnapshot(args []string, jobsDir string, out io.Writer) int {
-	if len(args) < 2 || len(args) > 3 || (len(args) == 3 && args[2] != "open") {
+// agentsSnapshot: one frame of the Agents tab read from sessionsDir (and abduco), ANSI stripped,
+// no terminal (for the coordinator and the check): --agents-snapshot <width> <height>.
+func agentsSnapshot(args []string, sessionsDir string, out io.Writer) int {
+	if len(args) != 2 {
 		return -1
 	}
 	w, err1 := strconv.Atoi(args[0])
@@ -1478,17 +1075,9 @@ func agentsSnapshot(args []string, jobsDir string, out io.Writer) int {
 		return -1
 	}
 	m := newModel("", "", "", w, h)
-	m.setJobsDir(jobsDir)
+	m.setSessionsDir(sessionsDir)
 	m.tab = tabAgents
 	m.applyAgents(pollAgents(m.ag.reader))
-	if len(args) == 3 {
-		if sel := m.agentSelection(); sel.idx >= 0 {
-			id := m.ag.board.cols[sel.col][sel.idx].ID
-			m.openAgentDrawer(sel.col, sel.idx, id)
-			ev, err := loadAgentTimeline(jobsDir, id)
-			m.applyAgentDrawer(agentDrawerMsg{id: id, at: m.agentByID(id).UpdatedAt, events: ev, err: err})
-		}
-	}
 	var sb strings.Builder
 	for l := range strings.SplitSeq(m.View().Content, "\n") {
 		sb.WriteString(strings.TrimRight(stripAnsi(l), " "))

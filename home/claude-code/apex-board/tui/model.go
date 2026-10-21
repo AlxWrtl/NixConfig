@@ -67,7 +67,6 @@ type Model struct {
 	quit          bool
 	tab           int // tabRuns | tabAgents
 	ag            agentsState
-	attach        string // the session `o` asked for: main execs `claude attach` on it after quitting
 
 	runsDir, budgetDir string
 	reader             *Reader
@@ -145,7 +144,7 @@ type pollMsg struct {
 	now      float64
 	clock    string
 	err      error
-	agents   *agentsPoll // nil without a jobs dir
+	agents   *agentsPoll // nil without a session-state dir
 }
 
 type drawerMsg struct {
@@ -166,8 +165,8 @@ func pollTickCmd() tea.Cmd {
 	return tea.Tick(pollEvery, func(time.Time) tea.Msg { return pollTickMsg{} })
 }
 
-// pollCmd reads and derives in the Cmd goroutine, the runs and the jobs; one poll at a time
-// owns the Readers.
+// pollCmd reads and derives in the Cmd goroutine, the runs and the agent sessions; one poll at a
+// time owns the Readers.
 func (m *Model) pollCmd() tea.Cmd {
 	if m.polling {
 		return nil
@@ -244,8 +243,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.applyPoll(msg)
 	case drawerMsg:
 		m.applyDrawer(msg)
-	case agentDrawerMsg:
-		m.applyAgentDrawer(msg)
+	case pickMsg:
+		m.applyPick(msg)
 	case docMsg:
 		if d := m.drawer; d != nil && d.id == msg.id && d.hasPath && d.path == msg.path {
 			doc := msg.doc
@@ -281,9 +280,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *Model) applyPoll(msg pollMsg) tea.Cmd {
 	m.polling = false
 	next := pollTickCmd()
-	if c := m.applyAgents(msg.agents); c != nil {
-		next = tea.Batch(next, c)
-	}
+	m.applyAgents(msg.agents)
 	if msg.err != nil {
 		// The runs dir itself is unreadable: keep the last board and say why.
 		m.status, m.dirty = &boardStatus{err: msg.err.Error()}, true

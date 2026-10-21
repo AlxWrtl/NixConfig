@@ -7,9 +7,10 @@
 // the user to act, background shells), its phase changes written to the log as `apex`.
 // Observes: every hook but the commands and the pane returns next(e)'s result unchanged, and it
 // never writes a file. The run folders are polled every 5 s only while the pane is open, and once
-// per prompt and per finished main turn otherwise; the background sessions (~/.claude/jobs) only
-// while it is open. A poll writes nothing that did not change. One action: « ↻ relancer » pressed
-// on a stalled background row runs `claude-bg resume <id>` (hooks/resume.ts), its outcome logged.
+// per prompt and per finished main turn otherwise; the background sessions (~/.claude/session-state)
+// only while it is open. A poll writes nothing that did not change. One action: « ↗ afficher »
+// pressed on a background row not done runs `agent-pane pick <name>` (hooks/pick.ts), its outcome
+// logged.
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, Timer } from 'claude-code'
 
@@ -32,7 +33,6 @@ import type {
   DeckView,
   DeckApexStepName,
   DeckBgAgent,
-  DeckBgEvent,
   DeckBgKind,
 } from '../types'
 import {
@@ -134,8 +134,8 @@ import {
 } from './shells'
 import type { Notification } from './shells'
 import { alertsOf, budgetOf, pickVerdict } from './signals'
-import { BG_TIMELINE, bgSummary, bgWord, inProject, parseJobState, parseTimeline, recentBg, sortBg, waitingText } from './background'
-import { resumeBg } from './resume'
+import { BG_ORDER, SESSION_NAME, bgSummary, bgWord, inProject, parseSessionState, recentBg, sortBg } from './background'
+import { pickSession } from './pick'
 
 const PANE = 'deck'
 const TITLE = 'Deck'
@@ -145,9 +145,11 @@ const POLL_MS = 5000
 const VERIFY_NAMES = ['04-external-verify.json', 'external-verify.json']
 // Finished shells shown under the running ones; the rest fold into « +N earlier ».
 const DONE_SHELLS = 3
-// Background sessions: state.json files read per poll (the newest folders), rows drawn in the panel.
+// Background sessions: state files read per poll (the newest), rows drawn in the panel.
 const BG_READS = 12
 const BG_ROWS = 6
+// A state file over this is skipped: session-state.js never writes one (its MAX_STATE).
+const BG_MAX_BYTES = 64 * 1024
 // `view.expanded` of an unfolded background row: `bg:<id>` (a card's id never starts so).
 const BG_OPEN = 'bg:'
 
@@ -170,7 +172,6 @@ const shells = atom({ plugin: 'deck', key: 'shells' } as const, [])
 const sessionRun = atom({ plugin: 'deck', key: 'sessionRun' } as const, null)
 const openStep = atom({ plugin: 'deck', key: 'openStep' } as const, null)
 const background = atom({ plugin: 'deck', key: 'background' } as const, [])
-const bgTimeline = atom({ plugin: 'deck', key: 'bgTimeline' } as const, null)
 
 // Module-level: a hot reload drops the environment and its timer with it.
 let timer: Timer | undefined
@@ -221,19 +222,10 @@ async function getShells($: EngineInterface): Promise<DeckApexShell[]> {
   return listOf<DeckApexShell>(await read($, shells))
 }
 async function getBackground($: EngineInterface): Promise<DeckBgAgent[]> {
-  // A row saved before intent and tokens were read has neither: none.
-  return listOf<DeckBgAgent>(await read($, background)).map(j => ({
-    ...j,
-    intent: typeof j.intent === 'string' ? j.intent : '',
-    tokens: typeof j.tokens === 'number' ? j.tokens : null,
-  }))
-}
-// The unfolded background row's last steps, or null (an older shape reads as none).
-async function getBgTimeline($: EngineInterface): Promise<{ id: string; events: DeckBgEvent[] } | null> {
-  const value: unknown = await read($, bgTimeline)
-  const id = stringField(value, 'id')
-  const events: unknown = Reflect.get(Object(value), 'events')
-  return id === undefined || !Array.isArray(events) ? null : { id, events: listOf<DeckBgEvent>(events) }
+  // A row saved under an older kind (the jobs reader's) is dropped: the next poll reads it anew.
+  return listOf<DeckBgAgent>(await read($, background))
+    .filter(j => BG_ORDER.includes(j.kind))
+    .map(j => ({ ...j, intent: typeof j.intent === 'string' ? j.intent : '', detail: typeof j.detail === 'string' ? j.detail : '' }))
 }
 
 async function say($: EngineInterface, who: string, text: string, kind: DeckLogLine['kind'] = 'info', agentId: string | null = null) {
@@ -591,90 +583,68 @@ async function clearForNewRun($: EngineInterface): Promise<void> {
   await update($, openStep, () => null)
 }
 
-// Background sessions of the current project (its subfolders and worktrees): ~/.claude/jobs/<id>/state.json of the BG_READS newest
-// folders (ranked by the folder's stat: a listing gives a folder mtime 0). A missing jobs folder,
-// a vanished or unreadable entry, a file such as pins.json: nothing, never an error.
+// Background sessions of the current project (its subfolders and worktrees): the BG_READS newest
+// ~/.claude/session-state/<name>.json (ranked by the listing's mtime). A missing or linked folder,
+// a link, a dotted temp file, a stem that is no session name, an oversized or vanished file:
+// nothing, never an error.
 async function refreshBackground($: EngineInterface): Promise<void> {
   const home = await $.env.get('HOME')
-  const root = `${home ?? ''}/.claude/jobs`
-  const entries =
-    home === undefined || home === ''
-      ? []
-      : await $.fs.list(root).catch(() => {
-          // No background session was ever started here: an empty panel.
-          return []
-        })
-  const ranked: { id: string; mtimeMs: number }[] = []
-  for (const entry of entries) {
-    if (entry.kind !== 'dir') continue
-    try {
-      ranked.push({ id: entry.name, mtimeMs: (await $.fs.stat(`${root}/${entry.name}`)).mtimeMs })
-    } catch {
-      // Vanished between list and stat: skipped.
-    }
-  }
-  ranked.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  const root = `${home ?? ''}/.claude/session-state`
+  const isDir =
+    home !== undefined &&
+    home !== '' &&
+    (await $.fs.stat(root).then(
+      st => st.kind === 'dir' && !st.isLink,
+      () => {
+        // No dispatched session ever ran here: an empty panel.
+        return false
+      },
+    ))
+  const entries = isDir
+    ? await $.fs.list(root).catch(() => {
+        // Vanished or unreadable between stat and list: an empty panel.
+        return []
+      })
+    : []
+  const ranked = entries
+    .filter(e => e.kind === 'file' && !e.isLink && e.size <= BG_MAX_BYTES && e.name.endsWith('.json') && SESSION_NAME.test(e.name.slice(0, -5)))
+    .sort((a, b) => b.mtimeMs - a.mtimeMs)
   const found: DeckBgAgent[] = []
-  for (const dir of ranked.slice(0, BG_READS)) {
+  for (const entry of ranked.slice(0, BG_READS)) {
+    const path = `${root}/${entry.name}`
     let text: string
     try {
-      text = await $.fs.read(`${root}/${dir.id}/state.json`)
+      // Swapped for a link since the listing: skipped, never followed.
+      const st = await $.fs.stat(path)
+      if (st.isLink || st.kind !== 'file' || st.size > BG_MAX_BYTES) continue
+      text = await $.fs.read(path)
     } catch {
-      // No state.json (yet), or over 4 MiB: skipped.
+      // Vanished between list and read: skipped.
       continue
     }
-    const parsed = parseJobState(dir.id, text)
-    if (parsed !== null) found.push(parsed.updatedAt > 0 ? parsed : { ...parsed, updatedAt: dir.mtimeMs })
+    const parsed = parseSessionState(entry.name.slice(0, -5), text)
+    if (parsed !== null) found.push(parsed.updatedAt > 0 ? parsed : { ...parsed, updatedAt: entry.mtimeMs })
   }
-  const next: DeckBgAgent[] = []
-  for (const j of sortBg(recentBg(inProject(found, await $.session.cwd()), await $.clock.now()))) {
-    if (j.kind !== 'needs-you') {
-      next.push(j)
-      continue
-    }
-    // What it waits on: the agent's last reply, never its detail echoing the last prompt.
-    try {
-      next.push({ ...j, detail: waitingText(await $.fs.read(`${root}/${j.id}/timeline.jsonl`), j.detail) })
-    } catch {
-      // No timeline (yet), or over 4 MiB: its detail as is.
-      next.push(j)
-    }
-  }
+  const next = sortBg(recentBg(inProject(found, await $.session.cwd()), await $.clock.now()))
   if (JSON.stringify(await getBackground($)) !== JSON.stringify(next)) await update($, background, () => next)
-  // The unfolded row's timeline only, never one per session; its id is one the listing gave.
-  const expanded = (await getView($)).expanded
-  const openId = expanded !== null && expanded.startsWith(BG_OPEN) ? expanded.slice(BG_OPEN.length) : null
-  let timeline: { id: string; events: DeckBgEvent[] } | null = null
-  if (openId !== null && next.some(j => j.id === openId)) {
-    let text = ''
-    try {
-      text = await $.fs.read(`${root}/${openId}/timeline.jsonl`)
-    } catch {
-      // No timeline (yet), or over 4 MiB: the row unfolds without steps.
-    }
-    timeline = { id: openId, events: parseTimeline(text, BG_TIMELINE) }
-  }
-  if (JSON.stringify(await getBgTimeline($)) !== JSON.stringify(timeline)) await update($, bgTimeline, () => timeline)
 }
 
 // A background row pressed: it unfolds, or folds when it was the one open (one slot with the
-// cards); its timeline is read at once rather than at the next tick.
+// cards).
 async function toggleBgRow($: EngineInterface, id: string): Promise<void> {
   const key = `${BG_OPEN}${id}`
   await update($, view, x => {
     const current = normalize(DEFAULT_VIEW, x)
     return { ...current, expanded: current.expanded === key ? null : key }
   })
-  await record(() => refreshBackground($))
 }
 
-// « ↻ relancer » pressed on a stalled row: the wrapper resumes it, the outcome goes to the log,
-// then the panel is read again at once. A press while the same id is under way does nothing.
-async function resumeRow($: EngineInterface, id: string): Promise<void> {
-  const o = await resumeBg($, id)
+// « ↗ afficher » pressed on a row: agent-pane shows that session in the top pane, the outcome goes
+// to the log. A press while the same name is under way does nothing.
+async function pickRow($: EngineInterface, name: string): Promise<void> {
+  const o = await pickSession($, name)
   if (o === null) return
-  await record(() => say($, 'bg', `${id} ${o.text}`, o.ok ? 'done' : 'error'))
-  await record(() => refreshBackground($))
+  await record(() => say($, 'bg', `${name} ${o.text}`, o.ok ? 'done' : 'error'))
 }
 
 // One poll: background sessions (pane open only), run (its phase moves to the log), phases,
@@ -1231,7 +1201,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     // Clients draw on terminal and desktop only; elsewhere the same frame as static text.
     const hasClient = 'Client' in els && (e.surface === 'terminal' || e.surface === 'desktop')
-    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now, open, jobs, tl] = await Promise.all([
+    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now, open, jobs] = await Promise.all([
       getMain($),
       getUsage($),
       getArchitect($),
@@ -1249,7 +1219,6 @@ export const register: Register = (on, options) => {
       $.clock.now(),
       getOpenStep($),
       getBackground($),
-      getBgTimeline($),
     ])
     const W = Math.max(40, e.props.bodyColumns)
     const layout = v.layout ?? cfg.layout
@@ -1641,26 +1610,23 @@ export const register: Register = (on, options) => {
         </Box>
       ) : null
 
-    // ---- background agents: sessions of the current project (~/.claude/jobs), what waits on you first
+    // ---- background agents: sessions of the current project (~/.claude/session-state), what waits on you first
     const bgMark: Record<DeckBgKind, { glyph: string; color: string }> = {
       'needs-you': { glyph: '◆', color: C.warn },
-      stalled: { glyph: '⟳', color: C.amber },
+      waiting: { glyph: '◇', color: C.amber },
+      idle: { glyph: '·', color: C.faint },
       working: { glyph: '◐', color: C.main },
-      failed: { glyph: '✗', color: C.warn },
-      done: { glyph: '✓', color: C.ok },
-      stopped: { glyph: '■', color: C.faint },
       other: { glyph: '·', color: C.faint },
+      done: { glyph: '✓', color: C.ok },
     }
     const bgShown = jobs.slice(0, BG_ROWS)
     const bgMore = jobs.length - bgShown.length
-    // The unfolded row (a press on its name), and its last steps once the poll has read them.
+    // The unfolded row (a press on its name): its intent, and its notice unless the folded row
+    // already shows it (needs-you).
     const bgOpenId = v.expanded !== null && v.expanded.startsWith(BG_OPEN) ? v.expanded.slice(BG_OPEN.length) : null
     const bgOpen = bgShown.find(j => j.id === bgOpenId)
-    const bgEvents = bgOpen !== undefined && tl !== null && tl.id === bgOpen.id ? tl.events.slice(-BG_TIMELINE) : []
-    // The current status, unless the last step already says it.
-    const bgOpenDetail = bgOpen !== undefined && bgOpen.detail !== '' && bgEvents[bgEvents.length - 1]?.detail !== bgOpen.detail ? bgOpen.detail : ''
-    const bgOpenRows = bgOpen === undefined ? 0 : (bgOpen.intent !== '' ? 2 : 0) + (bgOpenDetail !== '' ? 1 : 0) + 1 + bgEvents.length
-    const bgDetails = bgShown.filter(j => j.kind === 'needs-you' && j.detail !== '' && j !== bgOpen).length
+    const bgOpenRows = bgOpen === undefined ? 0 : (bgOpen.intent !== '' ? 2 : 0) + (bgOpen.detail !== '' && bgOpen.kind !== 'needs-you' ? 1 : 0)
+    const bgDetails = bgShown.filter(j => j.kind === 'needs-you' && j.detail !== '').length
     const bgRows = jobs.length === 0 ? 0 : 2 + 1 + bgShown.length + bgDetails + bgOpenRows + (bgMore > 0 ? 1 : 0)
     const needsYou = jobs.some(j => j.kind === 'needs-you')
     // One line under a row: a faint rail, then the text.
@@ -1700,10 +1666,10 @@ export const register: Register = (on, options) => {
                 <Box flexShrink={0}>
                   <Text color={mk.color}>{` ${shorten(bgWord(j), 12)}`}</Text>
                 </Box>
-                {j.kind === 'stalled' ? (
+                {j.kind !== 'done' ? (
                   <Box flexShrink={0}>
-                    <Button key={`bg-resume-${j.id}`} plain onPress={() => resumeRow($, j.id)}>
-                      <Text color={C.amber}>{' ↻ relancer'}</Text>
+                    <Button key={`bg-pick-${j.id}`} plain onPress={() => pickRow($, j.name)}>
+                      <Text color={C.main}>{' ↗ afficher'}</Text>
                     </Button>
                   </Box>
                 ) : null}
@@ -1711,20 +1677,17 @@ export const register: Register = (on, options) => {
                   <Text color={C.faint}>{` ${j.updatedAt > 0 ? fmtDuration(now - j.updatedAt) : '—'}`}</Text>
                 </Box>
               </Box>
+              {j.kind === 'needs-you' && j.detail !== '' ? bgLine(j.detail, C.dim) : null}
               {isOpen ? (
                 <Box flexDirection="column">
                   {j.intent !== '' ? bgLine(shorten(j.intent, 200), C.text, 'wrap') : null}
-                  {bgOpenDetail !== '' ? bgLine(bgOpenDetail, C.main) : null}
-                  {bgLine(`${j.tokens !== null ? `${kTokens(j.tokens)} tok · ` : ''}${j.id}`, C.dim)}
-                  {bgEvents.map(ev => bgLine(`${fmtClock(ev.at).slice(0, 5)} ${ev.detail}`, C.faint))}
+                  {j.detail !== '' && j.kind !== 'needs-you' ? bgLine(j.detail, C.main) : null}
                 </Box>
-              ) : j.kind === 'needs-you' && j.detail !== '' ? (
-                bgLine(j.detail, C.dim)
               ) : null}
             </Box>
           )
         })}
-        {bgMore > 0 ? <Text color={C.faint} wrap="truncate">{`+${bgMore} more · claude agents`}</Text> : null}
+        {bgMore > 0 ? <Text color={C.faint} wrap="truncate">{`+${bgMore} more`}</Text> : null}
       </Box>
     )
 

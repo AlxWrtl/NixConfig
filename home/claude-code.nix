@@ -91,6 +91,7 @@ let
     hookCorrectionGrant
     hookResearchModel
     hookLoneExcludedBash
+    hookWorktreeInUse
     hookSandboxEscapeEvidence
     hookReactDocsGate
     hookNullResultGate
@@ -283,6 +284,10 @@ let
     };
     "${claudeDir}/hooks/lone-excluded-bash.js" = {
       text = hookLoneExcludedBash;
+      executable = true;
+    };
+    "${claudeDir}/hooks/worktree-in-use.js" = {
+      text = hookWorktreeInUse;
       executable = true;
     };
     "${claudeDir}/hooks/sandbox-escape-evidence.js" = {

@@ -628,15 +628,15 @@ process.stdin.on("end", () => {
     const APEX = "\"name\":\"Skill\",\"input\":{\"skill\":\"apex\"";
     const lines = fs.readFileSync(t, "utf8").split("\n");
 
-    // Walk backwards: whichever comes first decides. An APEX call before
-    // any user turn means APEX ran for THIS task -> pass. A user turn
-    // first means this is a new request with no APEX yet -> deny.
-    let ranForThisTask = false;
-    for (let i = lines.length - 1; i >= 0; i--) {
+    // Walk backwards from line `from`: whichever comes first decides. An
+    // APEX call before any user turn means APEX ran for THIS task -> pass.
+    // A user turn first means this is a new request with no APEX yet -> deny.
+    const openAt = from => {
+    for (let i = from; i >= 0; i--) {
       const line = lines[i];
       if (!line) continue;
 
-      if (line.indexOf(APEX) !== -1) { ranForThisTask = true; break; }
+      if (line.indexOf(APEX) !== -1) return true;
 
       // Cheap reject before the JSON.parse cost.
       if (line.indexOf("\"type\":\"user\"") === -1) continue;
@@ -666,9 +666,68 @@ process.stdin.on("end", () => {
         : (Array.isArray(c) ? c.filter(b => b && b.type === "text").map(b => b.text || "").join("") : "");
       if (/^\s*<(bash-(input|stdout|stderr)|task-notification|command-name|local-command-)/.test(text)) continue;
 
-      break; // a real user turn, reached before any APEX call
+      return false; // a real user turn, reached before any APEX call
     }
-    if (ranForThisTask) process.exit(0);
+    return false;
+    };
+    if (openAt(lines.length - 1)) process.exit(0);
+
+    // A subagent's tool calls carry agent_id and the PARENT's transcript, so
+    // a user turn typed after the spawn would deny a subagent the coordinator
+    // launched under APEX. Its gate is ALSO the parent's gate at its last
+    // instruction: the spawn (the assistant line holding the Agent tool_use
+    // its meta file names), or a later SendMessage to it, which can relay a
+    // new request. A SendMessage to a name that is not another known
+    // subagent may be this one: no anchor. Anything unresolvable (bad id, no
+    // meta, no such line: a nested spawn lives in another subagent's file)
+    // leaves the whole-transcript verdict above, a deny.
+    const aid = data.agent_id;
+    if (typeof aid === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(aid)) {
+      try {
+        const dir = path.join(path.dirname(t), path.basename(t, ".jsonl"), "subagents");
+        // Opened once, non-blocking: a FIFO named like a meta file must not
+        // hang the hook, which fails open when the host kills it.
+        const fd = fs.openSync(path.join(dir, "agent-" + aid + ".meta.json"), fs.constants.O_NONBLOCK | fs.constants.O_RDONLY);
+        let raw;
+        try {
+          const st = fs.fstatSync(fd);
+          if (!st.isFile() || st.size > 65536) throw new Error("not a meta file");
+          const buf = Buffer.alloc(st.size);
+          raw = buf.toString("utf8", 0, fs.readSync(fd, buf, 0, st.size, 0));
+        } finally { fs.closeSync(fd); }
+        const meta = JSON.parse(raw);
+        const id = meta && meta.toolUseId;
+        let end = -1;
+        if (typeof id === "string" && /^toolu_[A-Za-z0-9_-]{1,128}$/.test(id)) {
+          // The bare id is only a cheap filter: JSON.parse decides, so the
+          // line's spacing does not matter.
+          for (let i = 0; i < lines.length; i++) {
+            if (lines[i].indexOf(id) === -1) continue;
+            let m;
+            try { m = JSON.parse(lines[i]); } catch { continue; }
+            const c = m && m.type === "assistant" && m.message && m.message.content;
+            if (Array.isArray(c) && c.some(b => b && b.type === "tool_use" && b.id === id)) { end = i; break; }
+          }
+        }
+        for (let i = end + 1; i < lines.length && end !== -1; i++) {
+          if (lines[i].indexOf("SendMessage") === -1) continue;
+          let m;
+          try { m = JSON.parse(lines[i]); } catch { continue; }
+          const sc = (m && m.type === "assistant" && m.message) ? m.message.content : null;
+          if (!Array.isArray(sc)) continue;
+          for (const b of sc) {
+            if (!b || b.type !== "tool_use" || b.name !== "SendMessage") continue;
+            const to = b.input && b.input.to;
+            if (to === aid) end = i;
+            else if (typeof to !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(to)
+              || !fs.existsSync(path.join(dir, "agent-" + to + ".meta.json"))) { end = -1; break; }
+          }
+        }
+        if (end !== -1 && openAt(end)) process.exit(0);
+      } catch (e) {
+        // No meta, not a file, not JSON: no anchor, the deny stands.
+      }
+    }
 
     // The message says "can write", not "writes". WRITES matches SHAPES —
     // a redirect, an in-place edit, a heredoc, cp/mv/tee — because a hook

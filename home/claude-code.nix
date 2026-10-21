@@ -84,6 +84,7 @@ let
     hookStopFailure
     hookCircuitBreaker
     hookCircuitBreakerReset
+    hookApexPrRecord
     hookQualityGate
     hookGovernanceAudit
     hookCorrectionBudget
@@ -254,6 +255,10 @@ let
     };
     "${claudeDir}/hooks/circuit-breaker-reset.js" = {
       text = hookCircuitBreakerReset;
+      executable = true;
+    };
+    "${claudeDir}/hooks/apex-pr-record.js" = {
+      text = hookApexPrRecord;
       executable = true;
     };
     "${claudeDir}/hooks/quality-gate.js" = {

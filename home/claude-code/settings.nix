@@ -916,6 +916,20 @@ in
           ];
         }
         {
+          # Après un `gh pr merge` qui a fusionné : écrit pr.md dans le run
+          # APEX de la branche (le board le passe en Terminé). Synchrone :
+          # pr.md est sur disque avant le tour suivant. Timeout au-dessus des
+          # 2 + 2 + 10 s internes (lecture, git, gh).
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/apex-pr-record.js";
+              timeout = 15;
+            }
+          ];
+        }
+        {
           hooks = [
             {
               type = "command";

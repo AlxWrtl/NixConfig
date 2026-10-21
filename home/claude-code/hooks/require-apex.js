@@ -653,6 +653,13 @@ process.stdin.on("end", () => {
       // Replayed over 4 real transcripts: 161/161 historical edits denied.
       if (msg.isMeta === true) continue;
 
+      // The compaction summary, written as a user line with its own flag
+      // and no isMeta: /compact, or the window running out mid-task, is not
+      // a new request. The walk goes on above it, where the lines from
+      // before the compaction still decide; in a file that starts at the
+      // compaction, nothing does: the walk reaches the top and denies.
+      if (msg.isCompactSummary === true) continue;
+
       const c = msg.message && msg.message.content;
 
       // Tool results are recorded as user messages. They are not turns.

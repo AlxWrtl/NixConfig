@@ -153,6 +153,13 @@
 #   m85 any truthy isCompactSummary skips the line (`"true"`, `1`).
 #   m86 the summary line opens the gate instead of being skipped.
 #   m87 the summary recognised by its text, not by its flag.
+#   m88 a queued human prompt no longer counts as a turn.
+#   m89 humanTurn alone (no human origin) no longer counts.
+#   m90 the older shape (origin.kind human, no humanTurn) no longer counts.
+#   m91 an attachment.isMeta queued line counts as a human turn.
+#   m92 any truthy humanTurn counts (`"true"`).
+#   m93 a top-level isMeta queued line counts as a human turn.
+#   m94 a human-flagged queued line counts whatever its commandMode.
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
@@ -167,7 +174,7 @@
 #
 # usage: require-apex-probe.sh [hook.js]
 #        require-apex-probe.sh --mutants
-#        require-apex-probe.sh --mutant m1..m87
+#        require-apex-probe.sh --mutant m1..m94
 
 set -euo pipefail
 
@@ -181,7 +188,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94"
 
 MODE="run"
 ONE_MUTANT=""
@@ -406,6 +413,13 @@ M84_EXPECT="compact-summary-after-apex"
 M85_EXPECT="compact-flag-number compact-flag-string"
 M86_EXPECT="compact-summary-after-user-turn compact-summary-at-file-top"
 M87_EXPECT="compact-flag-number compact-flag-string compact-text-without-flag"
+M88_EXPECT="queued-human-after-apex queued-human-old-shape queued-humanturn-only"
+M89_EXPECT="queued-humanturn-only"
+M90_EXPECT="queued-human-old-shape"
+M91_EXPECT="queued-meta-human"
+M92_EXPECT="queued-humanturn-string"
+M93_EXPECT="queued-meta-top"
+M94_EXPECT="queued-human-flag-notification-mode"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -536,6 +550,13 @@ build_mutant() { # build_mutant <mN> <destination>
     m85) from='if (msg.isCompactSummary === true) continue;' to='if (msg.isCompactSummary) continue;' ;;
     m86) from='if (msg.isCompactSummary === true) continue;' to='if (msg.isCompactSummary === true) return true;' ;;
     m87) from='if (msg.isCompactSummary === true) continue;' to='if (/^This session is being continued/.test(String(msg.message && msg.message.content))) continue;' ;;
+    m88) from='if (line.indexOf("\"queued_command\"") !== -1) {' to='if (false) {' ;;
+    m89) from='a.humanTurn === true || ' to='' ;;
+    m90) from=' || (a.origin && a.origin.kind === "human")' to='' ;;
+    m91) from=' && a.isMeta !== true' to='' ;;
+    m92) from='a.humanTurn === true' to='a.humanTurn' ;;
+    m93) from=' && q.isMeta !== true ' to=' ' ;;
+    m94) from=' && a.commandMode === "prompt"' to='' ;;
   esac
   if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
@@ -719,6 +740,44 @@ T_CMP_NUM="$WORK/transcript-compact-number.jsonl"
 # A file that STARTS at the compaction: nothing above the summary, deny.
 T_CMP_TOP="$WORK/transcript-compact-top.jsonl"
 compact_line true > "$T_CMP_TOP"
+
+# Queued-prompt fixtures. A prompt typed while the model works is recorded as
+# a `type:"attachment"` line of attachment.type queued_command, never as a
+# `type:"user"` line: it is a real user turn when humanTurn is boolean true or
+# origin.kind is "human" (older shape), and the line is not isMeta. Task
+# notifications and subagent hand-backs share the attachment type: not a turn.
+Q_HUMAN='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","humanTurn":true,"origin":{"kind":"human"},"prompt":"Il faut bien penser au desktop","timestamp":"2026-10-21T10:00:00.000Z"}}'
+Q_HUMAN_OLD='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"human"},"prompt":"Il faut bien penser au desktop","timestamp":"2026-10-21T10:00:00.000Z"}}'
+Q_TASK='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"task-notification","origin":{"kind":"task-notification"},"prompt":"<task-notification>\n<task-id>x</task-id>\n</task-notification>"}}'
+Q_PEER='{"type":"attachment","isMeta":true,"attachment":{"type":"queued_command","commandMode":"prompt","origin":{"kind":"peer","from":"a1"},"isMeta":true,"prompt":"<agent-message from=\"a1\">done</agent-message>"}}'
+Q_STR='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","humanTurn":"true","prompt":"Il faut bien penser au desktop"}}'
+T_Q_HUMAN="$WORK/transcript-queued-human.jsonl"
+T_Q_OLD="$WORK/transcript-queued-old.jsonl"
+T_Q_TASK="$WORK/transcript-queued-task.jsonl"
+T_Q_PEER="$WORK/transcript-queued-peer.jsonl"
+T_Q_STR="$WORK/transcript-queued-string.jsonl"
+T_Q_FIRST="$WORK/transcript-queued-first.jsonl"
+{ cat "$T_APEX"; printf '%s\n' "$Q_HUMAN"; } > "$T_Q_HUMAN"
+{ cat "$T_APEX"; printf '%s\n' "$Q_HUMAN_OLD"; } > "$T_Q_OLD"
+{ cat "$T_APEX"; printf '%s\n' "$Q_TASK"; } > "$T_Q_TASK"
+{ cat "$T_APEX"; printf '%s\n' "$Q_PEER"; } > "$T_Q_PEER"
+{ cat "$T_APEX"; printf '%s\n' "$Q_STR"; } > "$T_Q_STR"
+# humanTurn alone, no origin: still human. isMeta on a human-looking line: harness text, skipped.
+Q_TURN_ONLY='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","humanTurn":true,"prompt":"p"}}'
+Q_META='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","humanTurn":true,"origin":{"kind":"human"},"isMeta":true,"prompt":"p"}}'
+# isMeta on top (no real line has it there) and a human-flagged notification: both stay out.
+Q_META_TOP='{"type":"attachment","isMeta":true,"attachment":{"type":"queued_command","commandMode":"prompt","humanTurn":true,"origin":{"kind":"human"},"prompt":"p"}}'
+Q_NOTIF_HUMAN='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"task-notification","humanTurn":true,"origin":{"kind":"human"},"prompt":"<task-notification>x</task-notification>"}}'
+T_Q_META_TOP="$WORK/transcript-queued-meta-top.jsonl"
+T_Q_NOTIF_HUMAN="$WORK/transcript-queued-notif-human.jsonl"
+{ cat "$T_APEX"; printf '%s\n' "$Q_META_TOP"; } > "$T_Q_META_TOP"
+{ cat "$T_APEX"; printf '%s\n' "$Q_NOTIF_HUMAN"; } > "$T_Q_NOTIF_HUMAN"
+T_Q_TURN_ONLY="$WORK/transcript-queued-turn-only.jsonl"
+T_Q_META="$WORK/transcript-queued-meta.jsonl"
+{ cat "$T_APEX"; printf '%s\n' "$Q_TURN_ONLY"; } > "$T_Q_TURN_ONLY"
+{ cat "$T_APEX"; printf '%s\n' "$Q_META"; } > "$T_Q_META"
+# The queued prompt came first, then APEX answered it -> pass.
+{ cat "$T_APEX"; printf '%s\n' "$Q_HUMAN"; tail -n 1 "$T_APEX"; } > "$T_Q_FIRST"
 
 # Subagent fixtures. A hook fired inside a subagent carries `agent_id`, while
 # `transcript_path` is the PARENT's: a user turn typed after the spawn must not
@@ -1111,6 +1170,17 @@ check compact-text-without-flag deny "$REPO" "$T_CMP_TEXT" 'echo x > src/a.ts'
 check compact-flag-string deny "$REPO" "$T_CMP_STR" 'echo x > src/a.ts'
 check compact-flag-number deny "$REPO" "$T_CMP_NUM" 'echo x > src/a.ts'
 check compact-summary-at-file-top deny "$REPO" "$T_CMP_TOP" 'echo x > src/a.ts'
+# --- queued prompt: a human prompt typed mid-turn is a user turn ------------
+check queued-human-after-apex deny "$REPO" "$T_Q_HUMAN" 'echo x > src/a.ts'
+check queued-human-old-shape deny "$REPO" "$T_Q_OLD" 'echo x > src/a.ts'
+check queued-task-notification pass "$REPO" "$T_Q_TASK" 'echo x > src/a.ts'
+check queued-peer-handback pass "$REPO" "$T_Q_PEER" 'echo x > src/a.ts'
+check queued-humanturn-string pass "$REPO" "$T_Q_STR" 'echo x > src/a.ts'
+check queued-human-then-apex pass "$REPO" "$T_Q_FIRST" 'echo x > src/a.ts'
+check queued-humanturn-only deny "$REPO" "$T_Q_TURN_ONLY" 'echo x > src/a.ts'
+check queued-meta-human pass "$REPO" "$T_Q_META" 'echo x > src/a.ts'
+check queued-meta-top pass "$REPO" "$T_Q_META_TOP" 'echo x > src/a.ts'
+check queued-human-flag-notification-mode pass "$REPO" "$T_Q_NOTIF_HUMAN" 'echo x > src/a.ts'
 # --- codex exec: denied unless an explicit, unwidened `-s read-only` --------
 check codex-exec-default deny "$REPO" "$T_NOAPEX" 'codex exec "fix it"'
 check codex-e-alias deny "$REPO" "$T_NOAPEX" 'codex e -m m "x"'

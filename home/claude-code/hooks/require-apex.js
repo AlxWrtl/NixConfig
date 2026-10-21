@@ -638,6 +638,19 @@ process.stdin.on("end", () => {
 
       if (line.indexOf(APEX) !== -1) return true;
 
+      // A prompt typed while the model works is often recorded only as an
+      // attachment, never as a user line: a queued_command marked human
+      // (humanTurn, or origin.kind on the older shape). Task notifications
+      // and subagent hand-backs share the attachment type and stay out.
+      if (line.indexOf("\"queued_command\"") !== -1) {
+        let q;
+        try { q = JSON.parse(line); } catch { q = null; }
+        // isMeta sits on the attachment in the real lines, never on top.
+        const a = q && q.type === "attachment" && q.isMeta !== true ? q.attachment : null;
+        if (a && a.type === "queued_command" && a.isMeta !== true && a.commandMode === "prompt"
+          && (a.humanTurn === true || (a.origin && a.origin.kind === "human"))) return false;
+      }
+
       // Cheap reject before the JSON.parse cost.
       if (line.indexOf("\"type\":\"user\"") === -1) continue;
 

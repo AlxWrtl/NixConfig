@@ -5,8 +5,9 @@
 // daemon off, so ~/.claude/jobs is no longer written; this file replaces it.
 //
 // Acts only inside an abduco session: abduco puts ABDUCO_SESSION=<name> in the
-// session's environment and hooks inherit it. Any other session, or a name
-// outside claude-dispatch's rule, is a no-op.
+// session's environment and hooks inherit it. Any other session, a name
+// outside claude-dispatch's rule, or a headless session started inside the
+// agent (CLAUDE_CODE_SESSION_ATTENDED=0) is a no-op.
 //
 // Writes ~/.claude/session-state/<name>.json (dir 0700, file 0600) through a
 // temp file in the same dir and a rename, so a reader never sees half a file:
@@ -90,6 +91,14 @@ function readPrevious(file) {
 function main(input) {
   const name = String(process.env.ABDUCO_SESSION || "");
   if (!NAME_RE.test(name)) return;
+  // A headless `claude -p` started from inside the agent (graphify-reindex's
+  // extraction, a script) inherits ABDUCO_SESSION too, and its other session
+  // id would replace the agent's file (seen 2026-10-21: graphify's prompt as
+  // the agent's intent). Claude gives every hook CLAUDE_CODE_SESSION_ATTENDED,
+  // "1" in an interactive session, "0" in a headless one (probed, claude
+  // 2.1.306). The agent is the interactive one; absent (an older claude):
+  // written as before.
+  if (process.env.CLAUDE_CODE_SESSION_ATTENDED === "0") return;
 
   let data;
   try { data = JSON.parse(input); } catch { return; }

@@ -264,16 +264,18 @@ func readRun(base, runsDir, id string, files []string) (*RunInput, error) {
 
 // Reader is readRuns made incremental: a run whose listing and read files (00-context.md,
 // verdict) did not change keeps its parsed input. Used from one goroutine at a time (the poll).
+// Agents adds the agents' run dirs (agentSources); readRuns never sets it, so --derive-json
+// reads RunsDir alone.
 type Reader struct {
 	RunsDir, BudgetDir string
+	Agents             bool
 
-	base  string
 	cache map[string]cachedRun
 }
 
 type cachedRun struct {
-	sig   string
-	input RunInput
+	sig, base string
+	input     RunInput
 }
 
 // signature: the run's top-level names and the identity of the files readRun reads (stat
@@ -319,46 +321,179 @@ func (r *Reader) read(incremental bool) ([]*RunInput, []string, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	if base != r.base {
-		r.base, r.cache = base, nil
-	}
 	next := map[string]cachedRun{}
 	runs := []*RunInput{}
-	for _, id := range ids {
-		dir := filepath.Join(r.RunsDir, id)
-		files, err := runFiles(dir)
-		var in *RunInput
-		if err == nil {
-			sig := ""
-			if incremental {
-				sig = signature(dir, files)
-				if c, ok := r.cache[id]; ok && c.sig == sig {
-					cp := c.input
-					in = &cp
+	runs, problems = r.readSource(nil, r.RunsDir, base, ids, budget, incremental, next, runs, problems)
+	if r.Agents {
+		srcs, probs := agentSources(r.RunsDir)
+		problems = append(problems, probs...)
+		for _, src := range srcs {
+			// The source's realpath, checked under its parent: the base of every read in it.
+			real, ok, err := src.check()
+			if err == nil && ok {
+				ids, err = runIDs(src.Dir)
+			}
+			if err != nil {
+				if !isGone(err) {
+					problems = append(problems, src.label()+" : "+err.Error())
 				}
+				continue
 			}
-			if in == nil {
-				in, err = readRun(base, r.RunsDir, id, files)
+			// The board's own runs dir (a board opened in a worktree) is read once, as its own.
+			if !ok || real == base {
+				continue
 			}
-			if err == nil && incremental {
-				in.context() // parsed here, off the UI goroutine
-				next[id] = cachedRun{sig: sig, input: *in}
-			}
+			runs, problems = r.readSource(src, src.Dir, real, ids, budget, incremental, next, runs, problems)
 		}
-		if err != nil {
-			// A run removed between the listing and its read is simply gone; anything else is shown.
-			if !isGone(err) {
-				problems = append(problems, id+" : "+err.Error())
-			}
-			continue
-		}
-		in.Budget = budget[id]
-		runs = append(runs, in)
 	}
 	if incremental {
 		r.cache = next
 	}
 	return runs, problems, nil
+}
+
+// readSource: the runs `ids` of one runs dir, every file read kept under base (realInside).
+func (r *Reader) readSource(src *runSource, dir, base string, ids []string, budget map[string]*Budget, incremental bool, next map[string]cachedRun, runs []*RunInput, problems []string) ([]*RunInput, []string) {
+	for _, id := range ids {
+		key := src.key(id)
+		runDir := filepath.Join(dir, id)
+		files, err := runFiles(runDir)
+		var in *RunInput
+		if err == nil {
+			sig := ""
+			if incremental {
+				sig = signature(runDir, files)
+				if c, ok := r.cache[key]; ok && c.sig == sig && c.base == base {
+					cp := c.input
+					in = &cp
+				}
+			}
+			if in == nil {
+				in, err = readRun(base, dir, id, files)
+			}
+			if err == nil && incremental {
+				in.context() // parsed here, off the UI goroutine
+				next[key] = cachedRun{sig: sig, base: base, input: *in}
+			}
+		}
+		if err != nil {
+			// A run removed between the listing and its read is simply gone; anything else is shown.
+			if !isGone(err) {
+				problems = append(problems, key+" : "+err.Error())
+			}
+			continue
+		}
+		in.Budget, in.source = budget[id], src
+		runs = append(runs, in)
+	}
+	return runs, problems
+}
+
+// ---- agents' runs ----------------------------------------------------------------
+
+// runSource: the runs dir of an agent, `<tabRepo>/.claude/worktrees/<name>/.claude/output/apex`
+// or `<genericRoot>/<name>/.claude/output/apex` (Generic). nil is the board's own runs dir.
+type runSource struct {
+	Dir, Agent string
+	Generic    bool
+
+	parent string   // realpath of the dir that holds the agents' dirs, taken at discovery
+	chain  []string // every dir from the first under the repo / genericRoot down to Dir
+}
+
+// key: a card's identity, the run id for the board's own runs, `<agent>/<id>` for an agent's
+// (`~<agent>/<id>` for a generic: `~` is no session name, so a worktree and a generic of one
+// name stay two cards).
+func (s *runSource) key(id string) string {
+	switch {
+	case s == nil:
+		return id
+	case s.Generic:
+		return "~" + s.Agent + "/" + id
+	}
+	return s.Agent + "/" + id
+}
+
+// label: what the card shows of its source; "" for the board's own runs.
+func (s *runSource) label() string {
+	switch {
+	case s == nil:
+		return ""
+	case s.Generic:
+		return "générique " + s.Agent
+	}
+	return "agent " + s.Agent
+}
+
+// check: Dir's realpath when every link of the chain is a real dir by Lstat (a symlink, even
+// to a dir, or a file: refused) and that realpath stays under parent; ok false = not read.
+// Called at each poll and again before a drawer read (a dir swapped since is refused).
+func (s *runSource) check() (string, bool, error) {
+	if ok, err := realDirs(s.chain...); err != nil || !ok {
+		return "", false, err
+	}
+	real, where, err := realInside(s.parent, s.Dir)
+	if err != nil || where <= 0 {
+		return "", false, err
+	}
+	return real, true, nil
+}
+
+// realDirs: every path a real dir by Lstat; false (no error) when one is gone, a link or a file.
+func realDirs(paths ...string) (bool, error) {
+	for _, p := range paths {
+		fi, err := os.Lstat(p)
+		if err != nil {
+			if isGone(err) {
+				return false, nil
+			}
+			return false, err
+		}
+		if !fi.IsDir() {
+			return false, nil
+		}
+	}
+	return true, nil
+}
+
+// agentSources: the run dirs of runsDir's project's worktree agents, then of the generic
+// agents, by name; only a validName dir is one. An unreadable dir is a problem, a missing one
+// nothing.
+func agentSources(runsDir string) ([]*runSource, []string) {
+	var out []*runSource
+	var problems []string
+	scan := func(root string, generic bool, above []string) {
+		ok, err := realDirs(append(above, root)...)
+		if err == nil && ok {
+			var parent string
+			if parent, err = realRoot(root); err == nil {
+				var entries []fs.DirEntry
+				if entries, err = sortedEntries(root); err == nil {
+					for _, e := range entries {
+						// DirEntry types come from the listing, not followed: a linked <name> is no dir.
+						if !e.IsDir() || !validName(e.Name()) {
+							continue
+						}
+						home := filepath.Join(root, e.Name())
+						dir := filepath.Join(home, ".claude", "output", "apex")
+						chain := append(slices.Clone(above), root, home, filepath.Join(home, ".claude"), filepath.Join(home, ".claude", "output"), dir)
+						out = append(out, &runSource{Dir: dir, Agent: e.Name(), Generic: generic, parent: parent, chain: chain})
+					}
+				}
+			}
+		}
+		if err != nil && !isGone(err) {
+			problems = append(problems, root+" : "+err.Error())
+		}
+	}
+	if repo := tabRepo(runsDir); repo != "" {
+		claude := filepath.Join(repo, ".claude")
+		scan(filepath.Join(claude, "worktrees"), false, []string{claude})
+	}
+	if g := genericRoot(); g != "" && filepath.IsAbs(g) && filepath.Clean(g) == g {
+		scan(g, true, nil)
+	}
+	return out, problems
 }
 
 // DrawerData is loadDrawer's read of the open run: files, verdict dots, the shown file.
@@ -401,6 +536,40 @@ func loadDrawer(runsDir, id, want string) DrawerData {
 		d.Doc = loadDoc(runsDir, id, p)
 	}
 	return d
+}
+
+// sourceDir: where a drawer reads: runsDir for the board's own runs, else the agent source's
+// realpath, checked again (a source swapped for a link since the poll is not read).
+func sourceDir(runsDir string, src *runSource) (string, *FileRead) {
+	if src == nil {
+		return runsDir, nil
+	}
+	real, ok, err := src.check()
+	switch {
+	case err != nil:
+		return "", &FileRead{Kind: "error", Text: err.Error()}
+	case !ok:
+		return "", &FileRead{Kind: "outside", Text: outsideText}
+	}
+	return real, nil
+}
+
+// loadDrawerFrom: loadDrawer in the card's source.
+func loadDrawerFrom(runsDir string, src *runSource, id, want string) DrawerData {
+	dir, bad := sourceDir(runsDir, src)
+	if bad != nil {
+		return DrawerData{Files: []string{}, Tones: map[string]string{}, Doc: *bad, ListErr: true}
+	}
+	return loadDrawer(dir, id, want)
+}
+
+// loadDocFrom: loadDoc in the card's source.
+func loadDocFrom(runsDir string, src *runSource, id, p string) FileRead {
+	dir, bad := sourceDir(runsDir, src)
+	if bad != nil {
+		return *bad
+	}
+	return loadDoc(dir, id, p)
 }
 
 // loadDoc: one file for the doc pane; an unreadable one shows its reason.

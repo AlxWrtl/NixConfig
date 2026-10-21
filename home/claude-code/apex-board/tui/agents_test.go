@@ -42,17 +42,44 @@ func listing(t testing.TB) []byte {
 }
 
 // stubPick records each runPick argv; agentPaneBin is a fake store path for the test's length.
+// A pane runs (runAlive true) and opening one fails the test: stubPane changes both.
 func stubPick(t testing.TB, err error) *[][]string {
 	t.Helper()
 	var calls [][]string
-	prevRun, prevBin := runPick, agentPaneBin
+	prevRun, prevBin, prevAlive, prevOpen := runPick, agentPaneBin, runAlive, runOpenPane
 	runPick = func(argv []string) error {
 		calls = append(calls, slices.Clone(argv))
 		return err
 	}
+	runAlive = func([]string) (bool, error) { return true, nil }
+	runOpenPane = func(argv []string) error {
+		t.Errorf("a pane opened while one runs: %q", argv)
+		return nil
+	}
 	agentPaneBin = "/nix/store/x-agent-pane/bin/agent-pane"
-	t.Cleanup(func() { runPick, agentPaneBin = prevRun, prevBin })
+	t.Cleanup(func() { runPick, agentPaneBin, runAlive, runOpenPane = prevRun, prevBin, prevAlive, prevOpen })
 	return &calls
+}
+
+// paneCalls: what stubPane recorded, runAlive's argv and runOpenPane's.
+type paneCalls struct{ alive, open [][]string }
+
+// stubPane: runAlive answers alive (or aliveErr), runOpenPane openErr; both record their argv.
+// After stubPick, which it overrides.
+func stubPane(t testing.TB, alive bool, aliveErr, openErr error) *paneCalls {
+	t.Helper()
+	var c paneCalls
+	prevAlive, prevOpen := runAlive, runOpenPane
+	runAlive = func(argv []string) (bool, error) {
+		c.alive = append(c.alive, slices.Clone(argv))
+		return alive, aliveErr
+	}
+	runOpenPane = func(argv []string) error {
+		c.open = append(c.open, slices.Clone(argv))
+		return openErr
+	}
+	t.Cleanup(func() { runAlive, runOpenPane = prevAlive, prevOpen })
+	return &c
 }
 
 type sessionsFixture struct{ dir, outside string }
@@ -474,6 +501,37 @@ func TestPick(t *testing.T) {
 	}
 	if len(*calls) != 0 {
 		t.Fatalf("runPick called: %q", *calls)
+	}
+}
+
+// Enter with no pane running: after the pick, [agentPaneBin, alive] then one osascript split; a
+// failed split only says so; a refused pick asks nothing.
+func TestPickOpensPane(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	picks := stubPick(t, nil)
+	pc := stubPane(t, false, nil, nil)
+	send(m, send(m, key(tea.KeyEnter))())
+	if len(*picks) != 1 || len(pc.alive) != 1 || !slices.Equal(pc.alive[0], []string{agentPaneBin, "alive"}) {
+		t.Fatalf("picks %q alive %q", *picks, pc.alive)
+	}
+	if len(pc.open) != 1 || !slices.Equal(pc.open[0], openPaneArgv(agentPaneBin)) || m.ag.note != "affichée en haut : ask-needs" {
+		t.Fatalf("open %q note %q", pc.open, m.ag.note)
+	}
+	pc.open = nil
+	runOpenPane = func(argv []string) error {
+		pc.open = append(pc.open, argv)
+		return errors.New("Ghostty got an error: Can’t get front window. (-1728)")
+	}
+	send(m, send(m, key(tea.KeyEnter))())
+	if len(pc.open) != 1 || m.ag.note != "affichée en haut : ask-needs · pane : osascript : Ghostty got an error: Can’t get front window. (-1728) — lance agent-pane à la main" {
+		t.Fatalf("open error: open %d note %q", len(pc.open), m.ag.note)
+	}
+	pc.alive, pc.open = nil, nil
+	runPick = func([]string) error { return errors.New("cannot write target") }
+	send(m, send(m, key(tea.KeyEnter))())
+	if len(pc.alive) != 0 || len(pc.open) != 0 || m.ag.note != "agent-pane pick ask-needs : cannot write target" {
+		t.Fatalf("refused pick: alive %q open %q note %q", pc.alive, pc.open, m.ag.note)
 	}
 }
 

@@ -16,7 +16,12 @@
 #     substring of a listed name is no session: exit 1, nothing killed), a bad
 #     name or a wrong arity exits 2, an unlisted name exits 1;
 #   - abduco is only ever called as `abduco` (list) or `abduco -a <name>`;
-#     stop calls only the list.
+#     stop calls only the list;
+#   - the pane holds an flock on pane.lock for its life, and its client
+#     never inherits it; `alive` exits 0 only while another process holds
+#     that lock (1 for no file, a free lock, a lock that cannot be opened),
+#     prints nothing, and exits 2 on an argument. The board opens a pane on
+#     exit 1.
 #
 # Runtime suite: the BUILT script against a stub abduco that lists a fixed
 # set of sessions (`*`, ` `, `+` rows) and, on `-a <name>`, logs the call and
@@ -24,8 +29,10 @@
 # once). The pane runs headless (stdin /dev/null, no tty: `stty` fails
 # silently, width falls back to 80; the stub needs no tty) and is driven
 # through pick, then stopped with SIGTERM: exit 143, the client detached,
-# the terminal-restore sequence last on stdout. The pick and usage cases
-# (p01-p13) also run against the real package (pick never calls abduco).
+# the terminal-restore sequence last on stdout. The pick, usage and alive
+# cases (p01-p13, l01-l06) also run against the real package (neither calls
+# abduco; l03, a held lock, proves flock is on its PATH). w01-w03 check the
+# pane's lock around the pane cases (w03: a SIGKILLed pane, its client alive).
 # s01-s05 (stop) run against the stub, whose t1 and t2 rows then carry the
 # pids of two sleeps the suite starts (orphaned, so a killed one is reaped
 # and `kill -0` sees it gone).
@@ -34,7 +41,9 @@
 # Canaries: C1 drops pick's name check (p03 `../x` red), C2 drops the
 # SIGTERM to the old client on a change (a05 red: no `TERM t1`), C3 drops the
 # row restore after the attach (j01 red: no `rows 40`), C4 turns stop's exact
-# match into a substring one (s05 red: `t` kills t1). A canary
+# match into a substring one (s05 red: `t` kills t1), C5 drops alive's
+# conflict check (l02 red: a free lock counts as a pane), C6 lets the client
+# inherit the lock fd (w03 red: the orphaned client keeps it). A canary
 # that survives, or dies at another case, fails the check. Anchors and
 # `@abduco@` must occur exactly once in the script, and the name rule must
 # be claude-dispatch's: an eval-time throw otherwise.
@@ -82,6 +91,10 @@ let
   c4Text =
     mutate "C4" "    if [[ $sname == \"$1\" ]]; then\n"
       "    if [[ $sname == *\"$1\"* ]]; then\n";
+  c5Text = mutate "C5" "  [ \"$rc\" -eq 75 ] || exit 1\n" "  [ \"$rc\" -ge 0 ] || exit 1\n";
+  c6Text =
+    mutate "C6" "  \"$abduco_bin\" -a \"$1\" <&0 9>&- &\n"
+      "  \"$abduco_bin\" -a \"$1\" <&0 &\n";
 
   # Jiggle variant: every `stty ` call goes to a stub that answers `size` with
   # `40 100` and logs `rows <n>` into the abduco log, so the order against
@@ -135,6 +148,8 @@ let
   c1 = withStub c1Text;
   c2 = withStub c2Text;
   c4 = withStub c4Text;
+  c5 = withStub c5Text;
+  c6 = withStub c6Text;
   jiggle = withStub jText;
   c3 = withStub c3Text;
 
@@ -218,6 +233,42 @@ let
     echo "PASS $case"
     reject p13 --bogus
     [ ! -s "$work/out" ] || fail "unknown argument printed on stdout"
+
+    # ---- alive: 0 only while another process holds the flock on pane.lock,
+    # else 1, nothing printed. The holder is a sleep that keeps fd 9 (exec),
+    # so killing it frees the lock; it says `ready` once it holds it.
+    lf="$XDG_STATE_HOME/agent-pane/pane.lock"
+    alive_is() {
+      run "$1" alive
+      [ "$rc" = "$2" ] || fail "alive: exit $rc, expected $2"
+      [ ! -s "$work/out" ] && [ ! -s "$work/err" ] || fail "alive printed something"
+      echo "PASS $case"
+    }
+    alive_is l01 1
+    mkdir -p "$XDG_STATE_HOME/agent-pane"
+    : >"$lf"
+    alive_is l02 1
+    "$BASH" -c 'exec 9>>"$1" && ${pkgs.flock}/bin/flock -n 9 && echo ready && exec sleep 300' _ "$lf" \
+      </dev/null >"$work/ready" 2>/dev/null &
+    holder=$!
+    printf '%s\n' "$holder" >>"$STUB_PIDS"
+    i=0
+    until [ -s "$work/ready" ]; do
+      i=$((i + 1))
+      [ "$i" -lt 150 ] || { case=l03; fail "the holder never took the lock"; }
+      sleep 0.1
+    done
+    alive_is l03 0
+    kill "$holder" 2>/dev/null
+    wait "$holder" 2>/dev/null
+    alive_is l04 1
+    rm -f "$lf"
+    mkdir "$lf"
+    alive_is l05 1
+    run l06 alive x
+    [ "$rc" = 2 ] && [ -s "$work/err" ] || fail "alive x: exit $rc, expected 2 with a reason"
+    echo "PASS $case"
+    rmdir "$lf"
     case "$only" in
       all | jiggle) ;;
       *) echo ok; exit 0 ;;
@@ -327,6 +378,20 @@ let
     [ ! -s "$STUB_LOG" ] || fail "abduco -a called without a target"
     echo "PASS $case"
 
+    # wait_lock: `alive` sees the pane's lock (15 s).
+    wait_lock() {
+      local i=0
+      until "$bin" alive 2>/dev/null; do
+        i=$((i + 1))
+        [ "$i" -lt 150 ] || fail "alive never saw the pane's lock"
+        sleep 0.1
+      done
+    }
+    case=w01
+    wait_lock
+    [ "$(ls -A "$XDG_STATE_HOME/agent-pane")" = pane.lock ] || fail "state dir holds more than pane.lock: $(ls -A "$XDG_STATE_HOME/agent-pane")"
+    alive_is w01 0
+
     case=a02
     "$bin" pick ghost
     wait_for "$out" "ghost: no such session" 1 "no idle header for an absent session"
@@ -390,10 +455,35 @@ let
     [ "$(tail -c ''${#restore} "$out")" = "$restore" ] || fail "terminal not restored on exit"
     echo "PASS $case"
 
+    alive_is w02 1
+
     case=a10
     bad=$(grep -vxE '(-a|TERM) (t1|t2|quits)' "$STUB_LOG")
     [ -z "$bad" ] || fail "abduco called otherwise than -a <name>: $bad"
     echo "PASS $case"
+
+    # A pane killed by SIGKILL (no cleanup) while attached: its client lives
+    # on, and must not have kept the lock.
+    case=w03
+    rm -f "$tf"
+    "$bin" </dev/null >"$work/pane2.out" 2>>"$work/pane.err" &
+    pane=$!
+    wait_lock
+    "$bin" pick t1
+    wait_for "$STUB_LOG" "-a t1" 3 "the second pane did not attach t1"
+    client=$(tail -n1 "$STUB_PIDS")
+    kill -KILL "$pane"
+    wait "$pane" 2>/dev/null
+    pane=""
+    kill -0 "$client" 2>/dev/null || fail "the t1 client died with the pane: the case proves nothing"
+    # The pane's own `sleep 0.3` children hold fd 9 until they end.
+    i=0
+    while "$bin" alive 2>/dev/null; do
+      i=$((i + 1))
+      [ "$i" -lt 30 ] || break
+      sleep 0.1
+    done
+    alive_is w03 1
     stop_all
     echo ok
   '';
@@ -425,10 +515,10 @@ pkgs.runCommand "agent-pane-check" { } ''
     echo "agent-pane: pick suite FAILED against the real package"
     exit 1
   }
-  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 s01 s02 s03 s04 s05 a01 a02 a03 a04 a05 a06 a07 a08 a09 a10; do
+  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 l01 l02 l03 l04 l05 l06 s01 s02 s03 s04 s05 a01 w01 a02 a03 a04 a05 a06 a07 a08 a09 w02 a10 w03; do
     grep -qx "PASS $r" stub.log || { echo "agent-pane: case $r did not run against the stub"; exit 1; }
   done
-  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13; do
+  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 l01 l02 l03 l04 l05 l06; do
     grep -qx "PASS $r" real.log || { echo "agent-pane: case $r did not run against the real package"; exit 1; }
   done
   ${suite} ${jiggle}/bin/agent-pane "$TMPDIR/jiggle" jiggle >jiggle.log 2>&1 || {
@@ -461,7 +551,9 @@ pkgs.runCommand "agent-pane-check" { } ''
   canary C2 ${c2}/bin/agent-pane a05
   canary C3 ${c3}/bin/agent-pane j01 jiggle
   canary C4 ${c4}/bin/agent-pane s05
+  canary C5 ${c5}/bin/agent-pane l02
+  canary C6 ${c6}/bin/agent-pane w03
 
-  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4 — OK"
+  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4, C5, C6 — OK"
   touch $out
 ''

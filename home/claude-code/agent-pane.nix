@@ -13,7 +13,8 @@
 #
 # abduco is called by absolute path (substituted for @abduco@), from the same
 # pkgs as claude-dispatch (same default socket dir). inheritPath = false: the
-# script needs only coreutils and jq, and the attached client spawns nothing.
+# script needs only coreutils, jq and flock (the pane's lock, read by
+# `alive`), and the attached client spawns nothing.
 # mkAgentPane is exported so checks/agent-pane.nix can build the same script
 # against a stub abduco (and its canary mutants).
 { pkgs }:
@@ -28,6 +29,7 @@ let
       runtimeInputs = [
         pkgs.coreutils
         pkgs.jq
+        pkgs.flock
       ];
       inheritPath = false;
       text = builtins.replaceStrings [ "@abduco@" ] [ abduco ] text;

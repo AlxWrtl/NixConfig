@@ -23,12 +23,19 @@
 # list, its socket goes, the command gets SIGHUP). abduco is called bare.
 # State and intent come from ~/.claude/session-state/<name>.json
 # (hooks/session-state.js), control characters blanked before printing.
+# The pane holds an exclusive flock on `$state_dir/pane.lock` (fd 9) for its
+# whole life; the kernel drops it when the pane dies, even by SIGKILL (once
+# its `sleep 0.3` children end), and the attached client gets the fd closed
+# so it never keeps it. `agent-pane alive`
+# (the board, before opening a pane): exit 0 when that lock is held, 1 when it
+# is free or cannot be tried; prints nothing. No pid file: a pid can be reused.
 # abduco is called by absolute path (substituted at build time); PATH is the
-# package's own (coreutils, jq).
+# package's own (coreutils, jq, flock).
 abduco_bin="@abduco@"
 name_re='^[a-z0-9][a-z0-9-]{0,47}$'
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane"
 target_file="$state_dir/target"
+lock_file="$state_dir/pane.lock"
 session_dir="$HOME/.claude/session-state"
 
 usage() {
@@ -36,17 +43,22 @@ usage() {
     'usage: agent-pane              show the picked abduco session (run it in the top pane)' \
     '       agent-pane pick <name>  pick the session the pane shows' \
     '       agent-pane stop <name>  end the session (TERM to its abduco server)' \
+    '       agent-pane alive        exit 0 if a pane runs, 1 if none' \
     'In the pane: Ctrl+\ detaches, Ctrl+C on the session list quits.'
 }
 die() { printf 'agent-pane: %s\n' "$1" >&2; exit 2; }
 # The request was valid, its target is not there (or would not die).
 die1() { printf 'agent-pane: %s\n' "$1" >&2; exit 1; }
 
+make_state_dir() {
+  mkdir -p "${state_dir%/*}"
+  [ -d "$state_dir" ] || mkdir -m 700 "$state_dir" || [ -d "$state_dir" ]
+}
+
 pick() {
   [ "$#" -eq 1 ] || { usage >&2; exit 2; }
   [[ $1 =~ $name_re ]] || die 'name must match ^[a-z0-9][a-z0-9-]{0,47}$'
-  mkdir -p "${state_dir%/*}"
-  [ -d "$state_dir" ] || mkdir -m 700 "$state_dir" || [ -d "$state_dir" ]
+  make_state_dir
   local tmp
   tmp=$(mktemp "$state_dir/.target.XXXXXX")
   if ! printf '%s\n%s\n' "$1" "$EPOCHREALTIME-$$" >"$tmp" || ! mv -f "$tmp" "$target_file"; then
@@ -75,6 +87,22 @@ stop() {
   [ -n "$pid" ] || die1 "$1: no such session"
   [[ $pid =~ ^[1-9][0-9]*$ ]] || die1 "$1: listed pid is not a pid: ${pid//[[:cntrl:]]/?}"
   kill -TERM "$pid" 2>/dev/null || die1 "$1: cannot signal pid $pid"
+}
+
+# Held = a pane runs. flock exits 75 (-E) only on a conflict; a free lock is
+# taken and dropped with this process, any other failure counts as no pane.
+alive() {
+  [ "$#" -eq 0 ] || { usage >&2; exit 2; }
+  [ -f "$lock_file" ] || exit 1
+  exec 9<"$lock_file" 2>/dev/null || exit 1
+  local rc=0
+  flock -n -E 75 9 2>/dev/null || rc=$?
+  [ "$rc" -eq 75 ] || exit 1
+}
+
+# A pane that cannot take it still runs: the board then opens another one.
+take_lock() {
+  make_state_dir && exec 9>>"$lock_file" && flock -n 9
 }
 
 # Sets tgt_raw (the whole file, compared to detect a change) and tgt_name
@@ -166,7 +194,7 @@ attach() {
     stty rows "$((${size%% *} - 1))" 2>/dev/null; then
     tty_rows=${size%% *}
   fi
-  "$abduco_bin" -a "$1" <&0 &
+  "$abduco_bin" -a "$1" <&0 9>&- &
   child=$!
   if [ -n "$tty_rows" ]; then
     sleep 0.3
@@ -192,7 +220,8 @@ attach() {
 }
 
 # EXIT trap: undo an unfinished jiggle, detach the client if one runs
-# (default signal = TERM), restore the terminal.
+# (default signal = TERM), restore the terminal. The lock goes with the
+# process.
 cleanup() {
   set +e
   if [ -n "$tty_rows" ]; then
@@ -214,6 +243,7 @@ pane() {
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
+  take_lock 2>/dev/null || true
   while :; do
     read_target
     shown=$tgt_raw
@@ -248,6 +278,10 @@ case "$1" in
   stop)
     shift
     stop "$@"
+    ;;
+  alive)
+    shift
+    alive "$@"
     ;;
   *)
     usage >&2

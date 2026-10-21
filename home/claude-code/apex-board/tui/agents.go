@@ -23,7 +23,9 @@ package main
 // (the in-flight turn is lost, the transcript stays): any other key or click disarms. `n` or a
 // click on « + nouvel agent » runs `claude-dispatch --blank agent-HHMMSS` in the board's repo (a
 // session with no prompt, in its own worktree as a dispatched one), then picks it: the user types
-// the first prompt in the top pane, and the card takes it as its title.
+// the first prompt in the top pane, and the card takes it as its title. After any pick that
+// succeeded, `agent-pane alive`: when no pane runs, osascript opens one, a Ghostty split above the
+// board (ensurePane); a failure only says so in the footer.
 
 import (
 	"bytes"
@@ -602,19 +604,94 @@ type agentsPoll struct {
 	err      error
 }
 
-// pickMsg: the outcome of `agent-pane pick <name>`; err "" when it succeeded.
-type pickMsg struct{ name, err string }
+// pickMsg: the outcome of `agent-pane pick <name>`; err "" when it succeeded, then paneErr:
+// ensurePane's (tried only after a pick that succeeded).
+type pickMsg struct{ name, err, paneErr string }
 
 // stopMsg: the outcome of `agent-pane stop <name>`; err "" when it succeeded.
 type stopMsg struct{ name, err string }
 
 // newAgentMsg: the outcome of `n`: the name launched ("" when none was picked), the launch's
-// error, then the pick's (tried only after a launch that succeeded).
-type newAgentMsg struct{ name, err, pickErr string }
+// error, then the pick's (tried only after a launch that succeeded), then ensurePane's.
+type newAgentMsg struct{ name, err, pickErr, paneErr string }
 
-// runPick runs argv (agent-pane pick or stop, no shell), stdin and stdout /dev/null, env
-// inherited; the error carries stderr's first line. A variable so the tests never run it.
-var runPick = func(argv []string) error {
+// runPick runs argv (agent-pane pick or stop, no shell): runQuiet. A variable so the tests never
+// run it.
+var runPick = runQuiet
+
+// runAlive runs argv (`agent-pane alive`) as runQuiet: true on exit 0, false on exit 1 (no pane
+// runs), an error otherwise. A variable so the tests never run it.
+var runAlive = func(argv []string) (bool, error) {
+	err := runQuiet(argv)
+	var exit *exec.ExitError
+	switch {
+	case err == nil:
+		return true, nil
+	case errors.As(err, &exit) && exit.ExitCode() == 1:
+		return false, nil
+	}
+	return false, err
+}
+
+// runOpenPane runs openPaneArgv's argv (osascript) as runQuiet. A variable so the tests never run
+// it.
+var runOpenPane = runQuiet
+
+// paneScript: Ghostty's AppleScript (Ghostty.app/Contents/Resources/Ghostty.sdef, 1.3): a split
+// above the focused terminal of the front window, its command item 1 of argv. The board runs in
+// that terminal, so the split opens above it.
+var paneScript = []string{
+	"on run argv",
+	`tell application "Ghostty"`,
+	"set t to focused terminal of selected tab of front window",
+	"set cfg to new surface configuration",
+	"set command of cfg to item 1 of argv",
+	"split t direction up with configuration cfg",
+	"end tell",
+	"end run",
+}
+
+// safePath: Ghostty hands a command to the shell, so the agent-pane path it gets is only ever a
+// store path's characters.
+var safePath = regexp.MustCompile(`^/[A-Za-z0-9._+/-]+$`)
+
+// openPaneArgv: osascript with paneScript as -e lines and pane as the script's argv item: the
+// path never becomes script text.
+func openPaneArgv(pane string) []string {
+	argv := []string{"/usr/bin/osascript"}
+	for _, line := range paneScript {
+		argv = append(argv, "-e", line)
+	}
+	return append(argv, pane)
+}
+
+// ensurePane runs after a pick that succeeded, in its Cmd: `agent-pane alive`, and when no pane
+// runs a Ghostty split running agent-pane, which reads at start the target the pick just wrote.
+// "" when a pane runs or one opened, else the footer's reason; the pick stands either way.
+func ensurePane(pane string) string {
+	alive, err := runAlive([]string{pane, "alive"})
+	switch {
+	case err != nil:
+		return "agent-pane alive : " + err.Error()
+	case alive:
+		return ""
+	case !safePath.MatchString(pane):
+		return "chemin d'agent-pane non sûr"
+	}
+	if err := runOpenPane(openPaneArgv(pane)); err != nil {
+		return "osascript : " + err.Error()
+	}
+	return ""
+}
+
+// paneNote: the footer's tail for ensurePane's reason.
+func paneNote(reason string) string {
+	return " · pane : " + reason + " — lance agent-pane à la main"
+}
+
+// runQuiet runs argv (no shell), stdin and stdout /dev/null, env inherited, under pickTimeout;
+// the error carries stderr's first line.
+func runQuiet(argv []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), pickTimeout)
 	defer cancel()
 	var stderr bytes.Buffer
@@ -713,8 +790,8 @@ func nameTaken(repo, sessionsDir string, listed map[string]bool) func(string) bo
 }
 
 // launchAgent runs in newAgentCmd's Cmd: a free name, `claude-dispatch --blank <name>` in repo,
-// then `agent-pane pick <name>`. abduco silent: its list is not checked, `abduco -n` refuses a
-// live session of that name itself (create-session: EADDRINUSE).
+// then `agent-pane pick <name>`, then ensurePane. abduco silent: its list is not checked,
+// `abduco -n` refuses a live session of that name itself (create-session: EADDRINUSE).
 func launchAgent(bin, pane, repo, sessionsDir string, now time.Time) newAgentMsg {
 	var listed map[string]bool
 	if out, err := abducoList(); err == nil {
@@ -736,7 +813,7 @@ func launchAgent(bin, pane, repo, sessionsDir string, now time.Time) newAgentMsg
 	if err := runPick([]string{pane, "pick", name}); err != nil {
 		return newAgentMsg{name: name, pickErr: err.Error()}
 	}
-	return newAgentMsg{name: name}
+	return newAgentMsg{name: name, paneErr: ensurePane(pane)}
 }
 
 // setSessionsDir turns the Agents tab on, reading dir at each poll.
@@ -781,8 +858,9 @@ func (m *Model) applyAgents(p *agentsPoll) {
 	a.status = &boardStatus{ok: true, count: p.board.total, time: p.clock}
 }
 
-// pickCmd: `agent-pane pick <name>` in a Cmd, off the UI goroutine; the footer says the outcome
-// (pickMsg). The name is checked again here (the readers already skip others): it is an argv word.
+// pickCmd: `agent-pane pick <name>` then ensurePane in a Cmd, off the UI goroutine; the footer
+// says the outcome (pickMsg). The name is checked again here (the readers already skip others): it
+// is an argv word.
 func (m *Model) pickCmd(name string) tea.Cmd {
 	if !validName(name) {
 		return nil
@@ -791,19 +869,23 @@ func (m *Model) pickCmd(name string) tea.Cmd {
 		m.ag.note, m.dirty = "agent-pane : binaire absent, rien lancé", true
 		return nil
 	}
-	argv := []string{agentPaneBin, "pick", name}
+	pane := agentPaneBin
+	argv := []string{pane, "pick", name}
 	return func() tea.Msg {
 		if err := runPick(argv); err != nil {
 			return pickMsg{name: name, err: err.Error()}
 		}
-		return pickMsg{name: name}
+		return pickMsg{name: name, paneErr: ensurePane(pane)}
 	}
 }
 
 func (m *Model) applyPick(msg pickMsg) {
-	if msg.err != "" {
+	switch {
+	case msg.err != "":
 		m.ag.note = "agent-pane pick " + msg.name + " : " + msg.err
-	} else {
+	case msg.paneErr != "":
+		m.ag.note = "affichée en haut : " + msg.name + paneNote(msg.paneErr)
+	default:
 		m.ag.note = "affichée en haut : " + msg.name
 	}
 	m.dirty = true
@@ -877,6 +959,8 @@ func (m *Model) applyNewAgent(msg newAgentMsg) tea.Cmd {
 		a.note = "claude-dispatch --blank " + msg.name + " : " + msg.err
 	case msg.pickErr != "":
 		a.note = "nouvel agent : " + msg.name + " · agent-pane pick : " + msg.pickErr
+	case msg.paneErr != "":
+		a.note = "nouvel agent : " + msg.name + paneNote(msg.paneErr)
 	default:
 		a.note = "nouvel agent : " + msg.name
 	}

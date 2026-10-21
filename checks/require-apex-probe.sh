@@ -142,6 +142,13 @@
 #   m74 an unclosed `$(` span blanked again instead of left visible.
 #   m75 a bare `--` no longer ends the options (`-- -s read-only` whitelists).
 #   m76 a `-c` key after a leading blank (`' sandbox_mode=...'`) read as "".
+#   m77 a subagent's anchored walk starts at the transcript end again.
+#   m78 the agent_id shape test dropped (`../` reaches a planted meta file).
+#   m79 the spawn anchor taken from ANY line naming the tool_use id.
+#   m80 the spawn line no longer has to be an assistant line.
+#   m81 the SendMessage forward scan dropped (a continued agent keeps its spawn).
+#   m82 a SendMessage to an unknown name no longer voids the anchor.
+#   m83 the meta file opened blocking: a FIFO hangs the hook.
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
@@ -156,7 +163,7 @@
 #
 # usage: require-apex-probe.sh [hook.js]
 #        require-apex-probe.sh --mutants
-#        require-apex-probe.sh --mutant m1..m76
+#        require-apex-probe.sh --mutant m1..m83
 
 set -euo pipefail
 
@@ -170,7 +177,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83"
 
 MODE="run"
 ONE_MUTANT=""
@@ -384,6 +391,13 @@ M73_EXPECT="codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed
 M74_EXPECT="codex-subst-unclosed"
 M75_EXPECT="codex-double-dash-ro"
 M76_EXPECT="codex-c-key-leading-blank"
+M77_EXPECT="sub-continued-under-apex sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-under-apex-later-user-turn"
+M78_EXPECT="sub-agent-id-traversal"
+M79_EXPECT="sub-anchor-tool-result-only sub-tool-use-not-assistant"
+M80_EXPECT="sub-tool-use-not-assistant"
+M81_EXPECT="sub-continued-after-user-turn sub-sendmessage-unknown-name"
+M82_EXPECT="sub-sendmessage-unknown-name"
+M83_EXPECT="sub-meta-fifo"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -503,6 +517,13 @@ build_mutant() { # build_mutant <mN> <destination>
     m74) from='if (j === -1) break;' to='if (j === -1) { out += " "; k++; continue; }' ;;
     m75) from='if (dd !== -1) seg = seg.slice(0, dd);' to='if (false) seg = seg.slice(0, dd);' ;;
     m76) from='/^['"'"'"]?[ \t]*([\w.-]*)/' to='/^['"'"'"]?([\w.-]*)/' ;;
+    m77) from='if (end !== -1 && openAt(end))' to='if (end !== -1 && openAt(lines.length - 1))' ;;
+    m78) from='/^[A-Za-z0-9_-]{1,64}$/.test(aid)' to='true' ;;
+    m79) from='if (Array.isArray(c) && c.some(b => b && b.type === "tool_use" && b.id === id)) { end = i; break; }' to='{ end = i; break; }' ;;
+    m80) from='const c = m && m.type === "assistant" && m.message && m.message.content;' to='const c = m && m.message && m.message.content;' ;;
+    m81) from='for (let i = end + 1; i < lines.length && end !== -1; i++)' to='for (let i = lines.length; i < 0; i++)' ;;
+    m82) from='{ end = -1; break; }' to='{ }' ;;
+    m83) from='fs.constants.O_NONBLOCK | fs.constants.O_RDONLY' to='fs.constants.O_RDONLY' ;;
   esac
   if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
@@ -661,6 +682,95 @@ printf '%s\n' '{"type":"user","message":{"role":"user","content":"please edit th
   printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"apex"}}]}}'
 } > "$T_APEX"
 
+# Subagent fixtures. A hook fired inside a subagent carries `agent_id`, while
+# `transcript_path` is the PARENT's: a user turn typed after the spawn must not
+# deny the running subagent. Its spawn is anchored through
+# <dir>/<name>/subagents/agent-<id>.meta.json -> toolUseId -> the parent's
+# assistant `tool_use` line. Every fallback case shares T_SUB, the transcript
+# the anchor WOULD pass on, so each one denies only if the fallback is taken.
+U_TURN='{"type":"user","message":{"role":"user","content":"please edit the thing"}}'
+U_LATER='{"type":"user","message":{"role":"user","content":"and another request"}}'
+L_APEX='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"apex"}}]}}'
+spawn_line() { # spawn_line <toolUseId>
+  printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"%s","name":"Agent","input":{"description":"d","prompt":"p","subagent_type":"Explore"}}]}}\n' "$1"
+}
+meta_json() { # meta_json <toolUseId>
+  printf '{"agentType":"Explore","toolUseId":"%s","spawnDepth":1}\n' "$1"
+}
+SUBD="$WORK/sub"
+mkdir -p "$SUBD"
+# T_SUB: user turn, APEX, spawn toolu_sub01, a real user turn after it.
+T_SUB="$SUBD/parent.jsonl"
+T_SUB_AG="$SUBD/parent/subagents"
+mkdir -p "$T_SUB_AG"
+{
+  printf '%s\n' "$U_TURN" "$L_APEX"
+  spawn_line toolu_sub01
+  printf '%s\n' "$U_LATER"
+} > "$T_SUB"
+meta_json toolu_sub01 > "$T_SUB_AG/agent-subok01.meta.json"
+printf '%s\n' 'not json {' > "$T_SUB_AG/agent-subnotjson.meta.json"
+meta_json toolu_absent00 > "$T_SUB_AG/agent-subabsent.meta.json"
+# `../../planted` -> subagents/agent-../../planted.meta.json: `agent-..` exists
+# as a directory, so the OS and a lexical join both land on the planted file,
+# which anchors on toolu_sub01. Only the agent_id shape check refuses it.
+mkdir -p "$T_SUB_AG/agent-.."
+meta_json toolu_sub01 > "$T_SUB_AG/planted.meta.json"
+# T_SUBNO: the spawn came AFTER a user turn that APEX never answered.
+T_SUBNO="$SUBD/noapex.jsonl"
+mkdir -p "$SUBD/noapex/subagents"
+{
+  printf '%s\n' "$U_TURN" "$L_APEX" "$U_LATER"
+  spawn_line toolu_sub02
+  printf '%s\n' "$U_LATER"
+} > "$T_SUBNO"
+meta_json toolu_sub02 > "$SUBD/noapex/subagents/agent-subnoapex.meta.json"
+# T_SUBTR: only a tool_result names toolu_sub03, no assistant tool_use does.
+# Anchored on that line, the walk would skip it and reach APEX.
+T_SUBTR="$SUBD/toolresult.jsonl"
+mkdir -p "$SUBD/toolresult/subagents"
+{
+  printf '%s\n' "$U_TURN" "$L_APEX"
+  printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_sub03","content":"done"}]}}'
+  printf '%s\n' "$U_LATER"
+} > "$T_SUBTR"
+meta_json toolu_sub03 > "$SUBD/toolresult/subagents/agent-subtr.meta.json"
+# T_SUBSP: T_SUB with a spawn line written with blanks around its colons,
+# still valid JSON: the anchor is found by parsing, not by its spelling.
+T_SUBSP="$SUBD/spaced.jsonl"
+mkdir -p "$SUBD/spaced/subagents"
+{
+  printf '%s\n' "$U_TURN" "$L_APEX"
+  printf '%s\n' '{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_sub04", "name": "Agent", "input": {}}]}}'
+  printf '%s\n' "$U_LATER"
+} > "$T_SUBSP"
+meta_json toolu_sub04 > "$SUBD/spaced/subagents/agent-subsp.meta.json"
+# A continued agent: a SendMessage to it relays a request, so the anchor
+# moves there. All in one parent, T_CONT, each agent its own meta file.
+send_line() { # send_line <to>
+  printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_snd%s","name":"SendMessage","input":{"to":"%s","message":"m"}}]}}\n' "$RANDOM" "$1"
+}
+mk_parent() { # mk_parent <name> <toolUseId> <agent_id> — dir + meta; transcript on stdin
+  mkdir -p "$SUBD/$1/subagents"
+  cat > "$SUBD/$1.jsonl"
+  meta_json "$2" > "$SUBD/$1/subagents/agent-$3.meta.json"
+}
+# Continued after a user turn APEX never answered -> deny.
+{ printf '%s\n' "$U_TURN" "$L_APEX"; spawn_line toolu_sub05; printf '%s\n' "$U_LATER"; send_line subcont; } | mk_parent cont toolu_sub05 subcont
+# Continued after APEX answered that turn -> pass.
+{ printf '%s\n' "$U_TURN" "$L_APEX"; spawn_line toolu_sub06; printf '%s\n' "$U_LATER" "$L_APEX"; send_line subcont2; printf '%s\n' "$U_LATER"; } | mk_parent cont2 toolu_sub06 subcont2
+# A SendMessage to a name no meta file knows may be this agent -> deny.
+{ printf '%s\n' "$U_TURN" "$L_APEX"; spawn_line toolu_sub07; printf '%s\n' "$U_LATER"; send_line reviewer; printf '%s\n' "$U_LATER"; } | mk_parent named toolu_sub07 subname
+# A SendMessage to ANOTHER known subagent leaves this one's anchor -> pass.
+{ printf '%s\n' "$U_TURN" "$L_APEX"; spawn_line toolu_sub10; printf '%s\n' "$U_LATER"; send_line subother; printf '%s\n' "$U_LATER"; } | mk_parent other toolu_sub10 subsib
+meta_json toolu_elsewhere > "$SUBD/other/subagents/agent-subother.meta.json"
+# A non-assistant line holding a tool_use block with the id is no spawn.
+{ printf '%s\n' "$U_TURN" "$L_APEX" '{"type":"system","message":{"content":[{"type":"tool_use","id":"toolu_sub08"}]}}' "$U_LATER"; } | mk_parent sysline toolu_sub08 subsys
+# Spawned before APEX, APEX then answered the turn: the whole walk passes.
+{ printf '%s\n' "$U_TURN"; spawn_line toolu_sub09; printf '%s\n' "$L_APEX"; } | mk_parent early toolu_sub09 subearly
+# A FIFO where the meta file should be: read blocking, the hook would hang.
+mkfifo "$T_SUB_AG/agent-subfifo.meta.json"
+
 # Out-of-repo scripts. Each is the smallest source that separates one rule.
 printf "import json\nopen('%s/package.json', 'w').write('{}')\n" "$TOP" > "$EXT/edit.py"
 cp "$EXT/edit.py" "$TMPD/edit.py"
@@ -760,6 +870,21 @@ check() {
   run_raw "$cwd" "$pay" "$out" "$err"
   rc=$RUN_RC
   grade "$label" "$kind" "$rc" "$out" "$err"
+}
+
+# check_sub <label> <kind> <cwd> <transcript> <agent_id> <command> — `check`,
+# fired inside a subagent: the payload carries agent_id and agent_type.
+check_sub() {
+  local label="$1" kind="$2" cwd="$3" tr="$4" aid="$5" cmd="$6" pay out err
+  NCASES=$((NCASES + 1))
+  pay="$WORK/out/$label.json"
+  out="$WORK/out/$label.stdout"
+  err="$WORK/out/$label.stderr"
+  "$JQ" -n --arg c "$cmd" --arg t "$tr" --arg a "$aid" \
+    '{hook_event_name:"PreToolUse",tool_name:"Bash",tool_input:{command:$c},transcript_path:$t,permission_mode:"bypassPermissions",agent_id:$a,agent_type:"Explore"}' \
+    > "$pay"
+  run_raw "$cwd" "$pay" "$out" "$err"
+  grade "$label" "$kind" "$RUN_RC" "$out" "$err"
 }
 
 RUN_RC=0
@@ -921,6 +1046,25 @@ check apex-already-ran pass "$REPO" "$T_APEX" "python3 -c \"open('package.json',
 check apex-already-ran-script pass "$REPO" "$T_APEX" "python3 $EXT/edit.py"
 check outside-git-inline pass "$NOGIT" "$T_NOAPEX" "python3 -c \"open('package.json', 'w').write('{}')\""
 check outside-git-script pass "$NOGIT" "$T_NOAPEX" "python3 $EXT/edit.py"
+# --- subagents: the walk starts at the spawn, else falls back to the end -----
+# The command is ctl-redirect's, a shape no mutant touches: these cases grade
+# the transcript walk alone.
+check_sub sub-spawned-under-apex-later-user-turn pass "$REPO" "$T_SUB" subok01 'echo x > src/a.ts'
+check_sub sub-spawned-without-apex deny "$REPO" "$T_SUBNO" subnoapex 'echo x > src/a.ts'
+check_sub sub-meta-missing deny "$REPO" "$T_SUB" submissing 'echo x > src/a.ts'
+check_sub sub-meta-not-json deny "$REPO" "$T_SUB" subnotjson 'echo x > src/a.ts'
+check_sub sub-tooluseid-absent deny "$REPO" "$T_SUB" subabsent 'echo x > src/a.ts'
+check_sub sub-agent-id-traversal deny "$REPO" "$T_SUB" '../../planted' 'echo x > src/a.ts'
+check_sub sub-anchor-tool-result-only deny "$REPO" "$T_SUBTR" subtr 'echo x > src/a.ts'
+check_sub sub-spawn-line-spaced pass "$REPO" "$T_SUBSP" subsp 'echo x > src/a.ts'
+check_sub sub-continued-after-user-turn deny "$REPO" "$SUBD/cont.jsonl" subcont 'echo x > src/a.ts'
+check_sub sub-continued-under-apex pass "$REPO" "$SUBD/cont2.jsonl" subcont2 'echo x > src/a.ts'
+check_sub sub-sendmessage-unknown-name deny "$REPO" "$SUBD/named.jsonl" subname 'echo x > src/a.ts'
+check_sub sub-sendmessage-other-agent pass "$REPO" "$SUBD/other.jsonl" subsib 'echo x > src/a.ts'
+check_sub sub-tool-use-not-assistant deny "$REPO" "$SUBD/sysline.jsonl" subsys 'echo x > src/a.ts'
+check_sub sub-spawned-before-apex pass "$REPO" "$SUBD/early.jsonl" subearly 'echo x > src/a.ts'
+check_sub sub-meta-fifo deny "$REPO" "$T_SUB" subfifo 'echo x > src/a.ts'
+check sub-no-agent-id deny "$REPO" "$T_SUB" 'echo x > src/a.ts'
 # --- codex exec: denied unless an explicit, unwidened `-s read-only` --------
 check codex-exec-default deny "$REPO" "$T_NOAPEX" 'codex exec "fix it"'
 check codex-e-alias deny "$REPO" "$T_NOAPEX" 'codex e -m m "x"'

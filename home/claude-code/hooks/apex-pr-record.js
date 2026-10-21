@@ -11,7 +11,9 @@
 // that take one skipped; none, and gh resolves the CURRENT branch, which
 // `--delete-branch` has already left: nothing found, nothing written.
 // Match: a `Branch: <head>` line, the name followed by a blank or the end.
-// When no run has one, a run WITHOUT any `Branch:` line that names the head
+// When no run has one, a run WITHOUT any `Branch:` line whose dir is the
+// head's last segment (Direct cuts `{type}/{task-id}` and writes no
+// `Branch:` line: #609/#610 stayed stuck, 2026-10-21), or that names the head
 // as a whole token in its first 12 lines. Every match is written, never over
 // an existing pr.md (O_EXCL), never in a run that has commit.txt.
 //
@@ -194,7 +196,8 @@ function main(input) {
 
   let hits = runs.filter(r => r.lines.some(l => branchLine(l, head)));
   const unbranched = runs.filter(r => !r.lines.some(l => l.startsWith("Branch:")));
-  if (hits.length === 0) hits = unbranched.filter(r => r.lines.slice(0, HEADER_LINES).some(l => namesToken(l, head)));
+  const leaf = head.slice(head.lastIndexOf("/") + 1);
+  if (hits.length === 0) hits = unbranched.filter(r => path.basename(r.dir) === leaf || r.lines.slice(0, HEADER_LINES).some(l => namesToken(l, head)));
 
   const body = "#" + pr.number + " " + pr.url + " — merged (" + sha + ") — recorded by apex-pr-record\n";
   for (const r of hits) {

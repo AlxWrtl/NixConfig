@@ -74,8 +74,8 @@
 #      The apex-pr-record run adds apex-pr-record.js, run against a fixture
 #      repo of APEX runs and a stub gh: after a lone `gh pr merge` that
 #      merged, pr.md written in the run whose `Branch:` line names the head
-#      (every such run), else in a run with no `Branch:` line naming it in
-#      its first 12 lines; nothing over an existing pr.md, beside a
+#      (every such run), else in a run with no `Branch:` line whose dir is
+#      the head's last segment or that names it in its first 12 lines; nothing over an existing pr.md, beside a
 #      commit.txt, on a prefix of the name, for a run on another branch, on
 #      an OPEN PR, a failed gh, a failed tool, another command or malformed
 #      input; the value flags' values never read as the selector. One canary
@@ -613,6 +613,10 @@ let
     A-apr-fallback = {
       hook = "apex-pr-record.js";
       text = "if (hits.length === 0) hits = unbranched";
+    };
+    A-apr-dirname = {
+      hook = "apex-pr-record.js";
+      text = "path.basename(r.dir) === leaf ||";
     };
     A-apr-header = {
       hook = "apex-pr-record.js";
@@ -1646,6 +1650,18 @@ let
         }
       ];
     }
+    # No dir-name fallback: a Direct run (no `Branch:` line) never recorded.
+    {
+      id = "M-apr-dirname";
+      hook = "apex-pr-record.js";
+      kills = "apr-dirname-write";
+      swaps = [
+        {
+          anchor = "A-apr-dirname";
+          to = "false ||";
+        }
+      ];
+    }
     # The whole file read as header: a name on line 13 counts.
     {
       id = "M-apr-header";
@@ -2100,6 +2116,7 @@ let
     "ss-symlink-file"
     "apr-branch-write"
     "apr-header-write"
+    "apr-dirname-write"
     "apr-header-late-silent"
     "apr-existing-kept"
     "apr-committxt-silent"
@@ -3424,6 +3441,16 @@ let
           apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
           apr_quiet || return 1
           apr_has h1 ;;
+        # A Direct run: no `Branch:` line, its dir the head's last segment.
+        apr-dirname-write)
+          apr_fixture || return 1
+          apr_view MERGED fix/dead-env
+          apr_ctx dead-env "# APEX: drop a dead option" "Tier: Direct"
+          apr_ctx env "# APEX: other" "Tier: Direct"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash --delete-branch")"
+          apr_quiet || return 1
+          apr_none env || return 1
+          apr_has dead-env ;;
         # ...on line 13 it does not.
         apr-header-late-silent)
           apr_fixture || return 1

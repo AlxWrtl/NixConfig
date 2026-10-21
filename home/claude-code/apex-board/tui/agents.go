@@ -621,7 +621,7 @@ type stopMsg struct{ name, err string }
 // ensurePane's.
 type newAgentMsg struct {
 	name, err, pickErr, paneErr string
-	resume                      bool
+	resume, blank               bool // blank: resumed with no conversation to continue
 }
 
 // runPick runs argv (agent-pane pick or stop, no shell): runQuiet. A variable so the tests never
@@ -841,8 +841,45 @@ func isWorktreeOf(cwd, name string) bool {
 	return ok && validName(name) && repo != "" && filepath.IsAbs(cwd) && filepath.Clean(cwd) == cwd
 }
 
+// claudeProjects: claude's transcript root, ~/.claude/projects ("" when HOME is unknown). A
+// variable so the tests point it at a temp dir.
+var claudeProjects = func() string {
+	h, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(h, ".claude", "projects")
+}
+
+// hasConversation: a `*.jsonl` transcript in cwd's project dir under projects, named as claude
+// names it: cwd with every byte but [A-Za-z0-9] turned `-` (measured on this host's worktrees,
+// 2026-10-21). An agent whose user never typed a prompt has none: `--continue` would find nothing.
+// projects "" or a dir that cannot be read: true, --continue then says it itself.
+func hasConversation(projects, cwd string) bool {
+	if projects == "" {
+		return true
+	}
+	enc := []byte(cwd)
+	for i, c := range enc {
+		if !('a' <= c && c <= 'z' || 'A' <= c && c <= 'Z' || '0' <= c && c <= '9') {
+			enc[i] = '-'
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(projects, string(enc)))
+	if errors.Is(err, fs.ErrNotExist) {
+		return false
+	}
+	if err != nil {
+		return true
+	}
+	return slices.ContainsFunc(entries, func(e fs.DirEntry) bool {
+		return e.Type().IsRegular() && strings.HasSuffix(e.Name(), ".jsonl")
+	})
+}
+
 // resumeAgent runs in resumeCmd's Cmd: `abduco -n <name> claude --continue --name <name>` in the
-// worktree, then pickLaunched. claude-dispatch's launch minus --worktree (the cwd is the worktree)
+// worktree (without --continue when hasConversation finds none: a blank session there, as `n`
+// had started it), then pickLaunched. claude-dispatch's launch minus --worktree (the cwd is the worktree)
 // and minus a prompt: --continue reopens the most recent conversation there, not the state file's
 // sessionId, which another claude run in that dir (a hook's `claude -p`) can have overwritten
 // (measured 2026-10-21). CLAUDE_CODE_CHILD_SESSION is dropped as claude-dispatch does. Not through
@@ -855,7 +892,13 @@ func resumeAgent(abduco, claude, pane, name, cwd string) newAgentMsg {
 		msg.err = "worktree absent ou lien : " + cwd
 		return msg
 	}
-	argv := []string{"/usr/bin/env", "-u", "CLAUDE_CODE_CHILD_SESSION", abduco, "-n", name, claude, "--continue", "--name", name}
+	argv := []string{"/usr/bin/env", "-u", "CLAUDE_CODE_CHILD_SESSION", abduco, "-n", name, claude}
+	if hasConversation(claudeProjects(), cwd) {
+		argv = append(argv, "--continue")
+	} else {
+		msg.blank = true
+	}
+	argv = append(argv, "--name", name)
 	if err := runLaunch(cwd, argv); err != nil {
 		msg.err = err.Error()
 		return msg
@@ -1035,6 +1078,9 @@ func (m *Model) applyNewAgent(msg newAgentMsg) tea.Cmd {
 		a.note = label + msg.name + paneNote(msg.paneErr)
 	default:
 		a.note = label + msg.name
+	}
+	if msg.blank && msg.err == "" {
+		a.note += " (aucune conversation : session vierge)"
 	}
 	if msg.name != "" && msg.err == "" {
 		a.sel, a.follow = &selState{id: msg.name}, true

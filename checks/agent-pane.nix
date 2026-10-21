@@ -43,7 +43,8 @@
 # row restore after the attach (j01 red: no `rows 40`), C4 turns stop's exact
 # match into a substring one (s05 red: `t` kills t1), C5 drops alive's
 # conflict check (l02 red: a free lock counts as a pane), C6 lets the client
-# inherit the lock fd (w03 red: the orphaned client keeps it). A canary
+# inherit the lock fd (w03 red: the orphaned client keeps it), C7 drops the
+# XDG_CACHE_HOME default (e01 red: abduco sees it unset). A canary
 # that survives, or dies at another case, fails the check. Anchors and
 # `@abduco@` must occur exactly once in the script, and the name rule must
 # be claude-dispatch's: an eval-time throw otherwise.
@@ -92,6 +93,7 @@ let
     mutate "C4" "    if [[ $sname == \"$1\" ]]; then\n"
       "    if [[ $sname == *\"$1\"* ]]; then\n";
   c5Text = mutate "C5" "  [ \"$rc\" -eq 75 ] || exit 1\n" "  [ \"$rc\" -ge 0 ] || exit 1\n";
+  c7Text = mutate "C7" "export XDG_CACHE_HOME=\"\${XDG_CACHE_HOME:-$HOME/.cache}\"\n" "";
   c6Text =
     mutate "C6" "  \"$abduco_bin\" -a \"$1\" <&0 9>&- &\n"
       "  \"$abduco_bin\" -a \"$1\" <&0 &\n";
@@ -119,6 +121,7 @@ let
   # set them); `-a <name>` traps TERM and WINCH first, then logs the call, so a
   # signal sent after the log line is always recorded.
   stubAbduco = pkgs.writeShellScript "abduco-stub" ''
+    printf '%s\n' "''${XDG_CACHE_HOME-<unset>}" >"''${STUB_LOG:?STUB_LOG unset}.cache"
     if [ "$#" -eq 0 ]; then
       printf 'Active sessions (on host stub)\n'
       printf '* Wed\t 2026-10-21 10:00:00\t%s\tt1\n' "''${STUB_T1_PID:-101}"
@@ -150,6 +153,7 @@ let
   c4 = withStub c4Text;
   c5 = withStub c5Text;
   c6 = withStub c6Text;
+  c7 = withStub c7Text;
   jiggle = withStub jText;
   c3 = withStub c3Text;
 
@@ -309,6 +313,15 @@ let
       # A prefix and a suffix of t1 (and of t2) are no session.
       refuse s05 1 stop t
       refuse s05 1 stop 1
+      echo "PASS $case"
+      # abduco's socket dir: XDG_CACHE_HOME defaults to ~/.cache, a set one is kept.
+      case=e01
+      rm -f "$STUB_LOG.cache"
+      env -u XDG_CACHE_HOME "$bin" stop nosuch >/dev/null 2>&1
+      [ "$(cat "$STUB_LOG.cache" 2>/dev/null)" = "$HOME/.cache" ] || fail "abduco saw XDG_CACHE_HOME=$(cat "$STUB_LOG.cache" 2>/dev/null), expected $HOME/.cache"
+      rm -f "$STUB_LOG.cache"
+      XDG_CACHE_HOME=/x/cache "$bin" stop nosuch >/dev/null 2>&1
+      [ "$(cat "$STUB_LOG.cache" 2>/dev/null)" = /x/cache ] || fail "a set XDG_CACHE_HOME was not kept: $(cat "$STUB_LOG.cache" 2>/dev/null)"
       echo "PASS $case"
       run s01 stop t1
       [ "$rc" = 0 ] || fail "stop t1: exit $rc, expected 0"
@@ -515,7 +528,7 @@ pkgs.runCommand "agent-pane-check" { } ''
     echo "agent-pane: pick suite FAILED against the real package"
     exit 1
   }
-  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 l01 l02 l03 l04 l05 l06 s01 s02 s03 s04 s05 a01 w01 a02 a03 a04 a05 a06 a07 a08 a09 w02 a10 w03; do
+  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 l01 l02 l03 l04 l05 l06 s01 s02 s03 s04 s05 e01 a01 w01 a02 a03 a04 a05 a06 a07 a08 a09 w02 a10 w03; do
     grep -qx "PASS $r" stub.log || { echo "agent-pane: case $r did not run against the stub"; exit 1; }
   done
   for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 l01 l02 l03 l04 l05 l06; do
@@ -553,7 +566,8 @@ pkgs.runCommand "agent-pane-check" { } ''
   canary C4 ${c4}/bin/agent-pane s05
   canary C5 ${c5}/bin/agent-pane l02
   canary C6 ${c6}/bin/agent-pane w03
+  canary C7 ${c7}/bin/agent-pane e01
 
-  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4, C5, C6 — OK"
+  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4, C5, C6, C7 — OK"
   touch $out
 ''

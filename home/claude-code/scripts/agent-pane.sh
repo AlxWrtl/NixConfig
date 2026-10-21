@@ -37,6 +37,11 @@ state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane"
 target_file="$state_dir/target"
 lock_file="$state_dir/pane.lock"
 session_dir="$HOME/.claude/session-state"
+# abduco's socket dir follows XDG_CACHE_HOME (sessions live in ~/.cache/abduco).
+# A pane Ghostty opens for the board (`login … bash --noprofile`) has no
+# XDG_CACHE_HOME and would look elsewhere: no session listed (measured
+# 2026-10-21). Default it as the user's shells set it.
+export XDG_CACHE_HOME="${XDG_CACHE_HOME:-$HOME/.cache}"
 
 usage() {
   printf '%s\n' \

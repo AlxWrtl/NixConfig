@@ -393,12 +393,75 @@ func TestCardTitle(t *testing.T) {
 
 // ---- `c`: resume a closed agent ------------------------------------------------
 
-// stubResumeBins: abducoBin and claudeBin as fake paths for the test's length.
-func stubResumeBins(t testing.TB) {
+// stubResumeBins: abducoBin and claudeBin as fake paths, claudeProjects an empty temp dir, for
+// the test's length; that dir returned.
+func stubResumeBins(t testing.TB) string {
 	t.Helper()
-	prevA, prevC := abducoBin, claudeBin
+	prevA, prevC, prevP := abducoBin, claudeBin, claudeProjects
+	projects := t.TempDir()
 	abducoBin, claudeBin = "/nix/store/x-abduco/bin/abduco", "/opt/homebrew/bin/claude"
-	t.Cleanup(func() { abducoBin, claudeBin = prevA, prevC })
+	claudeProjects = func() string { return projects }
+	t.Cleanup(func() { abducoBin, claudeBin, claudeProjects = prevA, prevC, prevP })
+	return projects
+}
+
+// withTranscript: a transcript for cwd under projects, in the dir claude names for it.
+func withTranscript(t testing.TB, projects, cwd string) {
+	t.Helper()
+	dir := filepath.Join(projects, regexp.MustCompile(`[^A-Za-z0-9]`).ReplaceAllString(cwd, "-"))
+	mustDo(t, os.MkdirAll(dir, 0o700))
+	mustDo(t, os.WriteFile(filepath.Join(dir, "89cbb56c-2898-455c-9c9b-9bbe920df524.jsonl"), []byte("{}\n"), 0o600))
+}
+
+// hasConversation: the measured encoding, a transcript there; none, a dir without one, a
+// non-.jsonl entry or a .jsonl dir: false; projects unknown or unreadable: true.
+func TestHasConversation(t *testing.T) {
+	projects := t.TempDir()
+	cwd := "/Users/x/projects/Preliz/.claude/worktrees/agent-135738"
+	enc := filepath.Join(projects, "-Users-x-projects-Preliz--claude-worktrees-agent-135738")
+	if hasConversation(projects, cwd) {
+		t.Fatal("no project dir: true")
+	}
+	mustDo(t, os.MkdirAll(filepath.Join(enc, "sub.jsonl"), 0o700))
+	mustDo(t, os.WriteFile(filepath.Join(enc, "notes.txt"), nil, 0o600))
+	if hasConversation(projects, cwd) {
+		t.Fatal("no regular .jsonl: true")
+	}
+	mustDo(t, os.WriteFile(filepath.Join(enc, "a.jsonl"), nil, 0o600))
+	if !hasConversation(projects, cwd) {
+		t.Fatal("transcript there: false")
+	}
+	if hasConversation(projects, "/Users/x/projects/Preliz/.claude/worktrees/agent-1") {
+		t.Fatal("another worktree's dir counted")
+	}
+	if !hasConversation("", cwd) {
+		t.Fatal("projects unknown: false")
+	}
+	locked := filepath.Join(projects, "-l")
+	mustDo(t, os.MkdirAll(locked, 0o000))
+	t.Cleanup(func() { _ = os.Chmod(locked, 0o700) })
+	if !hasConversation(projects, "/l") {
+		t.Fatal("unreadable dir: false")
+	}
+}
+
+// `c` on an agent the user never typed into: the same launch without --continue, the footer says
+// the session is blank.
+func TestResumeBlank(t *testing.T) {
+	wt := filepath.Join(t.TempDir(), ".claude", "worktrees", "a1")
+	mustDo(t, os.MkdirAll(wt, 0o755))
+	m := resumeModel(t, &Agent{ID: "a1", Name: "a1", Cwd: wt, Resumable: true})
+	stubResumeBins(t)
+	launches := stubLaunch(t, nil)
+	stubPick(t, nil)
+	send(m, send(m, char('c'))())
+	want := []string{"/usr/bin/env", "-u", "CLAUDE_CODE_CHILD_SESSION", abducoBin, "-n", "a1", claudeBin, "--name", "a1"}
+	if len(*launches) != 1 || (*launches)[0].dir != wt || !slices.Equal((*launches)[0].argv, want) {
+		t.Fatalf("launches %+v", *launches)
+	}
+	if m.ag.note != "reprise : a1 (aucune conversation : session vierge)" {
+		t.Fatalf("note %q", m.ag.note)
+	}
 }
 
 // resumeModel: the Agents tab showing only ag, selected.
@@ -465,7 +528,7 @@ func TestResumeKey(t *testing.T) {
 	wt := filepath.Join(t.TempDir(), ".claude", "worktrees", "a1")
 	mustDo(t, os.MkdirAll(wt, 0o755))
 	m := resumeModel(t, &Agent{ID: "a1", Name: "a1", Cwd: wt, Resumable: true})
-	stubResumeBins(t)
+	withTranscript(t, stubResumeBins(t), wt)
 	launches := stubLaunch(t, nil)
 	picks := stubPick(t, nil)
 	pc := stubPane(t, false, nil, nil)

@@ -18,6 +18,9 @@
 # Session list = `abduco` with no argument: `<mark> <day>\t <date> <time>\t<pid>\t<name>`
 # (its strftime `%a%t %F %T` holds a TAB), so name = last field, pid = the one before;
 # mark `*` = a client attached, `+` = command ended (not attachable).
+# `agent-pane stop <name>` ends the session of exactly that name: TERM to the
+# pid the list gives, the abduco server (measured: the session leaves the
+# list, its socket goes, the command gets SIGHUP). abduco is called bare.
 # State and intent come from ~/.claude/session-state/<name>.json
 # (hooks/session-state.js), control characters blanked before printing.
 # abduco is called by absolute path (substituted at build time); PATH is the
@@ -32,9 +35,12 @@ usage() {
   printf '%s\n' \
     'usage: agent-pane              show the picked abduco session (run it in the top pane)' \
     '       agent-pane pick <name>  pick the session the pane shows' \
+    '       agent-pane stop <name>  end the session (TERM to its abduco server)' \
     'In the pane: Ctrl+\ detaches, Ctrl+C on the session list quits.'
 }
 die() { printf 'agent-pane: %s\n' "$1" >&2; exit 2; }
+# The request was valid, its target is not there (or would not die).
+die1() { printf 'agent-pane: %s\n' "$1" >&2; exit 1; }
 
 pick() {
   [ "$#" -eq 1 ] || { usage >&2; exit 2; }
@@ -47,6 +53,28 @@ pick() {
     rm -f "$tmp"
     die "cannot write $target_file"
   fi
+}
+
+# The list parsed as list_sessions does; only a name equal to $1 counts (a
+# prefix or a substring is another session). pid 0 would signal the group.
+stop() {
+  [ "$#" -eq 1 ] || { usage >&2; exit 2; }
+  [[ $1 =~ $name_re ]] || die "name must match $name_re"
+  local listing line pid="" sname
+  local -a f
+  listing=$("$abduco_bin" 2>/dev/null </dev/null) || true
+  while IFS= read -r line; do
+    IFS=$'\t' read -r -a f <<<"$line"
+    if [ "${#f[@]}" -lt 3 ]; then continue; fi
+    sname=${f[${#f[@]} - 1]}
+    if [[ $sname == "$1" ]]; then
+      pid=${f[${#f[@]} - 2]}
+      break
+    fi
+  done <<<"$listing"
+  [ -n "$pid" ] || die1 "$1: no such session"
+  [[ $pid =~ ^[1-9][0-9]*$ ]] || die1 "$1: listed pid is not a pid: ${pid//[[:cntrl:]]/?}"
+  kill -TERM "$pid" 2>/dev/null || die1 "$1: cannot signal pid $pid"
 }
 
 # Sets tgt_raw (the whole file, compared to detect a change) and tgt_name
@@ -216,6 +244,10 @@ case "$1" in
   pick)
     shift
     pick "$@"
+    ;;
+  stop)
+    shift
+    stop "$@"
     ;;
   *)
     usage >&2

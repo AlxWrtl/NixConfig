@@ -477,6 +477,187 @@ func TestPick(t *testing.T) {
 	}
 }
 
+// nameRow: the text of id's name row (the card's second row), within its card.
+func nameRow(t *testing.T, m *Model, id string) string {
+	t.Helper()
+	m.View()
+	card := findHit(m, hitCard, id)
+	if card == nil {
+		t.Fatalf("%s not drawn", id)
+	}
+	line := []rune(plain(m.View().Content)[card.y+1])
+	return string(line[card.x : card.x+card.w])
+}
+
+// `x` arms the selected card, a second `x` runs exactly [agentPaneBin, stop, name]; any other key
+// in between disarms.
+func TestStopConfirm(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	calls := stubPick(t, nil)
+	bin := agentPaneBin
+	if cmd := send(m, char('x')); cmd != nil || len(*calls) != 0 {
+		t.Fatalf("a first x stopped: calls %q", *calls)
+	}
+	ask := "éteindre ask-needs ? × ou x encore pour confirmer · Échap annule"
+	if m.ag.armed != "ask-needs" || m.ag.note != ask || !strings.Contains(strings.Join(plain(m.View().Content), "\n"), ask) {
+		t.Fatalf("armed %q note %q", m.ag.armed, m.ag.note)
+	}
+	if a := agentOf(t, m.ag.board, "ask-needs"); !a.rows.armed {
+		t.Fatal("the armed card was not redrawn")
+	}
+	cmd := send(m, char('x'))
+	if cmd == nil || len(*calls) != 0 {
+		t.Fatal("no stop Cmd, or stop ran on the UI goroutine")
+	}
+	msg := cmd()
+	if len(*calls) != 1 || !slices.Equal((*calls)[0], []string{bin, "stop", "ask-needs"}) {
+		t.Fatalf("calls %q", *calls)
+	}
+	if next := send(m, msg); next == nil || m.ag.note != "éteinte : ask-needs" || m.ag.armed != "" {
+		t.Fatalf("after stop: poll %v, note %q, armed %q", next != nil, m.ag.note, m.ag.armed)
+	}
+	// x, then another key, then x: the second x arms again, never stops.
+	m.polling = false
+	*calls = nil
+	for _, between := range []tea.Msg{char('j'), key(tea.KeyEscape), char('r')} {
+		m.ag.sel = &selState{id: "ask-needs"}
+		send(m, char('x'))
+		send(m, between)
+		if m.ag.armed != "" {
+			t.Fatalf("%v did not disarm", between)
+		}
+		m.ag.sel = &selState{id: "ask-needs"}
+		if cmd := send(m, char('x')); cmd != nil || m.ag.armed != "ask-needs" {
+			t.Fatalf("x after %v: a Cmd, or not armed", between)
+		}
+		send(m, key(tea.KeyEscape))
+		m.polling = false
+	}
+	// Armed on one card, x on another arms that one.
+	m.ag.sel = &selState{id: "ask-needs"}
+	send(m, char('x'))
+	send(m, char('j'))
+	if cmd := send(m, char('x')); cmd != nil || m.ag.armed != "ask-wait" {
+		t.Fatalf("x on another card: armed %q", m.ag.armed)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("stopped without a confirm: %q", *calls)
+	}
+	// A refused stop says stderr's first line.
+	runPick = func([]string) error { return errors.New("ask-wait: no such session") }
+	send(m, send(m, char('x'))())
+	if m.ag.note != "agent-pane stop ask-wait : ask-wait: no such session" {
+		t.Fatalf("error note %q", m.ag.note)
+	}
+	// An invalid name never reaches runPick, nor does any name without the binary.
+	*calls = nil
+	runPick = func(argv []string) error { *calls = append(*calls, argv); return nil }
+	for _, bad := range []string{"--help", "-x", "", "A", "a b", "a\n"} {
+		if m.stopCmd(bad) != nil {
+			t.Fatalf("stopCmd(%q) gave a Cmd", bad)
+		}
+	}
+	agentPaneBin = ""
+	if m.stopCmd("ask-needs") != nil || m.ag.note != "agent-pane : binaire absent, rien éteint" {
+		t.Fatalf("no binary: note %q", m.ag.note)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("runPick called: %q", *calls)
+	}
+}
+
+// A session abduco does not list (closed), or abduco silent: no ×, x stops nothing.
+func TestStopNotStoppable(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	calls := stubPick(t, nil)
+	m.View()
+	for id, want := range map[string]bool{"ask-needs": true, "work-live": true, "ended-cmd": true, "stateless": true, "closed": false, "done-recent": false} {
+		if a := agentOf(t, m.ag.board, id); a.Stoppable != want || (findHit(m, hitStop, id) != nil) != want || strings.Contains(nameRow(t, m, id), "×") != want {
+			t.Errorf("%s: stoppable %v, × hit %v, row %q", id, a.Stoppable, findHit(m, hitStop, id) != nil, nameRow(t, m, id))
+		}
+	}
+	for range 2 {
+		m.ag.sel = &selState{id: "closed"}
+		if cmd := send(m, char('x')); cmd != nil || m.ag.armed != "" || m.ag.note != "closed : pas de session à éteindre" {
+			t.Fatalf("x on closed: armed %q note %q", m.ag.armed, m.ag.note)
+		}
+	}
+	// abduco failed: every card is liveUnknown, none stoppable (fail-closed on the action).
+	read, err := m.ag.reader.Read()
+	mustDo(t, err)
+	m.applyAgents(&agentsPoll{board: deriveAgents(withLiveness(read.sessions, nil), testNow), now: testNow, clock: "12:00:00"})
+	m.ag.sel = nil
+	m.View()
+	if h := findHit(m, hitStop, ""); h != nil {
+		t.Fatalf("× on %s with abduco silent", h.id)
+	}
+	sel := m.agentSelection()
+	id := m.ag.board.cols[sel.col][sel.idx].ID
+	for range 2 {
+		if cmd := send(m, char('x')); cmd != nil || m.ag.armed != "" || m.ag.note != id+" : pas de session à éteindre" {
+			t.Fatalf("x with abduco silent: note %q", m.ag.note)
+		}
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("runPick called: %q", *calls)
+	}
+}
+
+// A click on × arms, a second stops; a click on the card's body picks; a click anywhere else
+// disarms.
+func TestStopMouse(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	calls := stubPick(t, nil)
+	bin := agentPaneBin
+	m.View()
+	x := findHit(m, hitStop, "work-live")
+	card := findHit(m, hitCard, "work-live")
+	if x == nil || card == nil || x.y != card.y+1 || []rune(plain(m.View().Content)[x.y])[x.x+1] != '×' {
+		t.Fatalf("× hit %+v not on the drawn ×", x)
+	}
+	if h := hitAt(m.hits, x.x+1, x.y); h == nil || h.kind != hitStop {
+		t.Fatal("the card's hit wins over its ×")
+	}
+	click := func(cx, cy int) tea.Cmd { return send(m, tea.MouseClickMsg{X: cx, Y: cy, Button: tea.MouseLeft}) }
+	if cmd := click(x.x+1, x.y); cmd != nil || m.ag.armed != "work-live" || m.ag.sel.id != "work-live" || len(*calls) != 0 {
+		t.Fatalf("first click: armed %q calls %q", m.ag.armed, *calls)
+	}
+	cmd := click(x.x, x.y)
+	if cmd == nil {
+		t.Fatal("second click: no stop")
+	}
+	send(m, cmd())
+	if len(*calls) != 1 || !slices.Equal((*calls)[0], []string{bin, "stop", "work-live"}) {
+		t.Fatalf("click calls %q", *calls)
+	}
+	// Armed, then a click on the body: disarmed and picked, not stopped.
+	m.polling = false
+	*calls = nil
+	click(x.x+1, x.y)
+	cmd = click(card.x+1, card.y+2)
+	if cmd == nil || m.ag.armed != "" {
+		t.Fatalf("body click: armed %q", m.ag.armed)
+	}
+	cmd()
+	if len(*calls) != 1 || !slices.Equal((*calls)[0], []string{bin, "pick", "work-live"}) {
+		t.Fatalf("body click calls %q", *calls)
+	}
+	// Armed, then a click on nothing: disarmed, the question gone.
+	click(x.x+1, x.y)
+	if hitAt(m.hits, 0, 49) != nil {
+		t.Fatal("the test's empty cell holds a hit")
+	}
+	if cmd := click(0, 49); cmd != nil || m.ag.armed != "" || m.ag.note != "" {
+		t.Fatalf("click on nothing: armed %q note %q", m.ag.armed, m.ag.note)
+	}
+	if cmd := click(x.x+1, x.y); cmd != nil || m.ag.armed != "work-live" {
+		t.Fatal("after a disarm, a click on × stopped")
+	}
+}
+
 func TestAgentsReadOnly(t *testing.T) {
 	f := newSessionsFixture(t)
 	before := append(snapshotTree(t, f.dir), snapshotTree(t, f.outside)...)
@@ -545,7 +726,7 @@ func TestRenderAgents(t *testing.T) {
 		"ask-needs", "Beta", "il y a 3 min", "corrige le login qui boucle", "Claude needs your permission",
 		"lit ?[31mrouge? le cache", "à toi", "pas encore lancée", "/card X1 — monter vite en 7.3", "Alpha",
 		"rien depuis 40 min", "paused", "sans état", "commande terminée", "session fermée",
-		"1 terminée depuis plus de 24 h masquée", "linked : lien : non lu", "⏎/o afficher en haut",
+		"1 terminée depuis plus de 24 h masquée", "linked : lien : non lu", "⏎/o afficher en haut", "x éteindre",
 	} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("%q not drawn:\n%s", want, all)
@@ -558,6 +739,13 @@ func TestRenderAgents(t *testing.T) {
 	}
 	if !strings.Contains(frame, "\x1b[0;38;2;255;121;198") {
 		t.Fatal("no human truecolor")
+	}
+	// The × on a listed session's name row, beside the whole name; none on a closed one.
+	if r := nameRow(t, m, "ask-needs"); !strings.Contains(r, "ask-needs") || !strings.HasSuffix(strings.TrimRight(r, " │"), "×") {
+		t.Fatalf("listed name row %q", r)
+	}
+	if r := nameRow(t, m, "closed"); strings.Contains(r, "×") {
+		t.Fatalf("closed name row %q", r)
 	}
 	if strings.Contains(strings.ReplaceAll(frame, "\x1b[", ""), "\x1b") || strings.Contains(frame, "\x07") {
 		t.Fatal("a control char reached the terminal")

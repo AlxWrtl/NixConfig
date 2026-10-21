@@ -245,6 +245,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyDrawer(msg)
 	case pickMsg:
 		m.applyPick(msg)
+	case stopMsg:
+		return m, m.applyStop(msg)
 	case docMsg:
 		if d := m.drawer; d != nil && d.id == msg.id && d.hasPath && d.path == msg.path {
 			doc := msg.doc
@@ -481,11 +483,11 @@ func (m *Model) keyDrawer(ev string) tea.Cmd {
 
 func (m *Model) click(x, y int) tea.Cmd {
 	h := hitAt(m.hits, x, y)
+	if m.tab == tabAgents {
+		return m.clickAgents(h) // a click on nothing still disarms a stop
+	}
 	if h == nil {
 		return nil
-	}
-	if m.tab == tabAgents {
-		return m.clickAgents(h)
 	}
 	if m.drawer == nil {
 		if h.kind == hitTab {

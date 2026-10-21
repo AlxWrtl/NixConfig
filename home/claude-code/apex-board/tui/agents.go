@@ -16,8 +16,11 @@ package main
 // reads and the abduco call run in the poll's Cmd, off the UI goroutine; a file that did not change
 // (size, mtime, inode) keeps its parsed state.
 //
-// One action: Enter, `o` or a click on a card runs `agent-pane pick <name>` (argv, no shell): the
-// agent screen's top pane switches to that session, the board stays open.
+// Two actions, argv through agent-pane (no shell), the board stays open. Enter, `o` or a click on a
+// card runs `agent-pane pick <name>`: the agent screen's top pane switches to that session. `x` on
+// the selected card or a click on its × (drawn only on a session abduco lists) arms it, the footer
+// asks; a second `x` or × on that card runs `agent-pane stop <name>`, which TERMs its abduco server
+// (the in-flight turn is lost, the transcript stays): any other key or click disarms.
 
 import (
 	"bytes"
@@ -415,6 +418,7 @@ type Agent struct {
 	Kind, Column                  string
 	Mission, Current              string
 	Asking, Stale                 bool
+	Stoppable                     bool // abduco lists it: there is a session to stop
 	UpdatedAt                     float64
 	Age                           string
 	Chips                         []Chip
@@ -495,6 +499,8 @@ func deriveAgent(s *sessionInput, now float64) *Agent {
 	a := &Agent{
 		ID: s.Name, Name: s.Name, Project: projectOf(s.Cwd), Cwd: s.Cwd, State: s.State,
 		Kind: kind, Column: col, Mission: s.Intent, Stale: stale, UpdatedAt: s.UpdatedAt, Age: ageText(now, s.UpdatedAt), Chips: chips,
+		// Not listed or abduco silent: nothing to stop, no × (fail-closed on the action).
+		Stoppable: s.noState || s.Live == liveRunning || s.Live == liveEnded,
 	}
 	if kind == "needs-you" {
 		// The notice says what it waits on (a permission, an idle prompt).
@@ -571,7 +577,8 @@ type agentsState struct {
 	hscroll  int
 	follow   bool
 	view     agentsView
-	note     string // a one-off footer message: the outcome of a pick
+	note     string // a one-off footer message: the outcome of a pick or a stop
+	armed    string // the card a first `x` / × asked to stop; "" = none
 }
 
 type agentsPoll struct {
@@ -585,8 +592,11 @@ type agentsPoll struct {
 // pickMsg: the outcome of `agent-pane pick <name>`; err "" when it succeeded.
 type pickMsg struct{ name, err string }
 
-// runPick runs argv (no shell), stdin and stdout /dev/null, env inherited; the error carries
-// stderr's first line. A variable so the tests never run it.
+// stopMsg: the outcome of `agent-pane stop <name>`; err "" when it succeeded.
+type stopMsg struct{ name, err string }
+
+// runPick runs argv (agent-pane pick or stop, no shell), stdin and stdout /dev/null, env
+// inherited; the error carries stderr's first line. A variable so the tests never run it.
 var runPick = func(argv []string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), pickTimeout)
 	defer cancel()
@@ -677,6 +687,60 @@ func (m *Model) applyPick(msg pickMsg) {
 	m.dirty = true
 }
 
+// stopCmd: `agent-pane stop <name>` in a Cmd, as pickCmd; the footer says the outcome (stopMsg).
+func (m *Model) stopCmd(name string) tea.Cmd {
+	if !validName(name) {
+		return nil
+	}
+	if agentPaneBin == "" {
+		m.ag.note, m.dirty = "agent-pane : binaire absent, rien éteint", true
+		return nil
+	}
+	argv := []string{agentPaneBin, "stop", name}
+	return func() tea.Msg {
+		if err := runPick(argv); err != nil {
+			return stopMsg{name: name, err: err.Error()}
+		}
+		return stopMsg{name: name}
+	}
+}
+
+// applyStop: the footer says it, and a poll at once moves the card (session fermée).
+func (m *Model) applyStop(msg stopMsg) tea.Cmd {
+	if msg.err != "" {
+		m.ag.note = "agent-pane stop " + msg.name + " : " + msg.err
+	} else {
+		m.ag.note = "éteinte : " + msg.name
+	}
+	m.dirty = true
+	return m.pollCmd()
+}
+
+// stopAgent: the first `x` / × on a card arms it, the second on the same card (armed: the one
+// armed before this event) stops it.
+func (m *Model) stopAgent(ag *Agent, armed string) tea.Cmd {
+	a := &m.ag
+	m.dirty = true
+	switch {
+	case !ag.Stoppable:
+		a.note = ag.Name + " : pas de session à éteindre"
+		return nil
+	case armed != ag.ID:
+		a.armed, a.note = ag.ID, "éteindre "+ag.Name+" ? × ou x encore pour confirmer · Échap annule"
+		return nil
+	}
+	return m.stopCmd(ag.ID)
+}
+
+// disarm: every event but the confirming one drops the arm; the armed name, for that one.
+func (m *Model) disarm() string {
+	armed := m.ag.armed
+	if armed != "" {
+		m.ag.armed, m.dirty = "", true
+	}
+	return armed
+}
+
 func (m *Model) setTab(t int) {
 	m.tab, m.ag.note, m.hits, m.dirty = t, "", nil, true
 }
@@ -725,6 +789,7 @@ func (m *Model) keyAgents(ev string) tea.Cmd {
 	if a.note != "" {
 		a.note, m.dirty = "", true
 	}
+	armed := m.disarm()
 	sel := m.agentSelection()
 	row := max(sel.idx, 0)
 	n := len(AgentColumns)
@@ -754,14 +819,26 @@ func (m *Model) keyAgents(ev string) tea.Cmd {
 		if sel.idx >= 0 {
 			return m.pickCmd(a.board.cols[sel.col][sel.idx].ID)
 		}
+	case "x":
+		if sel.idx >= 0 {
+			return m.stopAgent(a.board.cols[sel.col][sel.idx], armed)
+		}
 	case "r":
 		return m.pollCmd()
 	}
 	return nil
 }
 
+// clickAgents: h nil = a click on nothing, which only disarms.
 func (m *Model) clickAgents(h *hit) tea.Cmd {
 	a := &m.ag
+	armed := m.disarm()
+	if armed != "" {
+		a.note = "" // the confirm question
+	}
+	if h == nil {
+		return nil
+	}
 	switch h.kind {
 	case hitTab:
 		m.setTab(h.col)
@@ -769,6 +846,13 @@ func (m *Model) clickAgents(h *hit) tea.Cmd {
 		a.sel = &selState{col: h.col, idx: h.idx, id: h.id}
 		a.note, a.follow, m.dirty = "", true, true
 		return m.pickCmd(h.id)
+	case hitStop:
+		if h.col < 0 || h.col >= len(a.board.cols) || h.idx < 0 || h.idx >= len(a.board.cols[h.col]) || a.board.cols[h.col][h.idx].ID != h.id {
+			return nil // the board moved since the frame
+		}
+		a.sel = &selState{col: h.col, idx: h.idx, id: h.id}
+		a.follow, m.dirty = true, true
+		return m.stopAgent(a.board.cols[h.col][h.idx], armed)
 	}
 	return nil
 }
@@ -776,7 +860,7 @@ func (m *Model) clickAgents(h *hit) tea.Cmd {
 // wheelAgents: as wheel on the runs board, for the agents columns.
 func (m *Model) wheelAgents(h *hit, dir int) {
 	a := &m.ag
-	if (h.kind != hitCard && h.kind != hitCol) || h.col < 0 || h.col >= len(AgentColumns) {
+	if (h.kind != hitCard && h.kind != hitCol && h.kind != hitStop) || h.col < 0 || h.col >= len(AgentColumns) {
 		return
 	}
 	c := h.col
@@ -813,12 +897,16 @@ func (m *Model) wheelAgents(h *hit, dir int) {
 
 // ---- view ----------------------------------------------------------------------
 
-var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · r relire · a runs · q quitter"
+var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · x éteindre · r relire · a runs · q quitter"
 
-// agentRows: rows of exactly cw cells: rounded box, name, project and age, mission, the notice
-// (or what it does), chips.
-func agentRows(a *Agent, cw int, selected bool) *rowsMemo {
-	if m := &a.rows; m.rows != nil && m.cw == cw && m.sel == selected {
+// stopShown: the card draws its × (a listed session, room for the name besides it). The × sits on
+// the name row, at the last inner cell: x+cw-3 on screen, under a hitStop.
+func (a *Agent) stopShown(cw int) bool { return a.Stoppable && cw-4 >= 6 }
+
+// agentRows: rows of exactly cw cells: rounded box, name (and ×), project and age, mission, the
+// notice (or what it does), chips. armed lights the ×.
+func agentRows(a *Agent, cw int, selected, armed bool) *rowsMemo {
+	if m := &a.rows; m.rows != nil && m.cw == cw && m.sel == selected && m.armed == armed {
 		return m
 	}
 	bg := P.card
@@ -845,7 +933,17 @@ func agentRows(a *Agent, cw int, selected bool) *rowsMemo {
 		top = toCells("● ", st(P.active), top)
 	}
 	dotOff := cell{ch: "●", w: 1, st: st(P.faint)}
-	top = append(top, fitCells(cellsOf(a.Name, st(P.text).bold()), iw-cellsWidth(top))...)
+	if a.stopShown(cw) {
+		top = append(top, fitCells(cellsOf(a.Name, st(P.text).bold()), iw-cellsWidth(top)-2)...)
+		top = append(top, spaces(iw-cellsWidth(top)-1, bgOnly(bg))...)
+		xc := P.muted
+		if armed {
+			xc = P.human
+		}
+		top = toCells("×", st(xc).bold(), top)
+	} else {
+		top = append(top, fitCells(cellsOf(a.Name, st(P.text).bold()), iw-cellsWidth(top))...)
+	}
 	body = append(body, top)
 
 	age := cellsOf(a.Age, st(P.muted))
@@ -878,7 +976,7 @@ func agentRows(a *Agent, cw int, selected bool) *rowsMemo {
 			}
 		}
 	}
-	a.rows = rowsMemo{cw: cw, sel: selected, rows: rows, dotOff: dotOff}
+	a.rows = rowsMemo{cw: cw, sel: selected, armed: armed, rows: rows, dotOff: dotOff}
 	return &a.rows
 }
 
@@ -944,7 +1042,7 @@ func (m *Model) renderAgents() {
 		items := make([]*rowsMemo, len(list))
 		top := 0
 		for i, ag := range list {
-			rows := agentRows(ag, cw, c == sel.col && i == sel.idx)
+			rows := agentRows(ag, cw, c == sel.col && i == sel.idx, ag.ID == a.armed)
 			items[i] = rows
 			lay.tops = append(lay.tops, top)
 			lay.heights = append(lay.heights, len(rows.rows))
@@ -1004,13 +1102,16 @@ func (m *Model) renderAgents() {
 		m.hits = append(m.hits, hit{x: x, y: headY, w: cw, h: max(1, cardsTop+areaH-headY), kind: hitCol, col: c})
 
 		for i, rows := range items {
-			firstRow, shown := -1, 0
+			firstRow, shown, stopY := -1, 0, -1
 			for r, row := range rows.rows {
 				at := lay.tops[i] + r - s
 				if at < 0 || at >= areaH {
 					continue
 				}
 				g.putMax(x, cardsTop+at, row, x+cw)
+				if r == 1 && list[i].stopShown(cw) {
+					stopY = cardsTop + at
+				}
 				if r == 1 && !m.tick && list[i].Column == "work" {
 					g.putMax(x+2, cardsTop+at, []cell{rows.dotOff}, x+cw)
 				}
@@ -1021,6 +1122,10 @@ func (m *Model) renderAgents() {
 			}
 			if shown > 0 {
 				m.hits = append(m.hits, hit{x: x, y: firstRow, w: cw, h: shown, kind: hitCard, id: lay.ids[i], col: c, idx: i})
+			}
+			if stopY >= 0 {
+				// After the card's hit, so it wins there (hitAt: last first); the cells around the × too.
+				m.hits = append(m.hits, hit{x: x + cw - 4, y: stopY, w: 3, h: 1, kind: hitStop, id: lay.ids[i], col: c, idx: i})
 			}
 		}
 		if at := top - s; len(list) == 0 && at >= 0 && at < areaH {

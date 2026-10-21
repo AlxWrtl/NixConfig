@@ -12,7 +12,11 @@
 #   - on a tty, each attach shrinks it one row before the client starts,
 #     restores it, then sends the client SIGWINCH (Claude repaints only on a
 #     changed size); headless, no jiggle;
-#   - abduco is only ever called as `abduco` (list) or `abduco -a <name>`.
+#   - stop TERMs the pid the list gives for exactly that name (a prefix or a
+#     substring of a listed name is no session: exit 1, nothing killed), a bad
+#     name or a wrong arity exits 2, an unlisted name exits 1;
+#   - abduco is only ever called as `abduco` (list) or `abduco -a <name>`;
+#     stop calls only the list.
 #
 # Runtime suite: the BUILT script against a stub abduco that lists a fixed
 # set of sessions (`*`, ` `, `+` rows) and, on `-a <name>`, logs the call and
@@ -22,11 +26,15 @@
 # through pick, then stopped with SIGTERM: exit 143, the client detached,
 # the terminal-restore sequence last on stdout. The pick and usage cases
 # (p01-p13) also run against the real package (pick never calls abduco).
+# s01-s05 (stop) run against the stub, whose t1 and t2 rows then carry the
+# pids of two sleeps the suite starts (orphaned, so a killed one is reaped
+# and `kill -0` sees it gone).
 # j01 runs a variant whose `stty` is a stub (size `40 100`, logs `rows <n>`):
 # log = `rows 39`, `-a t1`, `rows 40`, `WINCH t1`.
 # Canaries: C1 drops pick's name check (p03 `../x` red), C2 drops the
 # SIGTERM to the old client on a change (a05 red: no `TERM t1`), C3 drops the
-# row restore after the attach (j01 red: no `rows 40`). A canary
+# row restore after the attach (j01 red: no `rows 40`), C4 turns stop's exact
+# match into a substring one (s05 red: `t` kills t1). A canary
 # that survives, or dies at another case, fails the check. Anchors and
 # `@abduco@` must occur exactly once in the script, and the name rule must
 # be claude-dispatch's: an eval-time throw otherwise.
@@ -71,6 +79,9 @@ let
 
   c1Text = mutate "C1" "  [[ $1 =~ $name_re ]] || die 'name must match ${nameRule}'\n" "";
   c2Text = mutate "C2" "      kill -TERM \"$child\" 2>/dev/null || true\n" "";
+  c4Text =
+    mutate "C4" "    if [[ $sname == \"$1\" ]]; then\n"
+      "    if [[ $sname == *\"$1\"* ]]; then\n";
 
   # Jiggle variant: every `stty ` call goes to a stub that answers `size` with
   # `40 100` and logs `rows <n>` into the abduco log, so the order against
@@ -91,13 +102,14 @@ let
   jText = withSttyStub source;
   c3Text = withSttyStub (mutate "C3" "    stty rows \"$tty_rows\" 2>/dev/null || true\n" "");
 
-  # Lists five sessions; `-a <name>` traps TERM and WINCH first, then logs the
-  # call, so a signal sent after the log line is always recorded.
+  # Lists five sessions (t1's and t2's pids from the env when the stop cases
+  # set them); `-a <name>` traps TERM and WINCH first, then logs the call, so a
+  # signal sent after the log line is always recorded.
   stubAbduco = pkgs.writeShellScript "abduco-stub" ''
     if [ "$#" -eq 0 ]; then
       printf 'Active sessions (on host stub)\n'
-      printf '* Wed\t 2026-10-21 10:00:00\t101\tt1\n'
-      printf '  Wed\t 2026-10-21 10:00:01\t102\tt2\n'
+      printf '* Wed\t 2026-10-21 10:00:00\t%s\tt1\n' "''${STUB_T1_PID:-101}"
+      printf '  Wed\t 2026-10-21 10:00:01\t%s\tt2\n' "''${STUB_T2_PID:-102}"
       printf '  Wed\t 2026-10-21 10:00:02\t103\tquits\n'
       printf '+ Wed\t 2026-10-21 10:00:03\t104\tgone\n'
       printf '  Wed\t 2026-10-21 10:00:04\t105\tbad-json\n'
@@ -122,6 +134,7 @@ let
   stubbed = withStub null;
   c1 = withStub c1Text;
   c2 = withStub c2Text;
+  c4 = withStub c4Text;
   jiggle = withStub jText;
   c3 = withStub c3Text;
 
@@ -209,6 +222,57 @@ let
       all | jiggle) ;;
       *) echo ok; exit 0 ;;
     esac
+
+    # ---- stop, against the stub: t1 and t2 are listed with the pids of two
+    # sleeps started here (orphaned: a killed one is reaped, `kill -0` fails).
+    if [ "$only" = all ]; then
+      spawn() { sleep 300 </dev/null >/dev/null 2>&1 & echo "$!"; }
+      p1=$(spawn)
+      p2=$(spawn)
+      printf '%s\n' "$p1" "$p2" >>"$STUB_PIDS"
+      export STUB_T1_PID="$p1" STUB_T2_PID="$p2"
+      alive() { kill -0 "$1" 2>/dev/null; }
+      list_only() {
+        [ ! -s "$STUB_LOG" ] || fail "stop called abduco otherwise than the bare list: $(tr '\n' ' ' <"$STUB_LOG")"
+      }
+      # refuse <id> <exit> <args...>: that exit, a reason on stderr, both sleeps alive.
+      refuse() {
+        local want="$2"
+        case="$1"
+        shift 2
+        run "$case" "$@"
+        [ "$rc" = "$want" ] || fail "$*: exit $rc, expected $want"
+        [ -s "$work/err" ] || fail "$*: no reason on stderr"
+        alive "$p1" && alive "$p2" || fail "$*: a listed process was killed"
+        list_only
+      }
+      refuse s02 2 stop ../x
+      refuse s02 2 stop -x
+      echo "PASS $case"
+      refuse s03 2 stop
+      refuse s03 2 stop t1 t2
+      echo "PASS $case"
+      refuse s04 1 stop nosuch
+      grep -qF 'nosuch: no such session' "$work/err" || fail "no 'no such session' reason: $(cat "$work/err")"
+      echo "PASS $case"
+      # A prefix and a suffix of t1 (and of t2) are no session.
+      refuse s05 1 stop t
+      refuse s05 1 stop 1
+      echo "PASS $case"
+      run s01 stop t1
+      [ "$rc" = 0 ] || fail "stop t1: exit $rc, expected 0"
+      i=0
+      while alive "$p1"; do
+        i=$((i + 1))
+        [ "$i" -lt 50 ] || fail "t1's process survived stop t1 (waited 5 s)"
+        sleep 0.1
+      done
+      alive "$p2" || fail "stop t1 killed t2's process"
+      list_only
+      echo "PASS $case"
+      kill "$p2" 2>/dev/null
+      unset STUB_T1_PID STUB_T2_PID
+    fi
 
     # ---- the pane, headless, against the stub
     sd="$HOME/.claude/session-state"
@@ -361,7 +425,7 @@ pkgs.runCommand "agent-pane-check" { } ''
     echo "agent-pane: pick suite FAILED against the real package"
     exit 1
   }
-  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 a01 a02 a03 a04 a05 a06 a07 a08 a09 a10; do
+  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 s01 s02 s03 s04 s05 a01 a02 a03 a04 a05 a06 a07 a08 a09 a10; do
     grep -qx "PASS $r" stub.log || { echo "agent-pane: case $r did not run against the stub"; exit 1; }
   done
   for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13; do
@@ -396,7 +460,8 @@ pkgs.runCommand "agent-pane-check" { } ''
   canary C1 ${c1}/bin/agent-pane p03
   canary C2 ${c2}/bin/agent-pane a05
   canary C3 ${c3}/bin/agent-pane j01 jiggle
+  canary C4 ${c4}/bin/agent-pane s05
 
-  echo "agent-pane: runtime cases and canaries C1, C2, C3 — OK"
+  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4 — OK"
   touch $out
 ''

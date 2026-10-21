@@ -390,3 +390,148 @@ func TestCardTitle(t *testing.T) {
 		t.Fatalf("prompt drawn %d times", n)
 	}
 }
+
+// ---- `c`: resume a closed agent ------------------------------------------------
+
+// stubResumeBins: abducoBin and claudeBin as fake paths for the test's length.
+func stubResumeBins(t testing.TB) {
+	t.Helper()
+	prevA, prevC := abducoBin, claudeBin
+	abducoBin, claudeBin = "/nix/store/x-abduco/bin/abduco", "/opt/homebrew/bin/claude"
+	t.Cleanup(func() { abducoBin, claudeBin = prevA, prevC })
+}
+
+// resumeModel: the Agents tab showing only ag, selected.
+func resumeModel(t *testing.T, ag *Agent) *Model {
+	t.Helper()
+	m, _ := newAgentModel(t)
+	m.ag.board = agentsBoard{}
+	m.ag.board.cols[colIndex("done")] = []*Agent{ag}
+	m.ag.sel = &selState{id: ag.ID}
+	return m
+}
+
+func TestIsWorktreeOf(t *testing.T) {
+	for _, c := range []struct {
+		cwd, name string
+		want      bool
+	}{
+		{"/r/.claude/worktrees/a1", "a1", true},
+		{"/Users/x/projects/Preliz/.claude/worktrees/agent-135738", "agent-135738", true},
+		{"/r/.claude/worktrees/a1", "a2", false},
+		{"/r/.claude/worktrees/xa1", "a1", false},
+		{"/r/.claude/worktrees/a1/sub", "a1", false},
+		{"r/.claude/worktrees/a1", "a1", false},
+		{"/.claude/worktrees/a1", "a1", false},
+		{"/r/../.claude/worktrees/a1", "a1", false},
+		{"/r//.claude/worktrees/a1", "a1", false},
+		{"/r/.claude/worktrees/-x", "-x", false},
+		{"", "a1", false},
+	} {
+		if got := isWorktreeOf(c.cwd, c.name); got != c.want {
+			t.Errorf("isWorktreeOf(%q, %q) = %v", c.cwd, c.name, got)
+		}
+	}
+}
+
+// Resumable: abduco answered without it, a state file, cwd its worktree; never a listed, ended,
+// unknown or stateless session.
+func TestResumableDerive(t *testing.T) {
+	wt := "/r/.claude/worktrees/a1"
+	for _, c := range []struct {
+		name string
+		in   sessionInput
+		want bool
+	}{
+		{"closed done", sessionInput{State: "done", Live: liveAbsent, Cwd: wt}, true},
+		{"closed working", sessionInput{State: "working", Live: liveAbsent, Cwd: wt}, true},
+		{"running", sessionInput{State: "done", Live: liveRunning, Cwd: wt}, false},
+		{"ended +", sessionInput{State: "done", Live: liveEnded, Cwd: wt}, false},
+		{"abduco silent", sessionInput{State: "done", Live: liveUnknown, Cwd: wt}, false},
+		{"no state", sessionInput{Live: liveAbsent, Cwd: wt, noState: true}, false},
+		{"repo cwd", sessionInput{State: "done", Live: liveAbsent, Cwd: "/r"}, false},
+	} {
+		c.in.Name = "a1"
+		if got := deriveAgent(&c.in, testNow).Resumable; got != c.want {
+			t.Errorf("%s: Resumable %v", c.name, got)
+		}
+	}
+}
+
+// `c` on a closed agent: off the UI goroutine, exactly env -u CLAUDE_CODE_CHILD_SESSION abduco -n
+// <name> claude --continue --name <name> in its worktree, then the pick, then a pane; the footer
+// says it and the card stays selected.
+func TestResumeKey(t *testing.T) {
+	wt := filepath.Join(t.TempDir(), ".claude", "worktrees", "a1")
+	mustDo(t, os.MkdirAll(wt, 0o755))
+	m := resumeModel(t, &Agent{ID: "a1", Name: "a1", Cwd: wt, Resumable: true})
+	stubResumeBins(t)
+	launches := stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+	pc := stubPane(t, false, nil, nil)
+	cmd := send(m, char('c'))
+	if cmd == nil || len(*launches) != 0 || m.ag.note != "reprise de a1…" || !m.ag.launching {
+		t.Fatalf("c: Cmd %v launches %d note %q", cmd != nil, len(*launches), m.ag.note)
+	}
+	if again := send(m, char('c')); again != nil || m.ag.note != "reprise : un lancement est en cours" {
+		t.Fatalf("second c: Cmd %v note %q", again != nil, m.ag.note)
+	}
+	msg := cmd()
+	want := []string{"/usr/bin/env", "-u", "CLAUDE_CODE_CHILD_SESSION", abducoBin, "-n", "a1", claudeBin, "--continue", "--name", "a1"}
+	if len(*launches) != 1 || (*launches)[0].dir != wt || !slices.Equal((*launches)[0].argv, want) {
+		t.Fatalf("launches %+v", *launches)
+	}
+	if len(*picks) != 1 || !slices.Equal((*picks)[0], []string{agentPaneBin, "pick", "a1"}) || len(pc.open) != 1 {
+		t.Fatalf("picks %q open %q", *picks, pc.open)
+	}
+	send(m, msg)
+	if m.ag.note != "reprise : a1" || m.ag.launching || m.ag.sel == nil || m.ag.sel.id != "a1" {
+		t.Fatalf("after: note %q launching %v sel %+v", m.ag.note, m.ag.launching, m.ag.sel)
+	}
+}
+
+// Not resumable, no binary, a gone or linked worktree: nothing launched; a refused launch picks
+// nothing and says stderr's line.
+func TestResumeRefusals(t *testing.T) {
+	stubResumeBins(t)
+	launches := stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+
+	m := resumeModel(t, &Agent{ID: "a1", Name: "a1", Cwd: "/r/.claude/worktrees/a1"})
+	if cmd := send(m, char('c')); cmd != nil || !strings.HasPrefix(m.ag.note, "a1 : rien à reprendre") {
+		t.Fatalf("not resumable: Cmd %v note %q", cmd != nil, m.ag.note)
+	}
+
+	claudeBin = ""
+	m = resumeModel(t, &Agent{ID: "a1", Name: "a1", Cwd: "/r/.claude/worktrees/a1", Resumable: true})
+	if cmd := send(m, char('c')); cmd != nil || m.ag.note != "reprise : binaire absent, rien lancé" {
+		t.Fatalf("no claude: Cmd %v note %q", cmd != nil, m.ag.note)
+	}
+	claudeBin = "/opt/homebrew/bin/claude"
+
+	root := t.TempDir()
+	gone := filepath.Join(root, "gone", ".claude", "worktrees", "a1")
+	if msg := resumeAgent(abducoBin, claudeBin, agentPaneBin, "a1", gone); msg.err == "" {
+		t.Fatal("gone worktree: no error")
+	}
+	target := filepath.Join(root, "target")
+	mustDo(t, os.MkdirAll(target, 0o755))
+	link := filepath.Join(root, "l", ".claude", "worktrees", "a1")
+	mustDo(t, os.MkdirAll(filepath.Dir(link), 0o755))
+	mustDo(t, os.Symlink(target, link))
+	if msg := resumeAgent(abducoBin, claudeBin, agentPaneBin, "a1", link); msg.err == "" {
+		t.Fatal("linked worktree: no error")
+	}
+	if len(*launches) != 0 || len(*picks) != 0 {
+		t.Fatalf("launched %v picked %q", *launches, *picks)
+	}
+
+	wt := filepath.Join(root, "ok", ".claude", "worktrees", "a1")
+	mustDo(t, os.MkdirAll(wt, 0o755))
+	failing := stubLaunch(t, errors.New("create-session: Address already in use"))
+	m = resumeModel(t, &Agent{ID: "a1", Name: "a1", Cwd: wt, Resumable: true})
+	send(m, send(m, char('c'))())
+	if len(*failing) != 1 || len(*picks) != 0 || m.ag.note != "reprise de a1 : create-session: Address already in use" {
+		t.Fatalf("refused launch: launches %v picks %q note %q", *failing, *picks, m.ag.note)
+	}
+}

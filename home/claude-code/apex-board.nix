@@ -17,8 +17,10 @@
 # abduco's list); Enter runs `agent-pane pick <name>`, `x` or the card's ×
 # `agent-pane stop <name>` once confirmed (a second `x`/×), `n` or its
 # « + nouvel agent » `claude-dispatch --blank agent-HHMMSS` in the board's
-# repo then a pick: the three binaries are baked in by store path (-X
-# ldflags), never looked up on PATH. abduco comes from the same pkgs as
+# repo then a pick, `c` on a closed agent `abduco -n <name> claude --continue`
+# in its worktree then a pick: the binaries are baked in by path (-X
+# ldflags; claude at claude-dispatch's /opt/homebrew path), never looked up
+# on PATH. abduco comes from the same pkgs as
 # claude-dispatch (same socket dir); agent-pane.nix and claude-dispatch.nix
 # are imported here as in home/claude-code.nix (pure: same derivations).
 #
@@ -52,6 +54,7 @@ let
       "-X main.abducoBin=${pkgs.abduco}/bin/abduco"
       "-X main.agentPaneBin=${agentPane.agentPanePkg}/bin/agent-pane"
       "-X main.dispatchBin=${dispatch.claudeDispatchPkg}/bin/claude-dispatch"
+      "-X main.claudeBin=/opt/homebrew/bin/claude"
     ];
     postInstall = ''
       mv $out/bin/tui $out/bin/apex-board-tui

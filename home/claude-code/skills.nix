@@ -2337,6 +2337,13 @@ in
        Est-lines: {N}
        Baseline: {gate} -> {green | red: check | skipped: reason}
 
+       ## Progress
+       | Step | Status | Notes |
+       |------|--------|-------|
+       | 03-edit | running | |
+       | 04-gate | pending | |
+       | 08-ship | pending | |
+
        ## Tokens
        | Point | Coordinator context |
        |-------|---------------------|
@@ -2344,7 +2351,13 @@ in
        | end | {n} |
        ```
 
-       ACs go in the same file under `## ACs`, one line each.
+       ACs go in the same file under `## ACs`, one line each. The Progress
+       table is what apex-board reads (NN prefix → column): without it a
+       Direct run sits in Init until it goes stale. One edit per change:
+       04-gate goes `running` (03-edit `complete`) at step 5, 08-ship
+       `running` at step 8 and `complete` once merged (`-PR`: once the
+       diff is left on the branch). An escalation replaces the table with
+       step-00b's.
     3. **Baseline gate.** Run the project's own gate BEFORE the first edit —
        the same command step 5 will run (`pnpm typecheck && pnpm lint`,
        `nix flake check --no-build`, `cargo check`). Record its verdict.

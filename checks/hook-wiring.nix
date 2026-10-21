@@ -562,6 +562,10 @@ let
       hook = "session-state.js";
       text = "if (!NAME_RE.test(name)) return;";
     };
+    A-ss-headless = {
+      hook = "session-state.js";
+      text = "if (process.env.CLAUDE_CODE_SESSION_ATTENDED === \"0\") return;";
+    };
     A-wes-link = {
       hook = "worktree-env-sync.sh";
       text = "if cp -p \"$src\" \"$tmp\" 2>/dev/null && ln -n \"$tmp\" \"$dst\" 2>/dev/null; then LIST=\"$LIST, $name\"; fi";
@@ -1436,6 +1440,19 @@ let
         }
       ];
     }
+    # The headless gate dropped: a `claude -p` inside the agent replaces its
+    # file.
+    {
+      id = "M-ss-headless";
+      hook = "session-state.js";
+      kills = "ss-headless-kept";
+      swaps = [
+        {
+          anchor = "A-ss-headless";
+          to = ";";
+        }
+      ];
+    }
     # apex-pr-record run, one canary per write or no-write branch.
     # Any command starting with gh read as a merge: `gh pr view 42` records.
     {
@@ -1760,6 +1777,8 @@ let
     "ss-start-idle"
     "ss-new-session-fresh"
     "ss-noabduco-silent"
+    "ss-headless-kept"
+    "ss-attended-writes"
     "ss-badname-silent"
     "ss-malformed-silent"
     "ss-symlink-dir"
@@ -2114,14 +2133,14 @@ let
 
     # session-state: a fresh fixture HOME $H per label, the state dir $SF in
     # it. ss_run $1 body, $2 ABDUCO_SESSION (absent from the env when empty),
-    # $3 stdin. The env is cleared as in run(): the variable reaches the hook
-    # only when the case passes it.
+    # $3 stdin, $4 one more VAR=value (none when unset). The env is cleared as
+    # in run(): a variable reaches the hook only when the case passes it.
     ss_home() { H="$root/ss/$lbl"; SF="$H/.claude/session-state"; rm -rf "$H"; mkdir -p "$H"; }
     ss_run() {
       printf '%s' "$3" > "$d/$lbl.in"
       rc=0
       if [ -n "$2" ]; then ab="ABDUCO_SESSION=$2"; else ab="SS_PROBE=1"; fi
-      (cd "$NOREPO" && env -i HOME="$H" PATH="${pkgs.coreutils}/bin" "$ab" ${pkgs.coreutils}/bin/timeout "$tmo" ${pkgs.nodejs_22}/bin/node "$1") \
+      (cd "$NOREPO" && env -i HOME="$H" PATH="${pkgs.coreutils}/bin" "$ab" "''${4-SS_PROBE2=1}" ${pkgs.coreutils}/bin/timeout "$tmo" ${pkgs.nodejs_22}/bin/node "$1") \
         < "$d/$lbl.in" > "$d/$lbl.out" 2> "$d/$lbl.err" || rc=$?
     }
     # $1 event, $2 session id (s1 when unset), $3 the prompt, the message or
@@ -2885,6 +2904,19 @@ let
           ss_home
           ss_run "$2" "" "$(ss_in UserPromptSubmit s1 "Fix the build")"; is_silent || return 1
           ss_nothing ;;
+        ss-headless-kept)
+          ss_home
+          ss_step "$2" UserPromptSubmit s1 "Fix the build" || return 1
+          ss_run "$2" t1 "$(ss_in SessionStart s2)" CLAUDE_CODE_SESSION_ATTENDED=0; is_silent || return 1
+          ss_run "$2" t1 "$(ss_in UserPromptSubmit s2 "You are naming clusters")" CLAUDE_CODE_SESSION_ATTENDED=0; is_silent || return 1
+          is_state working UserPromptSubmit "Fix the build" "" s1 || return 1
+          ss_home
+          ss_run "$2" t1 "$(ss_in UserPromptSubmit s1 "Fix the build")" CLAUDE_CODE_SESSION_ATTENDED=0; is_silent || return 1
+          ss_nothing ;;
+        ss-attended-writes)
+          ss_home
+          ss_run "$2" t1 "$(ss_in UserPromptSubmit s1 "Fix the build")" CLAUDE_CODE_SESSION_ATTENDED=1; is_silent || return 1
+          is_state working UserPromptSubmit "Fix the build" "" ;;
         ss-badname-silent)
           ss_home
           for bad in ../x -x X1 a/b; do

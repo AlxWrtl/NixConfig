@@ -33,7 +33,6 @@ let
   apexHealth = import ./claude-code/apex-health.nix { inherit pkgs; };
   apexBoard = import ./claude-code/apex-board.nix { inherit pkgs; };
   claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
-  claudeBg = import ./claude-code/claude-bg.nix { inherit pkgs; };
   agentPane = import ./claude-code/agent-pane.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
     inherit pkgs lib;
@@ -52,7 +51,6 @@ let
   inherit (apexHealth) apexHealthPkg;
   inherit (apexBoard) apexBoardPkg;
   inherit (claudeDispatch) claudeDispatchPkg;
-  inherit (claudeBg) claudeBgPkg;
   inherit (agentPane) agentPanePkg;
   inherit (graphifyReindex) graphifyReindexPkg;
   inherit (vaultSnapshot) vaultSnapshotPkg;
@@ -356,7 +354,7 @@ in
     file = claudeHomeFiles;
 
     # `libdocs` + `nix-options` + `trello` + `graphify-reindex` +
-    # `claude-dispatch` + `claude-bg` + `agent-pane` on PATH — usable by
+    # `claude-dispatch` + `agent-pane` on PATH — usable by
     # Claude, by APEX and its subagents, and by the user in a plain terminal.
     # `abduco` too, from the same pkgs as the claude-dispatch wrapper and
     # agent-pane (same default socket dir), so `abduco -a <name>` attaches to
@@ -373,7 +371,6 @@ in
       apexBoardPkg
       claudeDispatchPkg
       pkgs.abduco
-      claudeBgPkg
       agentPanePkg
       graphifyReindexPkg
       vaultSnapshotPkg

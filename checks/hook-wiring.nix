@@ -47,9 +47,9 @@
 #      non-target segment, a file redirection and a command substitution
 #      denied; a quoted `;`, fd duplication and malformed input allowed,
 #      the last three killed as over-blocks.
-#      The claude-bg run adds the claude-bg wrapper as a target: next to
-#      another command, behind VAR= or an absolute path, piped or redirected
-#      denied, alone or chained with itself allowed.
+#      The claude-bg removal retires that wrapper: claude-dispatch next to
+#      another command, behind VAR= or an absolute path denied, alone
+#      allowed; claude-bg chained to git push denied, behind cd && silent.
 #      The sandbox-escape run adds sandbox-escape-evidence: an escape with
 #      no sandbox error in the newest Bash batch denied, an older batch's
 #      error, a skill body naming the flag, an allowlisted verb inside
@@ -443,17 +443,17 @@ let
       hook = "lone-excluded-bash.js";
       text = "const dup = (op === \">&\" || op === \"<&\") && /^(?:[0-9]+-?|-)$/.test(w.val);";
     };
-    A-le-bg-target = {
+    A-le-dispatch-target = {
       hook = "lone-excluded-bash.js";
-      text = "if (cmd === \"claude-dispatch\" || cmd === \"claude-bg\") return [cmd];";
+      text = "if (cmd === \"claude-dispatch\") return [cmd];";
     };
-    A-le-bg-prefilter = {
+    A-le-dispatch-prefilter = {
       hook = "lone-excluded-bash.js";
-      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-(?:dispatch|bg)\\b/;";
+      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b/;";
     };
-    A-le-bg-clean = {
+    A-le-dispatch-clean = {
       hook = "lone-excluded-bash.js";
-      text = "if (w0.val === \"gh\" || w0.val === \"claude-dispatch\" || w0.val === \"claude-bg\") return true;";
+      text = "if (w0.val === \"gh\" || w0.val === \"claude-dispatch\") return true;";
     };
     A-se-failopen = {
       hook = "sandbox-escape-evidence.js";
@@ -977,41 +977,41 @@ let
         }
       ];
     }
-    # claude-bg run. The wrapper not a target: `cd /x && claude-bg …` passes.
+    # claude-dispatch not a target: `cd /x && claude-dispatch …` passes.
     {
-      id = "M-le-bg-target";
+      id = "M-le-dispatch-target";
       hook = "lone-excluded-bash.js";
-      kills = "le-bg-cd-deny";
+      kills = "le-dispatch-cd-deny";
       swaps = [
         {
-          anchor = "A-le-bg-target";
-          to = "if (cmd === \"claude-dispatch\") return [cmd];";
+          anchor = "A-le-dispatch-target";
+          to = "if (false) return [cmd];";
         }
       ];
     }
-    # The prefilter blind to claude-bg: a call with no git/gh word is never
-    # lexed, `VAR=x claude-bg status` passes.
+    # The prefilter blind to claude-dispatch: a call with no git/gh word is
+    # never lexed, `VAR=x claude-dispatch …` passes.
     {
-      id = "M-le-bg-prefilter";
+      id = "M-le-dispatch-prefilter";
       hook = "lone-excluded-bash.js";
-      kills = "le-bg-env-deny";
+      kills = "le-dispatch-env-deny";
       swaps = [
         {
-          anchor = "A-le-bg-prefilter";
-          to = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b/;";
+          anchor = "A-le-dispatch-prefilter";
+          to = "const PREFILTER = /\\bg(?:it|h)\\b/;";
         }
       ];
     }
-    # A lone claude-bg not clean: the call it must let out is denied.
+    # A lone claude-dispatch not clean: the call it must let out is denied.
     # Killed on an ALLOW case, as an over-block.
     {
-      id = "M-le-bg-clean";
+      id = "M-le-dispatch-clean";
       hook = "lone-excluded-bash.js";
-      kills = "le-bg-allow";
+      kills = "le-dispatch-allow";
       swaps = [
         {
-          anchor = "A-le-bg-clean";
-          to = "if (w0.val === \"gh\" || w0.val === \"claude-dispatch\") return true;";
+          anchor = "A-le-dispatch-clean";
+          to = "if (w0.val === \"gh\") return true;";
         }
       ];
     }
@@ -1337,11 +1337,9 @@ let
     "le-wrapper-opt-deny"
     "le-heredoc-body-deny"
     "le-dispatch-cd-deny"
-    "le-bg-cd-deny"
-    "le-bg-env-deny"
-    "le-bg-abs-deny"
-    "le-bg-pipe-deny"
-    "le-bg-redir-deny"
+    "le-retired-bg-push-deny"
+    "le-dispatch-env-deny"
+    "le-dispatch-abs-deny"
     "le-push-allow"
     "le-push-u-allow"
     "le-commit-F-allow"
@@ -1354,8 +1352,7 @@ let
     "le-status-diff-allow"
     "le-chain-targets-allow"
     "le-dispatch-allow"
-    "le-bg-allow"
-    "le-bg-chain-allow"
+    "le-retired-bg-cd-allow"
     "le-malformed-allow"
     "le-command-v-allow"
     "se-preempt-deny"
@@ -2163,16 +2160,16 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in "$(printf '%s\n%s\n%s' 'cat <<EOF' '$(gh auth token)' 'EOF')")"; is_deny "command substitution" ;;
         le-dispatch-cd-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'cd /x && claude-dispatch fix-a "fix the typo"')"; is_deny "next to another command" ;;
-        le-bg-cd-deny)
-          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'cd /x && claude-bg logs 4b04dbe6')"; is_deny "next to another command" ;;
-        le-bg-env-deny)
-          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'CLAUDE_CONFIG_DIR=/x claude-bg status')"; is_deny "next to another command" ;;
-        le-bg-abs-deny)
-          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in '/etc/profiles/per-user/alx/bin/claude-bg status')"; is_deny "next to another command" ;;
-        le-bg-pipe-deny)
-          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-bg logs 4b04dbe6 | tail')"; is_deny "next to another command" ;;
-        le-bg-redir-deny)
-          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-bg logs 4b04dbe6 > l.txt')"; is_deny "file redirection" ;;
+        # The retired claude-bg (daemon off, #299) is no excluded command:
+        # never a clean link in a chain, silent behind cd &&.
+        le-retired-bg-push-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-bg status && git push')"; is_deny "next to another command" ;;
+        le-retired-bg-cd-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'cd /x && claude-bg logs 4b04dbe6')"; is_allow ;;
+        le-dispatch-env-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'CLAUDE_CONFIG_DIR=/x claude-dispatch fix-a "fix the typo"')"; is_deny "next to another command" ;;
+        le-dispatch-abs-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in '/etc/profiles/per-user/alx/bin/claude-dispatch fix-a "fix the typo"')"; is_deny "next to another command" ;;
         le-command-v-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'command -v gh')"; is_allow ;;
         le-push-allow)
@@ -2199,10 +2196,6 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -F m.txt && git push')"; is_allow ;;
         le-dispatch-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-dispatch fix-a "fix the typo"')"; is_allow ;;
-        le-bg-allow)
-          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-bg respawn 4b04dbe6')"; is_allow ;;
-        le-bg-chain-allow)
-          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-bg respawn 4b04dbe6 && claude-bg logs 4b04dbe6')"; is_allow ;;
         le-malformed-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
         # Sandbox-escape run: the flag needs sandbox evidence in the newest

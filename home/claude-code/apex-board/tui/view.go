@@ -265,7 +265,7 @@ func (m *Model) drawHeader(g grid, W, y int) {
 	var status []cell
 	st, what := m.status, "runs/"
 	if m.tab == tabAgents {
-		st, what = m.ag.status, "jobs/"
+		st, what = m.ag.status, "session-state/"
 	}
 	switch {
 	case st == nil:

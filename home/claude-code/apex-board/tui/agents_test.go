@@ -1,21 +1,22 @@
 package main
 
-// The Agents tab: testdata/jobs (one session per observed state tuple: done/idle, blocked/active,
-// working/idle, working/blocked never started, plus failed, stopped, stale working, needs-you by
-// `needs`, by `block.questions` and by the last reply, stalled, an unknown state, a finished one
-// over 24 h, a half-written state.json) copied to a temp dir, where the edges that cannot live in
-// git are added: a dir without state.json, a state.json link and a dir link out of the jobs dir,
-// an oversized state.json, a timeline link, control chars and secrets in a detail. An active
-// tempo is working whatever the state: the blocked sessions that wait on you get tempo idle there.
+// The Agents tab: testdata/session-state (one file per state the writer writes, an unknown word,
+// done over 24 h, a session ended under abduco and one closed without SessionEnd, plus files that
+// are no session: bad JSON, an array, no cwd, name ≠ stem, `-x.json`, a dotted temp file, an
+// uppercase name) copied to a temp dir, where the edges that cannot live in git are added: a link
+// out of the dir, an oversized file, a FIFO. testdata/abduco/listing.txt is abduco's list in its
+// real format (header, `*`, `+`, bad names); abducoList and runPick are stubbed in every test, so
+// no process is ever started.
 
 import (
+	"errors"
 	"io"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -25,52 +26,75 @@ import (
 
 var testNow = float64(time.Date(2026, 10, 20, 12, 0, 0, 0, time.UTC).UnixMilli())
 
-type jobsFixture struct{ jobs, outside string }
+// stubAbduco: abducoList answers out (or err) for the test's length.
+func stubAbduco(t testing.TB, out []byte, err error) {
+	t.Helper()
+	prev := abducoList
+	abducoList = func() ([]byte, error) { return out, err }
+	t.Cleanup(func() { abducoList = prev })
+}
 
-func newJobsFixture(t *testing.T) *jobsFixture {
+func listing(t testing.TB) []byte {
+	t.Helper()
+	b, err := os.ReadFile("testdata/abduco/listing.txt")
+	mustDo(t, err)
+	return b
+}
+
+// stubPick records each runPick argv; agentPaneBin is a fake store path for the test's length.
+func stubPick(t testing.TB, err error) *[][]string {
+	t.Helper()
+	var calls [][]string
+	prevRun, prevBin := runPick, agentPaneBin
+	runPick = func(argv []string) error {
+		calls = append(calls, slices.Clone(argv))
+		return err
+	}
+	agentPaneBin = "/nix/store/x-agent-pane/bin/agent-pane"
+	t.Cleanup(func() { runPick, agentPaneBin = prevRun, prevBin })
+	return &calls
+}
+
+type sessionsFixture struct{ dir, outside string }
+
+func newSessionsFixture(t *testing.T) *sessionsFixture {
 	t.Helper()
 	root := t.TempDir()
-	f := &jobsFixture{jobs: filepath.Join(root, "jobs"), outside: filepath.Join(root, "outside")}
-	copyTree(t, "testdata/jobs", f.jobs)
-	put := func(rel, text string) {
-		p := filepath.Join(f.jobs, rel)
-		mustDo(t, os.MkdirAll(filepath.Dir(p), 0o755))
-		mustDo(t, os.WriteFile(p, []byte(text), 0o600))
-	}
-	// Control chars and secrets, written here: raw control bytes are no valid JSON in a file.
-	put("a000000a/state.json", `{"name":null,"nameSource":"auto","state":"working","tempo":"active","intent":"explore le cache","detail":"lit \u001b[31mrouge\u0007 avec token=abcdef123456 et ghp_abcdefghijklmnop","cwd":"/Users/u/projects/Gamma/","updatedAt":"2026-10-20T11:59:30.000Z"}`)
-	put("a000000a/timeline.jsonl", `{"at":"2026-10-20T11:59:30.000Z","state":"working","detail":"lecture"}`+"\n")
-	mustDo(t, os.MkdirAll(filepath.Join(f.jobs, "b0000001", "tmp"), 0o755)) // never wrote its state
+	f := &sessionsFixture{dir: filepath.Join(root, "session-state"), outside: filepath.Join(root, "outside")}
+	copyTree(t, "testdata/session-state", f.dir)
 	mustDo(t, os.MkdirAll(f.outside, 0o755))
-	secret := `{"name":"SECRET-OUTSIDE","state":"blocked","cwd":"/x","intent":"x","updatedAt":"2026-10-20T11:59:00.000Z"}`
-	mustDo(t, os.WriteFile(filepath.Join(f.outside, "state.json"), []byte(secret), 0o600))
-	mustDo(t, os.WriteFile(filepath.Join(f.outside, "timeline.jsonl"), []byte(`{"at":"2026-10-20T11:59:00.000Z","state":"blocked","detail":"SECRET-TIMELINE"}`+"\n"), 0o600))
-	mustDo(t, os.MkdirAll(filepath.Join(f.jobs, "b0000002"), 0o755))
-	mustDo(t, os.Symlink(filepath.Join(f.outside, "state.json"), filepath.Join(f.jobs, "b0000002", "state.json")))
-	put("b0000003/state.json", `{"name":"big","state":"working","cwd":"/x","pad":"`+strings.Repeat("x", maxStateBytes)+`"}`)
-	mustDo(t, os.Symlink(f.outside, filepath.Join(f.jobs, "b0000004"))) // a dir link: never listed
-	put("b0000005/state.json", `{"name":"linked-tl","state":"blocked","tempo":"idle","cwd":"/x","intent":"x","updatedAt":"2026-10-20T11:00:00.000Z"}`)
-	mustDo(t, os.Symlink(filepath.Join(f.outside, "timeline.jsonl"), filepath.Join(f.jobs, "b0000005", "timeline.jsonl")))
-	put("pins.json", `[]`)
+	secret := `{"name":"linked","state":"needs-you","cwd":"/x","intent":"SECRET-OUTSIDE","updatedAt":"2026-10-20T11:59:00.000Z"}`
+	mustDo(t, os.WriteFile(filepath.Join(f.outside, "linked.json"), []byte(secret), 0o600))
+	mustDo(t, os.Symlink(filepath.Join(f.outside, "linked.json"), filepath.Join(f.dir, "linked.json")))
+	big := `{"name":"big","state":"working","cwd":"/x","pad":"` + strings.Repeat("x", maxStateBytes) + `"}`
+	mustDo(t, os.WriteFile(filepath.Join(f.dir, "big.json"), []byte(big), 0o600))
+	mustDo(t, syscall.Mkfifo(filepath.Join(f.dir, "fifo.json"), 0o600))
 	return f
 }
 
-func (f *jobsFixture) read(t *testing.T) (jobsRead, agentsBoard) {
+func (f *sessionsFixture) read(t *testing.T) (sessionsRead, agentsBoard) {
 	t.Helper()
-	r := &JobsReader{Dir: f.jobs}
-	read, err := r.Read()
+	read, err := (&SessionsReader{Dir: f.dir}).Read()
 	mustDo(t, err)
-	return read, deriveAgents(read.jobs, read.empty, testNow)
+	live, err := readAbduco()
+	mustDo(t, err)
+	return read, deriveAgents(withLiveness(read.sessions, live), testNow)
 }
 
-func agentsModel(t *testing.T, f *jobsFixture, w, h int) *Model {
+func agentsModel(t *testing.T, f *sessionsFixture, w, h int) *Model {
 	t.Helper()
+	stubAbduco(t, listing(t), nil)
 	m := newModel("", "", "fixture", w, h)
-	m.setJobsDir(f.jobs)
+	m.setSessionsDir(f.dir)
 	m.tab = tabAgents
+	p := pollAgents(m.ag.reader)
+	mustDo(t, p.err)
+	// Derived again at testNow: the ages and the 24 h keep do not move with the clock.
 	read, err := m.ag.reader.Read()
 	mustDo(t, err)
-	m.applyAgents(&agentsPoll{board: deriveAgents(read.jobs, read.empty, testNow), problems: read.problems, now: testNow, clock: "12:00:00"})
+	live, _ := readAbduco()
+	p.board, p.now, p.clock = deriveAgents(withLiveness(read.sessions, live), testNow), testNow, "12:00:00"
+	m.applyAgents(p)
 	return m
 }
 
@@ -95,324 +119,375 @@ func agentOf(t *testing.T, b agentsBoard, id string) *Agent {
 	return nil
 }
 
-// deck's bgKind table (background.ts), case by case.
-func TestBgKindIsDecks(t *testing.T) {
-	for _, c := range []struct {
-		state, tempo string
-		asks         bool
-		want         string
-	}{
-		{"working", "blocked", true, "needs-you"},
-		{"working", "blocked", false, "stalled"},
-		{"Working", "blocked", false, "working"}, // the blocked rule is exact case, as deck's
-		{"working", "Blocked", true, "working"},
-		{"working", "idle", false, "working"},
-		{"working", "active", true, "working"}, // an active tempo is working whatever the state
-		{"blocked", "active", false, "working"},
-		{"done", "active", false, "working"},
-		{"paused", "active", false, "working"},
-		{"blocked", "Active", false, "needs-you"}, // exact case, as the blocked rule
-		{"blocked", "idle", false, "needs-you"},
-		{"BLOCKED", "", false, "needs-you"},
-		{"done", "idle", false, "done"},
-		{"completed", "", false, "done"},
-		{"failed", "", false, "failed"},
-		{"error", "", false, "failed"},
-		{"stopped", "", false, "stopped"},
-		{"killed", "", false, "stopped"},
-		{"paused", "", false, "other"},
-		{"", "", false, "other"},
+func TestSessionKind(t *testing.T) {
+	for state, want := range map[string]string{
+		"needs-you": "needs-you", "waiting": "waiting", "idle": "idle", "working": "working", "done": "done",
+		"Working": "other", "blocked": "other", "paused": "other", "": "other", " done": "other",
 	} {
-		if got := bgKind(c.state, c.tempo, c.asks); got != c.want {
-			t.Errorf("bgKind(%q, %q, %v) = %q, want %q", c.state, c.tempo, c.asks, got, c.want)
+		if got := sessionKind(state); got != want {
+			t.Errorf("sessionKind(%q) = %q, want %q", state, got, want)
 		}
 	}
-	if projectOf("/a/Repo/.claude/worktrees/x") != "Repo" || projectOf("/a/b/") != "b" || projectOf("/") != "/" {
+	if projectOf("/a/Repo/.claude/worktrees/x") != "Repo" || projectOf("/a/b/") != "b" || projectOf("/") != "/" || projectOf("") != "" {
 		t.Fatal("projectOf is not deck's")
 	}
 }
 
-func TestReadJobsColumns(t *testing.T) {
-	f := newJobsFixture(t)
-	read, b := f.read(t)
-	// a0000004 (never started) and b0000001 (no state.json) are the empty ones.
-	if read.empty != 2 || b.empty != 2 || b.old != 1 {
-		t.Fatalf("empty %d, old %d", b.empty, b.old)
+func TestValidName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"a": true, "0": true, "ask-needs": true, "a-": true, strings.Repeat("a", 48): true,
+		"": false, "-x": false, "--help": false, "Upper": false, "a_b": false, "a.b": false, "a/b": false,
+		"../a": false, "a\n": false, "a b": false, "é": false, strings.Repeat("a", 49): false,
+	} {
+		if got := validName(name); got != want {
+			t.Errorf("validName(%q) = %v", name, got)
+		}
 	}
-	if len(read.problems) != 2 || !strings.Contains(read.problems[0], "b0000002 : state.json est un lien") || !strings.Contains(read.problems[1], "b0000003 : state.json de 256 Ko") {
+}
+
+func TestParseSessionState(t *testing.T) {
+	ok := `{"name":"s1","state":"working","cwd":"/x","event":"UserPromptSubmit","updatedAt":"2026-10-20T11:59:00.000Z","intent":"[claude-dispatch]  fais\nça  avec token=abcdef123456","notice":"x\u0007y"}`
+	s := parseSessionState("s1", []byte(ok))
+	if s == nil || s.Intent != "fais ça avec token=•••" || s.State != "working" || s.Event != "UserPromptSubmit" || s.UpdatedAt != testNow-60_000 || s.Notice != "x\x07y" {
+		t.Fatalf("parsed %+v", s)
+	}
+	for name, data := range map[string]string{
+		"not json":      `{not json`,
+		"array":         `[1]`,
+		"null":          `null`,
+		"string":        `"x"`,
+		"no state":      `{"name":"s1","cwd":"/x"}`,
+		"state number":  `{"name":"s1","state":1,"cwd":"/x"}`,
+		"no cwd":        `{"name":"s1","state":"working"}`,
+		"name mismatch": `{"name":"s2","state":"working","cwd":"/x"}`,
+		"no name":       `{"state":"working","cwd":"/x"}`,
+		"name number":   `{"name":1,"state":"working","cwd":"/x"}`,
+	} {
+		if parseSessionState("s1", []byte(data)) != nil {
+			t.Errorf("%s: parsed", name)
+		}
+	}
+}
+
+func TestParseAbduco(t *testing.T) {
+	got := parseAbduco(listing(t))
+	var names, marks, pids []string
+	for _, s := range got {
+		names, marks, pids = append(names, s.Name), append(marks, string(s.Mark)), append(pids, s.Pid)
+	}
+	want := []string{"ask-needs", "ask-wait", "ask-idle", "work-live", "work-stale", "odd-state", "ended-cmd", "stateless", "gone-cmd"}
+	if !slices.Equal(names, want) {
+		t.Fatalf("names %q", names)
+	}
+	if !slices.Equal(marks, []string{"*", " ", " ", "*", " ", " ", "+", " ", "+"}) || pids[0] != "101" || pids[8] != "109" {
+		t.Fatalf("marks %q pids %q", marks, pids)
+	}
+	if parseAbduco(nil) != nil || parseAbduco([]byte("Active sessions (on host x)\n")) != nil {
+		t.Fatal("empty list")
+	}
+	live, err := func() (map[string]int, error) {
+		stubAbduco(t, listing(t), nil)
+		return readAbduco()
+	}()
+	mustDo(t, err)
+	if live["ask-needs"] != liveRunning || live["ended-cmd"] != liveEnded || live["gone-cmd"] != liveEnded {
+		t.Fatalf("liveness %v", live)
+	}
+	if _, listed := live["closed"]; listed {
+		t.Fatal("closed listed")
+	}
+}
+
+// Every row of the plan's state / liveness table.
+func TestAgentColumnOf(t *testing.T) {
+	recent := testNow - 60_000
+	for _, c := range []struct {
+		name            string
+		in              sessionInput
+		kind, col, chip string
+		stale, asking   bool
+		current         string
+	}{
+		{"needs-you", sessionInput{State: "needs-you", Notice: "permission Bash", Live: liveRunning}, "needs-you", "ask", "", false, true, "permission Bash"},
+		{"waiting", sessionInput{State: "waiting", Notice: "old", Live: liveRunning}, "waiting", "ask", "à toi", false, false, ""},
+		{"idle", sessionInput{State: "idle", Live: liveRunning}, "idle", "ask", "pas encore lancée", false, false, ""},
+		{"working", sessionInput{State: "working", Live: liveRunning}, "working", "work", "", false, false, ""},
+		{"working stale", sessionInput{State: "working", Live: liveRunning, UpdatedAt: testNow - 40*60_000}, "working", "stuck", "rien depuis 40 min", true, false, ""},
+		{"done", sessionInput{State: "done", Live: liveAbsent}, "done", "done", "", false, false, ""},
+		{"done ended", sessionInput{State: "done", Live: liveEnded}, "done", "done", "", false, false, ""},
+		{"ended +", sessionInput{State: "working", Live: liveEnded}, "done", "done", "commande terminée", false, false, ""},
+		{"absent", sessionInput{State: "needs-you", Notice: "x", Live: liveAbsent}, "done", "done", "session fermée", false, false, ""},
+		{"no state file", sessionInput{Live: liveRunning, noState: true}, "other", "stuck", "sans état", false, false, ""},
+		{"unknown word", sessionInput{State: "paused", Live: liveRunning}, "other", "stuck", "paused", false, false, ""},
+		{"empty word", sessionInput{State: "", Live: liveRunning}, "other", "stuck", "état vide", false, false, ""},
+		{"abduco failed: never ended", sessionInput{State: "waiting", Live: liveUnknown}, "waiting", "ask", "à toi", false, false, ""},
+	} {
+		in := c.in
+		in.Name = "s"
+		if in.UpdatedAt == 0 && !in.noState {
+			in.UpdatedAt = recent
+		}
+		a := deriveAgent(&in, testNow)
+		chip := ""
+		if len(a.Chips) > 0 {
+			chip = a.Chips[0].Label
+		}
+		if a.Kind != c.kind || a.Column != c.col || chip != c.chip || a.Stale != c.stale || a.Asking != c.asking || a.Current != c.current {
+			t.Errorf("%s: kind %q col %q chip %q stale %v asking %v current %q", c.name, a.Kind, a.Column, chip, a.Stale, a.Asking, a.Current)
+		}
+	}
+}
+
+// staleMs and keepMs at their edges.
+func TestStaleAndKeep(t *testing.T) {
+	at := func(state string, ago float64) *sessionInput {
+		return &sessionInput{Name: "s", State: state, Live: liveRunning, UpdatedAt: testNow - ago}
+	}
+	if a := deriveAgent(at("working", staleMs), testNow); a.Column != "work" {
+		t.Fatal("stale at exactly staleMs")
+	}
+	if a := deriveAgent(at("working", staleMs+1), testNow); a.Column != "stuck" {
+		t.Fatal("not stale past staleMs")
+	}
+	b := deriveAgents([]*sessionInput{at("done", keepMs), at("done", keepMs+1), at("waiting", 3*keepMs)}, testNow)
+	if b.total != 2 || b.old != 1 || len(b.cols[colIndex("done")]) != 1 || len(b.cols[colIndex("ask")]) != 1 {
+		t.Fatalf("keep: total %d old %d", b.total, b.old)
+	}
+	// Ended by abduco counts as done for the 24 h keep.
+	gone := at("working", keepMs+1)
+	gone.Live = liveAbsent
+	if b := deriveAgents([]*sessionInput{gone}, testNow); b.old != 1 || b.total != 0 {
+		t.Fatal("an old closed session kept")
+	}
+	if hiddenText(b) != "1 terminée depuis plus de 24 h masquée" || hiddenText(agentsBoard{}) != "" {
+		t.Fatalf("hidden %q", hiddenText(b))
+	}
+}
+
+func TestReadSessionsColumns(t *testing.T) {
+	stubAbduco(t, listing(t), nil)
+	f := newSessionsFixture(t)
+	read, b := f.read(t)
+	wantProblems := []string{"big : 64 Ko, plus de 64 Ko : non lu", "fifo : pas un fichier ordinaire : non lu", "linked : lien : non lu"}
+	if !slices.Equal(read.problems, wantProblems) {
 		t.Fatalf("problems %q", read.problems)
 	}
 	for key, want := range map[string][]string{
-		"ask":   {"a0000002", "a0000008", "a000000c", "a000000d", "b0000005"},
-		"work":  {"a000000a", "a0000003"},
-		"stuck": {"a0000009", "a0000005", "a0000007", "a000000e"}, // BG_ORDER: stalled, failed, working (stale), other
-		"done":  {"a0000006", "a0000001"},                         // stopped before done, as BG_ORDER
+		"ask":   {"ask-needs", "ask-wait", "ask-idle"}, // bgOrder: needs-you, waiting, idle
+		"work":  {"work-live"},
+		"stuck": {"work-stale", "odd-state", "stateless"}, // working (stale) before other; newest first
+		"done":  {"closed", "ended-cmd", "done-recent"},   // newest first
 	} {
 		if got := colIDs(b, key); !slices.Equal(got, want) {
 			t.Errorf("%s: %v, want %v", key, got, want)
 		}
 	}
-	if b.total != 13 {
-		t.Fatalf("total %d", b.total)
+	if b.total != 10 || b.old != 1 {
+		t.Fatalf("total %d, old %d", b.total, b.old)
 	}
-	for _, id := range []string{"a0000004", "a000000b", "a000000f", "b0000001", "b0000002", "b0000003", "b0000004"} {
-		for _, col := range b.cols {
-			if slices.ContainsFunc(col, func(a *Agent) bool { return a.ID == id }) {
-				t.Fatalf("%s shown", id)
+	if a := agentOf(t, b, "ask-needs"); !a.Asking || a.Current != "Claude needs your permission to use Bash (token=•••" || a.Mission != "corrige le login qui boucle" || a.Project != "Beta" || a.Age != "il y a 3 min" {
+		t.Fatalf("needs-you: %+v", a)
+	}
+	if a := agentOf(t, b, "ask-wait"); a.Project != "Gamma" || strings.Contains(a.Mission, "ghp_abcdefghijklmnop") || a.Chips[0].Label != "à toi" {
+		t.Fatalf("waiting: %+v", a)
+	}
+	if a := agentOf(t, b, "work-live"); a.Mission != "/card X1 — monter vite en 7.3" || a.Project != "Alpha" {
+		t.Fatalf("working: %+v", a)
+	}
+	if a := agentOf(t, b, "ended-cmd"); a.Chips[0].Label != "commande terminée" {
+		t.Fatalf("ended: %+v", a.Chips)
+	}
+	if a := agentOf(t, b, "closed"); a.Chips[0].Label != "session fermée" {
+		t.Fatalf("closed: %+v", a.Chips)
+	}
+	if a := agentOf(t, b, "stateless"); a.Chips[0].Label != "sans état" || a.Age != "date inconnue" {
+		t.Fatalf("stateless: %+v", a)
+	}
+	if a := agentOf(t, b, "done-recent"); len(a.Chips) != 0 {
+		t.Fatalf("done needs no reason: %+v", a.Chips)
+	}
+	for _, col := range b.cols {
+		for _, a := range col {
+			for _, bad := range []string{"no-cwd", "someone-else", "wrong-name", "-x", "Upper", "array", "bad-json", "gone-cmd", "linked", "big", "fifo", "done-old"} {
+				if a.ID == bad {
+					t.Fatalf("%s shown", bad)
+				}
 			}
 		}
 	}
-	// What each card says.
-	// The last reply's last paragraph, not the detail.
-	if a := agentOf(t, b, "a0000002"); !a.Asking || a.Current != "Je merge ou j'attends ta relecture ?" || a.Age != "il y a 3 min" || a.Project != "Beta" {
-		t.Fatalf("blocked/idle: %+v", a)
-	}
-	if a := agentOf(t, b, "a0000008"); a.Current != "Autoriser l'édition de config.ts ?" {
-		t.Fatalf("needs: %q", a.Current)
-	}
-	if a := agentOf(t, b, "a000000c"); a.Current != "Quelle base : Postgres ou SQLite ?" {
-		t.Fatalf("block.questions: %q", a.Current)
-	}
-	if a := agentOf(t, b, "a000000d"); a.Current != "Je pars sur l'option A ?" {
-		// no needs nor questions: the last reply's last paragraph speaks
-		t.Fatalf("last reply: %q", a.Current)
-	}
-	if a := agentOf(t, b, "a0000003"); a.Mission != "/card X1 — monter vite en 7.3" || a.Project != "Alpha" || a.Branch != "worktree-deps-bump" || a.Asking {
-		t.Fatalf("working/idle: %+v", a)
-	}
-	if a := agentOf(t, b, "a0000007"); !a.Stale || a.Chips[0].Label != "rien depuis 40 min" {
-		t.Fatalf("stale: %+v", a)
-	}
-	if a := agentOf(t, b, "a0000005"); a.Chips[0].State != "fail" || a.Chips[0].Label != "échec" {
-		t.Fatalf("failed chip: %+v", a.Chips)
-	}
-	if a := agentOf(t, b, "a000000e"); a.Chips[0].Label != "paused" {
-		t.Fatalf("other chip: %+v", a.Chips)
-	}
-	if a := agentOf(t, b, "a000000a"); a.Name != "" || a.Project != "Gamma" || strings.Contains(a.Current, "abcdef123456") || strings.Contains(a.Current, "ghp_abcdefghijklmnop") || !strings.Contains(a.Current, "token=•••") {
-		t.Fatalf("redaction: %q", a.Current)
-	}
-	// b0000005's timeline is a link: not read, so no reply text and no timeline.
-	if a := agentOf(t, b, "b0000005"); a.Current != "" || strings.Contains(a.Current, "SECRET") {
-		t.Fatalf("linked timeline read: %q", a.Current)
-	}
 }
 
-// Only an 8-char name of 0123456789abcdef is a session: anything else never reaches the argv
-// of `claude attach`.
-func TestJobDirNamesValidated(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "jobs")
-	for _, id := range []string{"--help", "ABCDEF12", "a000000", "a00000001", "-x", "d0000001"} {
-		mustDo(t, os.MkdirAll(filepath.Join(dir, id), 0o755))
-		mustDo(t, os.WriteFile(filepath.Join(dir, id, "state.json"), []byte(`{"name":"n-`+id+`","state":"blocked","tempo":"active","cwd":"/x","intent":"x","updatedAt":"2026-10-20T11:59:00.000Z"}`), 0o600))
+// Only `<name>.json` with a valid name is read: anything else never reaches pick's argv.
+func TestSessionNamesValidated(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "session-state")
+	mustDo(t, os.MkdirAll(dir, 0o755))
+	for _, name := range []string{"--help", "-x", "ABC", "a.b", ".s1", "s1.json.1.2", "ok-1"} {
+		body := `{"name":"` + name + `","state":"needs-you","cwd":"/x","updatedAt":"2026-10-20T11:59:00.000Z"}`
+		mustDo(t, os.WriteFile(filepath.Join(dir, name+".json"), []byte(body), 0o600))
 	}
-	read, err := (&JobsReader{Dir: dir}).Read()
+	mustDo(t, os.WriteFile(filepath.Join(dir, ".ok-1.json.99.1.tmp"), []byte(`{"name":"ok-1","state":"done","cwd":"/x"}`), 0o600))
+	mustDo(t, os.MkdirAll(filepath.Join(dir, "sub"), 0o755))
+	read, err := (&SessionsReader{Dir: dir}).Read()
 	mustDo(t, err)
-	var ids []string
-	for _, j := range read.jobs {
-		ids = append(ids, j.ID)
+	var names []string
+	for _, s := range read.sessions {
+		names = append(names, s.Name)
 	}
-	if !slices.Equal(ids, []string{"d0000001"}) || read.empty != 0 || len(read.problems) != 0 {
-		t.Fatalf("listed %v, empty %d, problems %q", ids, read.empty, read.problems)
-	}
-	if _, msg := loadAgentTimeline(dir, "--help"); msg == "" {
-		t.Fatal("timeline of a non-id dir read")
+	if !slices.Equal(names, []string{"ok-1"}) || len(read.problems) != 0 || read.sessions[0].State != "needs-you" {
+		t.Fatalf("listed %v, problems %q", names, read.problems)
 	}
 }
 
-func TestAttachIDCheck(t *testing.T) {
-	for id, want := range map[string]bool{
-		"d0000001": true, "0123abcd": true, "fedcba98": true,
-		"--help": false, "-x": false, "ABCDEF12": false, "a000000": false, "a00000001": false,
-		"0123abcg": false, "0123abc-": false, "": false, "a000000\n": false, "a000000é": false, "../a0000": false,
-	} {
-		if got := validJobID(id); got != want {
-			t.Errorf("validJobID(%q) = %v", id, got)
-		}
-	}
-	defer func(f func(string, []string, []string) error) { execve = f }(execve)
-	var execd [][]string
-	execve = func(_ string, argv, _ []string) error {
-		execd = append(execd, argv)
-		return os.ErrPermission
-	}
-	defer func(f func(string) (string, error)) { lookPath = f }(lookPath)
-	lookPath = func(string) (string, error) { return "/bin/claude", nil }
-	er, ew, err := os.Pipe()
-	mustDo(t, err)
-	stderr := os.Stderr
-	os.Stderr = ew
-	rc := execAttach("--help")
-	good := execAttach("d0000001")
-	os.Stderr = stderr
-	mustDo(t, ew.Close())
-	msg, _ := io.ReadAll(er)
-	if rc != 1 || !strings.Contains(string(msg), "pas un id de session") {
-		t.Fatalf("execAttach(--help) rc %d: %s", rc, msg)
-	}
-	if good != 1 || len(execd) != 1 || !slices.Equal(execd[0], []string{"claude", "attach", "d0000001"}) {
-		t.Fatalf("exec calls %q (rc %d): only the valid id may be execed", execd, good)
-	}
-	m := newModel("", "", "", 80, 24)
-	if m.attachTo("--help") != nil || m.attach != "" {
-		t.Fatal("attachTo took a non-id")
-	}
-}
-
-// The waiting text: the last reply before the detail, which after a prompt echoes it; with no
-// reply, the detail unless it is a prompt; a timeline that does not read gives no text.
-func TestLastReplyBeforeDetail(t *testing.T) {
-	f := newJobsFixture(t)
-	p := filepath.Join(f.jobs, "a000000d", "state.json")
-	data, err := os.ReadFile(p)
-	mustDo(t, err)
-	mustDo(t, os.WriteFile(p, []byte(strings.Replace(string(data), `"detail":null`, `"detail":"Analyse terminée"`, 1)), 0o600))
-	// state blocked, tempo "", its detail the prompt that followed the reply.
-	echo := `{"name":"echo","state":"blocked","tempo":"","intent":"x","detail":"donne moi la prochaine card","cwd":"/x","updatedAt":"2026-10-20T11:59:00.000Z"}`
-	mustDo(t, os.MkdirAll(filepath.Join(f.jobs, "c0000001"), 0o755))
-	mustDo(t, os.WriteFile(filepath.Join(f.jobs, "c0000001", "state.json"), []byte(echo), 0o600))
-	tl := `{"at":"2026-10-20T11:58:00.000Z","state":"blocked","detail":"Card trouvée","text":"J'ai lu le board.\n\nJe prends la card #12 ?"}` + "\n" +
-		`{"at":"2026-10-20T11:59:00.000Z","state":"working","detail":"donne moi la prochaine card","text":""}` + "\n"
-	mustDo(t, os.WriteFile(filepath.Join(f.jobs, "c0000001", "timeline.jsonl"), []byte(tl), 0o600))
-	// The same with only the prompt in its timeline: no text rather than the echo.
-	mustDo(t, os.MkdirAll(filepath.Join(f.jobs, "c0000002"), 0o755))
-	mustDo(t, os.WriteFile(filepath.Join(f.jobs, "c0000002", "state.json"), []byte(echo), 0o600))
-	mustDo(t, os.WriteFile(filepath.Join(f.jobs, "c0000002", "timeline.jsonl"), []byte(`{"at":"2026-10-20T11:59:00.000Z","state":"working","detail":"donne moi la prochaine card"}`+"\n"), 0o600))
-	_, b := f.read(t)
-	if a := agentOf(t, b, "a000000d"); a.Current != "Je pars sur l'option A ?" {
-		t.Fatalf("reply before detail: %q", a.Current)
-	}
-	if a := agentOf(t, b, "c0000001"); a.Column != "ask" || a.Current != "Je prends la card #12 ?" {
-		t.Fatalf("prompt echo: %+v", a)
-	}
-	if a := agentOf(t, b, "c0000002"); a.Column != "ask" || a.Current != "" {
-		t.Fatalf("prompt-only timeline: %q", a.Current)
-	}
-	// A timeline present but unread: no text, never the detail.
-	j := &jobInput{ID: "c0000003", State: "blocked", Detail: "donne moi la prochaine card", Intent: "x", HasTimeline: true}
-	if a := deriveAgent(j, testNow); a.Current != "" {
-		t.Fatalf("unread timeline: %q", a.Current)
-	}
-	j.HasTimeline = false
-	if a := deriveAgent(j, testNow); a.Current != "donne moi la prochaine card" {
-		t.Fatalf("no timeline: %q", a.Current)
-	}
-	// An active tempo works, whatever the state.
-	if a := deriveAgent(&jobInput{ID: "c0000004", State: "blocked", Tempo: "active", Detail: "lit", UpdatedAt: testNow}, testNow); a.Column != "work" || a.Asking {
-		t.Fatalf("blocked/active: %+v", a)
-	}
-}
-
-// deck's waitingText (background.ts), case by case.
-func TestWaitingTextIsDecks(t *testing.T) {
-	ask := func(d string) string {
-		return `{"at":"2026-10-20T09:00:00.000Z","state":"working","detail":` + strconv.Quote(d) + `}`
-	}
-	reply := func(d, text string) string {
-		return `{"at":"2026-10-20T09:01:00.000Z","state":"blocked","detail":` + strconv.Quote(d) + `,"text":` + strconv.Quote(text) + `}`
-	}
-	lines := func(ls ...string) []byte { return []byte(strings.Join(ls, "\n")) }
-	for _, c := range []struct {
-		name, detail, want string
-		data               []byte
-	}{
-		{"last paragraph", "Card found", "Je la prends ?", lines(ask("donne moi la prochaine card"), reply("Card found", "J'ai lu le board.\n\nLa card #12   est prête.\n  \nJe la prends ?\n\n"))},
-		{"whitespace collapsed", "x", "Une seule partie", lines(reply("x", "Une\nseule   partie"))},
-		{"prompt after the reply", "et la suite ?", "On y va ?", lines(reply("Plan ready", "Le plan est prêt.\n\nOn y va ?"), ask("et la suite ?"))},
-		{"later reply wins, bad lines skipped", "b", "second", lines(reply("a", "premier"), reply("b", "second"), `{"text":"half`, `["x"]`, `42`)},
-		{"prompt echo", "donne moi la prochaine card", "", lines(ask("donne moi la prochaine card"))},
-		{"prompt echo one-lined", "donne moi la card", "", lines(ask("donne  moi\nla card"), `{half`)},
-		{"detail not a prompt", "approve the plan", "approve the plan", lines(ask("donne moi la prochaine card"))},
-		{"no timeline", "approve the plan", "approve the plan", nil},
-		{"blank reply is none", "approve the plan", "approve the plan", lines(reply("x", "   \n\n  "))},
-	} {
-		if got := waitingText(c.data, c.detail); got != c.want {
-			t.Errorf("%s: waitingText = %q, want %q", c.name, got, c.want)
-		}
-	}
-	if got := waitingText(lines(reply("k", "Done.\n\nexport API_KEY=sk-abcdefghijkl1234")), "k"); strings.Contains(got, "abcdefghijkl") {
-		t.Fatalf("secret kept: %q", got)
-	}
-}
-
-func TestTimelineFoldAndOrder(t *testing.T) {
-	f := newJobsFixture(t)
-	ev, err := loadAgentTimeline(f.jobs, "a0000002")
-	if err != "" {
-		t.Fatal(err)
-	}
-	var details []string
-	for _, e := range ev {
-		details = append(details, e.Detail)
-	}
-	want := []string{"Je merge la PR #12 ou j'attends ta relecture ?", "Correctif écrit, tests verts", "Lecture du module auth"}
-	if !slices.Equal(details, want) {
-		t.Fatalf("newest first, folded: %q", details)
-	}
-	if ev[2].Text != "Le module boucle sur le refresh." {
-		t.Fatalf("folded reply text: %q", ev[2].Text)
-	}
-	if _, err := loadAgentTimeline(f.jobs, "b0000005"); !strings.Contains(err, "lien") {
-		t.Fatalf("timeline link read: %q", err)
-	}
-	if _, err := loadAgentTimeline(f.jobs, "b0000004"); err == "" {
-		t.Fatal("dir link read")
-	}
-	if _, err := loadAgentTimeline(f.jobs, "../outside"); err == "" {
-		t.Fatal("traversal read")
-	}
-	if ev, err := loadAgentTimeline(f.jobs, "a0000005"); err != "" || ev == nil || len(ev) != 0 {
-		t.Fatalf("no timeline: %v %q", ev, err)
-	}
-}
-
-func TestTimelineTailCapped(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "jobs")
-	mustDo(t, os.MkdirAll(filepath.Join(dir, "c0000001"), 0o755))
-	var sb strings.Builder
-	for i := 0; sb.Len() < maxTimelineBytes+200*1024; i++ {
-		sb.WriteString(`{"at":"2026-10-20T11:00:00.000Z","state":"working","detail":"step ` + itoaT(i) + `","text":"` + strings.Repeat("y", 300) + `"}` + "\n")
-	}
-	p := filepath.Join(dir, "c0000001", "timeline.jsonl")
-	mustDo(t, os.WriteFile(p, []byte(sb.String()), 0o600))
-	tail, err := readTail(p, maxTimelineBytes)
-	mustDo(t, err)
-	if len(tail) > maxTimelineBytes || len(tail) == 0 || tail[0] != '{' {
-		t.Fatalf("tail %d bytes, starts %q", len(tail), tail[:1])
-	}
-	ev, msg := loadAgentTimeline(dir, "c0000001")
-	if msg != "" || len(ev) != timelineMax || !strings.HasSuffix(sb.String(), `"detail":"`+ev[0].Detail+`","text":"`+strings.Repeat("y", 300)+`"}`+"\n") {
-		t.Fatalf("%d events, newest %q", len(ev), ev[0].Detail)
-	}
-}
-
-func TestJobsReaderIncremental(t *testing.T) {
-	f := newJobsFixture(t)
-	r := &JobsReader{Dir: f.jobs}
+func TestSessionsReaderIncremental(t *testing.T) {
+	f := newSessionsFixture(t)
+	r := &SessionsReader{Dir: f.dir}
 	first, err := r.Read()
 	mustDo(t, err)
 	again, err := r.Read()
 	mustDo(t, err)
-	find := func(rd jobsRead, id string) *jobInput {
-		for _, j := range rd.jobs {
-			if j.ID == id {
-				return j
+	find := func(rd sessionsRead, name string) *sessionInput {
+		for _, s := range rd.sessions {
+			if s.Name == name {
+				return s
 			}
 		}
 		return nil
 	}
-	if find(first, "a0000002") != find(again, "a0000002") || find(again, "a0000002") == nil {
+	if find(first, "ask-needs") == nil || find(first, "ask-needs") != find(again, "ask-needs") {
 		t.Fatal("unchanged session parsed again")
 	}
-	p := filepath.Join(f.jobs, "a0000002", "state.json")
-	mustDo(t, os.WriteFile(p, []byte(`{"name":"fix-login","state":"done","cwd":"/Users/u/projects/Beta","intent":"x","updatedAt":"2026-10-20T11:59:00.000Z"}`), 0o600))
+	if len(again.problems) != len(first.problems) {
+		t.Fatalf("problems drift: %q", again.problems)
+	}
+	// As the writer does: a temp file renamed over the state file.
+	tmp := filepath.Join(f.dir, ".ask-needs.json.1.2.tmp")
+	mustDo(t, os.WriteFile(tmp, []byte(`{"name":"ask-needs","state":"done","cwd":"/x","updatedAt":"2026-10-20T11:59:00.000Z"}`), 0o600))
+	mustDo(t, os.Rename(tmp, filepath.Join(f.dir, "ask-needs.json")))
 	third, err := r.Read()
 	mustDo(t, err)
-	if j := find(third, "a0000002"); j == nil || j.State != "done" {
+	if s := find(third, "ask-needs"); s == nil || s.State != "done" {
 		t.Fatal("changed session not read again")
 	}
-	if rd, err := (&JobsReader{Dir: filepath.Join(t.TempDir(), "none")}).Read(); err != nil || len(rd.jobs) != 0 {
-		t.Fatalf("missing jobs dir: %v", err)
+	// A cached parse is never mutated by a poll's liveness.
+	withLiveness(third.sessions, map[string]int{})
+	if find(third, "ask-needs").Live != liveUnknown {
+		t.Fatal("cached session mutated")
+	}
+	if rd, err := (&SessionsReader{Dir: filepath.Join(t.TempDir(), "none")}).Read(); err != nil || len(rd.sessions) != 0 {
+		t.Fatalf("missing dir: %v", err)
+	}
+}
+
+// abduco failing marks nothing ended (fail-open) and says so in the tab.
+func TestAbducoFailureFailsOpen(t *testing.T) {
+	f := newSessionsFixture(t)
+	stubAbduco(t, nil, errors.New("exit status 1"))
+	p := pollAgents(&SessionsReader{Dir: f.dir})
+	if p.err != nil || !slices.Contains(p.problems, "abduco : exit status 1 : sessions non vérifiées") {
+		t.Fatalf("problems %q", p.problems)
+	}
+	read, _ := (&SessionsReader{Dir: f.dir}).Read()
+	b := deriveAgents(withLiveness(read.sessions, nil), testNow)
+	if a := agentOf(t, b, "closed"); a.Column != "ask" {
+		t.Fatalf("closed drawn %q with abduco unknown", a.Column)
+	}
+	if a := agentOf(t, b, "ended-cmd"); a.Column != "stuck" || !a.Stale { // working, 20 min silent
+		t.Fatalf("ended-cmd drawn %q with abduco unknown", a.Column)
+	}
+	if slices.Contains(colIDs(b, "stuck"), "stateless") {
+		t.Fatal("a stateless session invented")
+	}
+}
+
+func TestAbducoListNoBinary(t *testing.T) {
+	prev := abducoBin
+	defer func() { abducoBin = prev }()
+	abducoBin = ""
+	if _, err := abducoList(); err == nil || err.Error() != "binaire absent" {
+		t.Fatalf("no binary: %v", err)
+	}
+	abducoBin = filepath.Join(t.TempDir(), "abduco")
+	if _, err := abducoList(); err == nil {
+		t.Fatal("a missing binary answered")
+	}
+}
+
+// Enter, o and a card click run exactly [agentPaneBin, pick, name]; the board stays open.
+func TestPick(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	calls := stubPick(t, nil)
+	bin := agentPaneBin
+	for i, k := range []tea.Msg{key(tea.KeyEnter), char('o')} {
+		cmd := send(m, k)
+		if cmd == nil || m.quit {
+			t.Fatalf("%v: no pick Cmd, or quit", k)
+		}
+		if len(*calls) != i {
+			t.Fatal("pick ran on the UI goroutine")
+		}
+		msg := cmd()
+		if _, ok := msg.(tea.QuitMsg); ok {
+			t.Fatal("pick quit")
+		}
+		send(m, msg)
+	}
+	want := []string{bin, "pick", "ask-needs"}
+	if len(*calls) != 2 || !slices.Equal((*calls)[0], want) || !slices.Equal((*calls)[1], want) {
+		t.Fatalf("calls %q", *calls)
+	}
+	if m.quit || m.ag.note != "affichée en haut : ask-needs" || !strings.Contains(strings.Join(plain(m.View().Content), "\n"), "affichée en haut : ask-needs") {
+		t.Fatalf("note %q", m.ag.note)
+	}
+	send(m, key(tea.KeyDown))
+	if m.ag.note != "" {
+		t.Fatal("note not cleared by the next key")
+	}
+	// A click on a card selects it and picks it.
+	*calls = nil
+	card := findHit(m, hitCard, "work-live")
+	cmd := send(m, tea.MouseClickMsg{X: card.x + 1, Y: card.y, Button: tea.MouseLeft})
+	if cmd == nil {
+		t.Fatal("click: no pick")
+	}
+	send(m, cmd())
+	if len(*calls) != 1 || !slices.Equal((*calls)[0], []string{bin, "pick", "work-live"}) || m.ag.sel.id != "work-live" {
+		t.Fatalf("click calls %q", *calls)
+	}
+	// A refused pick says stderr's first line.
+	runPick = func([]string) error { return errors.New("name must match ^[a-z0-9][a-z0-9-]{0,47}$") }
+	send(m, send(m, key(tea.KeyEnter))())
+	if m.ag.note != "agent-pane pick work-live : name must match ^[a-z0-9][a-z0-9-]{0,47}$" {
+		t.Fatalf("error note %q", m.ag.note)
+	}
+	// An invalid name never reaches runPick, nor does any name without the binary.
+	*calls = nil
+	runPick = func(argv []string) error { *calls = append(*calls, argv); return nil }
+	for _, bad := range []string{"--help", "-x", "", "A", "a b", "a\n"} {
+		if m.pickCmd(bad) != nil {
+			t.Fatalf("pickCmd(%q) gave a Cmd", bad)
+		}
+	}
+	agentPaneBin = ""
+	if m.pickCmd("ask-needs") != nil || m.ag.note != "agent-pane : binaire absent, rien lancé" {
+		t.Fatalf("no binary: note %q", m.ag.note)
+	}
+	if len(*calls) != 0 {
+		t.Fatalf("runPick called: %q", *calls)
+	}
+}
+
+func TestAgentsReadOnly(t *testing.T) {
+	f := newSessionsFixture(t)
+	before := append(snapshotTree(t, f.dir), snapshotTree(t, f.outside)...)
+	m := agentsModel(t, f, 160, 48)
+	m.View()
+	all := strings.Join(plain(m.View().Content), "\n")
+	if strings.Contains(all, "SECRET") {
+		t.Fatal("a file outside the dir was drawn")
+	}
+	if after := append(snapshotTree(t, f.dir), snapshotTree(t, f.outside)...); !slices.Equal(before, after) {
+		t.Fatal("the session-state dir changed")
 	}
 }
 
@@ -433,23 +508,8 @@ func snapshotTree(t testing.TB, root string) []string {
 	return out
 }
 
-func TestAgentsReadOnly(t *testing.T) {
-	f := newJobsFixture(t)
-	before := append(snapshotTree(t, f.jobs), snapshotTree(t, f.outside)...)
-	m := agentsModel(t, f, 160, 48)
-	runCmd(t, m, m.openAgentDrawer(0, 0, "a0000002"))
-	m.View()
-	all := strings.Join(plain(m.View().Content), "\n")
-	if strings.Contains(all, "SECRET") {
-		t.Fatal("a file outside the jobs dir was drawn")
-	}
-	if after := append(snapshotTree(t, f.jobs), snapshotTree(t, f.outside)...); !slices.Equal(before, after) {
-		t.Fatal("the jobs dir changed")
-	}
-}
-
 func TestRenderAgents(t *testing.T) {
-	f := newJobsFixture(t)
+	f := newSessionsFixture(t)
 	m := agentsModel(t, f, 180, 50)
 	frame := m.View().Content
 	lines := strings.Split(frame, "\n")
@@ -481,18 +541,17 @@ func TestRenderAgents(t *testing.T) {
 		last = at
 	}
 	for _, want := range []string{
-		"[Agents ● 5]", " Runs ", "jobs/ · 13 · 12:00:00",
-		"fix-login", "Beta", "il y a 3 min", "corrige le login qui boucle", "Je merge ou j'attends ta relecture ?",
-		"sans nom · a000000a", "lit ?[31mrouge?", "token=•••", "/card X1 — monter vite en 7.3", "Alpha · worktree-deps",
-		"échec", "arrêtée", "rien depuis 40 min", "paused", "bloquée sans question",
-		"2 sessions vides masquées · 1 terminée depuis plus de 24 h masquée",
-		"b0000002 : state.json est un lien", "o reprendre",
+		"[Agents ● 3]", " Runs ", "session-state/ · 10 · 12:00:00",
+		"ask-needs", "Beta", "il y a 3 min", "corrige le login qui boucle", "Claude needs your permission",
+		"lit ?[31mrouge? le cache", "à toi", "pas encore lancée", "/card X1 — monter vite en 7.3", "Alpha",
+		"rien depuis 40 min", "paused", "sans état", "commande terminée", "session fermée",
+		"1 terminée depuis plus de 24 h masquée", "linked : lien : non lu", "⏎/o afficher en haut",
 	} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("%q not drawn:\n%s", want, all)
 		}
 	}
-	for _, not := range []string{"[claude-dispatch]", "abcdef123456", "SECRET", "ancien", "half-written", "send a prompt"} {
+	for _, not := range []string{"[claude-dispatch]", "abcdef123456", "ghp_abcdefghijklmnop", "SECRET", "ancien travail", "NOCWD", "WRONGNAME", "DASHNAME", "TMPFILE", "UPPERNAME", "gone-cmd", "attach"} {
 		if strings.Contains(all, not) {
 			t.Fatalf("%q drawn", not)
 		}
@@ -506,7 +565,7 @@ func TestRenderAgents(t *testing.T) {
 }
 
 func TestRenderAgentsNarrow(t *testing.T) {
-	f := newJobsFixture(t)
+	f := newSessionsFixture(t)
 	for _, wh := range [][2]int{{60, 30}, {23, 12}, {10, 5}, {1, 1}} {
 		m := agentsModel(t, f, wh[0], wh[1])
 		for pass := range 2 {
@@ -519,21 +578,22 @@ func TestRenderAgentsNarrow(t *testing.T) {
 					t.Fatalf("%v pass %d line %d width %d", wh, pass, y, visibleWidth(l))
 				}
 			}
-			runCmd(t, m, m.openAgentDrawer(0, 0, "a0000002"))
+			m.ag.note, m.dirty = "affichée en haut : ask-needs", true
 		}
 	}
 }
 
 func TestAgentsTabKeys(t *testing.T) {
-	f := newJobsFixture(t)
+	f := newSessionsFixture(t)
 	m := agentsModel(t, f, 180, 50)
+	stubPick(t, nil)
 	m.tab = tabRuns
 	m.dirty = true
 	if !strings.Contains(plain(m.View().Content)[1], "[Runs]") {
 		t.Fatalf("runs tab not shown active: %q", plain(m.View().Content)[1])
 	}
 	send(m, char('a'))
-	if m.tab != tabAgents || !strings.Contains(plain(m.View().Content)[1], "[Agents ● 5]") {
+	if m.tab != tabAgents || !strings.Contains(plain(m.View().Content)[1], "[Agents ● 3]") {
 		t.Fatal("a did not switch to Agents")
 	}
 	send(m, key(tea.KeyTab))
@@ -548,67 +608,40 @@ func TestAgentsTabKeys(t *testing.T) {
 		}
 		return m.ag.board.cols[s.col][s.idx].ID
 	}
-	if sel() != "a0000002" {
+	if sel() != "ask-needs" {
 		t.Fatalf("first selection %q", sel())
 	}
 	send(m, key(tea.KeyDown))
 	send(m, char('j'))
-	if sel() != "a000000c" {
+	if sel() != "ask-idle" {
 		t.Fatalf("down: %q", sel())
 	}
 	send(m, key(tea.KeyRight))
-	if sel() != "a0000003" {
+	if sel() != "work-live" {
 		t.Fatalf("right keeps the row, clamped: %q", sel())
 	}
 	send(m, char('l'))
 	send(m, char('G'))
-	if sel() != "a000000e" {
+	if sel() != "stateless" {
 		t.Fatalf("end: %q", sel())
 	}
-	send(m, char('h'))
+	send(m, char('l'))
 	send(m, char('g'))
-	send(m, char('h'))
-	cmd := send(m, key(tea.KeyEnter))
-	if m.ag.drawer == nil || m.ag.drawer.id != "a0000002" {
-		t.Fatal("enter opened no drawer")
+	if sel() != "closed" {
+		t.Fatalf("home: %q", sel())
 	}
-	runCmd(t, m, cmd)
-	all := strings.Join(plain(m.View().Content), "\n")
-	for _, want := range []string{"Reprendre : claude attach a0000002", "Mission : corrige le login qui boucle", "Correctif écrit, tests verts", "Le module boucle sur le refresh.", "attend", "travaille"} {
-		if !strings.Contains(all, want) {
-			t.Fatalf("drawer: %q missing\n%s", want, all)
-		}
+	if cmd := send(m, char('r')); cmd == nil {
+		t.Fatal("r did not poll")
 	}
-	send(m, key(tea.KeyDown))
-	send(m, key(tea.KeyEscape))
-	if m.ag.drawer != nil {
-		t.Fatal("esc did not close")
-	}
-
-	// o: claude missing says the command; present quits with the id for main to exec.
-	defer func(f func(string) (string, error)) { lookPath = f }(lookPath)
-	lookPath = func(string) (string, error) { return "", os.ErrNotExist }
-	if c := send(m, char('o')); c != nil || m.attach != "" || !strings.Contains(strings.Join(plain(m.View().Content), "\n"), "claude introuvable dans le PATH : lance  claude attach a0000002") {
-		t.Fatal("o without claude")
-	}
-	send(m, key(tea.KeyDown))
-	if m.ag.note != "" {
-		t.Fatal("note not cleared by the next key")
-	}
-	send(m, key(tea.KeyUp))
-	lookPath = func(string) (string, error) { return "/bin/claude", nil }
-	c := send(m, char('o'))
-	if c == nil || m.attach != "a0000002" || !m.quit {
-		t.Fatal("o did not ask for the attach")
-	}
-	if _, ok := c().(tea.QuitMsg); !ok {
-		t.Fatal("o did not quit")
+	if cmd := send(m, char('q')); cmd == nil || !m.quit {
+		t.Fatal("q did not quit")
 	}
 }
 
 func TestAgentsMouse(t *testing.T) {
-	f := newJobsFixture(t)
-	m := agentsModel(t, f, 180, 30)
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 18) // short: Attend ta réponse overflows
+	stubPick(t, nil)
 	m.View()
 	tabs := findHit(m, hitTab, "")
 	if tabs == nil || tabs.col != tabRuns {
@@ -634,60 +667,49 @@ func TestAgentsMouse(t *testing.T) {
 	if m.ag.scroll[0] <= before {
 		t.Fatal("wheel did not scroll the column")
 	}
-	card := findHit(m, hitCard, "")
-	cmd := send(m, tea.MouseClickMsg{X: card.x + 1, Y: card.y, Button: tea.MouseLeft})
-	if m.ag.drawer == nil || m.ag.drawer.id != card.id {
-		t.Fatal("card click")
-	}
-	runCmd(t, m, cmd)
-	cl := findHit(m, hitClose, "")
-	send(m, tea.MouseClickMsg{X: cl.x + 1, Y: cl.y + 1, Button: tea.MouseLeft})
-	if m.ag.drawer != nil {
-		t.Fatal("close click")
-	}
 }
 
 func TestAgentsPollOffLoop(t *testing.T) {
 	f := newFixture(t)
-	jf := newJobsFixture(t)
+	sf := newSessionsFixture(t)
+	called := 0
+	prev := abducoList
+	abducoList = func() ([]byte, error) { called++; return []byte("Active sessions (on host x)\n"), nil }
+	defer func() { abducoList = prev }()
 	m := newModel(f.runs, f.budget, "fixture", 120, 40)
-	m.setJobsDir(jf.jobs)
+	m.setSessionsDir(sf.dir)
 	_, cmd := m.Update(pollTickMsg{})
-	if cmd == nil || m.ag.status != nil {
-		t.Fatal("jobs read on the UI goroutine")
+	if cmd == nil || m.ag.status != nil || called != 0 {
+		t.Fatal("sessions read on the UI goroutine")
 	}
 	msg := cmd()
 	pm, ok := msg.(pollMsg)
-	if !ok || pm.agents == nil || pm.agents.err != nil || len(pm.cards) != 3 {
+	if !ok || pm.agents == nil || pm.agents.err != nil || len(pm.cards) != 3 || called != 1 {
 		t.Fatalf("poll result %+v", msg)
 	}
-	m.Update(msg)
-	if m.ag.status == nil || !m.ag.status.ok || m.ag.board.empty != 2 || m.status == nil || !m.status.ok {
+	_, next := m.Update(msg)
+	if next == nil || m.ag.status == nil || !m.ag.status.ok || m.status == nil || !m.status.ok {
 		t.Fatal("agents poll not applied")
 	}
-	// The open drawer reloads when its session moved.
-	m.tab = tabAgents
-	runCmd(t, m, m.openAgentDrawer(0, 0, "a0000002"))
-	m.ag.drawer.loadedAt = 1
-	_, cmd = m.Update(pollTickMsg{})
-	_, next := m.Update(cmd())
-	if next == nil {
-		t.Fatal("no next poll")
+	// An empty abduco list: every session with a state file is gone, none is stateless.
+	if len(m.ag.board.cols[colIndex("ask")]) != 0 || len(m.ag.board.cols[colIndex("work")]) != 0 {
+		t.Fatalf("sessions absent from abduco still live: %v", colIDs(m.ag.board, "ask"))
 	}
 }
 
 func TestAgentsSnapshotFlag(t *testing.T) {
-	f := newJobsFixture(t)
+	f := newSessionsFixture(t)
+	stubAbduco(t, listing(t), nil)
 	r, w, err := os.Pipe()
 	mustDo(t, err)
 	stdout := os.Stdout
 	os.Stdout = w
-	rc := run([]string{"--jobs", f.jobs, "--agents-snapshot", "120", "30", "open"})
+	rc := run([]string{"--sessions", f.dir, "--agents-snapshot", "120", "30"})
 	os.Stdout = stdout
 	mustDo(t, w.Close())
 	out, err := io.ReadAll(r)
 	mustDo(t, err)
-	if rc != 0 || !strings.Contains(string(out), "Attend ta réponse") || !strings.Contains(string(out), "Reprendre : claude attach a0000002") || strings.Contains(string(out), "\x1b") {
+	if rc != 0 || !strings.Contains(string(out), "Attend ta réponse") || !strings.Contains(string(out), "ask-needs") || strings.Contains(string(out), "\x1b") {
 		t.Fatalf("rc %d:\n%s", rc, out)
 	}
 	er, ew, err := os.Pipe()
@@ -695,28 +717,28 @@ func TestAgentsSnapshotFlag(t *testing.T) {
 	stderr := os.Stderr
 	os.Stderr = ew
 	bad := run([]string{"--agents-snapshot", "x", "3"})
-	noDir := run([]string{"--jobs"})
+	open := run([]string{"--agents-snapshot", "80", "24", "open"})
+	noDir := run([]string{"--sessions"})
 	os.Stderr = stderr
 	mustDo(t, ew.Close())
 	msg, _ := io.ReadAll(er)
-	if bad != 2 || noDir != 2 || !strings.Contains(string(msg), "usage") {
-		t.Fatalf("usage rc %d %d: %s", bad, noDir, msg)
+	if bad != 2 || open != 2 || noDir != 2 || !strings.Contains(string(msg), "usage") {
+		t.Fatalf("usage rc %d %d %d: %s", bad, open, noDir, msg)
 	}
 }
 
 func BenchmarkAgentsView(b *testing.B) {
-	jobs := make([]*jobInput, 80)
-	states := [][2]string{{"blocked", "idle"}, {"working", "idle"}, {"working", "active"}, {"done", "idle"}, {"failed", "idle"}}
-	for i := range jobs {
-		s := states[i%len(states)]
-		jobs[i] = &jobInput{
-			ID: "j" + itoaT(1000000+i), Name: "session-" + itoaT(i), Cwd: "/Users/u/projects/P" + itoaT(i%7), State: s[0], Tempo: s[1],
-			Intent: "mission " + strings.Repeat("longue ", 8), Detail: "étape en cours " + itoaT(i), LastText: "étape en cours " + itoaT(i), UpdatedAt: testNow - float64(i)*120_000, HasTimeline: true,
+	sessions := make([]*sessionInput, 80)
+	states := []string{"needs-you", "waiting", "working", "done", "idle"}
+	for i := range sessions {
+		sessions[i] = &sessionInput{
+			Name: "session-" + itoaT(i), Cwd: "/Users/u/projects/P" + itoaT(i%7), State: states[i%len(states)], Live: liveRunning,
+			Intent: "mission " + strings.Repeat("longue ", 8), Notice: "étape en cours " + itoaT(i), UpdatedAt: testNow - float64(i)*120_000,
 		}
 	}
 	m := newModel("", "", "bench", 200, 60)
 	m.tab = tabAgents
-	m.applyAgents(&agentsPoll{board: deriveAgents(jobs, 3, testNow), now: testNow, clock: "12:00:00"})
+	m.applyAgents(&agentsPoll{board: deriveAgents(sessions, testNow), now: testNow, clock: "12:00:00"})
 	m.View()
 	b.ReportAllocs()
 	for i := 0; b.Loop(); i++ {

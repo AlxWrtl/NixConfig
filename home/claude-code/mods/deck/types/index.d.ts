@@ -167,13 +167,14 @@ export type DeckApexVerdict = { dir: string; verdict: string; findings: number; 
 // ---------------------------------------------------------------- background agents
 
 /**
- * A background session's state as the panel groups it; `needs-you` is the engine's `blocked`,
- * `stalled` a `working` state whose `tempo` is `blocked` (it waits on nothing the panel can answer).
+ * A background session's state as the panel groups it: the five words session-state.js writes,
+ * any other word `other`.
  */
-export type DeckBgKind = 'needs-you' | 'stalled' | 'working' | 'failed' | 'done' | 'stopped' | 'other'
+export type DeckBgKind = 'needs-you' | 'waiting' | 'working' | 'idle' | 'other' | 'done'
 
-/** One background session, read from ~/.claude/jobs/<id>/state.json (an undocumented format). */
+/** One background session, read from ~/.claude/session-state/<name>.json. */
 export type DeckBgAgent = {
+  /** Its abduco session name (the file stem). */
   id: string
   name: string
   cwd: string
@@ -182,18 +183,13 @@ export type DeckBgAgent = {
   /** The raw `state` word. */
   state: string
   kind: DeckBgKind
-  /** Its one-line status, or empty. */
+  /** Its last notice (one line, redacted), or empty. */
   detail: string
-  /** The prompt it was started with (one line, redacted), or empty. */
+  /** Its first prompt (one line, redacted), or empty. */
   intent: string
-  /** Its token count, or null when state.json gives none. */
-  tokens: number | null
-  /** Its last update (ms), else its folder's mtime. */
+  /** Its last update (ms), else its file's mtime. */
   updatedAt: number
 }
-
-/** One step of a background session, read from ~/.claude/jobs/<id>/timeline.jsonl. */
-export type DeckBgEvent = { at: number; state: string; detail: string }
 
 declare module 'claude-code' {
   interface PluginState {
@@ -215,10 +211,8 @@ declare module 'claude-code' {
       sessionRun: DeckApexSessionRun | null
       /** The step whose explanation box is open under the step row. */
       openStep: DeckApexStepName | null
-      /** Background sessions of every project, polled while the pane is open. */
+      /** Background sessions of the current project, polled while the pane is open. */
       background: DeckBgAgent[]
-      /** The last steps of the background row unfolded in the panel (`view.expanded` = `bg:<id>`). */
-      bgTimeline: { id: string; events: DeckBgEvent[] } | null
     }
   }
 }

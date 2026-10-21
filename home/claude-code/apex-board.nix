@@ -13,6 +13,11 @@
 # (Bubble Tea, a port of board.js's rules): the same board drawn in the
 # terminal, no server, no node. `go test` runs in its checkPhase; the byte
 # parity with board.js is checks/apex-board.nix's job (node is not here).
+# Its Agents tab lists the dispatched sessions (session-state files and
+# abduco's list) and Enter runs `agent-pane pick <name>`: both binaries are
+# baked in by store path (-X ldflags), never looked up on PATH. abduco comes
+# from the same pkgs as claude-dispatch (same socket dir); agent-pane.nix is
+# imported here as in home/claude-code.nix (pure: same derivation).
 #
 # The page dir's and the binary's store paths replace `@boardDir@` and
 # `@tuiBin@` in the script; a missing placeholder throws at eval, so a renamed
@@ -21,6 +26,8 @@
 # the script fails the rebuild.
 { pkgs }:
 let
+  agentPane = import ./agent-pane.nix { inherit pkgs; };
+
   boardDir = pkgs.runCommand "apex-board-page" { } ''
     mkdir -p $out
     cp ${./apex-board/index.html} $out/index.html
@@ -38,6 +45,8 @@ let
     ldflags = [
       "-s"
       "-w"
+      "-X main.abducoBin=${pkgs.abduco}/bin/abduco"
+      "-X main.agentPaneBin=${agentPane.agentPanePkg}/bin/agent-pane"
     ];
     postInstall = ''
       mv $out/bin/tui $out/bin/apex-board-tui

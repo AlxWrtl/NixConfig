@@ -1,0 +1,13 @@
+Active sessions (on host alex-mbp)
+* Tue	 2026-10-20 10:00:00	101	ask-needs
+  Tue	 2026-10-20 10:01:00	102	ask-wait
+  Tue	 2026-10-20 10:02:00	103	ask-idle
+* Tue	 2026-10-20 10:03:00	104	work-live
+  Tue	 2026-10-20 10:04:00	105	work-stale
+  Tue	 2026-10-20 10:05:00	106	odd-state
++ Tue	 2026-10-20 10:06:00	107	ended-cmd
+  Tue	 2026-10-20 10:07:00	108	stateless
++ Tue	 2026-10-20 10:08:00	109	gone-cmd
+  Tue	 2026-10-20 10:09:00	110	--help
+  Tue	 2026-10-20 10:10:00	111	Bad_Name
+short	line

@@ -16,11 +16,14 @@ package main
 // reads and the abduco call run in the poll's Cmd, off the UI goroutine; a file that did not change
 // (size, mtime, inode) keeps its parsed state.
 //
-// Two actions, argv through agent-pane (no shell), the board stays open. Enter, `o` or a click on a
-// card runs `agent-pane pick <name>`: the agent screen's top pane switches to that session. `x` on
-// the selected card or a click on its × (drawn only on a session abduco lists) arms it, the footer
+// Three actions, argv only (no shell), the board stays open. Enter, `o` or a click on a card runs
+// `agent-pane pick <name>`: the agent screen's top pane switches to that session. `x` on the
+// selected card or a click on its × (drawn only on a session abduco lists) arms it, the footer
 // asks; a second `x` or × on that card runs `agent-pane stop <name>`, which TERMs its abduco server
-// (the in-flight turn is lost, the transcript stays): any other key or click disarms.
+// (the in-flight turn is lost, the transcript stays): any other key or click disarms. `n` or a
+// click on « + nouvel agent » runs `claude-dispatch --blank agent-HHMMSS` in the board's repo (a
+// session with no prompt, in its own worktree as a dispatched one), then picks it: the user types
+// the first prompt in the top pane, and the card takes it as its title.
 
 import (
 	"bytes"
@@ -53,6 +56,8 @@ const (
 	// abduco answers a list at once; one that hangs must not hold the poll.
 	abducoTimeout = 2 * time.Second
 	pickTimeout   = 5 * time.Second
+	// abduco -n returns once its server is up; claude starts behind it.
+	launchTimeout = 10 * time.Second
 )
 
 const (
@@ -413,10 +418,12 @@ func (r *SessionsReader) Read() (sessionsRead, error) {
 // ---- derive --------------------------------------------------------------------
 
 // Agent: one card of the tab, derived from a sessionInput at a given now. ID is the session name.
+// Title: the first prompt (Mission) once the session has one, its name before: a blank agent's
+// name (agent-HHMMSS) says nothing of what it does.
 type Agent struct {
 	ID, Name, Project, Cwd, State string
 	Kind, Column                  string
-	Mission, Current              string
+	Title, Mission, Current       string
 	Asking, Stale                 bool
 	Stoppable                     bool // abduco lists it: there is a session to stop
 	UpdatedAt                     float64
@@ -502,6 +509,10 @@ func deriveAgent(s *sessionInput, now float64) *Agent {
 		// Not listed or abduco silent: nothing to stop, no × (fail-closed on the action).
 		Stoppable: s.noState || s.Live == liveRunning || s.Live == liveEnded,
 	}
+	a.Title = a.Mission
+	if a.Title == "" {
+		a.Title = a.Name
+	}
 	if kind == "needs-you" {
 		// The notice says what it waits on (a permission, an idle prompt).
 		a.Asking, a.Current = true, s.Notice
@@ -577,8 +588,10 @@ type agentsState struct {
 	hscroll  int
 	follow   bool
 	view     agentsView
-	note     string // a one-off footer message: the outcome of a pick or a stop
+	note     string // a one-off footer message: the outcome of a pick, a stop or a launch
 	armed    string // the card a first `x` / × asked to stop; "" = none
+	// A launch runs: a second `n` waits for it, two launches in one second would pick one name.
+	launching bool
 }
 
 type agentsPoll struct {
@@ -594,6 +607,10 @@ type pickMsg struct{ name, err string }
 
 // stopMsg: the outcome of `agent-pane stop <name>`; err "" when it succeeded.
 type stopMsg struct{ name, err string }
+
+// newAgentMsg: the outcome of `n`: the name launched ("" when none was picked), the launch's
+// error, then the pick's (tried only after a launch that succeeded).
+type newAgentMsg struct{ name, err, pickErr string }
 
 // runPick runs argv (agent-pane pick or stop, no shell), stdin and stdout /dev/null, env
 // inherited; the error carries stderr's first line. A variable so the tests never run it.
@@ -615,6 +632,111 @@ var runPick = func(argv []string) error {
 		return errors.New(oneLine(line))
 	}
 	return err
+}
+
+// runLaunch runs argv in dir (claude-dispatch --blank <name>, no shell), stdin and stdout
+// /dev/null, env inherited; the error carries stderr's first line. stderr is an os.Pipe handed to
+// the child as is, not runPick's buffer: abduco's server outlives the call and keeps the fd unless
+// built with NDEBUG, and Wait would sit on a copied pipe until WaitDelay. Read only after a
+// failure, under a deadline. A variable so the tests never run it.
+var runLaunch = func(dir string, argv []string) error {
+	r, w, err := os.Pipe()
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), launchTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Dir, cmd.Stderr = dir, w
+	cmd.WaitDelay = time.Second
+	err = cmd.Start()
+	w.Close()
+	if err == nil {
+		err = cmd.Wait()
+	}
+	switch {
+	case err == nil:
+		return nil
+	case ctx.Err() != nil:
+		return errors.New("pas de réponse en " + strconv.Itoa(int(launchTimeout/time.Second)) + " s")
+	}
+	_ = r.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+	head, _ := io.ReadAll(io.LimitReader(r, 4096))
+	if line, _, _ := strings.Cut(strings.TrimSpace(string(head)), "\n"); line != "" {
+		return errors.New(oneLine(line))
+	}
+	return err
+}
+
+// repoOf: the repo apex-board.sh passed, read back from its runs dir `<repo>/.claude/output/apex`
+// (absolute, pwd -P); "" for any other dir: no repo, no launch.
+func repoOf(runsDir string) string {
+	if !filepath.IsAbs(runsDir) {
+		return ""
+	}
+	repo, ok := strings.CutSuffix(filepath.Clean(runsDir), "/.claude/output/apex")
+	if !ok {
+		return ""
+	}
+	return repo
+}
+
+// agentName: `agent-HHMMSS` at t, else the first of `-2` … `-99` after it that taken refuses;
+// "" when all are taken. Always validName's: 15 characters at most.
+func agentName(t time.Time, taken func(string) bool) string {
+	base := "agent-" + t.Format("150405")
+	for i := 1; i < 100; i++ {
+		name := base
+		if i > 1 {
+			name += "-" + strconv.Itoa(i)
+		}
+		if !taken(name) {
+			return name
+		}
+	}
+	return ""
+}
+
+// nameTaken: a name abduco lists, or with a state file or a worktree left by an earlier session
+// (`claude --worktree <name>` would reuse it): another session's, not this one's. A path that
+// cannot be checked counts as taken.
+func nameTaken(repo, sessionsDir string, listed map[string]bool) func(string) bool {
+	exists := func(p string) bool {
+		_, err := os.Lstat(p)
+		return !errors.Is(err, fs.ErrNotExist)
+	}
+	return func(n string) bool {
+		return listed[n] || (sessionsDir != "" && exists(filepath.Join(sessionsDir, n+".json"))) ||
+			exists(filepath.Join(repo, ".claude", "worktrees", n))
+	}
+}
+
+// launchAgent runs in newAgentCmd's Cmd: a free name, `claude-dispatch --blank <name>` in repo,
+// then `agent-pane pick <name>`. abduco silent: its list is not checked, `abduco -n` refuses a
+// live session of that name itself (create-session: EADDRINUSE).
+func launchAgent(bin, pane, repo, sessionsDir string, now time.Time) newAgentMsg {
+	var listed map[string]bool
+	if out, err := abducoList(); err == nil {
+		listed = map[string]bool{}
+		for _, s := range parseAbduco(out) {
+			listed[s.Name] = true
+		}
+	}
+	name := agentName(now, nameTaken(repo, sessionsDir, listed))
+	if !validName(name) {
+		return newAgentMsg{err: "aucun nom libre pour " + now.Format("150405")}
+	}
+	if err := runLaunch(repo, []string{bin, "--blank", name}); err != nil {
+		return newAgentMsg{name: name, err: err.Error()}
+	}
+	if pane == "" {
+		return newAgentMsg{name: name, pickErr: "binaire absent"}
+	}
+	if err := runPick([]string{pane, "pick", name}); err != nil {
+		return newAgentMsg{name: name, pickErr: err.Error()}
+	}
+	return newAgentMsg{name: name}
 }
 
 // setSessionsDir turns the Agents tab on, reading dir at each poll.
@@ -713,6 +835,54 @@ func (m *Model) applyStop(msg stopMsg) tea.Cmd {
 		m.ag.note = "éteinte : " + msg.name
 	}
 	m.dirty = true
+	return m.pollCmd()
+}
+
+// newAgentCmd: `n` or « + nouvel agent »: launchAgent in a Cmd, off the UI goroutine; the footer
+// says the outcome (newAgentMsg). Nothing runs without the binary, without a repo, or while a
+// launch runs.
+func (m *Model) newAgentCmd() tea.Cmd {
+	a := &m.ag
+	m.dirty = true
+	if a.launching {
+		a.note = "nouvel agent : un lancement est en cours"
+		return nil
+	}
+	if dispatchBin == "" {
+		a.note = "claude-dispatch : binaire absent, rien lancé"
+		return nil
+	}
+	repo := repoOf(m.runsDir)
+	if repo == "" {
+		a.note = "nouvel agent : dépôt inconnu, rien lancé"
+		return nil
+	}
+	sessionsDir := ""
+	if a.reader != nil {
+		sessionsDir = a.reader.Dir
+	}
+	bin, pane := dispatchBin, agentPaneBin
+	a.launching, a.note = true, "nouvel agent : lancement…"
+	return func() tea.Msg { return launchAgent(bin, pane, repo, sessionsDir, time.Now()) }
+}
+
+// applyNewAgent: the footer says it, the new card is selected, and a poll at once draws it.
+func (m *Model) applyNewAgent(msg newAgentMsg) tea.Cmd {
+	a := &m.ag
+	a.launching, m.dirty = false, true
+	switch {
+	case msg.name == "":
+		a.note = "nouvel agent : " + msg.err
+	case msg.err != "":
+		a.note = "claude-dispatch --blank " + msg.name + " : " + msg.err
+	case msg.pickErr != "":
+		a.note = "nouvel agent : " + msg.name + " · agent-pane pick : " + msg.pickErr
+	default:
+		a.note = "nouvel agent : " + msg.name
+	}
+	if msg.name != "" && msg.err == "" {
+		a.sel, a.follow = &selState{id: msg.name}, true
+	}
 	return m.pollCmd()
 }
 
@@ -823,6 +993,8 @@ func (m *Model) keyAgents(ev string) tea.Cmd {
 		if sel.idx >= 0 {
 			return m.stopAgent(a.board.cols[sel.col][sel.idx], armed)
 		}
+	case "n":
+		return m.newAgentCmd()
 	case "r":
 		return m.pollCmd()
 	}
@@ -853,6 +1025,8 @@ func (m *Model) clickAgents(h *hit) tea.Cmd {
 		a.sel = &selState{col: h.col, idx: h.idx, id: h.id}
 		a.follow, m.dirty = true, true
 		return m.stopAgent(a.board.cols[h.col][h.idx], armed)
+	case hitNew:
+		return m.newAgentCmd()
 	}
 	return nil
 }
@@ -899,12 +1073,16 @@ func (m *Model) wheelAgents(h *hit, dir int) {
 
 var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · x éteindre · r relire · a runs · q quitter"
 
-// stopShown: the card draws its × (a listed session, room for the name besides it). The × sits on
-// the name row, at the last inner cell: x+cw-3 on screen, under a hitStop.
+// newAgentLabel: the footer's button, first on the keys row, under a hitNew.
+const newAgentLabel = "+ nouvel agent (n)"
+
+// stopShown: the card draws its × (a listed session, room for the title besides it). The × sits
+// on the title's first row, at the last inner cell: x+cw-3 on screen, under a hitStop.
 func (a *Agent) stopShown(cw int) bool { return a.Stoppable && cw-4 >= 6 }
 
-// agentRows: rows of exactly cw cells: rounded box, name (and ×), project and age, mission, the
-// notice (or what it does), chips. armed lights the ×.
+// agentRows: rows of exactly cw cells: rounded box, title (and ×; the first prompt on up to two
+// rows, else the name), the name once the title is the prompt, project and age, the notice (or
+// what it does), chips. armed lights the ×.
 func agentRows(a *Agent, cw int, selected, armed bool) *rowsMemo {
 	if m := &a.rows; m.rows != nil && m.cw == cw && m.sel == selected && m.armed == armed {
 		return m
@@ -933,29 +1111,42 @@ func agentRows(a *Agent, cw int, selected, armed bool) *rowsMemo {
 		top = toCells("● ", st(P.active), top)
 	}
 	dotOff := cell{ch: "●", w: 1, st: st(P.faint)}
+	// The title's rows: room for the × on the first; the name never wraps, the prompt on two rows.
+	tw := iw - cellsWidth(top)
 	if a.stopShown(cw) {
-		top = append(top, fitCells(cellsOf(a.Name, st(P.text).bold()), iw-cellsWidth(top)-2)...)
+		tw -= 2
+	}
+	title := [][]cell{fitCells(cellsOf(a.Title, st(P.text).bold()), tw)}
+	if a.Title != a.Name && tw > 0 {
+		title = wrapText(a.Title, tw, 2, st(P.text).bold())
+	}
+	top = append(top, title[0]...)
+	if a.stopShown(cw) {
 		top = append(top, spaces(iw-cellsWidth(top)-1, bgOnly(bg))...)
 		xc := P.muted
 		if armed {
 			xc = P.human
 		}
 		top = toCells("×", st(xc).bold(), top)
-	} else {
-		top = append(top, fitCells(cellsOf(a.Name, st(P.text).bold()), iw-cellsWidth(top))...)
 	}
 	body = append(body, top)
+	body = append(body, title[1:]...)
 
+	// The project row; once the prompt is the title, the name leads it (the session's handle).
+	where := a.Project
+	if a.Title != a.Name {
+		where = a.Name
+		if a.Project != "" {
+			where += " · " + a.Project
+		}
+	}
 	age := cellsOf(a.Age, st(P.muted))
 	if room := iw - cellsWidth(age) - 1; room >= 4 {
-		line := fitCells(cellsOf(a.Project, st(P.faint)), room)
+		line := fitCells(cellsOf(where, st(P.faint)), room)
 		line = append(line, spaces(iw-cellsWidth(line)-cellsWidth(age), bgOnly(bg))...)
 		body = append(body, append(line, age...))
 	} else {
-		body = append(body, fitCells(cellsOf(a.Project, st(P.faint)), iw), fitCells(age, iw))
-	}
-	if a.Mission != "" {
-		body = append(body, wrapText(a.Mission, iw, 2, st(P.text))...)
+		body = append(body, fitCells(cellsOf(where, st(P.faint)), iw), fitCells(age, iw))
 	}
 	if a.Current != "" {
 		if a.Asking {
@@ -1151,12 +1342,17 @@ func (m *Model) renderAgents() {
 	if nVis < n {
 		info = cellsOf("colonnes "+strconv.Itoa(first+1)+"-"+strconv.Itoa(first+nVis)+"/"+strconv.Itoa(n), fg(P.faint))
 	}
-	keys := cellsOf(keysAgents, fg(P.faint))
+	btn := cellsOf(newAgentLabel, fg(P.active).bold())
+	keys := toCells(" · "+keysAgents, fg(P.faint), slices.Clone(btn))
 	kw := W - 2*margin
 	if len(info) > 0 {
 		kw -= min(cellsWidth(info), kw/2) + 2
 	}
-	g.put(margin, H-1, fitCells(keys, max(0, kw)))
+	shownKeys := fitCells(keys, max(0, kw))
+	g.put(margin, H-1, shownKeys)
+	if w := min(cellsWidth(btn), cellsWidth(shownKeys)); w > 0 {
+		m.hits = append(m.hits, hit{x: margin, y: H - 1, w: w, h: 1, kind: hitNew})
+	}
 	if len(info) > 0 && kw > 8 {
 		iw := W - 2*margin - kw - 2
 		ic := fitCells(info, iw)

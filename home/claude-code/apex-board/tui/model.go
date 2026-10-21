@@ -247,6 +247,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyPick(msg)
 	case stopMsg:
 		return m, m.applyStop(msg)
+	case newAgentMsg:
+		return m, m.applyNewAgent(msg)
 	case docMsg:
 		if d := m.drawer; d != nil && d.id == msg.id && d.hasPath && d.path == msg.path {
 			doc := msg.doc

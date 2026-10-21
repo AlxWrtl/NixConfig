@@ -28,6 +28,13 @@
 # reaches claude as `[claude-dispatch] <brief>`: the CLAUDE.md Delegation rule
 # forbids a session started that way to dispatch.
 #
+# `claude-dispatch --blank <name>` starts the same session with no prompt (no
+# argv after `--name <name>`): apex-board's `n`, a conversation the user
+# starts in the agent pane. It keeps --worktree, as a dispatched session: one
+# blank agent per worktree, the repo's checkout untouched. No marker: nothing
+# was dispatched, the user drives it. A lone `<name>` stays a usage error, so a
+# forgotten brief never starts an idle session.
+#
 # A one-word prompt equal to a claude subcommand (`purge`, `rm`, `stop`…) runs
 # the subcommand, and `--` does not prevent it (claude --help 2.1.299): the
 # script requires two non-blank words in the brief and rejects a leading `-`.

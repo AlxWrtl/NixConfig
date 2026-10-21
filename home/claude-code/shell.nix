@@ -15,6 +15,8 @@
     ccl = "claude -c";
     # The agent screen's top pane, wherever it is typed (the board opens one only when none runs).
     ap = "agent-pane";
+    # The terminal APEX board (`ab` is Apache's benchmark, /usr/sbin/ab).
+    bd = "apex-board --tui";
     # Skill analysis tools
     schliff = "uvx schliff";
     schliff-all = "uvx schliff doctor --skill-dirs ~/.claude/skills/ -v";

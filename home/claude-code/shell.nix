@@ -13,6 +13,8 @@
     ccb = "claude --bare";
     ccrc = "claude --remote-control";
     ccl = "claude -c";
+    # The agent screen's top pane, wherever it is typed (the board opens one only when none runs).
+    ap = "agent-pane";
     # Skill analysis tools
     schliff = "uvx schliff";
     schliff-all = "uvx schliff doctor --skill-dirs ~/.claude/skills/ -v";

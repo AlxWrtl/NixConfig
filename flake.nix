@@ -36,6 +36,12 @@
       url = "github:cloudflare/security-audit-skill/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8";
       flake = false;
     };
+
+    # /brag skill (launch videos), pinned by commit: `nix flake update` cannot move it. Bump = new sha + re-read SKILL.md and slim.md.
+    brag = {
+      url = "github:latent-spaces/brag/069432cac935ed1895859df201c31436c07fb74e";
+      flake = false;
+    };
   };
 
   outputs =

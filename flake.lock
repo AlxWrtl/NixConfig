@@ -33,6 +33,23 @@
         "type": "github"
       }
     },
+    "brag": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791889689,
+        "narHash": "sha256-nTufs0qKitbbZ6LnJOPrcDvIbjjek5gX81MPro5E7mA=",
+        "owner": "latent-spaces",
+        "repo": "brag",
+        "rev": "069432cac935ed1895859df201c31436c07fb74e",
+        "type": "github"
+      },
+      "original": {
+        "owner": "latent-spaces",
+        "repo": "brag",
+        "rev": "069432cac935ed1895859df201c31436c07fb74e",
+        "type": "github"
+      }
+    },
     "claude-video": {
       "flake": false,
       "locked": {
@@ -313,6 +330,7 @@
     "root": {
       "inputs": {
         "awesome-design-md": "awesome-design-md",
+        "brag": "brag",
         "claude-video": "claude-video",
         "cloudflare-security-audit": "cloudflare-security-audit",
         "determinate": "determinate",

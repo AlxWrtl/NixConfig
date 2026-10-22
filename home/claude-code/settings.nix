@@ -484,6 +484,8 @@ in
       optimize = "user-invocable-only";
       schliff = "user-invocable-only";
       tdd = "user-invocable-only";
+      # Overlaps the claude-security plugin's triggers: typed `/security-audit` only.
+      "security-audit" = "user-invocable-only";
       "verify-feature" = "user-invocable-only";
       # `name-only` (2026-10-10) : skills intégrées ou maison rarement utiles
       # ici ; le nom reste listé donc invocable par le modèle, la description

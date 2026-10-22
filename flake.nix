@@ -30,6 +30,12 @@
       url = "github:bradautomates/claude-video/03ceb42f7fa2c4439aca01752118044baabffb8f";
       flake = false;
     };
+
+    # security-audit skill (Cloudflare), pinned by commit: `nix flake update` cannot move it. Bump = new sha + re-read SKILL.md.
+    cloudflare-security-audit = {
+      url = "github:cloudflare/security-audit-skill/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8";
+      flake = false;
+    };
   };
 
   outputs =

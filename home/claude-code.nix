@@ -137,6 +137,59 @@ let
     ) skillsManifest.manifest
   );
 
+  # ui-expert skill: Emil Kowalski's UI/motion skills (emil-skills flake input,
+  # pinned by commit), linked verbatim under the router SKILL.md that
+  # skills-manifest.nix ships; no upstream file is rewritten. write-swift is
+  # left out. Plain directory links, no `recursive`: desymlink only copies
+  # `skills/*/SKILL.md` (activation.nix), one level deep, and Claude Code
+  # discovers skills only at `skills/<name>/SKILL.md`
+  # (https://code.claude.com/docs/en/skills), so the nested SKILL.md files are
+  # neither rewritten nor loaded as separate skills: the router reads them.
+  # The `*.backup` purge (find without -L) does not enter the links either.
+  # pathExists turns a name missing upstream (bump, typo) into an eval error:
+  # a dangling link would only fail the build, never `flake check --no-build`.
+  uiExpertSkills = [
+    "emil-design-eng"
+    "animate"
+    "animate-expo"
+    "review-animations"
+    "improve-animations"
+    "find-animation-opportunities"
+    "animation-performance"
+    "animation-vocabulary"
+    "apple-design"
+    "pick-ui-library"
+    "prototype"
+    "mobile-native"
+    "break-ui"
+    "ask-sonner"
+  ];
+  uiExpertLinks =
+    let
+      link =
+        rel:
+        let
+          src = "${inputs.emil-skills}/${rel}";
+        in
+        {
+          source =
+            if builtins.pathExists src then
+              src
+            else
+              throw "ui-expert: ${rel} missing from the emil-skills input";
+        };
+    in
+    builtins.listToAttrs (
+      map (name: {
+        name = "${claudeDir}/skills/ui-expert/${name}";
+        value = link "skills/${name}";
+      }) uiExpertSkills
+    )
+    // {
+      "${claudeDir}/skills/ui-expert/LICENSE" = link "LICENSE";
+      "${claudeDir}/skills/ui-expert/performance-cheatsheet.md" = link "performance-cheatsheet.md";
+    };
+
   # Write ~/.claude content declaratively
   claudeHomeFiles = skillFiles // {
     # Settings base (read-only reference, merged by activation script)
@@ -410,7 +463,9 @@ in
       "$HOME/.local/bin"
     ];
 
-    file = claudeHomeFiles;
+    # uiExpertLinks merged here, not in claudeHomeFiles: same set, and it
+    # spares nixfmt re-indenting that whole attrset.
+    file = claudeHomeFiles // uiExpertLinks;
 
     # `libdocs` + `nix-options` + `trello` + `graphify-reindex` +
     # `claude-dispatch` + `agent-pane` on PATH — usable by

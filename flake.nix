@@ -42,6 +42,12 @@
       url = "github:latent-spaces/brag/069432cac935ed1895859df201c31436c07fb74e";
       flake = false;
     };
+
+    # ui-expert skill (Emil Kowalski's UI/motion skills, MIT), pinned by commit: `nix flake update` cannot move it. Bump = new sha + re-read every SKILL.md and the router table.
+    emil-skills = {
+      url = "github:emilkowalski/skills/2d228630ba1446365f614a108cb8252f1feda202";
+      flake = false;
+    };
   };
 
   outputs =

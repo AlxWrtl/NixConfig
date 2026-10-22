@@ -200,6 +200,16 @@ let
       force = true;
     };
 
+    # brag skill (latent-spaces, flake input pinned by commit): launch video from
+    # the project; bundles slim.md (brag-slim, picked on Opus 5.5), music/sfx
+    # assets and a local librosa script. No `allowed-tools`, hooks or MCP.
+    # `recursive` + `force` for the same desymlink reason as security-audit.
+    "${claudeDir}/skills/brag" = {
+      source = "${inputs.brag}/skills/brag";
+      recursive = true;
+      force = true;
+    };
+
     # Rules (path-scoped, loaded on demand when a matching file is read)
     "${claudeDir}/rules/nix.md".text = ruleNix;
     "${claudeDir}/rules/typescript.md".text = ruleTypescript;

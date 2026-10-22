@@ -95,6 +95,7 @@ let
     hookSandboxEscapeEvidence
     hookReactDocsGate
     hookNullResultGate
+    hookInstagramWatch
     ;
   hookWorktreeEnvSync = hooks.hookWorktreeEnvSync {
     jqBin = "${pkgs.jq}/bin/jq";
@@ -164,6 +165,17 @@ let
     # text, and a single link keeps the desymlink loop (`*/SKILL.md`) and the
     # `*.backup` purge (find does not follow links) off it.
     "${claudeDir}/skills/design-md/library".source = "${inputs.awesome-design-md}/design-md";
+
+    # /watch skill (claude-video, flake input pinned by commit). Third-party
+    # code linked verbatim, outside skills-manifest.nix: the manifest takes no
+    # argument and cannot see `inputs`, and the directory link keeps no
+    # hand-made file list to drift. SKILL.md is its own entry with `force`:
+    # desymlink turns it into a real copy, as for every manifest SKILL.md.
+    "${claudeDir}/skills/watch/SKILL.md" = {
+      source = "${inputs.claude-video}/skills/watch/SKILL.md";
+      force = true;
+    };
+    "${claudeDir}/skills/watch/scripts".source = "${inputs.claude-video}/skills/watch/scripts";
 
     # Rules (path-scoped, loaded on demand when a matching file is read)
     "${claudeDir}/rules/nix.md".text = ruleNix;
@@ -308,6 +320,10 @@ let
     };
     "${claudeDir}/hooks/session-state.js" = {
       text = hookSessionState;
+      executable = true;
+    };
+    "${claudeDir}/hooks/instagram-watch.js" = {
+      text = hookInstagramWatch;
       executable = true;
     };
   };

@@ -122,7 +122,7 @@ let
         inherit homeDirectory;
       };
     };
-    # Flake inputs feed only non-hook `.source` links (design-md library);
+    # Flake inputs feed only non-hook `.source` links (design-md library, watch skill);
     # this check reads `/hooks/` entries only, so the value is never forced.
     inputs = { };
   };
@@ -457,6 +457,22 @@ let
     A-cg-wrappers = {
       hook = "correction-grant.js";
       text = "const WRAPPERS = [\"<task-notification\", \"<agent-message\", \"Another Claude session sent a message\", \"[SYSTEM NOTIFICATION\", \"<teammate-message\", \"<command-name>\", \"<local-command\", \"<scheduled-task\", \"<system-reminder\"];";
+    };
+    A-iw-url = {
+      hook = "instagram-watch.js";
+      text = "const IG_URL = /(?:^|[^A-Za-z0-9.@-])((?:https?:\\/\\/)?(?:(?:www|m)\\.)?instagram\\.com\\/(?:[A-Za-z0-9._]{1,30}\\/)?(?:p|reels?|tv)\\/[A-Za-z0-9_-]+)/gi;";
+    };
+    A-iw-agent = {
+      hook = "instagram-watch.js";
+      text = "if (Object.prototype.hasOwnProperty.call(data, \"agent_id\") && data.agent_id !== undefined) { quiet(); return; }";
+    };
+    A-iw-wrappers = {
+      hook = "instagram-watch.js";
+      text = "if (WRAPPERS.some((w) => data.prompt.includes(w))) { quiet(); return; }";
+    };
+    A-iw-json = {
+      hook = "instagram-watch.js";
+      text = "try { data = JSON.parse(input); } catch { quiet(); return; }";
     };
     A-cb-cron = {
       hook = "correction-budget.js";
@@ -1137,6 +1153,66 @@ let
         {
           anchor = "A-cg-wrappers";
           to = "const WRAPPERS = [];";
+        }
+      ];
+    }
+    # Any instagram.com path: a profile or explore page asks for the watch skill.
+    {
+      id = "M-iw-path";
+      hook = "instagram-watch.js";
+      kills = "iw-mention-silent";
+      swaps = [
+        {
+          anchor = "A-iw-url";
+          to = "const IG_URL = /(?:^|[^A-Za-z0-9.@-])((?:https?:\\/\\/)?(?:(?:www|m)\\.)?instagram\\.com\\/[A-Za-z0-9._-]*)/gi;";
+        }
+      ];
+    }
+    # No left boundary: notinstagram.com/reel/… is read as an Instagram link.
+    {
+      id = "M-iw-boundary";
+      hook = "instagram-watch.js";
+      kills = "iw-other-url-silent";
+      swaps = [
+        {
+          anchor = "A-iw-url";
+          to = "const IG_URL = /((?:https?:\\/\\/)?(?:(?:www|m)\\.)?instagram\\.com\\/(?:[A-Za-z0-9._]{1,30}\\/)?(?:p|reels?|tv)\\/[A-Za-z0-9_-]+)/gi;";
+        }
+      ];
+    }
+    # No wrapper filter: an agent hand-back quoting a reel asks for the skill.
+    {
+      id = "M-iw-wrappers";
+      hook = "instagram-watch.js";
+      kills = "iw-wrapped-silent";
+      swaps = [
+        {
+          anchor = "A-iw-wrappers";
+          to = ";";
+        }
+      ];
+    }
+    # No agent_id test: a subagent's prompt asks for the skill.
+    {
+      id = "M-iw-agent";
+      hook = "instagram-watch.js";
+      kills = "iw-subagent-silent";
+      swaps = [
+        {
+          anchor = "A-iw-agent";
+          to = ";";
+        }
+      ];
+    }
+    # Malformed input exits 2: the host blocks the user's prompt.
+    {
+      id = "M-iw-json";
+      hook = "instagram-watch.js";
+      kills = "iw-malformed-silent";
+      swaps = [
+        {
+          anchor = "A-iw-json";
+          to = "try { data = JSON.parse(input); } catch { process.exit(2); }";
         }
       ];
     }
@@ -2157,6 +2233,15 @@ let
     "wh-self-nonshell-parent"
     "wh-lsof-noself-deny"
     "wh-lsof-badexit-deny"
+    "iw-reel-emits"
+    "iw-post-query-emits"
+    "iw-user-reel-emits"
+    "iw-mention-silent"
+    "iw-other-url-silent"
+    "iw-wrapped-silent"
+    "iw-subagent-silent"
+    "iw-malformed-silent"
+    "iw-no-prompt-silent"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -2215,6 +2300,7 @@ let
     "session-state.js"
     "apex-pr-record.js"
     "worktree-in-use.js"
+    "instagram-watch.js"
   ];
   timeoutsOf =
     n:
@@ -2389,6 +2475,25 @@ let
       else
         grep -Fq -- "$2" "$d/$lbl.out" || { why="context lacks '$2'"; return 1; }
       fi
+    }
+
+    # instagram-watch: $1 prompt, $2 agent_id as raw JSON (absent when empty or unset).
+    iw_in() { ${jq} -cn --arg p "$1" --arg a "''${2-}" '{hook_event_name:"UserPromptSubmit",cwd:"/probe/cwd",session_id:"probe",prompt:$p} + (if $a == "" then {} else {agent_id:($a | fromjson)} end)'; }
+    # $1 URL the context must name; $2 text it must not carry (unchecked when unset).
+    iw_emits() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the watch context was due"; kind=mismatch; return 1; }
+      ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "UserPromptSubmit") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
+      case "$ctx" in *"$1"*'`watch` skill'*) ;; *) why="context lacks $1 or the watch skill: $ctx"; return 1 ;; esac
+      if [ -n "''${2-}" ]; then case "$ctx" in *"$2"*) why="context carries '$2'"; kind=mismatch; return 1 ;; esac; fi
+    }
+    # Exit 2 blocks the user's prompt (hooks reference): the miss fail-open prevents.
+    iw_silent() {
+      [ "$rc" -ne 2 ] || { why="exit 2: the host blocks the user's prompt"; kind=mismatch; return 1; }
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ ! -s "$d/$lbl.out" ] || { why="context emitted where silence was due"; kind=mismatch; return 1; }
     }
 
     # research-model: $1 subagent_type, $2 model (absent when empty or unset).
@@ -2783,6 +2888,7 @@ let
         ss-*) tmo=${hostTimeout "session-state.js"} ;;
         apr-*) tmo=${hostTimeout "apex-pr-record.js"} ;;
         wh-*) tmo=${hostTimeout "worktree-in-use.js"} ;;
+        iw-*) tmo=${hostTimeout "instagram-watch.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -3661,6 +3767,28 @@ let
         # Same listing as lsof, exit status 2.
         wh-lsof-badexit-deny)
           wh_case "$2" "$WH/badexit-lsof" "$WR" "git worktree remove $WH/wts/free"; is_deny "lsof exited 2" ;;
+        # instagram-watch: a post/reel/tv link asks for the watch skill, once,
+        # with its query dropped; anything else is silence, never exit 2.
+        iw-reel-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(iw_in "regarde ça https://www.instagram.com/reel/Derra61CUhb/ t'en penses quoi ?")"; iw_emits "https://www.instagram.com/reel/Derra61CUhb/" ;;
+        iw-post-query-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(iw_in "instagram.com/p/ABC_def-1/?igsh=MWx0&utm_source=ig_web_copy_link")"; iw_emits "https://instagram.com/p/ABC_def-1/" "igsh" ;;
+        iw-user-reel-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(iw_in "https://www.instagram.com/some.user/reel/C0de_9/")"; iw_emits "https://www.instagram.com/some.user/reel/C0de_9/" ;;
+        # A profile or explore page is no video.
+        iw-mention-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(iw_in "un ami m'a parlé d'instagram.com/explore et de https://www.instagram.com/alx_profile/")"; iw_silent ;;
+        iw-other-url-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(iw_in "https://www.youtube.com/watch?v=x et https://notinstagram.com/reel/abc")"; iw_silent ;;
+        # A harness-wrapped turn quoting a reel is not the user pasting it.
+        iw-wrapped-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(iw_in "$(printf '<task-notification>\n<result>https://www.instagram.com/reel/Derra61CUhb/</result>\n</task-notification>')")"; iw_silent ;;
+        iw-subagent-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(iw_in "https://www.instagram.com/reel/Derra61CUhb/" '"agent-1"')"; iw_silent ;;
+        iw-malformed-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit","prompt":"https://www.instagram.com/reel/Derra61CUhb/'; iw_silent ;;
+        iw-no-prompt-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit"}'; iw_silent ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -3680,6 +3808,7 @@ let
         ss-*) echo ${hookFile "session-state.js"} ;;
         apr-*) echo ${hookFile "apex-pr-record.js"} ;;
         wh-*) echo ${hookFile "worktree-in-use.js"} ;;
+        iw-*) echo ${hookFile "instagram-watch.js"} ;;
       esac
     }
 

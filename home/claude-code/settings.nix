@@ -50,6 +50,11 @@ in
       # Astro telemetry writes ~/Library/Preferences/astro: 1 EPERM in 30 d,
       # telemetry only. Off rather than opening ~/Library/Preferences.
       ASTRO_TELEMETRY_DISABLED = "1";
+      # /watch (claude-video): WhisperX's Hugging Face and torch-hub caches
+      # live beside its venv, so one allowWrite entry (sandbox below) covers
+      # them; ~/.cache/huggingface and ~/.cache/torch stay closed.
+      HF_HOME = "${homeDirectory}/.cache/watch/huggingface";
+      TORCH_HOME = "${homeDirectory}/.cache/watch/torch";
     };
 
     # Défaut déclaratif : Opus 5.5 = workhorse full-loop. L'alias `opus` suit le
@@ -377,6 +382,18 @@ in
         # unsandboxed deploy got 400, forcing `wrangler login`. Residual risk
         # (accepted by the user 2026-10-18): a sandboxed command can overwrite the
         # Cloudflare OAuth pair (already readable); no code in that dir runs.
+        # ~/.cache/watch (2026-10-22): the /watch skill's WhisperX venv
+        # (setup.py:277) and, through HF_HOME/TORCH_HOME in env, its model
+        # caches. Measured in a scratchpad test the same day: sandboxed, the
+        # model download died EPERM on ~/.cache/huggingface; with the caches
+        # writable, download, frames and transcription ran sandboxed.
+        # Redirected, unlike CARGO_HOME/UV_CACHE_DIR: neither real cache
+        # existed, and torch/hub keeps repo code torch.hub runs, so the real
+        # path would be class c for any later unsandboxed torch user.
+        # Residual (accepted by the user 2026-10-22): venv bin/ and hub code run
+        # OUTSIDE the sandbox when setup.py is rerun unsandboxed. The one-time
+        # install runs outside it anyway: the proxy truncated the torch-hub zip
+        # and broke HF xet transfers.
         # Check A28 (checks/claude-config.nix) pins this.
         allowWrite = [
           "${homeDirectory}/GraphVault"
@@ -398,6 +415,7 @@ in
           "${homeDirectory}/.cargo/.global-cache"
           "${homeDirectory}/.cargo/.global-cache-journal"
           "${homeDirectory}/.cache/uv"
+          "${homeDirectory}/.cache/watch"
         ];
       };
       network = {
@@ -992,6 +1010,13 @@ in
             {
               type = "command";
               command = "${node} ~/.claude/hooks/session-state.js";
+              timeout = 5;
+            }
+            # Instagram post/reel/tv link → context asking for the watch skill.
+            # Timeout above the hook's 3 s watchdog; fail-open.
+            {
+              type = "command";
+              command = "${node} ~/.claude/hooks/instagram-watch.js";
               timeout = 5;
             }
           ];

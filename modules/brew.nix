@@ -33,6 +33,8 @@ _:
       "openssl@4"
       "postgresql@16"
       "trash"
+      # /watch skill; brew, not nixpkgs: upgraded each switch (pinned nixpkgs had 2026.08.19, Instagram breaks old ones)
+      "yt-dlp"
     ];
 
     # Apps with auto-updaters: simple strings (no greedy)

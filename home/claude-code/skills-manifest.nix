@@ -14,6 +14,8 @@
 # reason: `checks/readme-consistency.nix` does not walk the tree recursively,
 # so a file in a new directory would be invisible to the inventory it enforces.
 # Move it only together with the readme-consistency inventory.
+# Exception: a third-party skill fetched as a pinned flake input (`watch`) is
+# linked in home/claude-code.nix, since this file cannot see `inputs`.
 #
 # `force` IS NOT DATA HERE — IT IS A RULE, DERIVED FROM THE FILE NAME.
 # Measured on the state this manifest replaces: 15 of the 33 entries carried

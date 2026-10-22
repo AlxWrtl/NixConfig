@@ -58,6 +58,11 @@ in
       # sandbox-writable dir. None exists today; one added later must not.
       HF_HOME = "${homeDirectory}/.cache/watch/huggingface";
       TORCH_HOME = "${homeDirectory}/.cache/watch/torch";
+      # Node 22 fetch ignores HTTP(S)_PROXY: sandboxed it dies ENOTFOUND; with
+      # this flag it goes through the sandbox proxy, 200 (probe 2026-10-22).
+      # Inert outside the sandbox (no proxy var there); NO_PROXY keeps
+      # localhost direct.
+      NODE_USE_ENV_PROXY = "1";
     };
 
     # Défaut déclaratif : Opus 5.5 = workhorse full-loop. L'alias `opus` suit le
@@ -156,9 +161,10 @@ in
       # pull/fetch, gh and claude-dispatch before they run.
       # nix flake check: sandboxed it hits EPERM on the daemon socket
       # (/nix/var/nix/daemon-socket/socket) and on ~/.cache/nix sqlite.
-      # Excluding the one command, NOT allowUnixSockets: the user is in
-      # trusted-users (@admin), so an open daemon socket would hand every
-      # sandboxed command a root-equivalent channel.
+      # Excluding the one command; the daemon socket is never in
+      # allowUnixSockets (check A14b): the user is in trusted-users (@admin),
+      # so an open daemon socket would hand every sandboxed command a
+      # root-equivalent channel.
       # Bare form ONLY, never "nix flake check *": an argument can name a remote
       # flake or `--override-input`, i.e. arbitrary nix code evaluated
       # unsandboxed by a trusted user.
@@ -195,6 +201,17 @@ in
         "git pull *"
         "git fetch *"
         "nix flake check"
+        # nix build/eval + docker: user decision 2026-10-22 — the escape box
+        # was always approved anyway. Risk accepted: as a trusted user,
+        # nix build/eval with --option/--override-input/--expr is
+        # root-equivalent; docker via colima = root in a VM mounting $HOME rw,
+        # a full escape. nix shell/run/develop stay sandboxed (they run an
+        # arbitrary command; A29). Inconsistent on purpose: flake check stays
+        # bare-only, "nix flake check *" banned (A14b), though `nix eval *`
+        # reaches the same remote-flake/--override-input code.
+        "nix build *"
+        "nix eval *"
+        "docker *"
       ];
       filesystem = {
         denyWrite = [
@@ -326,7 +343,9 @@ in
         #   bootstrap_check_in org.chromium.crashpad...: Permission denied (1100)
         #   process_singleton_posix.cc: Failed to create socket directory.
         #   exception while trying to kill process: Error: kill EPERM
-        # Mach IPC registration, a unix socket dir, and process signalling. The
+        # Mach IPC registration, a unix socket dir, and process signalling.
+        # allowMachLookup cannot fix the first: bootstrap_check_in is
+        # mach-register, srt emits only mach-lookup (measured 2026-10-22). The
         # CLI offers no `--user-data-dir` to relocate the profile either, so
         # there is no lever. Reverted rather than kept: an allowlist entry that
         # widens the sandbox while implying a capability that does not exist is
@@ -424,6 +443,15 @@ in
       network = {
         # All domains allowed (web analysis, design, docs, APIs)
         allowedDomains = [ "*" ];
+        # pgrep: sandboxed it fails "sysmond service not found" (2026-10-22).
+        # Residual: pgrep -lf shows other processes' argv. /bin/ps stays an
+        # escape (setuid exec denied).
+        allowMachLookup = [ "com.apple.sysmond" ];
+        # tsx 4.x CLI: its IPC server listen() dies EPERM on
+        # /tmp/claude-501/tsx-501/<pid>.pipe; no env opt-out (`node --import
+        # tsx` works). Exact dir under the sandbox TMPDIR only (A14b); needs a
+        # post-switch probe.
+        allowUnixSockets = [ "/private/tmp/claude-501/tsx-501" ];
       };
     };
 

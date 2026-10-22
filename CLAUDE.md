@@ -14,7 +14,9 @@
 - A new Claude hook needs a case in `checks/hook-wiring.nix`, and a canary
   for its deny/allow branch.
 - Skills are Claude-only: a new skill file goes into
-  `home/claude-code/skills-manifest.nix` in the same edit.
+  `home/claude-code/skills-manifest.nix` in the same edit; a third-party
+  skill pinned as a flake input is linked in `home/claude-code.nix` instead
+  (`watch`).
 - `model` in `home/claude-code/settings.nix` is never forced, but it re-seeds
   the live value whenever `/model` has removed the key: keep it equal to the
   intended default.

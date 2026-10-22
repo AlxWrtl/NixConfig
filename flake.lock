@@ -33,6 +33,23 @@
         "type": "github"
       }
     },
+    "claude-video": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1790299542,
+        "narHash": "sha256-2fV8DGRf1erxtuiJJrcrxtiKdqRNzNjV8fZ/KgUiMBs=",
+        "owner": "bradautomates",
+        "repo": "claude-video",
+        "rev": "03ceb42f7fa2c4439aca01752118044baabffb8f",
+        "type": "github"
+      },
+      "original": {
+        "owner": "bradautomates",
+        "repo": "claude-video",
+        "rev": "03ceb42f7fa2c4439aca01752118044baabffb8f",
+        "type": "github"
+      }
+    },
     "determinate": {
       "inputs": {
         "determinate-nixd-aarch64-darwin": "determinate-nixd-aarch64-darwin",
@@ -279,6 +296,7 @@
     "root": {
       "inputs": {
         "awesome-design-md": "awesome-design-md",
+        "claude-video": "claude-video",
         "determinate": "determinate",
         "home-manager": "home-manager",
         "nix-darwin": "nix-darwin",

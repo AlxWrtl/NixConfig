@@ -388,6 +388,14 @@ in
   # File kept ≤ 200 bytes: this line is paid on every prompt.
   hookApexReminder = builtins.readFile ./hooks/apex-reminder.sh;
 
+  # UserPromptSubmit: a pasted Instagram post/reel/tv link → one context line
+  # asking for the `watch` skill (the user's standing wish, 2026-10-22).
+  # Keyword matching is right here, unlike apex-reminder (above): a URL is not
+  # an ambiguous case, and a miss costs one manual `/watch`, not a silently
+  # skipped rule. Wrapped harness turns and any agent_id are ignored;
+  # fail-open, never exit 2 (it would block the prompt).
+  hookInstagramWatch = builtins.readFile ./hooks/instagram-watch.js;
+
   hookSubagentStop = builtins.readFile ./hooks/subagent-stop.js;
 
   hookCompactContext = builtins.readFile ./hooks/compact-context.sh;

@@ -24,6 +24,12 @@
       url = "github:VoltAgent/awesome-design-md";
       flake = false;
     };
+
+    # /watch skill, tag v0.3.2 pinned by commit: `nix flake update` cannot move it. Bump = new sha + re-test.
+    claude-video = {
+      url = "github:bradautomates/claude-video/03ceb42f7fa2c4439aca01752118044baabffb8f";
+      flake = false;
+    };
   };
 
   outputs =

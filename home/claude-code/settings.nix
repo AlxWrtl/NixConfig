@@ -52,7 +52,10 @@ in
       ASTRO_TELEMETRY_DISABLED = "1";
       # /watch (claude-video): WhisperX's Hugging Face and torch-hub caches
       # live beside its venv, so one allowWrite entry (sandbox below) covers
-      # them; ~/.cache/huggingface and ~/.cache/torch stay closed.
+      # them; ~/.cache/huggingface and ~/.cache/torch stay closed. env is
+      # session-wide: an unsandboxed HF/torch.hub consumer Claude starts
+      # (hook, MCP server, excluded command) would load from this
+      # sandbox-writable dir. None exists today; one added later must not.
       HF_HOME = "${homeDirectory}/.cache/watch/huggingface";
       TORCH_HOME = "${homeDirectory}/.cache/watch/torch";
     };

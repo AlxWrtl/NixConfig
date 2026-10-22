@@ -171,8 +171,20 @@ let
     # argument and cannot see `inputs`, and the directory link keeps no
     # hand-made file list to drift. SKILL.md is its own entry with `force`:
     # desymlink turns it into a real copy, as for every manifest SKILL.md.
+    # One upstream line changed: `allowed-tools: Bash` would pre-approve every
+    # Bash call in the turn that reads attacker-controlled captions and
+    # transcripts; narrowed to Read, Bash goes through the normal permission
+    # path. The throw catches an upstream bump that moves the line.
     "${claudeDir}/skills/watch/SKILL.md" = {
-      source = "${inputs.claude-video}/skills/watch/SKILL.md";
+      text =
+        let
+          upstream = builtins.readFile "${inputs.claude-video}/skills/watch/SKILL.md";
+          granted = "allowed-tools: Bash, Read, AskUserQuestion\n";
+        in
+        if lib.hasInfix granted upstream then
+          builtins.replaceStrings [ granted ] [ "allowed-tools: Read, AskUserQuestion\n" ] upstream
+        else
+          throw "watch SKILL.md: upstream allowed-tools line changed; re-audit it";
       force = true;
     };
     "${claudeDir}/skills/watch/scripts".source = "${inputs.claude-video}/skills/watch/scripts";

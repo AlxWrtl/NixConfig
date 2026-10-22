@@ -70,7 +70,7 @@ function main() {
     if (urls.length === MAX_URLS) break;
   }
   if (urls.length === 0) { quiet(); return; }
-  say("instagram-watch: the prompt contains Instagram video link(s): " + urls.join(" ") + ". This user wants the `watch` skill run on every Instagram link they paste, before any answer, unless the prompt says not to: one run per link with `--engine local`, their question (if any) passed as `--question`. The answer then rests on the frames and transcript it returns.");
+  say("instagram-watch: the prompt contains Instagram video link(s): " + urls.join(" ") + ". This user wants the `watch` skill run on every Instagram link they paste, before any answer, unless the prompt says not to: one run per link with `--engine local`. The answer then rests on the frames and transcript it returns.");
 }
 
 // Fail-open: a broken hook asks for nothing and stops no prompt (exit 2

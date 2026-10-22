@@ -189,6 +189,17 @@ let
     };
     "${claudeDir}/skills/watch/scripts".source = "${inputs.claude-video}/skills/watch/scripts";
 
+    # security-audit skill (Cloudflare, flake input pinned by commit): attack-class
+    # library + six-phase audit workflow, linked verbatim. Upstream SKILL.md carries
+    # no `allowed-tools`. `recursive`: real directories with linked leaves, so
+    # desymlink can replace SKILL.md with a copy (a directory link would make it
+    # `rm` inside the store); `force` lets home-manager clobber that copy.
+    "${claudeDir}/skills/security-audit" = {
+      source = "${inputs.cloudflare-security-audit}/skills/security-audit";
+      recursive = true;
+      force = true;
+    };
+
     # Rules (path-scoped, loaded on demand when a matching file is read)
     "${claudeDir}/rules/nix.md".text = ruleNix;
     "${claudeDir}/rules/typescript.md".text = ruleTypescript;

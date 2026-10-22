@@ -142,8 +142,9 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 ```
 
 `flake.nix` inputs: `nixpkgs` (unstable), `nix-darwin`, `home-manager` (master),
-and `determinate` for the Nix daemon. `awesome-design-md` and `claude-video`
-are pinned non-flake sources for the `design-md` and `watch` skills.
+and `determinate` for the Nix daemon. `awesome-design-md`, `claude-video` and
+`cloudflare-security-audit` are pinned non-flake sources for the `design-md`,
+`watch` and `security-audit` skills.
 
 ## Secrets
 

@@ -25,7 +25,12 @@
 #   - `--slot <id>` (one pane per board tab) moves target and lock to
 #     slots/<id>/ (0700) and nowhere else: two slots pick, detach and lock
 #     apart, the global files untouched; stop takes it and ignores it; a bad
-#     or missing id exits 2 with nothing created.
+#     or missing id exits 2 with nothing created;
+#   - `--here` is `--slot <id>` with the id osascript prints (the Ghostty
+#     terminal it runs in) lowercased: target and lock under slots/<lower id>/,
+#     osascript called once; osascript failing or an id off the name rule
+#     falls back to the global pane, a reason on stderr and under the idle
+#     header (the pane clears the screen), no slot dir created.
 #
 # Runtime suite: the BUILT script against a stub abduco that lists a fixed
 # set of sessions (`*`, ` `, `+` rows) and, on `-a <name>`, logs the call and
@@ -54,10 +59,16 @@
 # inherit the lock fd (w03 red: the orphaned client keeps it), C7 drops the
 # XDG_CACHE_HOME default (e01 red: abduco sees it unset), C8 parses the slot
 # but keeps the global paths (t01 red: no slot target), C9 drops the slot's
-# name check (t04 red: `../x` creates a dir). A canary
-# that survives, or dies at another case, fails the check. Anchors and
-# `@abduco@` must occur exactly once in the script, and the name rule must
-# be claude-dispatch's: an eval-time throw otherwise.
+# name check (t04 red: `../x` creates a dir), C10 drops --here's lowercasing
+# (r01 red: Ghostty's uppercase id fails the rule, the global pane is picked),
+# C11 empties the append of the fallback's line under the idle header, its
+# test kept (r04 red).
+# --here (r01, r03 against a stub osascript that prints $STUB_OSA_ID or fails
+# with STUB_OSA_FAIL; r02 its pane's lock, r04 the fallback's header) runs
+# against the stub only: the real package would call /usr/bin/osascript.
+# A canary that survives, or dies at another case, fails the check. Anchors,
+# `@abduco@` and `@osascript@` must occur exactly once in the script, and the
+# name rule must be claude-dispatch's: an eval-time throw otherwise.
 { pkgs }:
 
 let
@@ -109,6 +120,23 @@ let
       "  \"$abduco_bin\" -a \"$1\" <&0 &\n";
   c8Text = mutate "C8" "if [ -n \"$slot\" ]; then pane_dir=\"$state_dir/slots/$slot\"; fi\n" "";
   c9Text = mutate "C9" "  [[ $2 =~ $name_re ]] || die \"slot must match $name_re\"\n" "";
+  c10Text = mutate "C10" "  here_id=\${here_id,,}\n" "";
+  # C11 keeps the test on here_note (its only read): a mutant that drops the
+  # whole line fails ShellCheck (SC2034) at build, before r04 can run.
+  c11Text =
+    mutate "C11" "  if [ -n \"$here_note\" ]; then out+=\"\${here_note:0:cols}\"$'\\n'; fi\n"
+      "  if [ -n \"$here_note\" ]; then :; fi\n";
+
+  # osascript for --here: logs its arguments (one line per call), then prints
+  # $STUB_OSA_ID, or fails like Ghostty unreachable when STUB_OSA_FAIL is set.
+  stubOsascript = pkgs.writeShellScript "osascript-stub" ''
+    printf '%s\n' "$*" >>"''${STUB_OSA_LOG:?STUB_OSA_LOG unset}"
+    if [ -n "''${STUB_OSA_FAIL:-}" ]; then
+      echo "execution error: Ghostty got an error: Can't get front window. (-1728)" >&2
+      exit 1
+    fi
+    printf '%s\n' "''${STUB_OSA_ID:?STUB_OSA_ID unset}"
+  '';
 
   # Jiggle variant: every `stty ` call goes to a stub that answers `size` with
   # `40 100` and logs `rows <n>` into the abduco log, so the order against
@@ -156,7 +184,11 @@ let
   withStub =
     text:
     mkAgentPane (
-      { abduco = "${stubAbduco}"; } // pkgs.lib.optionalAttrs (text != null) { inherit text; }
+      {
+        abduco = "${stubAbduco}";
+        osascript = "${stubOsascript}";
+      }
+      // pkgs.lib.optionalAttrs (text != null) { inherit text; }
     );
 
   stubbed = withStub null;
@@ -168,6 +200,8 @@ let
   c7 = withStub c7Text;
   c8 = withStub c8Text;
   c9 = withStub c9Text;
+  c10 = withStub c10Text;
+  c11 = withStub c11Text;
   jiggle = withStub jText;
   c3 = withStub c3Text;
 
@@ -181,6 +215,10 @@ let
     mkdir -p "$work"
     export HOME="$work/home" XDG_STATE_HOME="$work/state"
     export STUB_LOG="$work/abduco.log" STUB_PIDS="$work/abduco.pids"
+    # --here: the stub's terminal id (uppercase, as Ghostty prints it) and its slot.
+    hid=6B1E0C4A-0000-4000-8000-0000000000C0
+    hslot=6b1e0c4a-0000-4000-8000-0000000000c0
+    export STUB_OSA_LOG="$work/osa.log" STUB_OSA_ID="$hid"
     tf="$XDG_STATE_HOME/agent-pane/target"
     : >"$STUB_LOG"
     : >"$STUB_PIDS"
@@ -402,6 +440,39 @@ let
       echo "PASS $case"
       kill "$p2" 2>/dev/null
       unset STUB_T1_PID STUB_T2_PID
+
+      # ---- --here: the slot is osascript's id lowercased, osascript asked once;
+      # the global target untouched.
+      : >"$STUB_OSA_LOG"
+      run r01 --here pick t1
+      [ "$rc" = 0 ] || fail "--here pick t1: exit $rc, expected 0"
+      slot_is "$hslot" t1
+      cmp -s "$work/saved" "$tf" || fail "--here pick changed the global target: $(tr '\n' ' ' <"$tf")"
+      [ "$(wc -l <"$STUB_OSA_LOG")" -eq 1 ] || fail "osascript called $(wc -l <"$STUB_OSA_LOG") times, expected once"
+      grep -qF 'focused terminal of selected tab of front window' "$STUB_OSA_LOG" || fail "osascript not asked for the focused terminal: $(cat "$STUB_OSA_LOG")"
+      [ ! -s "$work/err" ] || fail "--here printed on stderr: $(cat "$work/err")"
+      echo "PASS $case"
+      rm -f "$sl/$hslot/target"
+      rmdir "$sl/$hslot" "$sl"
+
+      # osascript failing, or an id off the name rule: the global pane, a reason
+      # on stderr, no slot dir.
+      here_falls_back() {
+        run r03 --here pick "$1"
+        [ "$rc" = 0 ] || fail "--here pick $1 ($2): exit $rc, expected 0"
+        [ "$(sed -n 1p "$tf")" = "$1" ] || fail "--here pick $1 ($2) did not pick into the global target: $(sed -n 1p "$tf")"
+        grep -q '^agent-pane: --here: ' "$work/err" || fail "--here ($2): no reason on stderr: $(cat "$work/err")"
+        [ ! -e "$sl" ] || fail "--here ($2) created a slot dir"
+      }
+      export STUB_OSA_FAIL=1
+      here_falls_back t2 "osascript failing"
+      unset STUB_OSA_FAIL
+      export STUB_OSA_ID=../X
+      here_falls_back t1 "an id off the rule"
+      export STUB_OSA_ID=""
+      here_falls_back t2 "an empty id"
+      export STUB_OSA_ID="$hid"
+      echo "PASS $case"
     fi
 
     # ---- the pane, headless, against the stub
@@ -647,11 +718,41 @@ let
     free_wait --slot a
     alive_in 1 --slot a
     echo "PASS $case"
+
+    # ---- a --here pane holds its lock under slots/<lower id>/; one whose
+    # osascript fails runs as the global pane and says so under its header.
+    case=r02
+    "$bin" --here </dev/null >"$work/pane-h.out" 2>>"$work/pane.err" &
+    pane=$!
+    printf '%s\n' "$pane" >>"$STUB_PIDS"
+    wait_slot_lock "$hslot"
+    [ -f "$sl/$hslot/pane.lock" ] || fail "the --here pane's lock is not at slots/$hslot/pane.lock"
+    alive_in 1
+    stop_pane "$pane"
+    pane=""
+    echo "PASS $case"
+
+    case=r04
+    rm -f "$tf"
+    export STUB_OSA_FAIL=1
+    "$bin" --here </dev/null >"$work/pane-g.out" 2>"$work/pane-g.err" &
+    pane=$!
+    unset STUB_OSA_FAIL
+    printf '%s\n' "$pane" >>"$STUB_PIDS"
+    out="$work/pane-g.out"
+    wait_for "$out" "agent-pane — no agent selected" 1 "no idle header in the fallback pane"
+    wait_for "$out" "agent-pane — Ghostty injoignable (--here) : pane global" 1 "the fallback is not said under the idle header"
+    wait_lock
+    grep -q '^agent-pane: --here: ' "$work/pane-g.err" || fail "the fallback pane gave no reason on stderr"
+    stop_pane "$pane"
+    pane=""
+    echo "PASS $case"
     stop_all
     echo ok
   '';
 in
 assert once "@abduco@" "@abduco@";
+assert once "@osascript@" "@osascript@";
 assert once "the name rule" "name_re='${nameRule}'";
 assert
   pkgs.lib.hasInfix "$name =~ ${nameRule} ]]" dispatchSource
@@ -666,6 +767,14 @@ pkgs.runCommand "agent-pane-check" { } ''
     echo "agent-pane: @abduco@ left unsubstituted in the real script"
     exit 1
   fi
+  grep -qF 'osascript_bin="/usr/bin/osascript"' "$real" || {
+    echo "agent-pane: /usr/bin/osascript is not substituted into the real script"
+    exit 1
+  }
+  if grep -qF @osascript@ "$real"; then
+    echo "agent-pane: @osascript@ left unsubstituted in the real script"
+    exit 1
+  fi
 
   ${suite} ${stubbed}/bin/agent-pane "$TMPDIR/stub" all >stub.log 2>&1 || {
     cat stub.log
@@ -678,7 +787,7 @@ pkgs.runCommand "agent-pane-check" { } ''
     echo "agent-pane: pick suite FAILED against the real package"
     exit 1
   }
-  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 t01 t04 l01 l02 l03 l04 l05 l06 s01 s02 s03 s04 s05 e01 t05 a01 w01 a02 a03 a04 a05 a06 a07 a08 a09 w02 a10 w03 t02 t03; do
+  for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 t01 t04 l01 l02 l03 l04 l05 l06 s01 s02 s03 s04 s05 e01 t05 a01 w01 a02 a03 a04 a05 a06 a07 a08 a09 w02 a10 w03 t02 t03 r01 r03 r02 r04; do
     grep -qx "PASS $r" stub.log || { echo "agent-pane: case $r did not run against the stub"; exit 1; }
   done
   for r in p01 p02 p03 p04 p05 p06 p07 p08 p09 p10 p11 h12 p13 t01 t04 l01 l02 l03 l04 l05 l06; do
@@ -719,7 +828,9 @@ pkgs.runCommand "agent-pane-check" { } ''
   canary C7 ${c7}/bin/agent-pane e01
   canary C8 ${c8}/bin/agent-pane t01
   canary C9 ${c9}/bin/agent-pane t04
+  canary C10 ${c10}/bin/agent-pane r01
+  canary C11 ${c11}/bin/agent-pane r04
 
-  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4, C5, C6, C7, C8, C9 — OK"
+  echo "agent-pane: runtime cases and canaries C1, C2, C3, C4, C5, C6, C7, C8, C9, C10, C11 — OK"
   touch $out
 ''

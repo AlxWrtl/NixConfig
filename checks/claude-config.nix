@@ -332,7 +332,65 @@ let
   missingNixExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) requiredNixExcluded;
   nixCheckWildcard = builtins.elem "nix flake check *" excludedCommands;
   sandboxNetwork = pkgs.lib.attrByPath [ "sandbox" "network" ] { } settingsAttrs;
-  nixSocketOpened = sandboxNetwork ? allowUnixSockets;
+  # allowUnixSockets may name sockets under the sandbox TMPDIR only (tsx IPC),
+  # never a wildcard, a traversal, the nix daemon socket or a docker socket.
+  sandboxTmpPrefix = "/private/tmp/claude-501/";
+  isBadUnixSocket =
+    s:
+    !(builtins.isString s)
+    || !(hasPrefix sandboxTmpPrefix s)
+    || hasInfix "*" s
+    || hasInfix ".." s
+    || hasInfix "/nix/var/nix/daemon-socket" s
+    || hasInfix "docker.sock" s;
+  unixSocketPredicateLive =
+    builtins.all isBadUnixSocket [
+      "/nix/var/nix/daemon-socket/socket"
+      "/var/run/docker.sock"
+      "/private/tmp/claude-501/*"
+      "/private/tmp/claude-501/../../../nix/var/nix/daemon-socket/socket"
+      "/private/tmp/claude-501/docker.sock"
+      "/Users/alx/.docker/run/docker.sock"
+    ]
+    && !(isBadUnixSocket "/private/tmp/claude-501/tsx-501");
+  allowUnixSockets = sandboxNetwork.allowUnixSockets or [ ];
+  badUnixSockets =
+    if builtins.isList allowUnixSockets then
+      builtins.filter isBadUnixSocket allowUnixSockets
+    else
+      [ "<allowUnixSockets is not a list>" ];
+  allUnixSocketsOpened = (sandboxNetwork.allowAllUnixSockets or false) != false;
+  # Pinned to the one measured socket (tsx IPC): no extra entry, no empty list.
+  pinnedUnixSockets = [ "/private/tmp/claude-501/tsx-501" ];
+  unixSocketsPinned = allowUnixSockets == pinnedUnixSockets;
+  nixSocketOpened =
+    !unixSocketPredicateLive || allUnixSocketsOpened || badUnixSockets != [ ] || !unixSocketsPinned;
+
+  # --- A29: targeted widening (user decision 2026-10-22) -------------------
+  machLookup = sandboxNetwork.allowMachLookup or null;
+  nodeUseEnvProxy = pkgs.lib.attrByPath [ "env" "NODE_USE_ENV_PROXY" ] null settingsAttrs;
+  requiredWidenedExcluded = [
+    "nix build *"
+    "nix eval *"
+    "docker *"
+  ];
+  missingWidenedExcluded = builtins.filter (
+    c: !(builtins.elem c excludedCommands)
+  ) requiredWidenedExcluded;
+  isRunnerNixEntry =
+    c:
+    builtins.isString c
+    && (
+      builtins.elem c [
+        "nix"
+        "nix*"
+        "nix *"
+      ]
+      || hasPrefix "nix shell" c
+      || hasPrefix "nix run" c
+      || hasPrefix "nix develop" c
+    );
+  runnerNixExcluded = builtins.filter isRunnerNixEntry excludedCommands;
 
   requiredDeny = [
     "Bash(git push --force *)"
@@ -686,7 +744,7 @@ let
         + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`abduco -n`) hits EPERM on create-session (its socket) and a sandboxed abduco server would pass its Seatbelt profile to the session; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
     }
     {
-      name = "A14b sandbox: bare nix flake check is excluded, no wildcard, the daemon socket stays closed";
+      name = "A14b sandbox: bare nix flake check is excluded, no wildcard, unix sockets pinned to the measured tsx socket";
       ok = missingNixExcluded == [ ] && !nixCheckWildcard && !nixSocketOpened;
       msg =
         "sandbox.excludedCommands is missing: "
@@ -697,8 +755,53 @@ let
           else
             ""
         )
-        + (if nixSocketOpened then " / sandbox.network.allowUnixSockets is set" else "")
-        + " — sandboxed, `nix flake check` fails with EPERM on the nix daemon socket and on the ~/.cache/nix sqlite, so the verify step cannot run it. The fix is excluding that one command, never opening the socket: the user is in trusted-users (@admin), so allowUnixSockets on the daemon socket hands every sandboxed command a root-equivalent channel";
+        + (
+          if unixSocketPredicateLive then
+            ""
+          else
+            " / the isBadUnixSocket predicate no longer flags its own known-bad samples (vacuous)"
+        )
+        + (if allUnixSocketsOpened then " / sandbox.network.allowAllUnixSockets is set" else "")
+        + (
+          if badUnixSockets == [ ] then
+            ""
+          else
+            " / sandbox.network.allowUnixSockets entries outside ${sandboxTmpPrefix}, with a wildcard or traversal, or naming the nix daemon / docker socket: "
+            + builtins.concatStringsSep ", " (map builtins.toJSON badUnixSockets)
+        )
+        + (
+          if unixSocketsPinned then
+            ""
+          else
+            " / sandbox.network.allowUnixSockets is ${builtins.toJSON allowUnixSockets}, want exactly ${builtins.toJSON pinnedUnixSockets} (pinned to the measured entry)"
+        )
+        + " — sandboxed, `nix flake check` fails with EPERM on the nix daemon socket and on the ~/.cache/nix sqlite, so the verify step cannot run it. The fix is excluding that one command, never opening the socket: the user is in trusted-users (@admin), so allowUnixSockets on the daemon socket (or on docker.sock, root in the VM with host mounts) hands every sandboxed command a root-equivalent channel. The list is pinned to the one measured entry, the tsx IPC socket under the sandbox TMPDIR: adding a socket means re-measuring and updating this pin";
+    }
+    {
+      name = "A29 sandbox: targeted widening — sysmond mach lookup, Node env proxy, nix build/eval + docker excluded, nix shell/run/develop sandboxed";
+      ok =
+        machLookup == [ "com.apple.sysmond" ]
+        && nodeUseEnvProxy == "1"
+        && missingWidenedExcluded == [ ]
+        && runnerNixExcluded == [ ];
+      msg =
+        (
+          if machLookup == [ "com.apple.sysmond" ] then
+            ""
+          else
+            "sandbox.network.allowMachLookup is ${builtins.toJSON machLookup}, want [\"com.apple.sysmond\"] / "
+        )
+        + (
+          if nodeUseEnvProxy == "1" then
+            ""
+          else
+            "env.NODE_USE_ENV_PROXY is ${builtins.toJSON nodeUseEnvProxy}, want \"1\" / "
+        )
+        + "sandbox.excludedCommands is missing: "
+        + builtins.concatStringsSep ", " missingWidenedExcluded
+        + " / excludes a command runner: "
+        + builtins.concatStringsSep ", " runnerNixExcluded
+        + " — user decision 2026-10-22: `nix build *`, `nix eval *` and `docker *` run unsandboxed (daemon socket = root-equivalent for a trusted user, docker = host-equivalent; risk accepted), while `nix shell`/`nix run`/`nix develop` (and a bare `nix *`) execute arbitrary commands and stay sandboxed. pgrep/ps need the com.apple.sysmond mach service and nothing wider; Node's fetch ignores HTTP(S)_PROXY unless NODE_USE_ENV_PROXY=1, so sandboxed fetch cannot reach the proxy without it";
     }
     {
       name = "A14d sandbox: no `claude …` entry in excludedCommands, only the claude-dispatch wrapper";

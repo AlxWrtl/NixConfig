@@ -13,12 +13,10 @@
     ccb = "claude --bare";
     ccrc = "claude --remote-control";
     ccl = "claude -c";
-    # The agent screen's top pane, wherever it is typed (the board opens one only when none runs):
-    # the slot of the board that picked last (its slot dir's mtime moves on each pick's mv), the
-    # global pane when no board ever picked. `command ls`: the alias text is parsed again, so the
-    # `ls` alias (eza, whose -t takes a field) would apply and leave the slot empty. zsh splits no
-    # expansion, so `--slot` and the slot are two expansions (an empty one is dropped).
-    ap = "_ap_slot=$(command ls -t \"\${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane/slots\" 2>/dev/null | head -n 1); agent-pane \${_ap_slot:+--slot} $_ap_slot";
+    # Makes the terminal it is typed in an agent pane: its slot is that Ghostty terminal's id
+    # (`--here`), the one the board finds when this pane is clicked during a placement, so no
+    # slot is looked up here. Ghostty unreachable: the global pane, said in its header.
+    ap = "agent-pane --here";
     # The terminal APEX board (`ab` is Apache's benchmark, /usr/sbin/ab).
     bd = "apex-board --tui";
     # Skill analysis tools

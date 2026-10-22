@@ -35,9 +35,20 @@
 # file). <id> follows the name rule; a bad or missing one exits 2 before
 # anything is created. stop takes it and ignores it (sessions are global).
 # Without it, target and lock are the global files above.
-# abduco is called by absolute path (substituted at build time); PATH is the
-# package's own (coreutils, jq, flock).
+# `--here` (the `ap` alias, and the command of the splits the board opens) is
+# `--slot <id>` with the id of the Ghostty terminal it runs in, lowercased
+# (Ghostty prints uppercase UUIDs): the board names a pane by the terminal
+# the user clicks, with no registry. The id is the focused terminal of the
+# front window's selected tab (the shell `ap` was typed in, or the split
+# Ghostty just opened, has the focus). osascript failing or an id off the
+# name rule: the global pane, said on stderr and in the idle header (the
+# pane clears the screen, stderr alone would not be seen).
+# abduco and osascript are called by absolute path (substituted at build
+# time); PATH is the package's own (coreutils, jq, flock).
 abduco_bin="@abduco@"
+osascript_bin="@osascript@"
+# Set by a --here that fell back to the global pane; shown under the idle header.
+here_note=""
 name_re='^[a-z0-9][a-z0-9-]{0,47}$'
 state_dir="${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane"
 # slot, pane_dir, target_file and lock_file are set once the arguments are
@@ -57,6 +68,7 @@ usage() {
     '       agent-pane [--slot <id>] stop <name>  end the session (TERM to its abduco server)' \
     '       agent-pane [--slot <id>] alive        exit 0 if a pane runs, 1 if none' \
     '--slot <id>: the pane of one board tab (its own target and lock); stop ignores it.' \
+    '--here: --slot <id of this Ghostty terminal>; Ghostty unreachable: the global pane.' \
     'In the pane: Ctrl+\ detaches, Ctrl+C on the session list quits.'
 }
 die() { printf 'agent-pane: %s\n' "$1" >&2; exit 2; }
@@ -177,7 +189,9 @@ draw_idle() {
   local cols=80 size out line row mark sname
   size=$(stty size 2>/dev/null) || size=""
   if [[ ${size##* } =~ ^[1-9][0-9]*$ ]]; then cols=${size##* }; fi
-  out=$'\e[H\e[2J'"${1:0:cols}"$'\n\n'
+  out=$'\e[H\e[2J'"${1:0:cols}"$'\n'
+  if [ -n "$here_note" ]; then out+="${here_note:0:cols}"$'\n'; fi
+  out+=$'\n'
   if [ "${#rows[@]}" -eq 0 ]; then out+=$'(no abduco session)\n'; fi
   for row in "${rows[@]}"; do
     mark=${row%%$'\t'*}
@@ -280,7 +294,21 @@ pane() {
 }
 
 # The slot is checked before any command runs, so a bad one creates nothing.
-if [ "$#" -gt 0 ] && [ "$1" = --slot ]; then
+if [ "$#" -gt 0 ] && [ "$1" = --here ]; then
+  shift
+  here_id=$("$osascript_bin" -e 'tell application "Ghostty" to get id of focused terminal of selected tab of front window' </dev/null 2>/dev/null) || here_id=""
+  here_id=${here_id,,}
+  if [[ $here_id =~ $name_re ]]; then
+    slot=$here_id
+  else
+    here_note='agent-pane — Ghostty injoignable (--here) : pane global'
+    if [ -z "$here_id" ]; then
+      printf 'agent-pane: --here: osascript gave no terminal id: the global pane\n' >&2
+    else
+      printf 'agent-pane: --here: the terminal id is off %s: the global pane\n' "$name_re" >&2
+    fi
+  fi
+elif [ "$#" -gt 0 ] && [ "$1" = --slot ]; then
   [ "$#" -ge 2 ] || die '--slot needs an id'
   [[ $2 =~ $name_re ]] || die "slot must match $name_re"
   slot=$2

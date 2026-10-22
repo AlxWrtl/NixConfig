@@ -16,26 +16,29 @@ package main
 // reads and the abduco call run in the poll's Cmd, off the UI goroutine; a file that did not change
 // (size, mtime, inode) keeps its parsed state.
 //
-// Three actions, argv only (no shell), the board stays open. Enter, `o` or a click on a card runs
-// `agent-pane pick <name>`: the agent screen's top pane switches to that session. `x` on the
-// selected card or a click on its × (drawn only on a session abduco lists) arms it, the footer
+// Three actions, argv only (no shell), the board stays open. Enter, `o` or a click on a card shows
+// that session in a Ghostty pane: the live pane already showing it gets the focus, else a click on
+// a pane of the board's tab puts it there (one pane per terminal, several agents at once; see
+// « placement » below); outside Ghostty, `agent-pane pick <name>` on the board's own pane. `x` on
+// the selected card or a click on its × (drawn only on a session abduco lists) arms it, the footer
 // asks; a second `x` or × on that card runs `agent-pane stop <name>`, which TERMs its abduco server
 // (the in-flight turn is lost, the transcript stays): any other key or click disarms. `n` or a
 // click on « + nouvel agent » runs `claude-dispatch --blank agent-HHMMSS` in the board's repo (a
-// session with no prompt, in its own worktree as a dispatched one), then picks it: the user types
-// the first prompt in the top pane, and the card takes it as its title. `N` starts a generic one,
-// in no repo: `abduco -n <name> claude --name <name>` in a new `~/agents/<name>` (launchGeneric).
-// After any pick that succeeded, `agent-pane alive`: when no pane runs, osascript opens one, a
-// Ghostty split above the board (ensurePane); a failure only says so in the footer. `c` on a
-// closed agent (its claude exited, abduco no longer lists it) brings its conversation back:
-// `abduco -n <name> claude --continue --name <name>` in its worktree or generic dir, then the same
-// pick (resumeAgent).
+// session with no prompt, in its own worktree as a dispatched one), then shows it as a card click
+// does (placement mode for the new name): the user types the first prompt in its pane, and the
+// card takes it as its title. `N` starts a generic one, in no repo: `abduco -n <name> claude
+// --name <name>` in a new `~/agents/<name>` (launchGeneric). `c` on a closed agent (its claude
+// exited, abduco no longer lists it) brings its conversation back: `abduco -n <name> claude
+// --continue --name <name>` in its worktree or generic dir, then the same show (resumeAgent).
 //
-// One pane per board: pick and alive pass `--slot <tty>` (paneSlot, the board's tty name), the
-// split runs `agent-pane --slot <tty>`, so two boards in two tabs each drive their own pane; no
-// tty, no slot: the one global pane. With the board's repo known (tabRepo), the cards are grouped
-// by project as an accordion: the expanded group fills the kanban, the others one header line
-// each; `p` / `P` or a click on a header expands another (agentGroups).
+// Ghostty not answering, the fallback pick (pickTop) keeps one pane per board: pick and alive pass
+// `--slot <tty>` (paneSlot, the board's tty name); when no pane runs, osascript opens one, a split
+// above the board running `agent-pane --slot <tty>` (ensurePane); a failure only says so in the
+// footer; no tty, no slot: the one global pane.
+//
+// With the board's repo known (tabRepo), the cards are grouped by project as an accordion: the
+// expanded group fills the kanban, the others one header line each; `p` / `P` or a click on a
+// header expands another (agentGroups).
 
 import (
 	"bytes"
@@ -810,6 +813,8 @@ type agentsState struct {
 	group    string // the expanded group's key; "" = the tab's project (agentGroups)
 	// A launch runs: a second `n` waits for it, two launches in one second would pick one name.
 	launching bool
+	place     *placeState // placement mode (showCmd): nil = none
+	placeGen  int         // the last placement's gen
 }
 
 type agentsPoll struct {
@@ -821,18 +826,20 @@ type agentsPoll struct {
 }
 
 // pickMsg: the outcome of `agent-pane pick <name>`; err "" when it succeeded, then paneErr:
-// ensurePane's (tried only after a pick that succeeded).
-type pickMsg struct{ name, err, paneErr string }
+// ensurePane's (tried only after a pick that succeeded); ghostty: why showCmd fell back to it.
+type pickMsg struct{ name, err, paneErr, ghostty string }
 
 // stopMsg: the outcome of `agent-pane stop <name>`; err "" when it succeeded.
 type stopMsg struct{ name, err string }
 
 // newAgentMsg: the outcome of `n` (or of `c`, resume set, or of `N`, generic set): the name
-// launched ("" when none was picked), the launch's error, then the pick's (tried only after a
-// launch that succeeded), then ensurePane's.
+// launched ("" when none was picked), the launch's error, then show (the show path, after a launch
+// that succeeded), or with Ghostty not answering (ghostty: why) the fallback pick's error, then
+// ensurePane's.
 type newAgentMsg struct {
-	name, err, pickErr, paneErr string
-	resume, blank, generic      bool // blank: resumed with no conversation to continue
+	name, err, pickErr, paneErr, ghostty string
+	resume, blank, generic               bool // blank: resumed with no conversation to continue
+	show                                 *placeStartMsg
 }
 
 // runPick runs argv (agent-pane pick or stop, no shell): runQuiet. A variable so the tests never
@@ -1112,17 +1119,20 @@ func launchAgent(bin, pane, repo, sessionsDir string, now time.Time) newAgentMsg
 	return pickLaunched(pane, newAgentMsg{name: name})
 }
 
-// pickLaunched: after a launch that succeeded, `agent-pane pick <name>` then ensurePane, into msg.
+// pickLaunched: after a launch that succeeded, the card's show path (showIn): the focus of a pane
+// already showing it (a resume), else placement mode for the new name (msg.show); Ghostty not
+// answering, the fallback pick's outcome (pickTop) into msg.
 func pickLaunched(pane string, msg newAgentMsg) newAgentMsg {
 	if pane == "" {
 		msg.pickErr = "binaire absent"
 		return msg
 	}
-	if err := runPick(paneArgv(pane, "pick", msg.name)); err != nil {
-		msg.pickErr = err.Error()
+	s := showIn(pane, msg.name)
+	if s.top != nil {
+		msg.pickErr, msg.paneErr, msg.ghostty = s.top.err, s.top.paneErr, s.top.ghostty
 		return msg
 	}
-	msg.paneErr = ensurePane(pane)
+	msg.show = &s
 	return msg
 }
 
@@ -1331,7 +1341,8 @@ func (m *Model) applyAgents(p *agentsPoll) {
 
 // pickCmd: `agent-pane pick <name>` then ensurePane in a Cmd, off the UI goroutine; the footer
 // says the outcome (pickMsg). The name is checked again here (the readers already skip others): it
-// is an argv word.
+// is an argv word. Enter, `o` and a card click go through showCmd, which falls back to this pick
+// when Ghostty cannot be asked.
 func (m *Model) pickCmd(name string) tea.Cmd {
 	if !validName(name) {
 		return nil
@@ -1341,13 +1352,16 @@ func (m *Model) pickCmd(name string) tea.Cmd {
 		return nil
 	}
 	pane := agentPaneBin
-	argv := paneArgv(pane, "pick", name)
-	return func() tea.Msg {
-		if err := runPick(argv); err != nil {
-			return pickMsg{name: name, err: err.Error()}
-		}
-		return pickMsg{name: name, paneErr: ensurePane(pane)}
+	return func() tea.Msg { return pickTop(pane, name) }
+}
+
+// pickTop: the board's own pane (paneArgv's slot) gets name, then ensurePane; in pickCmd's Cmd or
+// showCmd's.
+func pickTop(pane, name string) pickMsg {
+	if err := runPick(paneArgv(pane, "pick", name)); err != nil {
+		return pickMsg{name: name, err: err.Error()}
 	}
+	return pickMsg{name: name, paneErr: ensurePane(pane)}
 }
 
 func (m *Model) applyPick(msg pickMsg) {
@@ -1359,7 +1373,417 @@ func (m *Model) applyPick(msg pickMsg) {
 	default:
 		m.ag.note = "affichée en haut : " + msg.name
 	}
+	if msg.ghostty != "" {
+		m.ag.note += " · Ghostty : " + msg.ghostty
+	}
 	m.dirty = true
+}
+
+// ---- placement: one pane per Ghostty terminal ------------------------------------
+//
+// A pane's slot is its Ghostty terminal's id lowercased (termSlot: Ghostty's ids are uppercase
+// UUIDs, the slot rule wants lowercase), so a terminal names its slot with no registry; `agent-pane
+// --here` (the `ap` alias, and the command of every split the board opens) resolves its own the
+// same way. Enter, `o` or a click on a card (showCmd): a live pane already showing the agent gets
+// the focus (findShown); else the board enters placement mode (placeState): every placeEvery it
+// asks Ghostty which terminal of its own tab has the focus, and the first one that is not the
+// board gets the agent (placeInto): an agent pane switches (pick), any other terminal gets a split
+// on its right running `agent-pane --here`, then the pick on the new terminal's slot. Enter splits
+// the board itself, Échap or placeTimeout cancels. Nothing is ever typed into a terminal: a split
+// carries its command in its surface configuration, and every script gets the ids and the command
+// as argv items, never as script text. Ghostty that cannot be asked (another terminal, osascript
+// refused) falls back to pickTop, the board's own pane as before.
+
+const (
+	placeEvery   = 300 * time.Millisecond
+	placeTimeout = 30 * time.Second
+	// The most a script prints: two ids and a newline.
+	ghosttyOutMax = 4096
+)
+
+// uuidSlot: a slot that is a terminal's (Ghostty's id lowercased): only those can be focused; the
+// others (a board's tty, a hand-typed `--slot`) are no terminal.
+var uuidSlot = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
+
+// termSlot: the slot of a terminal id Ghostty printed, lowercased, when it passes the name rule
+// (agent-pane --here's); "" else. A passing id is also safe as an osascript argv item (no `-`
+// first).
+func termSlot(id string) string {
+	s := strings.ToLower(strings.TrimSpace(id))
+	if !validName(s) {
+		return ""
+	}
+	return s
+}
+
+// boardScript: the board's tab id and terminal id, one per line: it runs in the focused terminal
+// of the front window's selected tab (the key or the click that started it went there).
+var boardScript = []string{
+	"on run argv",
+	`tell application "Ghostty"`,
+	"set tb to selected tab of front window",
+	"return (id of tb) & linefeed & (id of focused terminal of tb)",
+	"end tell",
+	"end run",
+}
+
+// focusedScript: the id of the focused terminal of the tab whose id is item 1, in any window; ""
+// when no tab has it (closed).
+var focusedScript = []string{
+	"on run argv",
+	`tell application "Ghostty"`,
+	"repeat with w in windows",
+	"repeat with tb in tabs of w",
+	"if id of tb is item 1 of argv then return id of focused terminal of tb",
+	"end repeat",
+	"end repeat",
+	"end tell",
+	`return ""`,
+	"end run",
+}
+
+// focusScript: focus the terminal whose id is item 1 (its window comes to the front).
+var focusScript = []string{
+	"on run argv",
+	`tell application "Ghostty"`,
+	"focus (terminal id (item 1 of argv))",
+	"end tell",
+	"end run",
+}
+
+// splitScript: a split on the right of the terminal whose id is item 1, running item 2; prints the
+// new terminal's id, "" when split gives none back.
+var splitScript = []string{
+	"on run argv",
+	`tell application "Ghostty"`,
+	"set cfg to new surface configuration",
+	"set command of cfg to item 2 of argv",
+	"set n to split (terminal id (item 1 of argv)) direction right with configuration cfg",
+	"try",
+	"return id of n",
+	"on error",
+	`return ""`,
+	"end try",
+	"end tell",
+	"end run",
+}
+
+// ghosttyArgv: osascript with script as -e lines and items as the script's argv.
+func ghosttyArgv(script []string, items ...string) []string {
+	argv := []string{"/usr/bin/osascript"}
+	for _, line := range script {
+		argv = append(argv, "-e", line)
+	}
+	return append(argv, items...)
+}
+
+// runGhostty runs argv (osascript, no shell) as runQuiet and returns stdout trimmed, at most
+// ghosttyOutMax bytes. A variable so the tests never run it.
+var runGhostty = func(argv []string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), pickTimeout)
+	defer cancel()
+	var stdout, stderr bytes.Buffer
+	cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	cmd.WaitDelay = time.Second
+	err := cmd.Run()
+	switch {
+	case err == nil:
+		if stdout.Len() > ghosttyOutMax {
+			return "", errors.New("réponse de plus de " + strconv.Itoa(ghosttyOutMax) + " octets")
+		}
+		return strings.TrimSpace(stdout.String()), nil
+	case ctx.Err() != nil:
+		return "", errors.New("pas de réponse en " + strconv.Itoa(int(pickTimeout/time.Second)) + " s")
+	}
+	if line, _, _ := strings.Cut(strings.TrimSpace(stderr.String()), "\n"); line != "" {
+		return "", errors.New(oneLine(line))
+	}
+	return "", err
+}
+
+// paneStateDir: agent-pane's state dir, `${XDG_STATE_HOME:-$HOME/.local/state}/agent-pane` as the
+// script computes it; "" without a home. A variable so the tests point it at a temp dir.
+var paneStateDir = func() string {
+	base := os.Getenv("XDG_STATE_HOME")
+	if base == "" {
+		h, err := os.UserHomeDir()
+		if err != nil || h == "" {
+			return ""
+		}
+		base = filepath.Join(h, ".local", "state")
+	}
+	return filepath.Join(base, "agent-pane")
+}
+
+// slotTarget: line 1 of a slot's target file (the name it shows), "" when it cannot be read (a
+// link, not a regular file, absent). The file is two short lines: 256 bytes are plenty.
+func slotTarget(p string) string {
+	f, _, err := openNoFollow(p)
+	if err != nil {
+		return ""
+	}
+	defer f.Close()
+	head, _ := io.ReadAll(io.LimitReader(f, 256))
+	line, _, _ := strings.Cut(string(head), "\n")
+	return line
+}
+
+// findShown: the slot of a terminal whose live pane shows name (its target's line 1, and `agent-pane
+// --slot <slot> alive` exit 0), "" when none. Only terminal slots (uuidSlot): another cannot be
+// focused.
+func findShown(pane, name string) string {
+	dir := paneStateDir()
+	if dir == "" {
+		return ""
+	}
+	root := filepath.Join(dir, "slots")
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return ""
+	}
+	for _, e := range entries {
+		slot := e.Name()
+		if !e.IsDir() || !uuidSlot.MatchString(slot) || slotTarget(filepath.Join(root, slot, "target")) != name {
+			continue
+		}
+		if alive, err := runAlive([]string{pane, "--slot", slot, "alive"}); err == nil && alive {
+			return slot
+		}
+	}
+	return ""
+}
+
+// hereCommand: what a split runs, `<pane> --here`; "" when the shell Ghostty hands it to could read
+// more than those words in it (paneCommand's rule).
+func hereCommand(pane string) string {
+	if !safePath.MatchString(pane) {
+		return ""
+	}
+	if cmd := pane + " --here"; safeCommand.MatchString(cmd) {
+		return cmd
+	}
+	return ""
+}
+
+// placeState: placement mode, for one agent; the board's tab and terminal ids as Ghostty printed
+// them (compared and passed back as is); gen tells this placement's ticks from an earlier one's.
+type placeState struct {
+	name, tab, board string
+	until            time.Time
+	gen              int
+}
+
+// placeStartMsg: showCmd's outcome: shown (a pane showed name and got the focus; err when the focus
+// failed), else the board's ids (placement starts), else top (Ghostty not asked: the fallback pick
+// ran).
+type placeStartMsg struct {
+	name, err, tab, board string
+	shown                 bool
+	top                   *pickMsg
+}
+
+// placeTickMsg: time to ask which terminal of the board's tab has the focus.
+type placeTickMsg struct{ gen int }
+
+// placeFocusMsg: the answer: the focused terminal's id ("" = the tab is gone), or err.
+type placeFocusMsg struct {
+	gen       int
+	term, err string
+}
+
+// placedMsg: placeInto's outcome: err "" when name is shown; split when a new split shows it.
+type placedMsg struct {
+	name, err string
+	split     bool
+}
+
+// showCmd: Enter, `o` or a card click on name: findShown then the focus, else the board's ids,
+// in a Cmd off the UI goroutine; Ghostty failing to answer falls back to pickTop.
+func (m *Model) showCmd(name string) tea.Cmd {
+	if !validName(name) {
+		return nil
+	}
+	if agentPaneBin == "" {
+		m.ag.note, m.dirty = "agent-pane : binaire absent, rien lancé", true
+		return nil
+	}
+	pane := agentPaneBin
+	return func() tea.Msg { return showIn(pane, name) }
+}
+
+// showIn: showCmd's work, in its Cmd or after a launch that succeeded (pickLaunched).
+func showIn(pane, name string) placeStartMsg {
+	if slot := findShown(pane, name); slot != "" {
+		if _, err := runGhostty(ghosttyArgv(focusScript, strings.ToUpper(slot))); err != nil {
+			return placeStartMsg{name: name, shown: true, err: err.Error()}
+		}
+		return placeStartMsg{name: name, shown: true}
+	}
+	out, err := runGhostty(ghosttyArgv(boardScript))
+	why := ""
+	tab, board, _ := strings.Cut(out, "\n")
+	switch {
+	case err != nil:
+		why = err.Error()
+	case termSlot(tab) == "" || termSlot(board) == "":
+		why = "ids illisibles"
+	default:
+		return placeStartMsg{name: name, tab: strings.TrimSpace(tab), board: strings.TrimSpace(board)}
+	}
+	top := pickTop(pane, name)
+	top.ghostty = why
+	return placeStartMsg{name: name, top: &top}
+}
+
+// placeTick: the next placeTickMsg of this placement, placeEvery from now.
+func placeTick(gen int) tea.Cmd {
+	return tea.Tick(placeEvery, func(time.Time) tea.Msg { return placeTickMsg{gen: gen} })
+}
+
+func (m *Model) applyPlaceStart(msg placeStartMsg) tea.Cmd {
+	a := &m.ag
+	m.dirty = true
+	switch {
+	case msg.top != nil:
+		m.applyPick(*msg.top)
+		return nil
+	case msg.shown && msg.err != "":
+		a.note = "focus " + msg.name + " : osascript : " + msg.err
+		return nil
+	case msg.shown:
+		a.note = "affichée : " + msg.name
+		return nil
+	}
+	a.placeGen++
+	a.place = &placeState{name: msg.name, tab: msg.tab, board: msg.board, until: time.Now().Add(placeTimeout), gen: a.placeGen}
+	a.note = "clique le pane où afficher " + msg.name + " · Entrée = nouveau split · Échap = annuler"
+	return placeTick(a.placeGen)
+}
+
+// placing: the current placement when gen is its own, else nil (cancelled, done, or replaced).
+func (m *Model) placing(gen int) *placeState {
+	if p := m.ag.place; p != nil && p.gen == gen {
+		return p
+	}
+	return nil
+}
+
+// endPlace leaves placement mode, the footer saying note.
+func (m *Model) endPlace(note string) {
+	m.ag.place, m.ag.note, m.dirty = nil, note, true
+}
+
+// applyPlaceTick: past placeTimeout the placement ends; else one osascript in a Cmd asks the
+// board's tab for its focused terminal (the next tick waits for its answer).
+func (m *Model) applyPlaceTick(msg placeTickMsg) tea.Cmd {
+	p := m.placing(msg.gen)
+	if p == nil {
+		return nil
+	}
+	if !time.Now().Before(p.until) {
+		m.endPlace("placement de " + p.name + " annulé (" + strconv.Itoa(int(placeTimeout/time.Second)) + " s)")
+		return nil
+	}
+	gen, argv := p.gen, ghosttyArgv(focusedScript, p.tab)
+	return func() tea.Msg {
+		out, err := runGhostty(argv)
+		if err != nil {
+			return placeFocusMsg{gen: gen, err: err.Error()}
+		}
+		return placeFocusMsg{gen: gen, term: out}
+	}
+}
+
+// applyPlaceFocus: the board still focused, another tick; another terminal gets the agent.
+func (m *Model) applyPlaceFocus(msg placeFocusMsg) tea.Cmd {
+	p := m.placing(msg.gen)
+	switch {
+	case p == nil:
+		return nil
+	case msg.err != "":
+		m.endPlace("placement annulé : osascript : " + msg.err)
+		return nil
+	case msg.term == "":
+		m.endPlace("onglet du board introuvable : placement annulé")
+		return nil
+	case msg.term == p.board:
+		return placeTick(p.gen)
+	}
+	return m.placeCmd(p, msg.term, false)
+}
+
+// placeCmd ends placement mode and runs placeInto on term in a Cmd (split: a new split of term,
+// whatever runs there: Enter on the board).
+func (m *Model) placeCmd(p *placeState, term string, split bool) tea.Cmd {
+	name, pane := p.name, agentPaneBin
+	m.endPlace("placement de " + name + "…")
+	return func() tea.Msg { return placeInto(pane, name, term, split) }
+}
+
+// placeInto: term's own pane gets name when one runs there (and split is false), else a split on
+// term's right running `agent-pane --here`, then the pick on the new terminal's slot. The new pane
+// polls its target, so a pick before or after its start shows the same agent.
+func placeInto(pane, name, term string, split bool) placedMsg {
+	slot := termSlot(term)
+	if slot == "" {
+		return placedMsg{name: name, err: "id de terminal illisible"}
+	}
+	if !split {
+		alive, err := runAlive([]string{pane, "--slot", slot, "alive"})
+		if err != nil {
+			return placedMsg{name: name, err: "agent-pane alive : " + err.Error()}
+		}
+		if alive {
+			return pickInto(pane, name, slot, false)
+		}
+	}
+	cmd := hereCommand(pane)
+	if cmd == "" {
+		return placedMsg{name: name, err: "chemin d'agent-pane non sûr"}
+	}
+	out, err := runGhostty(ghosttyArgv(splitScript, term, cmd))
+	if err != nil {
+		return placedMsg{name: name, err: "split : osascript : " + err.Error()}
+	}
+	nslot := termSlot(out)
+	if nslot == "" {
+		return placedMsg{name: name, err: "split ouvert sans id : rien choisi dedans", split: true}
+	}
+	return pickInto(pane, name, nslot, true)
+}
+
+// pickInto: `agent-pane --slot <slot> pick <name>`.
+func pickInto(pane, name, slot string, split bool) placedMsg {
+	if err := runPick([]string{pane, "--slot", slot, "pick", name}); err != nil {
+		return placedMsg{name: name, err: "agent-pane pick : " + err.Error(), split: split}
+	}
+	return placedMsg{name: name, split: split}
+}
+
+func (m *Model) applyPlaced(msg placedMsg) {
+	switch {
+	case msg.err != "":
+		m.ag.note = msg.name + " : " + msg.err
+	case msg.split:
+		m.ag.note = "affichée : " + msg.name + " (nouveau split)"
+	default:
+		m.ag.note = "affichée : " + msg.name
+	}
+	m.dirty = true
+}
+
+// keyPlace: a key in placement mode: Enter splits the board, Échap cancels, any other is ignored
+// (the footer stays).
+func (m *Model) keyPlace(ev string) tea.Cmd {
+	p := m.ag.place
+	switch ev {
+	case "enter":
+		return m.placeCmd(p, p.board, true)
+	case "esc":
+		m.endPlace("placement annulé")
+	}
+	return nil
 }
 
 // stopCmd: `agent-pane stop <name>` in a Cmd, as pickCmd; the footer says the outcome (stopMsg).
@@ -1493,8 +1917,18 @@ func (m *Model) applyNewAgent(msg newAgentMsg) tea.Cmd {
 	if msg.blank && msg.err == "" {
 		a.note += " (aucune conversation : session vierge)"
 	}
+	if msg.ghostty != "" {
+		a.note += " · Ghostty : " + msg.ghostty
+	}
 	if msg.name != "" && msg.err == "" {
 		a.sel, a.follow = &selState{id: msg.name}, true
+	}
+	if msg.show != nil && msg.err == "" {
+		// The launch's line, then the show path's (the placement prompt, or the focus).
+		head := a.note
+		tick := m.applyPlaceStart(*msg.show)
+		a.note = head + " · " + a.note
+		return tea.Batch(m.pollCmd(), tick)
 	}
 	return m.pollCmd()
 }
@@ -1569,6 +2003,9 @@ func (m *Model) pickAgent(c, i int) {
 
 func (m *Model) keyAgents(ev string) tea.Cmd {
 	a := &m.ag
+	if a.place != nil {
+		return m.keyPlace(ev)
+	}
 	if a.note != "" {
 		a.note, m.dirty = "", true
 	}
@@ -1601,7 +2038,7 @@ func (m *Model) keyAgents(ev string) tea.Cmd {
 		m.pickAgent(sel.col, sel.idx+pageCards)
 	case "enter", "o":
 		if sel.idx >= 0 {
-			return m.pickCmd(cols[sel.col][sel.idx].ID)
+			return m.showCmd(cols[sel.col][sel.idx].ID)
 		}
 	case "x":
 		if sel.idx >= 0 {
@@ -1625,9 +2062,13 @@ func (m *Model) keyAgents(ev string) tea.Cmd {
 	return nil
 }
 
-// clickAgents: h nil = a click on nothing, which only disarms.
+// clickAgents: h nil = a click on nothing, which only disarms. In placement mode a click on the
+// board is ignored, as a key (the footer stays).
 func (m *Model) clickAgents(h *hit) tea.Cmd {
 	a := &m.ag
+	if a.place != nil {
+		return nil
+	}
 	armed := m.disarm()
 	if armed != "" {
 		a.note = "" // the confirm question
@@ -1641,7 +2082,7 @@ func (m *Model) clickAgents(h *hit) tea.Cmd {
 	case hitCard:
 		a.sel = &selState{col: h.col, idx: h.idx, id: h.id}
 		a.note, a.follow, m.dirty = "", true, true
-		return m.pickCmd(h.id)
+		return m.showCmd(h.id)
 	case hitStop:
 		cols := m.shownCols()
 		if h.col < 0 || h.col >= len(cols) || h.idx < 0 || h.idx >= len(cols[h.col]) || cols[h.col][h.idx].ID != h.id {
@@ -1701,7 +2142,7 @@ func (m *Model) wheelAgents(h *hit, dir int) {
 
 // ---- view ----------------------------------------------------------------------
 
-var keysAgents = "←→↑↓ naviguer · ⏎/o afficher en haut · x éteindre · c reprendre · N générique · p projet · a runs · q quitter"
+var keysAgents = "←→↑↓ naviguer · ⏎/o afficher · x éteindre · c reprendre · N générique · p projet · a runs · q quitter"
 
 // newAgentLabel: the footer's button, first on the keys row, under a hitNew.
 const newAgentLabel = "+ nouvel agent (n)"

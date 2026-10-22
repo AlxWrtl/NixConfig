@@ -42,11 +42,14 @@ func listing(t testing.TB) []byte {
 }
 
 // stubPick records each runPick argv; agentPaneBin is a fake store path for the test's length.
-// A pane runs (runAlive true) and opening one fails the test: stubPane changes both.
+// A pane runs (runAlive true) and opening one fails the test: stubPane changes both. Ghostty does
+// not answer (runGhostty fails, so Enter falls back to the board's own pane) and agent-pane's state
+// dir is an empty temp dir: stubGhostty changes them.
 func stubPick(t testing.TB, err error) *[][]string {
 	t.Helper()
 	var calls [][]string
 	prevRun, prevBin, prevAlive, prevOpen := runPick, agentPaneBin, runAlive, runOpenPane
+	prevGhostty, prevState := runGhostty, paneStateDir
 	runPick = func(argv []string) error {
 		calls = append(calls, slices.Clone(argv))
 		return err
@@ -56,10 +59,19 @@ func stubPick(t testing.TB, err error) *[][]string {
 		t.Errorf("a pane opened while one runs: %q", argv)
 		return nil
 	}
+	runGhostty = func([]string) (string, error) { return "", errors.New(noGhostty) }
+	state := filepath.Join(t.TempDir(), "agent-pane")
+	paneStateDir = func() string { return state }
 	agentPaneBin = "/nix/store/x-agent-pane/bin/agent-pane"
-	t.Cleanup(func() { runPick, agentPaneBin, runAlive, runOpenPane = prevRun, prevBin, prevAlive, prevOpen })
+	t.Cleanup(func() {
+		runPick, agentPaneBin, runAlive, runOpenPane = prevRun, prevBin, prevAlive, prevOpen
+		runGhostty, paneStateDir = prevGhostty, prevState
+	})
 	return &calls
 }
+
+// noGhostty: stubPick's runGhostty error, the fallback note's tail.
+const noGhostty = "pas de Ghostty (test)"
 
 // paneCalls: what stubPane recorded, runAlive's argv and runOpenPane's.
 type paneCalls struct{ alive, open [][]string }
@@ -439,7 +451,8 @@ func TestAbducoListNoBinary(t *testing.T) {
 	}
 }
 
-// Enter, o and a card click run exactly [agentPaneBin, pick, name]; the board stays open.
+// Ghostty not answering (stubPick): Enter, o and a card click fall back to exactly [agentPaneBin,
+// pick, name], the footer saying why; the board stays open.
 func TestPick(t *testing.T) {
 	f := newSessionsFixture(t)
 	m := agentsModel(t, f, 180, 50)
@@ -463,7 +476,7 @@ func TestPick(t *testing.T) {
 	if len(*calls) != 2 || !slices.Equal((*calls)[0], want) || !slices.Equal((*calls)[1], want) {
 		t.Fatalf("calls %q", *calls)
 	}
-	if m.quit || m.ag.note != "affichée en haut : ask-needs" || !strings.Contains(strings.Join(plain(m.View().Content), "\n"), "affichée en haut : ask-needs") {
+	if m.quit || m.ag.note != "affichée en haut : ask-needs · Ghostty : "+noGhostty || !strings.Contains(strings.Join(plain(m.View().Content), "\n"), "affichée en haut : ask-needs") {
 		t.Fatalf("note %q", m.ag.note)
 	}
 	send(m, key(tea.KeyDown))
@@ -484,28 +497,31 @@ func TestPick(t *testing.T) {
 	// A refused pick says stderr's first line.
 	runPick = func([]string) error { return errors.New("name must match ^[a-z0-9][a-z0-9-]{0,47}$") }
 	send(m, send(m, key(tea.KeyEnter))())
-	if m.ag.note != "agent-pane pick work-live : name must match ^[a-z0-9][a-z0-9-]{0,47}$" {
+	if m.ag.note != "agent-pane pick work-live : name must match ^[a-z0-9][a-z0-9-]{0,47}$ · Ghostty : "+noGhostty {
 		t.Fatalf("error note %q", m.ag.note)
 	}
 	// An invalid name never reaches runPick, nor does any name without the binary.
 	*calls = nil
 	runPick = func(argv []string) error { *calls = append(*calls, argv); return nil }
 	for _, bad := range []string{"--help", "-x", "", "A", "a b", "a\n"} {
-		if m.pickCmd(bad) != nil {
-			t.Fatalf("pickCmd(%q) gave a Cmd", bad)
+		if m.pickCmd(bad) != nil || m.showCmd(bad) != nil {
+			t.Fatalf("pickCmd or showCmd(%q) gave a Cmd", bad)
 		}
 	}
 	agentPaneBin = ""
-	if m.pickCmd("ask-needs") != nil || m.ag.note != "agent-pane : binaire absent, rien lancé" {
-		t.Fatalf("no binary: note %q", m.ag.note)
+	for _, c := range []func(string) tea.Cmd{m.pickCmd, m.showCmd} {
+		m.ag.note = ""
+		if c("ask-needs") != nil || m.ag.note != "agent-pane : binaire absent, rien lancé" {
+			t.Fatalf("no binary: note %q", m.ag.note)
+		}
 	}
 	if len(*calls) != 0 {
 		t.Fatalf("runPick called: %q", *calls)
 	}
 }
 
-// Enter with no pane running: after the pick, [agentPaneBin, alive] then one osascript split; a
-// failed split only says so; a refused pick asks nothing.
+// Enter with no pane running, Ghostty not answering: after the fallback pick, [agentPaneBin,
+// alive] then one osascript split; a failed split only says so; a refused pick asks nothing.
 func TestPickOpensPane(t *testing.T) {
 	f := newSessionsFixture(t)
 	m := agentsModel(t, f, 180, 50)
@@ -515,7 +531,7 @@ func TestPickOpensPane(t *testing.T) {
 	if len(*picks) != 1 || len(pc.alive) != 1 || !slices.Equal(pc.alive[0], []string{agentPaneBin, "alive"}) {
 		t.Fatalf("picks %q alive %q", *picks, pc.alive)
 	}
-	if len(pc.open) != 1 || !slices.Equal(pc.open[0], openPaneArgv(agentPaneBin)) || m.ag.note != "affichée en haut : ask-needs" {
+	if len(pc.open) != 1 || !slices.Equal(pc.open[0], openPaneArgv(agentPaneBin)) || m.ag.note != "affichée en haut : ask-needs · Ghostty : "+noGhostty {
 		t.Fatalf("open %q note %q", pc.open, m.ag.note)
 	}
 	pc.open = nil
@@ -524,14 +540,324 @@ func TestPickOpensPane(t *testing.T) {
 		return errors.New("Ghostty got an error: Can’t get front window. (-1728)")
 	}
 	send(m, send(m, key(tea.KeyEnter))())
-	if len(pc.open) != 1 || m.ag.note != "affichée en haut : ask-needs · pane : osascript : Ghostty got an error: Can’t get front window. (-1728) — lance agent-pane à la main" {
+	if len(pc.open) != 1 || m.ag.note != "affichée en haut : ask-needs · pane : osascript : Ghostty got an error: Can’t get front window. (-1728) — lance agent-pane à la main · Ghostty : "+noGhostty {
 		t.Fatalf("open error: open %d note %q", len(pc.open), m.ag.note)
 	}
 	pc.alive, pc.open = nil, nil
 	runPick = func([]string) error { return errors.New("cannot write target") }
 	send(m, send(m, key(tea.KeyEnter))())
-	if len(pc.alive) != 0 || len(pc.open) != 0 || m.ag.note != "agent-pane pick ask-needs : cannot write target" {
+	if len(pc.alive) != 0 || len(pc.open) != 0 || m.ag.note != "agent-pane pick ask-needs : cannot write target · Ghostty : "+noGhostty {
 		t.Fatalf("refused pick: alive %q open %q note %q", pc.alive, pc.open, m.ag.note)
+	}
+}
+
+// ---- placement (Ghostty), runGhostty stubbed -------------------------------------
+
+// Ghostty's ids in the tests: uppercase UUIDs, as Ghostty prints them.
+const (
+	boardTab  = "6B1E0C4A-0000-4000-8000-00000000000A"
+	boardTerm = "6B1E0C4A-0000-4000-8000-0000000000B0"
+	otherTerm = "6B1E0C4A-0000-4000-8000-0000000000C0"
+	newTerm   = "6B1E0C4A-0000-4000-8000-0000000000D0"
+)
+
+// ghosttyCall: one runGhostty call, its -e lines and its argv items.
+type ghosttyCall struct{ script, items []string }
+
+// ghosttyFake: what each script answers.
+type ghosttyFake struct {
+	board, focused, split string
+	focusErr, splitErr    error
+}
+
+// stubGhostty: runGhostty answers from fake per script, each call recorded; after stubPick. An
+// argv that is not /usr/bin/osascript, -e pairs, then items, or an unknown script, fails the test.
+func stubGhostty(t *testing.T, fake *ghosttyFake) *[]ghosttyCall {
+	t.Helper()
+	var calls []ghosttyCall
+	prev := runGhostty
+	runGhostty = func(argv []string) (string, error) {
+		if len(argv) == 0 || argv[0] != "/usr/bin/osascript" {
+			t.Errorf("not osascript: %q", argv)
+			return "", errors.New("bad argv")
+		}
+		var c ghosttyCall
+		i := 1
+		for i+1 < len(argv) && argv[i] == "-e" {
+			c.script = append(c.script, argv[i+1])
+			i += 2
+		}
+		c.items = slices.Clone(argv[i:])
+		calls = append(calls, c)
+		switch {
+		case slices.Equal(c.script, boardScript):
+			return fake.board, nil
+		case slices.Equal(c.script, focusedScript):
+			return fake.focused, fake.focusErr
+		case slices.Equal(c.script, splitScript):
+			return fake.split, fake.splitErr
+		case slices.Equal(c.script, focusScript):
+			return "", fake.focusErr
+		}
+		t.Errorf("unknown script %q", c.script)
+		return "", errors.New("unknown script")
+	}
+	t.Cleanup(func() { runGhostty = prev })
+	return &calls
+}
+
+// startPlace: Enter on the selected card (ask-needs) must start placement mode, its first tick
+// armed.
+func startPlace(t *testing.T, m *Model) *placeState {
+	t.Helper()
+	cmd := send(m, key(tea.KeyEnter))
+	if cmd == nil {
+		t.Fatal("Enter: no Cmd")
+	}
+	msg, ok := cmd().(placeStartMsg)
+	if !ok {
+		t.Fatalf("Enter gave %T, want placeStartMsg", msg)
+	}
+	if send(m, msg) == nil || m.ag.place == nil {
+		t.Fatalf("no placement: note %q", m.ag.note)
+	}
+	return m.ag.place
+}
+
+// tickOnce: one tick of the current placement and Ghostty's answer; when that ends the placement
+// (a terminal was chosen), its Cmd runs and its outcome is applied. The next tick's Cmd is never
+// run (it sleeps placeEvery).
+func tickOnce(t *testing.T, m *Model) {
+	t.Helper()
+	p := m.ag.place
+	cmd := send(m, placeTickMsg{gen: p.gen})
+	if cmd == nil {
+		return
+	}
+	next := send(m, cmd())
+	if m.ag.place == nil && next != nil {
+		send(m, next())
+	}
+}
+
+// A live terminal pane whose target is the card: exactly one focus, its id uppercased as an argv
+// item, no pick. Panes that are dead, show another agent, sit in a non-terminal slot (a hand one) or
+// have a linked target are passed over; only the candidates are asked alive.
+func TestShowFocusesShownPane(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	picks := stubPick(t, nil)
+	calls := stubGhostty(t, &ghosttyFake{board: boardTab + "\n" + boardTerm})
+	slots := filepath.Join(paneStateDir(), "slots")
+	dead, live, other := "6b1e0c4a-0000-4000-8000-0000000000a0", strings.ToLower(otherTerm), "6b1e0c4a-0000-4000-8000-0000000000f0"
+	linked := "6b1e0c4a-0000-4000-8000-0000000000e0"
+	// "0hand" (a hand-typed --slot, live) sorts first: a terminal check dropped would focus it.
+	for slot, name := range map[string]string{dead: "ask-needs", live: "ask-needs", other: "work-live", "0hand": "ask-needs"} {
+		mustDo(t, os.MkdirAll(filepath.Join(slots, slot), 0o700))
+		mustDo(t, os.WriteFile(filepath.Join(slots, slot, "target"), []byte(name+"\n1-1\n"), 0o600))
+	}
+	mustDo(t, os.MkdirAll(filepath.Join(slots, linked), 0o700))
+	mustDo(t, os.Symlink(filepath.Join(slots, live, "target"), filepath.Join(slots, linked, "target")))
+	var alive [][]string
+	runAlive = func(argv []string) (bool, error) {
+		alive = append(alive, slices.Clone(argv))
+		return argv[2] != dead, nil
+	}
+	send(m, send(m, key(tea.KeyEnter))())
+	bin := agentPaneBin
+	if !slices.EqualFunc(alive, [][]string{{bin, "--slot", dead, "alive"}, {bin, "--slot", live, "alive"}}, slices.Equal) {
+		t.Fatalf("alive %q", alive)
+	}
+	if len(*calls) != 1 || !slices.Equal((*calls)[0].script, focusScript) || !slices.Equal((*calls)[0].items, []string{otherTerm}) {
+		t.Fatalf("ghostty %q", *calls)
+	}
+	if len(*picks) != 0 || m.ag.place != nil || m.ag.note != "affichée : ask-needs" {
+		t.Fatalf("picks %q place %+v note %q", *picks, m.ag.place, m.ag.note)
+	}
+	// A focus that fails says so, and places nothing.
+	stubGhostty(t, &ghosttyFake{focusErr: errors.New("Can’t get terminal id")})
+	send(m, send(m, key(tea.KeyEnter))())
+	if m.ag.place != nil || m.ag.note != "focus ask-needs : osascript : Can’t get terminal id" || len(*picks) != 0 {
+		t.Fatalf("focus error: note %q", m.ag.note)
+	}
+}
+
+// Placement: the board still focused → another tick, nothing run; any key but Enter / Échap and
+// any click ignored; a terminal whose pane runs → exactly [pane, --slot, lower(T), pick, name];
+// one where none runs → one split on its right running `<pane> --here`, then the pick on the new
+// terminal's slot; a split with no id back picks nothing.
+func TestPlacement(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	picks := stubPick(t, nil)
+	fake := &ghosttyFake{board: boardTab + "\n" + boardTerm, focused: boardTerm, split: newTerm}
+	calls := stubGhostty(t, fake)
+	pc := stubPane(t, true, nil, nil)
+	bin, slot := agentPaneBin, strings.ToLower(otherTerm)
+	p := startPlace(t, m)
+	if len(*calls) != 1 || !slices.Equal((*calls)[0].script, boardScript) || len((*calls)[0].items) != 0 {
+		t.Fatalf("board query %q", *calls)
+	}
+	if p.name != "ask-needs" || p.tab != boardTab || p.board != boardTerm || !strings.HasPrefix(m.ag.note, "clique le pane où afficher ask-needs") {
+		t.Fatalf("place %+v note %q", p, m.ag.note)
+	}
+	note := m.ag.note
+	for _, k := range []tea.Msg{char('x'), char('q'), char('o'), char('n'), char('a'), key(tea.KeyDown)} {
+		if cmd := send(m, k); cmd != nil || m.quit || m.ag.place != p || m.ag.note != note || m.tab != tabAgents {
+			t.Fatalf("%v not ignored: place %+v note %q", k, m.ag.place, m.ag.note)
+		}
+	}
+	card := findHit(m, hitCard, "work-live")
+	if cmd := send(m, tea.MouseClickMsg{X: card.x + 1, Y: card.y, Button: tea.MouseLeft}); cmd != nil || m.ag.place != p {
+		t.Fatal("a click in placement was not ignored")
+	}
+	tickOnce(t, m)
+	if m.ag.place != p || len(*calls) != 2 || !slices.Equal((*calls)[1].script, focusedScript) || !slices.Equal((*calls)[1].items, []string{boardTab}) {
+		t.Fatalf("board focused: place %+v calls %q", m.ag.place, *calls)
+	}
+	if len(*picks) != 0 || len(pc.alive) != 0 {
+		t.Fatalf("board focused ran: picks %q alive %q", *picks, pc.alive)
+	}
+	if send(m, placeTickMsg{gen: p.gen - 1}) != nil {
+		t.Fatal("a stale tick asked Ghostty")
+	}
+	// Another terminal, its pane alive: the pane switches.
+	fake.focused = otherTerm
+	tickOnce(t, m)
+	if m.ag.place != nil || !slices.EqualFunc(pc.alive, [][]string{{bin, "--slot", slot, "alive"}}, slices.Equal) {
+		t.Fatalf("alive %q place %+v", pc.alive, m.ag.place)
+	}
+	if !slices.EqualFunc(*picks, [][]string{{bin, "--slot", slot, "pick", "ask-needs"}}, slices.Equal) || len(*calls) != 3 || m.ag.note != "affichée : ask-needs" {
+		t.Fatalf("picks %q calls %d note %q", *picks, len(*calls), m.ag.note)
+	}
+	// No pane there: a split on its right, then the pick on the new terminal's slot.
+	*picks, *calls = nil, nil
+	pc = stubPane(t, false, nil, nil)
+	startPlace(t, m)
+	tickOnce(t, m)
+	if len(*calls) != 3 || !slices.Equal((*calls)[2].script, splitScript) || !slices.Equal((*calls)[2].items, []string{otherTerm, bin + " --here"}) {
+		t.Fatalf("split %q", *calls)
+	}
+	if !slices.EqualFunc(*picks, [][]string{{bin, "--slot", strings.ToLower(newTerm), "pick", "ask-needs"}}, slices.Equal) || m.ag.note != "affichée : ask-needs (nouveau split)" {
+		t.Fatalf("picks %q note %q", *picks, m.ag.note)
+	}
+	if len(pc.open) != 0 {
+		t.Fatalf("the old split above ran: %q", pc.open)
+	}
+	// The split gives no id back: nothing picked, the footer says it.
+	*picks, fake.split = nil, ""
+	startPlace(t, m)
+	tickOnce(t, m)
+	if len(*picks) != 0 || m.ag.note != "ask-needs : split ouvert sans id : rien choisi dedans" {
+		t.Fatalf("no id: picks %q note %q", *picks, m.ag.note)
+	}
+	// No script ever holds the name, the pane's path or an id: argv items only.
+	for _, c := range *calls {
+		for _, l := range c.script {
+			if strings.Contains(l, "ask-needs") || strings.Contains(l, bin) || strings.Contains(l, "--here") || strings.Contains(strings.ToUpper(l), "6B1E0C4A") {
+				t.Fatalf("script line %q holds a value", l)
+			}
+		}
+	}
+}
+
+// Enter in placement: a split on the right of the board's own terminal (no alive asked), the
+// pick on the new one.
+func TestPlacementEnter(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	picks := stubPick(t, nil)
+	calls := stubGhostty(t, &ghosttyFake{board: boardTab + "\n" + boardTerm, focused: boardTerm, split: newTerm})
+	pc := stubPane(t, true, nil, nil)
+	startPlace(t, m)
+	cmd := send(m, key(tea.KeyEnter))
+	if cmd == nil || m.ag.place != nil {
+		t.Fatal("Enter in placement: no split Cmd")
+	}
+	send(m, cmd())
+	if len(*calls) != 2 || !slices.Equal((*calls)[1].script, splitScript) || !slices.Equal((*calls)[1].items, []string{boardTerm, agentPaneBin + " --here"}) {
+		t.Fatalf("split %q", *calls)
+	}
+	if script := strings.Join(splitScript, "\n"); !strings.Contains(script, "direction right") || strings.Contains(script, "direction up") {
+		t.Fatal("the split is not on the right")
+	}
+	if len(pc.alive) != 0 || !slices.EqualFunc(*picks, [][]string{{agentPaneBin, "--slot", strings.ToLower(newTerm), "pick", "ask-needs"}}, slices.Equal) {
+		t.Fatalf("alive %q picks %q", pc.alive, *picks)
+	}
+}
+
+// Échap, the 30 s timeout, a closed tab or a failed query: placement ends, nothing run.
+func TestPlacementCancel(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	picks := stubPick(t, nil)
+	fake := &ghosttyFake{board: boardTab + "\n" + boardTerm, focused: otherTerm, split: newTerm}
+	calls := stubGhostty(t, fake)
+	pc := stubPane(t, false, nil, nil)
+	p := startPlace(t, m)
+	if cmd := send(m, key(tea.KeyEscape)); cmd != nil || m.ag.place != nil || m.ag.note != "placement annulé" {
+		t.Fatalf("Échap: place %+v note %q", m.ag.place, m.ag.note)
+	}
+	if send(m, placeTickMsg{gen: p.gen}) != nil || send(m, placeFocusMsg{gen: p.gen, term: otherTerm}) != nil {
+		t.Fatal("a cancelled placement still runs")
+	}
+	startPlace(t, m)
+	m.ag.place.until = time.Now().Add(-time.Millisecond)
+	if cmd := send(m, placeTickMsg{gen: m.ag.place.gen}); cmd != nil || m.ag.place != nil || m.ag.note != "placement de ask-needs annulé (30 s)" {
+		t.Fatalf("timeout: place %+v note %q", m.ag.place, m.ag.note)
+	}
+	fake.focused = ""
+	startPlace(t, m)
+	tickOnce(t, m)
+	if m.ag.place != nil || m.ag.note != "onglet du board introuvable : placement annulé" {
+		t.Fatalf("tab gone: note %q", m.ag.note)
+	}
+	fake.focusErr = errors.New("Ghostty got an error")
+	startPlace(t, m)
+	tickOnce(t, m)
+	if m.ag.place != nil || m.ag.note != "placement annulé : osascript : Ghostty got an error" {
+		t.Fatalf("query error: note %q", m.ag.note)
+	}
+	for _, c := range *calls {
+		if slices.Equal(c.script, splitScript) {
+			t.Fatalf("a cancelled placement split: %q", c.items)
+		}
+	}
+	if len(*picks) != 0 || len(pc.alive) != 0 || len(pc.open) != 0 {
+		t.Fatalf("picks %q alive %q open %q", *picks, pc.alive, pc.open)
+	}
+}
+
+// Ids Ghostty prints that are no slot fall back to the board's own pane; termSlot lowercases and
+// keeps the name rule; hereCommand refuses a path the shell would split, and placeInto then splits
+// nothing.
+func TestPlacementGuards(t *testing.T) {
+	f := newSessionsFixture(t)
+	m := agentsModel(t, f, 180, 50)
+	picks := stubPick(t, nil)
+	calls := stubGhostty(t, &ghosttyFake{board: "only-one-line"})
+	send(m, send(m, key(tea.KeyEnter))())
+	if m.ag.place != nil || !slices.EqualFunc(*picks, [][]string{{agentPaneBin, "pick", "ask-needs"}}, slices.Equal) || m.ag.note != "affichée en haut : ask-needs · Ghostty : ids illisibles" {
+		t.Fatalf("bad ids: picks %q note %q", *picks, m.ag.note)
+	}
+	if termSlot(otherTerm) != strings.ToLower(otherTerm) || termSlot(" "+otherTerm+"\n") != strings.ToLower(otherTerm) {
+		t.Fatal("termSlot does not lowercase")
+	}
+	for _, bad := range []string{"", "-x", "../x", "a b", "A;B", strings.Repeat("a", 49)} {
+		if termSlot(bad) != "" {
+			t.Fatalf("termSlot(%q) = %q", bad, termSlot(bad))
+		}
+	}
+	if hereCommand(agentPaneBin) != agentPaneBin+" --here" || hereCommand("/nix/store/x y/bin/agent-pane") != "" || hereCommand("bin/agent-pane") != "" {
+		t.Fatal("hereCommand")
+	}
+	*calls = nil
+	stubPane(t, false, nil, nil)
+	if got := placeInto("/nix/store/x;y/bin/agent-pane", "ask-needs", otherTerm, false); got.err != "chemin d'agent-pane non sûr" || len(*calls) != 0 {
+		t.Fatalf("unsafe path: %+v calls %q", got, *calls)
+	}
+	if got := placeInto(agentPaneBin, "ask-needs", "-x", true); got.err == "" || len(*calls) != 0 {
+		t.Fatalf("bad term: %+v calls %q", got, *calls)
 	}
 }
 
@@ -790,7 +1116,7 @@ func TestRenderAgents(t *testing.T) {
 		"ask-needs", "Beta", "il y a 3 min", "corrige le login qui boucle", "Claude needs your permission",
 		"lit ?[31mrouge? le cache", "à toi", "pas encore lancée", "/card X1 — monter vite en 7.3", "Alpha",
 		"rien depuis 40 min", "paused", "sans état", "commande terminée", "session fermée",
-		"1 terminée depuis plus de 24 h masquée", "linked : lien : non lu", "⏎/o afficher en haut", "x éteindre",
+		"1 terminée depuis plus de 24 h masquée", "linked : lien : non lu", "⏎/o afficher", "x éteindre",
 	} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("%q not drawn:\n%s", want, all)

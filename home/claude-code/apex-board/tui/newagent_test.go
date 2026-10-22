@@ -1,7 +1,7 @@
 package main
 
-// The Agents tab's `n` / « + nouvel agent »: runLaunch, runPick, runAlive, runOpenPane and
-// abducoList are stubbed, so no process is ever started (TestRunLaunchNoBinary only names a binary
+// The Agents tab's `n` / « + nouvel agent »: runLaunch, runPick, runAlive, runOpenPane, runGhostty
+// and abducoList are stubbed, so no process is ever started (TestRunLaunchNoBinary only names a binary
 // that is not there; TestRunAlive runs /bin/sh scripts of its temp dir).
 
 import (
@@ -50,6 +50,9 @@ func newAgentModel(t *testing.T) (*Model, string) {
 
 var blankName = regexp.MustCompile(`^agent-[0-2][0-9][0-5][0-9][0-5][0-9]$`)
 
+// fallbackTail: a launch's note when Ghostty does not answer (stubPick): the fallback pick ran.
+const fallbackTail = " · Ghostty : " + noGhostty
+
 // `n` runs exactly [dispatchBin, --blank, agent-HHMMSS] in the repo off the UI goroutine, then
 // [agentPaneBin, pick, name]; the footer says it and the new card is selected.
 func TestNewAgentKey(t *testing.T) {
@@ -80,7 +83,7 @@ func TestNewAgentKey(t *testing.T) {
 		t.Fatalf("picks %q", *picks)
 	}
 	send(m, msg)
-	if m.ag.note != "nouvel agent : "+name || m.ag.launching || m.ag.sel == nil || m.ag.sel.id != name {
+	if m.ag.note != "nouvel agent : "+name+fallbackTail || m.ag.launching || m.ag.sel == nil || m.ag.sel.id != name {
 		t.Fatalf("after: note %q launching %v sel %+v", m.ag.note, m.ag.launching, m.ag.sel)
 	}
 	if !strings.Contains(strings.Join(plain(m.View().Content), "\n"), "nouvel agent : "+name) {
@@ -137,7 +140,7 @@ func TestNewAgentFailures(t *testing.T) {
 	runLaunch = func(string, []string) error { return nil }
 	runPick = func([]string) error { return errors.New("cannot write target") }
 	send(m, send(m, char('n'))())
-	if !strings.HasPrefix(m.ag.note, "nouvel agent : agent-") || !strings.HasSuffix(m.ag.note, " · agent-pane pick : cannot write target") {
+	if !strings.HasPrefix(m.ag.note, "nouvel agent : agent-") || !strings.HasSuffix(m.ag.note, " · agent-pane pick : cannot write target"+fallbackTail) {
 		t.Fatalf("pick error note %q", m.ag.note)
 	}
 	agentPaneBin = ""
@@ -278,7 +281,7 @@ func TestNewAgentOpensPane(t *testing.T) {
 		}
 	}
 	send(m, msg)
-	if m.ag.note != "nouvel agent : "+name || m.ag.sel == nil || m.ag.sel.id != name {
+	if m.ag.note != "nouvel agent : "+name+fallbackTail || m.ag.sel == nil || m.ag.sel.id != name {
 		t.Fatalf("note %q sel %+v", m.ag.note, m.ag.sel)
 	}
 }
@@ -314,7 +317,7 @@ func TestNewAgentPaneOutcomes(t *testing.T) {
 		m.ag.sel = nil
 		send(m, send(m, char('n'))())
 		agentPaneBin = "/nix/store/x-agent-pane/bin/agent-pane"
-		if len(*launches) != 1 || len(pc.open) != c.opens || !strings.HasPrefix(m.ag.note, "nouvel agent : agent-") || !strings.HasSuffix(m.ag.note, c.tail) {
+		if len(*launches) != 1 || len(pc.open) != c.opens || !strings.HasPrefix(m.ag.note, "nouvel agent : agent-") || !strings.HasSuffix(m.ag.note, c.tail+fallbackTail) {
 			t.Fatalf("%+v: launches %d open %d note %q", c, len(*launches), len(pc.open), m.ag.note)
 		}
 		if m.ag.sel == nil || !strings.HasPrefix(m.ag.sel.id, "agent-") {
@@ -460,7 +463,7 @@ func TestResumeBlank(t *testing.T) {
 	if len(*launches) != 1 || (*launches)[0].dir != wt || !slices.Equal((*launches)[0].argv, want) {
 		t.Fatalf("launches %+v", *launches)
 	}
-	if m.ag.note != "reprise : a1 (aucune conversation : session vierge)" {
+	if m.ag.note != "reprise : a1 (aucune conversation : session vierge)"+fallbackTail {
 		t.Fatalf("note %q", m.ag.note)
 	}
 }
@@ -549,7 +552,7 @@ func TestResumeKey(t *testing.T) {
 		t.Fatalf("picks %q open %q", *picks, pc.open)
 	}
 	send(m, msg)
-	if m.ag.note != "reprise : a1" || m.ag.launching || m.ag.sel == nil || m.ag.sel.id != "a1" {
+	if m.ag.note != "reprise : a1"+fallbackTail || m.ag.launching || m.ag.sel == nil || m.ag.sel.id != "a1" {
 		t.Fatalf("after: note %q launching %v sel %+v", m.ag.note, m.ag.launching, m.ag.sel)
 	}
 }
@@ -811,7 +814,7 @@ func TestGenericKey(t *testing.T) {
 		t.Fatalf("picks %q", *picks)
 	}
 	send(m, msg)
-	if m.ag.note != "générique : "+name || m.ag.launching || m.ag.sel == nil || m.ag.sel.id != name {
+	if m.ag.note != "générique : "+name+fallbackTail || m.ag.launching || m.ag.sel == nil || m.ag.sel.id != name {
 		t.Fatalf("after: note %q launching %v sel %+v", m.ag.note, m.ag.launching, m.ag.sel)
 	}
 	// A second one: root kept, the name's dir taken gets the suffix.
@@ -922,7 +925,7 @@ func TestResumeGeneric(t *testing.T) {
 	if len(*launches) != 1 || (*launches)[0].dir != dir || !slices.Equal((*launches)[0].argv, want) {
 		t.Fatalf("launches %+v", *launches)
 	}
-	if len(*picks) != 1 || !slices.Equal((*picks)[0], []string{agentPaneBin, "pick", "g1"}) || m.ag.note != "reprise : g1" {
+	if len(*picks) != 1 || !slices.Equal((*picks)[0], []string{agentPaneBin, "pick", "g1"}) || m.ag.note != "reprise : g1"+fallbackTail {
 		t.Fatalf("picks %q note %q", *picks, m.ag.note)
 	}
 }
@@ -937,5 +940,55 @@ func TestNewAgentFromWorktree(t *testing.T) {
 	send(m, send(m, char('n'))())
 	if len(*launches) != 1 || (*launches)[0].dir != repo || (*launches)[0].argv[1] != "--blank" {
 		t.Fatalf("launches %+v, want dir %s", *launches, repo)
+	}
+}
+
+// `n` with Ghostty answering: after the launch, placement mode for the new name, nothing picked
+// and no split above; the click on another terminal whose pane runs picks it there.
+func TestNewAgentPlaces(t *testing.T) {
+	m, _ := newAgentModel(t)
+	stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+	fake := &ghosttyFake{board: boardTab + "\n" + boardTerm, focused: otherTerm}
+	calls := stubGhostty(t, fake)
+	pc := stubPane(t, true, nil, nil)
+	if cmd := send(m, send(m, char('n'))()); cmd == nil {
+		t.Fatal("no Cmd after the launch")
+	}
+	p := m.ag.place
+	if p == nil || !blankName.MatchString(p.name) || m.ag.sel == nil || m.ag.sel.id != p.name || m.ag.launching {
+		t.Fatalf("place %+v sel %+v", p, m.ag.sel)
+	}
+	if want := "nouvel agent : " + p.name + " · clique le pane où afficher " + p.name; !strings.HasPrefix(m.ag.note, want) {
+		t.Fatalf("note %q", m.ag.note)
+	}
+	if len(*picks) != 0 || len(pc.alive) != 0 || len(pc.open) != 0 || len(*calls) != 1 {
+		t.Fatalf("before the click: picks %q alive %q open %q calls %d", *picks, pc.alive, pc.open, len(*calls))
+	}
+	tickOnce(t, m)
+	if !slices.EqualFunc(*picks, [][]string{{agentPaneBin, "--slot", strings.ToLower(otherTerm), "pick", p.name}}, slices.Equal) || m.ag.place != nil {
+		t.Fatalf("picks %q place %+v", *picks, m.ag.place)
+	}
+}
+
+// `c` on an agent a live terminal pane still shows: after the launch, exactly that pane's focus,
+// no placement, no pick.
+func TestResumeFocusesShown(t *testing.T) {
+	wt := filepath.Join(t.TempDir(), ".claude", "worktrees", "a1")
+	mustDo(t, os.MkdirAll(wt, 0o755))
+	m := resumeModel(t, &Agent{ID: "a1", Name: "a1", Cwd: wt, Resumable: true})
+	withTranscript(t, stubResumeBins(t), wt)
+	stubLaunch(t, nil)
+	picks := stubPick(t, nil)
+	calls := stubGhostty(t, &ghosttyFake{board: boardTab + "\n" + boardTerm})
+	slot := strings.ToLower(otherTerm)
+	mustDo(t, os.MkdirAll(filepath.Join(paneStateDir(), "slots", slot), 0o700))
+	mustDo(t, os.WriteFile(filepath.Join(paneStateDir(), "slots", slot, "target"), []byte("a1\n1-1\n"), 0o600))
+	send(m, send(m, char('c'))())
+	if len(*calls) != 1 || !slices.Equal((*calls)[0].script, focusScript) || !slices.Equal((*calls)[0].items, []string{otherTerm}) {
+		t.Fatalf("ghostty %q", *calls)
+	}
+	if len(*picks) != 0 || m.ag.place != nil || m.ag.note != "reprise : a1 · affichée : a1" {
+		t.Fatalf("picks %q place %+v note %q", *picks, m.ag.place, m.ag.note)
 	}
 }

@@ -255,6 +255,14 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.applyDrawer(msg)
 	case pickMsg:
 		m.applyPick(msg)
+	case placeStartMsg:
+		return m, m.applyPlaceStart(msg)
+	case placeTickMsg:
+		return m, m.applyPlaceTick(msg)
+	case placeFocusMsg:
+		return m, m.applyPlaceFocus(msg)
+	case placedMsg:
+		m.applyPlaced(msg)
 	case stopMsg:
 		return m, m.applyStop(msg)
 	case newAgentMsg:

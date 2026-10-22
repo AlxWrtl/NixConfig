@@ -8,8 +8,9 @@ package main
 //
 // The Agents tab reads $HOME/.claude/session-state unless --sessions names another dir (tests, the
 // check), and asks abduco which sessions run. Read-only but for its actions (agents.go): Enter on
-// a session runs `agent-pane --slot <tty> pick <name>`, the board stays open. Bubble Tea restores the terminal on q,
-// Ctrl-C, SIGTERM, SIGHUP and a panic.
+// a session shows it in a Ghostty pane, the one already showing it or the one clicked next
+// (`agent-pane --slot <terminal id> pick <name>`), the board stays open. Bubble Tea restores the
+// terminal on q, Ctrl-C, SIGTERM, SIGHUP and a panic.
 
 import (
 	"fmt"

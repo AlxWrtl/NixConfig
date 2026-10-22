@@ -270,6 +270,18 @@ in
       ];
     }
     {
+      # Router only: the upstream skill directories, LICENSE and
+      # performance-cheatsheet.md (the emil-skills flake input) are
+      # directory/file links declared in home/claude-code.nix.
+      name = "ui-expert";
+      files = [
+        {
+          path = "SKILL.md";
+          text = skills.skillUiExpert;
+        }
+      ];
+    }
+    {
       name = "ecriture-fr";
       files = [
         {

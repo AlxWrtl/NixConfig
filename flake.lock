@@ -143,6 +143,23 @@
         "url": "https://install.determinate.systems/determinate-nixd/tag/v3.23.0/x86_64-linux"
       }
     },
+    "emil-skills": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791727112,
+        "narHash": "sha256-4/xWVt4HqB1nwqdLMFC3No07vkEWqRcQDtqNY8FHwh8=",
+        "owner": "emilkowalski",
+        "repo": "skills",
+        "rev": "2d228630ba1446365f614a108cb8252f1feda202",
+        "type": "github"
+      },
+      "original": {
+        "owner": "emilkowalski",
+        "repo": "skills",
+        "rev": "2d228630ba1446365f614a108cb8252f1feda202",
+        "type": "github"
+      }
+    },
     "flake-compat": {
       "flake": false,
       "locked": {
@@ -334,6 +351,7 @@
         "claude-video": "claude-video",
         "cloudflare-security-audit": "cloudflare-security-audit",
         "determinate": "determinate",
+        "emil-skills": "emil-skills",
         "home-manager": "home-manager",
         "nix-darwin": "nix-darwin",
         "nixpkgs": "nixpkgs_2"

@@ -3270,6 +3270,105 @@ in
   '';
 
   # =========================================================================
+  # ui-expert — router over Emil Kowalski's UI/motion skills (emil-skills
+  # flake input, linked verbatim next to this file by home/claude-code.nix).
+  # Our additions live here only: routing, the greeting rule, the errata.
+  # =========================================================================
+  skillUiExpert = ''
+    ---
+    name: ui-expert
+    description: "Design-engineering expertise for front-end UI and motion: building, reviewing or auditing animations (easing, duration, springs, enter/exit, stagger, clip-path), gestures (drag, swipe, sheets, drawers, momentum), animation performance and jank, making a web app feel native on a phone, stress-testing UI with worst-case data, prototyping UI variants, picking a front-end library, Sonner toasts, React Native / Expo motion, Apple design principles (materials, typography, reduced motion), and naming an animation effect. Use for any web or React Native UI polish or motion question. Not for backend code, not for Swift/SwiftUI."
+    ---
+
+    # ui-expert — Emil Kowalski's design-engineering skills
+
+    Every path below is relative to `~/.claude/skills/ui-expert/`. The
+    sub-skills are Emil Kowalski's own files, unchanged; this file only
+    routes to them and corrects them where they are wrong.
+
+    ## Rules
+
+    1. Read the matching `SKILL.md` before answering, then only the annex
+       it points at when the task needs it. Annex links inside a file are
+       relative to that file's folder (`[RECIPES.md](RECIPES.md)` in
+       `animate/SKILL.md` = `animate/RECIPES.md`).
+    2. Ignore every `## Initial Response` section: never answer with its
+       greeting or wait for a question. Go straight to the task.
+    3. A file naming another skill (`animate`, `review-animations`,
+       `pick-ui-library`…) means `<name>/SKILL.md` in this folder.
+       `write-swift` is not installed: no Swift/SwiftUI advice from here.
+    4. `review-animations`, `pick-ui-library` and `prototype` are
+       explicit-only upstream: use them when the user asks for that job
+       (review motion code, choose a library, build variants), not on
+       your own initiative.
+    5. The Errata section below wins over the sub-skill text.
+
+    ## Routing
+
+    | Task | Read |
+    |------|------|
+    | General UI polish, design taste, component details, design review | `emil-design-eng/SKILL.md` |
+    | Build an animation or transition from scratch (web) | `animate/SKILL.md` + `animate/RECIPES.md` (button, dropdown, tooltip, modal, drawer, toast, accordion, stagger, hold-to-confirm, tab indicator, scroll reveal, drag-to-dismiss) |
+    | Motion in React Native / Expo (Reanimated, Gesture Handler, haptics) | `animate-expo/SKILL.md` + `animate-expo/RECIPES.md` |
+    | Review animation code or a diff | `review-animations/SKILL.md` + `review-animations/STANDARDS.md` |
+    | Audit a codebase's motion, write fix plans for other agents | `improve-animations/SKILL.md` + `improve-animations/AUDIT.md` + `improve-animations/PLAN-TEMPLATE.md` |
+    | What could be animated here (read-only, mostly rejects) | `find-animation-opportunities/SKILL.md` |
+    | Jank, dropped frames, `will-change`, CSS vs JS on performance | `animation-performance/SKILL.md` + `performance-cheatsheet.md` |
+    | Name an effect (what is it called when…) | `animation-vocabulary/SKILL.md` |
+    | Gestures, springs, velocity, momentum, materials, typography, reduced motion (Apple-style) | `apple-design/SKILL.md` |
+    | Which library for a front-end task | `pick-ui-library/SKILL.md` |
+    | Several different versions of a UI piece behind a picker | `prototype/SKILL.md` + `prototype/PICKER.md` |
+    | Web app that feels wrong on a phone (hover, 100vh, safe areas, tap delay) | `mobile-native/SKILL.md` |
+    | Stress-test a component with worst-case data | `break-ui/SKILL.md` + `break-ui/CATALOG.md` |
+    | Sonner toasts: setup, API, troubleshooting | `ask-sonner/SKILL.md` + `ask-sonner/API.md` |
+    | Quick performance fixes | `performance-cheatsheet.md` |
+
+    A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
+    `apple-design`) reads both; stop at two or three files.
+
+    ## Errata (ours, measured; they override the sub-skills)
+
+    - **Motion springs lose velocity when defined by time.** A spring with
+      `duration` and/or `bounce` (so also the usual `visualDuration` +
+      `bounce` pair) and no `stiffness`/`damping`/`mass` has its inherited
+      velocity forced to 0. For a velocity handoff (apple-design §5, drag
+      release, interrupted gesture) use `stiffness` + `damping` (+ `mass`)
+      with `velocity`; keep the time-based form for non-gesture motion.
+      Source: motion-dom@12.43.0 `animation/generators/spring.mjs:127-134`
+      ("Time-defined springs should ignore inherited velocity"), measured in
+      Preliz 2026-09-03.
+    - **Tailwind v4 `hover:` gates on `(hover: hover)` only**, not on
+      `(pointer: fine)`. Fine for most hover styles; where the sub-skills
+      ask for both conditions, write raw CSS
+      `@media (hover: hover) and (pointer: fine)` or a custom variant.
+      Source: Tailwind CSS v4 upgrade guide (hover styles on mobile).
+    - **Radix / shadcn origin variable.** Base UI's `var(--transform-origin)`
+      is `var(--radix-<component>-content-transform-origin)` in Radix and
+      shadcn/ui, e.g. Tailwind `origin-(--radix-popover-content-transform-origin)`.
+      Source: shadcn/ui docs, Radix → Base UI mapping
+      (`--radix-<name>-content-transform-origin` ↔ `--transform-origin`).
+    - **Next.js-specific advice** (`viewport` export, `layout.tsx`,
+      `next-themes`) is one framework's way: translate it to the project's
+      framework (React Router: meta/links in the root route; plain HTML:
+      the `<meta>` tag itself) before applying.
+
+    Source: emilkowalski/skills @ 2d22863 (github.com/emilkowalski/skills),
+    MIT, see `LICENSE` beside this file.
+    ${contract {
+      expects = "a UI, motion, gesture, mobile-web, library-choice or toast question, or code to build, review or audit.";
+      produces = "the answer or implementation following the routed sub-skill, corrected by the Errata.";
+      sideEffects = "none from the router; a sub-skill may write code or plans when the task asks for it.";
+    }}
+    ${scope {
+      useWhen = "Front-end UI polish, animation, gestures, motion performance, mobile web feel, UI stress tests, UI variants, library picks, Sonner, React Native / Expo motion.";
+      notFor = "Backend or non-visual code, Swift/SwiftUI, or brand look and design tokens (design-md).";
+    }}
+    ${handoffs [
+      "Brand palette, typography or a named brand's look → design-md."
+    ]}
+  '';
+
+  # =========================================================================
   # Écriture FR — prose française qui ne sent pas le modèle. Adaptée de
   # blader/humanizer (procédure, motifs, faux positifs) et de
   # hardikpandya/stop-slop (grille /50, agent factice), traduite et

@@ -3146,47 +3146,6 @@ in
     ]}
   '';
 
-  skillCaveman = ''
-    ---
-    name: caveman
-    description: "Compresses assistant output tokens by roughly 75% into terse caveman-style prose, keeping full technical accuracy and reproducing code, paths, commands and error text verbatim. Use when the user types /caveman, says talk like a caveman, or asks for shorter, terser, denser, less verbose answers or fewer output tokens; stop on stop caveman or normal mode. Not for compressing files on disk, which is cavemem, and it stays off for security warnings and irreversible-action confirmations."
-    ---
-
-    # Caveman — Token Compression
-
-    When active, respond in compressed caveman-style prose.
-    Level: full (default).
-
-    ## Rules
-
-    - Drop articles (a, an, the) unless ambiguous without
-    - Drop filler: "I'll", "Let me", "Sure", "Happy to", "Based on", "In order to"
-    - Use fragments over full sentences
-    - Prefer verbs: "Fix X" not "I will fix X"
-    - Technical terms, code, file paths, URLs, commands → preserve EXACTLY
-    - Error messages → preserve verbatim
-    - Code blocks → never compress
-    - Multi-step sequences where ambiguity risks misread → use full sentences
-
-    ## Safety carve-outs (resume full prose)
-
-    - Security warnings
-    - Irreversible action confirmations (delete, force-push, history rewrite, deploy)
-    - User confused or repeating question
-
-    ## Intensity levels
-
-    - /caveman lite — drop filler, keep readable sentences
-    - /caveman full — fragments, no articles, minimal words (DEFAULT)
-    - /caveman ultra — absolute minimum, telegraph style
-    - stop caveman — resume normal prose
-
-    ## Activation
-
-    Trigger: /caveman or /caveman full or "talk like caveman" or "less tokens"
-    Deactivate: "stop caveman" or "normal mode"
-  '';
-
   skillCavemem = ''
     ---
     name: cavemem

@@ -215,15 +215,6 @@ in
       ];
     }
     {
-      name = "caveman";
-      files = [
-        {
-          path = "SKILL.md";
-          text = skills.skillCaveman;
-        }
-      ];
-    }
-    {
       name = "cavemem";
       files = [
         {

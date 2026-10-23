@@ -23,7 +23,6 @@
     mkdir -p "$HOME/.claude/skills/claude-code-meta"
     mkdir -p "$HOME/.claude/skills/testing-patterns"
     mkdir -p "$HOME/.claude/skills/codebase-audit"
-    mkdir -p "$HOME/.claude/skills/caveman"
     mkdir -p "$HOME/.claude/skills/cavemem"
     mkdir -p "$HOME/.claude/skills/trello"
     mkdir -p "$HOME/.claude/backups"

@@ -161,14 +161,13 @@ let
     "\n## Handoffs\n"
   ];
 
-  # caveman et cavemem sont des bascules de mode de sortie (38 et 31 lignes)
-  # dont tout le contrat tient déjà dans la `description` : ce qu'elles font,
-  # quand se déclencher, quand s'arrêter, ce pour quoi elles ne sont PAS. Un
+  # cavemem est un utilitaire de compression de fichiers (31 lignes) dont
+  # tout le contrat tient déjà dans la `description` : ce qu'elle fait, quand
+  # se déclencher, quand s'arrêter, ce pour quoi elle n'est PAS. Un
   # bloc de contrat y serait du cérémonial. Liste tenue à la main, donc gardée
   # dans les deux sens : une exemption ne peut pas échouer toute seule, elle ne peut que devenir
   # fausse en silence, et celle que personne ne relit devient un trou.
   footerExempt = [
-    "caveman"
     "cavemem"
   ];
 
@@ -912,14 +911,6 @@ let
         + "sandbox.excludedCommands still lets out: "
         + builtins.concatStringsSep ", " retiredBgExcluded
         + " — claude-bg tended jobs of Claude's background daemon, off since #299 (disableAgentView); the wrapper is gone, and an exclusion left for its name lets any binary called claude-bg on PATH run unsandboxed";
-    }
-    {
-      name = "A14c skills: caveman names force-push and history rewrite as irreversible, not push or merge";
-      ok =
-        hasInfix "(delete, force-push, history rewrite, deploy)" (skills.skillCaveman or "")
-        && !(hasInfix "(delete, push, deploy)" (skills.skillCaveman or ""))
-        && !(hasInfix "merge into master, force-push" (skills.skillCaveman or ""));
-      msg = "skillCaveman must list `(delete, force-push, history rewrite, deploy)` as irreversible confirmations, without plain push or merge — push to a feature branch and squash-merging the agent's own green PR are pre-authorized (user decision 2026-09-28); listed, caveman mode asks for confirmation on every routine push or merge, contradicting the git policy";
     }
     {
       name = "A15 settings: force-push, master-target push, remote-program override, gh/codex escape hatches stay denied";

@@ -126,7 +126,7 @@ in
 
     # Le style de sortie modifie le PROMPT SYSTÈME ; CLAUDE.md, lui, n'ajoute
     # qu'un message utilisateur après coup. C'est toute la différence : la
-    # consigne « caveman full mode: terse prose, no filler » vit dans CLAUDE.md
+    # consigne de concision vivait dans CLAUDE.md
     # et a été ignorée toute la session du 2026-09-05 — des réponses de
     # plusieurs écrans, sans que rien ne le signale.
     #
@@ -492,7 +492,7 @@ in
     # Les 8 entrées ci-dessous sont mesurées : JAMAIS invoquées sur 214
     # démarrages, tout en occupant le listing à chaque tour.
     # `user-invocable-only` est délibéré : il sort l'entrée du listing que le
-    # modèle voit, mais `/caveman`, `/tdd` et les autres restent tapables.
+    # modèle voit, mais `/tdd` et les autres restent tapables.
     # `off` a été écarté : il retire AUSSI l'entrée du menu slash, de Remote
     # Control et des listes de commandes de l'Agent SDK — la taper renvoie
     # alors une erreur.
@@ -508,7 +508,6 @@ in
     # l'attrape. C'est la raison d'être de ce commentaire.
     skillOverrides = {
       auto = "user-invocable-only";
-      caveman = "user-invocable-only";
       cavemem = "user-invocable-only";
       "context-prime" = "user-invocable-only";
       optimize = "user-invocable-only";

@@ -7,6 +7,7 @@ const path = require("path");
 const MAX_ROUNDS = 2;
 const BUDGET_MS = 3000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const APEX_OUT = path.join(".claude", "output", "apex");
 const MARKER = /^[\s>*`-]*APEX-CORRECTION-ROUND:\s*([^\s`]*)[\s`]*$/;
 const MENTIONS = /06-resolve\.md|correction round/i;
 const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
@@ -120,18 +121,26 @@ function main() {
   }
   if (!marker && MENTIONS.test(prompt)) { denyNoMarker(); return; }
   if (marker === null || marker === "none") { allow(); return; }
-  if (!RUN_ID.test(marker) || marker.includes("..")) {
-    deny("BLOCKED: APEX-CORRECTION-ROUND names \"" + safe(marker) + "\", which is neither none nor a run-id like 62-correction-budget; fix the line, then retry.");
+  // A run outside the session's repo is named by its absolute run dir,
+  // <repo>/.claude/output/apex/<run-id>; its budget is keyed by the run-id.
+  const named = marker;
+  let runDir = null;
+  if (path.isAbsolute(marker) && path.dirname(marker).endsWith(path.sep + APEX_OUT) && path.join(path.dirname(marker), path.basename(marker)) === marker) {
+    runDir = marker;
+    marker = path.basename(marker);
+  }
+  if (!RUN_ID.test(marker) || named.includes("..")) {
+    deny("BLOCKED: APEX-CORRECTION-ROUND names \"" + safe(named) + "\", which is neither none, a run-id like 62-correction-budget, nor an absolute <repo>/.claude/output/apex/<run-id> path; fix the line, then retry.");
     return;
   }
   marked = marker;
 
   const cwd = typeof data.cwd === "string" && data.cwd !== "" ? data.cwd : process.cwd();
-  const runDir = path.join(cwd, ".claude", "output", "apex", marker);
+  if (runDir === null) runDir = path.join(cwd, ".claude", "output", "apex", marker);
   let isDir;
   try { isDir = fs.statSync(runDir).isDirectory(); } catch { isDir = false; }
   if (!isDir) {
-    deny("BLOCKED: APEX-CORRECTION-ROUND " + marker + ": run dir not found (" + safe(runDir) + "); name the run this round belongs to, then retry.");
+    deny("BLOCKED: APEX-CORRECTION-ROUND " + safe(named) + ": run dir not found (" + safe(runDir) + "); name the run this round belongs to, then retry.");
     return;
   }
 
@@ -145,7 +154,9 @@ function main() {
     ts: new Date().toISOString(),
     tool: safe(data.tool_name),
     session: safe(data.session_id),
-    description: safe(ti.description || ti.summary).slice(0, 200)
+    description: safe(ti.description || ti.summary).slice(0, 200),
+    // correction-grant.js grants a run outside the prompt's repo by it.
+    dir: runDir
   }) + "\n";
   try { fs.mkdirSync(dir, { recursive: true }); } catch { denyState("unwritable", dir); return; }
 

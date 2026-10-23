@@ -11,6 +11,7 @@ const TOKEN = /^\s*apex\s*:\s*\+1\s+tour\s*$/i;
 const ROUND = /^(.+)\.round([1-9][0-9]*)$/;
 const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const APEX_OUT = path.join(".claude", "output", "apex");
 const WRAPPERS = ["<task-notification", "<agent-message", "Another Claude session sent a message", "[SYSTEM NOTIFICATION", "<teammate-message", "<command-name>", "<local-command", "<scheduled-task", "<system-reminder"];
 
 let settled = false;
@@ -64,6 +65,30 @@ function isDir(p) {
   try { return fs.statSync(p).isDirectory(); } catch { return false; }
 }
 
+// A run outside the prompt's repo: the run dir its rounds were stamped with
+// by correction-budget.js in this session. A stamp that is no readable JSON
+// file, two dirs, or a dir that is not an existing absolute
+// <repo>/.claude/output/apex/<run-id> in plain ASCII is doubt: null.
+function stampedDir(dir, id, rounds, session) {
+  if (typeof session !== "string" || session === "") return null;
+  let found = null;
+  for (const n of rounds) {
+    const f = path.join(dir, n);
+    let s;
+    try {
+      if (!fs.statSync(f).isFile()) return null;
+      s = JSON.parse(fs.readFileSync(f, "utf8"));
+    } catch { return null; }
+    if (!s || typeof s !== "object" || Array.isArray(s)) return null;
+    if (s.session !== safe(session)) continue;
+    if (typeof s.dir !== "string" || (found !== null && s.dir !== found)) return null;
+    found = s.dir;
+  }
+  if (found === null || !path.isAbsolute(found) || found.includes("..") || safe(found) !== found || /[\s`]/.test(found)) return null;
+  if (!path.dirname(found).endsWith(path.sep + APEX_OUT) || path.join(path.dirname(found), id) !== found) return null;
+  return isDir(found) ? found : null;
+}
+
 let input = "";
 let overflow = false;
 let ran = false;
@@ -113,11 +138,16 @@ function main() {
   // The live run is the project's run with the newest round; it alone may be
   // granted, and only once its budget, grants included, is spent. An older
   // spent run never is. An unreadable round, or a tie, is doubt: no grant.
+  // A run whose dir is not under the cwd counts only through stampedDir.
   let target = null;
   let tie = false;
   for (const [id, r] of runs) {
     if (r.rounds.length === 0) continue;
-    if (!isDir(path.join(cwd, ".claude", "output", "apex", id))) continue;
+    let where = null;
+    if (!isDir(path.join(cwd, ".claude", "output", "apex", id))) {
+      where = stampedDir(dir, id, r.rounds, data.session_id);
+      if (where === null) continue;
+    }
     let last = 0;
     for (const n of r.rounds) {
       let t;
@@ -125,7 +155,7 @@ function main() {
       if (t > last) last = t;
     }
     if (target !== null && last === target.last) tie = true;
-    if (target === null || last > target.last) { target = { id, rounds: r.rounds.length, grants: r.grants, last }; tie = false; }
+    if (target === null || last > target.last) { target = { id, rounds: r.rounds.length, grants: r.grants, last, where }; tie = false; }
   }
   if (target === null || tie || target.rounds < MAX_ROUNDS + target.grants) {
     say("correction-grant: `apex: +1 tour` read, but this project has no latest correction run whose budget is spent; nothing was granted.");
@@ -143,7 +173,7 @@ function main() {
       if (code === "EEXIST") continue;
       break;
     }
-    say("correction-grant: the user granted run " + target.id + " one more correction round (cap now " + (MAX_ROUNDS + target.grants + 1) + "). Spawn it on model: \"opus\" with APEX-CORRECTION-ROUND: " + target.id + "; never run it inline.");
+    say("correction-grant: the user granted run " + target.id + " one more correction round (cap now " + (MAX_ROUNDS + target.grants + 1) + "). Spawn it on model: \"opus\" with APEX-CORRECTION-ROUND: " + (target.where === null ? target.id : target.where) + "; never run it inline.");
     return;
   }
   say("correction-grant: could not record the grant for run " + target.id + " (" + code + "); nothing was granted.");

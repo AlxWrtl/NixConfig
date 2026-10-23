@@ -40,7 +40,11 @@ in
   # PreToolUse on Agent and SendMessage: a hard cap on APEX correction rounds
   # (run 62). A correction round goes through either channel, a fresh spawn
   # or a re-brief sent to a live agent, and both are counted. Its brief
-  # carries `APEX-CORRECTION-ROUND: <run-id>`; each round claims the first
+  # carries `APEX-CORRECTION-ROUND: <run-id>` or, for a run outside the
+  # session's repo, its absolute `…/.claude/output/apex/<run-id>` path (an
+  # existing dir, no `..`; never a stub run dir created in the session's
+  # repo), counted under the run-id and stamped in the slot as `dir`; each
+  # round claims the first
   # free slot ~/.claude/apex-correction-budget/<run-id>.round<n>, n in
   # 1..MAX_ROUNDS (outside the Bash sandbox's writable paths), and the round
   # finding none is denied. A slot is created exclusively (O_EXCL), so
@@ -63,7 +67,9 @@ in
   # UserPromptSubmit: the user's grant of one more correction round. A prompt
   # whose FIRST non-empty line is exactly `apex: +1 tour` (case and spacing
   # free) grants the live run of this project — the one with the newest
-  # round among runs with a dir under the prompt's (absolute) cwd — one
+  # round among runs with a dir under the prompt's (absolute) cwd, or whose
+  # round stamps from this same session all name one existing absolute
+  # `…/.claude/output/apex/<run-id>` dir (an unreadable stamp: no) — one
   # round, only if its budget is spent (rounds >= MAX_ROUNDS + grants); one
   # <run-id>.grant<n> per prompt (O_EXCL). Task notifications and agent
   # hand-backs also fire this event, without agent_id: a prompt carrying a

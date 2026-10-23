@@ -96,6 +96,12 @@
 #      prune, a held non-checkout dir, a name-prefix sibling, the hook's own
 #      parent shell, `$VAR`, malformed input and a non-shape with no lsof at
 #      all allowed. One canary per branch.
+#      The board-refresh-budget-runs run adds the cross-repo correction run:
+#      an absolute <repo>/.claude/output/apex/<run-id> marker allowed and
+#      counted by its run-id, one outside such a dir, through `..` or
+#      missing denied; a grant for such a run only from the session whose
+#      round stamps name an existing run dir of that shape. One canary per
+#      branch, both allows killed as over-blocks.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -445,6 +451,22 @@ let
     A-cb-opus = {
       hook = "correction-budget.js";
       text = "if (data.tool_name !== \"SendMessage\" && ti.model !== \"opus\") {";
+    };
+    A-cb-abs = {
+      hook = "correction-budget.js";
+      text = "if (path.isAbsolute(marker) && path.dirname(marker).endsWith(path.sep + APEX_OUT) && path.join(path.dirname(marker), path.basename(marker)) === marker) {";
+    };
+    A-cg-stamped = {
+      hook = "correction-grant.js";
+      text = "where = stampedDir(dir, id, r.rounds, data.session_id);";
+    };
+    A-cg-session = {
+      hook = "correction-grant.js";
+      text = "if (s.session !== safe(session)) continue;";
+    };
+    A-cg-abs = {
+      hook = "correction-grant.js";
+      text = "if (!path.dirname(found).endsWith(path.sep + APEX_OUT) || path.join(path.dirname(found), id) !== found) return null;";
     };
     A-cg-token = {
       hook = "correction-grant.js";
@@ -1169,6 +1191,69 @@ let
         {
           anchor = "A-cg-wrappers";
           to = "const WRAPPERS = [];";
+        }
+      ];
+    }
+    # Any absolute dir: a marker naming a dir outside an apex output dir is
+    # taken for a run, and a fresh budget is one mkdir away.
+    {
+      id = "M-cb-abs-parent";
+      hook = "correction-budget.js";
+      kills = "cb-abs-run-bad-deny";
+      swaps = [
+        {
+          anchor = "A-cb-abs";
+          to = "if (path.isAbsolute(marker) && path.join(path.dirname(marker), path.basename(marker)) === marker) {";
+        }
+      ];
+    }
+    # Run-ids only: a correction round for a run outside the session's repo
+    # is denied, the stub-dir workaround back.
+    {
+      id = "M-cb-abs-off";
+      hook = "correction-budget.js";
+      kills = "cb-abs-run-allow";
+      swaps = [
+        {
+          anchor = "A-cb-abs";
+          to = "if (false) {";
+        }
+      ];
+    }
+    # No stamped dir read: a spent run outside the prompt's repo is never
+    # granted.
+    {
+      id = "M-cg-stamped-off";
+      hook = "correction-grant.js";
+      kills = "cg-cross-repo-grants";
+      swaps = [
+        {
+          anchor = "A-cg-stamped";
+          to = "where = null;";
+        }
+      ];
+    }
+    # Any session: another session's spent run outside the repo is granted.
+    {
+      id = "M-cg-session";
+      hook = "correction-grant.js";
+      kills = "cg-cross-repo-other-session";
+      swaps = [
+        {
+          anchor = "A-cg-session";
+          to = ";";
+        }
+      ];
+    }
+    # Any stamped dir: a run stamped outside an apex output dir is granted.
+    {
+      id = "M-cg-abs-parent";
+      hook = "correction-grant.js";
+      kills = "cg-cross-repo-bad-dir";
+      swaps = [
+        {
+          anchor = "A-cg-abs";
+          to = "if (path.join(path.dirname(found), id) !== found) return null;";
         }
       ];
     }
@@ -2144,6 +2229,9 @@ let
     "cb-grant-round3-allow"
     "cb-cron-token-deny"
     "cb-cron-plain-allow"
+    "cb-abs-run-allow"
+    "cb-abs-run-cap-deny"
+    "cb-abs-run-bad-deny"
     "cg-token-grants"
     "cg-no-token"
     "cg-inline-token-ignored"
@@ -2160,6 +2248,9 @@ let
     "cg-token-not-first-ignored"
     "cg-agentid-nonstring-ignored"
     "cg-newest-not-spent"
+    "cg-cross-repo-grants"
+    "cg-cross-repo-other-session"
+    "cg-cross-repo-bad-dir"
     "rm-explore-sonnet-deny"
     "rm-navigator-opus-deny"
     "rm-navigator-nomodel-deny"
@@ -2484,10 +2575,12 @@ let
     # reaches the canary re-runs: every cb case wipes it first.
     CBREPO="$root/cbrepo"
     CBSTATE="$TMPDIR/.claude/apex-correction-budget"
+    # A run outside $CBREPO, named by its absolute run dir.
+    CBOTHER="$root/cbother/.claude/output/apex/64-z"
     cb_reset() {
       if [ -e "$CBSTATE" ]; then chmod -R u+w "$CBSTATE"; fi
       rm -rf "$CBSTATE"
-      mkdir -p "$CBREPO/.claude/output/apex/62-x" "$CBREPO/.claude/output/apex/63-y"
+      mkdir -p "$CBREPO/.claude/output/apex/62-x" "$CBREPO/.claude/output/apex/63-y" "$CBOTHER" "$root/cbother/notapex/64-z"
     }
     # $1 brief, $2 marker: a run-id, none, or absent for no marker line.
     # $3 model: opus when unset, absent from the input when empty.
@@ -2506,6 +2599,14 @@ let
       for i in $(${pkgs.coreutils}/bin/seq 1 "$2"); do
         : > "$CBSTATE/$1.round$i"
         ${pkgs.coreutils}/bin/touch -d "@''${3-1700000000}" "$CBSTATE/$1.round$i"
+      done
+    }
+    # $1 run-id, $2 rounds, $3 dir, $4 session: rounds stamped as
+    # correction-budget.js leaves them, the run dir recorded.
+    cb_stamp() {
+      mkdir -p "$CBSTATE"
+      for i in $(${pkgs.coreutils}/bin/seq 1 "$2"); do
+        ${jq} -cn --arg d "$3" --arg s "$4" '{ts:"2026-01-01T00:00:00.000Z",tool:"Agent",session:$s,description:"probe",dir:$d}' > "$CBSTATE/$1.round$i"
       done
     }
 
@@ -3201,6 +3302,26 @@ let
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched CronCreate "Apply the fixes in 06-resolve.md.")"; is_allow || return 1
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched ScheduleWakeup "The hook says: type apex: +1 tour alone on a line.")"; is_allow || return 1
           [ ! -e "$CBSTATE" ] || { why="a scheduler call touched the budget state"; return 1; } ;;
+        # A run outside the session's repo, named by its absolute run dir:
+        # counted by its run-id, the dir stamped for correction-grant.js.
+        cb-abs-run-allow)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$CBOTHER")"; is_allow || return 1
+          ${jq} -e --arg d "$CBOTHER" '.dir == $d' "$CBSTATE/64-z.round1" > /dev/null 2>&1 \
+            || { why="allowed, but 64-z.round1 is missing or does not stamp dir $CBOTHER"; return 1; } ;;
+        cb-abs-run-cap-deny)
+          cb_reset
+          cb_round "$2" "$CBOTHER" 1 || return 1
+          cb_round "$2" "$CBOTHER" 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$CBOTHER")"; is_deny "budget de correction épuisé (2/2) pour le run 64-z" ;;
+        # An absolute dir outside an apex output dir, through `..`, or
+        # missing: denied, nothing counted.
+        cb-abs-run-bad-deny)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/notapex/64-z")"; is_deny "nor an absolute <repo>/.claude/output/apex/<run-id> path" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/.claude/output/apex/../apex/64-z")"; is_deny "nor an absolute <repo>/.claude/output/apex/<run-id> path" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/.claude/output/apex/65-none")"; is_deny "65-none: run dir not found" || return 1
+          [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
         # correction-grant: only the user's token, as the first non-empty
         # line, only for the project's live run once spent.
         cg-token-grants)
@@ -3288,6 +3409,21 @@ let
           cb_reset
           cb_spend 62-x 2 1700000000
           cb_spend 63-y 1 1700000100
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
+        # A spent run outside the prompt's repo, its rounds stamped by this
+        # session: granted, the context naming its dir as the marker.
+        cg-cross-repo-grants)
+          cb_reset
+          cb_stamp 64-z 2 "$CBOTHER" probe
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_granted 64-z 1 3 || return 1
+          grep -Fq -- "APEX-CORRECTION-ROUND: $CBOTHER;" "$d/$lbl.out" || { why="granted, but the context does not name the marker $CBOTHER"; return 1; } ;;
+        cg-cross-repo-other-session)
+          cb_reset
+          cb_stamp 64-z 2 "$CBOTHER" other
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
+        cg-cross-repo-bad-dir)
+          cb_reset
+          cb_stamp 64-z 2 "$root/cbother/notapex/64-z" probe
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
         # Run 66: research agents on haiku, the model named explicitly.
         rm-explore-sonnet-deny)

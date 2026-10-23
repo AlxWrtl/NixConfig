@@ -26,6 +26,7 @@ let
   rules = import ./claude-code/rules.nix;
   libdocs = import ./claude-code/libdocs.nix { inherit pkgs; };
   trello = import ./claude-code/trello.nix { inherit pkgs; };
+  preprodCurl = import ./claude-code/preprod-curl.nix { inherit pkgs; };
   nixOptions = import ./claude-code/nix-options.nix { inherit pkgs; };
   scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
   apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
@@ -45,6 +46,7 @@ let
   inherit (rules) ruleNix ruleTypescript ruleReact;
   inherit (libdocs) libdocsPkg;
   inherit (trello) trelloPkg;
+  inherit (preprodCurl) preprodCurlPkg;
   inherit (nixOptions) nixOptionsPkg;
   inherit (apexVerifyExternal) apexVerifyExternalPkg;
   inherit (apexTier) apexTierPkg;
@@ -467,8 +469,8 @@ in
     # spares nixfmt re-indenting that whole attrset.
     file = claudeHomeFiles // uiExpertLinks;
 
-    # `libdocs` + `nix-options` + `trello` + `graphify-reindex` +
-    # `claude-dispatch` + `agent-pane` on PATH — usable by
+    # `libdocs` + `nix-options` + `trello` + `preprod-curl` +
+    # `graphify-reindex` + `claude-dispatch` + `agent-pane` on PATH — usable by
     # Claude, by APEX and its subagents, and by the user in a plain terminal.
     # `abduco` too, from the same pkgs as the claude-dispatch wrapper and
     # agent-pane (same default socket dir), so `abduco -a <name>` attaches to
@@ -478,6 +480,7 @@ in
     packages = [
       libdocsPkg
       trelloPkg
+      preprodCurlPkg
       nixOptionsPkg
       apexVerifyExternalPkg
       apexTierPkg

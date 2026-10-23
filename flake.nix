@@ -96,6 +96,7 @@
         };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };
         js-lint = import ./checks/js-lint.nix { inherit pkgs; };
+        preprod-curl = import ./checks/preprod-curl.nix { inherit pkgs; };
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };
         trello-cli = import ./checks/trello-cli.nix { inherit pkgs; };
       };

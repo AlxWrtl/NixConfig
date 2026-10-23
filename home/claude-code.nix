@@ -98,6 +98,7 @@ let
     hookReactDocsGate
     hookNullResultGate
     hookInstagramWatch
+    hookApexAcsProof
     ;
   hookWorktreeEnvSync = hooks.hookWorktreeEnvSync {
     jqBin = "${pkgs.jq}/bin/jq";
@@ -412,6 +413,10 @@ let
     };
     "${claudeDir}/hooks/instagram-watch.js" = {
       text = hookInstagramWatch;
+      executable = true;
+    };
+    "${claudeDir}/hooks/apex-metrics-probe.py" = {
+      text = hookApexAcsProof;
       executable = true;
     };
   };

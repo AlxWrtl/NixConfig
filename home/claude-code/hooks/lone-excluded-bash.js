@@ -2,11 +2,13 @@
 "use strict";
 
 // The sandbox-excluded commands (settings.nix excludedCommands: git
-// push/commit/pull/fetch, gh, claude-dispatch) leave the sandbox only when
-// the Bash call is made of them alone. `cd x && git push`, `git -C x push`, a
-// pipe, `$(...)`, a heredoc or a file redirection keep the WHOLE call
-// sandboxed, where the keychain and ~/.ssh are denied: the network or signing
-// step fails (x509, no SSH key; EPERM on the abduco socket (create-session) for claude-dispatch)
+// push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start/stop) leave
+// the sandbox only when the Bash call is made of them alone. `cd x && git push`,
+// `git -C x push`, a pipe, `$(...)`, a heredoc or a file redirection keep the
+// WHOLE call sandboxed, where the keychain and ~/.ssh are denied: the network
+// or signing step fails (x509, no SSH key; EPERM on the abduco socket (create-session) for claude-dispatch;
+// EPERM on the colima docker socket for pnpm localdb:start/stop, and those two
+// are exact entries: an argument keeps them in)
 // and the retry turns into a permission prompt. Refusing that
 // shape up front, with the fix in the reason, costs one retry instead.
 //
@@ -22,6 +24,9 @@ const MAX_INPUT = 4 * 1024 * 1024;
 // command is not read at all: an allow.
 const MAX_DEPTH = 8;
 const VERBS = ["push", "commit", "pull", "fetch"];
+const PNPM_SCRIPTS = ["localdb:start", "localdb:stop"];
+// pnpm options that take their value as the NEXT word.
+const PNPM_ARG_OPTS = ["-C", "--dir", "-F", "--filter"];
 // Run the word after them (and their options) as the command. Their
 // unsandboxing is undocumented, so a target behind one is never clean.
 const WRAPPERS = ["env", "command", "builtin", "exec", "nohup", "nice", "timeout", "gtimeout", "sudo", "doas", "time", "stdbuf", "xargs", "caffeinate", "noglob", "rtk"];
@@ -46,9 +51,9 @@ const KEYWORDS = ["if", "then", "else", "elif", "do", "while", "until", "!", "{"
 const SHELLS = ["sh", "bash", "zsh", "dash", "ksh"];
 // git global options that take their value as the NEXT word.
 const GIT_ARG_OPTS = ["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"];
-// Cheap gate: no `git`, `gh` or `claude-dispatch` word anywhere,
+// Cheap gate: no `git`, `gh`, `claude-dispatch` or `pnpm` word anywhere,
 // nothing to lex.
-const PREFILTER = /\bg(?:it|h)\b|\bclaude-dispatch\b/;
+const PREFILTER = /\bg(?:it|h)\b|\bclaude-dispatch\b|\bpnpm\b/;
 const ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 const CAUSE = {
@@ -57,7 +62,8 @@ const CAUSE = {
   redir: "with a file redirection (only fd duplication like 2>&1 is kept)",
   group: "inside a subshell or a { } group",
   background: "sent to the background with &",
-  shape: "next to another command or behind a prefix (cd &&, a pipe, ;, git -C / -c, VAR=, a wrapper, an absolute path, a quoted verb)"
+  shape: "next to another command or behind a prefix (cd &&, a pipe, ;, git -C / -c, VAR=, a wrapper, an absolute path, a quoted verb)",
+  args: "with arguments after it (the pnpm localdb:start / localdb:stop exclusions are exact: those two words, nothing after)"
 };
 
 let settled = false;
@@ -367,6 +373,16 @@ function segTargets(words, depth) {
   const cmd = base(words[k].val);
   if (cmd === "gh") return ["gh"];
   if (cmd === "claude-dispatch") return [cmd];
+  if (cmd === "pnpm") {
+    let j = k + 1;
+    while (j < words.length) {
+      const v = words[j].val;
+      if (PNPM_ARG_OPTS.includes(v)) { j += 2; continue; }
+      if (v.startsWith("-") || v === "run") { j++; continue; }
+      return PNPM_SCRIPTS.includes(v) ? ["pnpm " + v] : [];
+    }
+    return [];
+  }
   if (cmd === "git") {
     let j = k + 1;
     while (j < words.length) {
@@ -398,14 +414,18 @@ function targetsOf(r, depth) {
 
 // Clean = what an excludedCommands entry matches: `git` then the verb, or
 // `gh` / `claude-dispatch`, literal words at the head of the
-// segment.
+// segment; `pnpm` then a localdb script and nothing after (exact entries).
 function isCleanTarget(words) {
   const w0 = words[0];
   const w1 = words[1];
   if (w0 === undefined || !w0.plain) return false;
   if (w0.val === "gh" || w0.val === "claude-dispatch") return true;
+  if (w0.val === "pnpm") return words.length === 2 && w1.plain && PNPM_SCRIPTS.includes(w1.val);
   return w0.val === "git" && w1 !== undefined && w1.plain && VERBS.includes(w1.val);
 }
+
+// `pnpm localdb:stop --rm`: the head is clean, the exact entry is not met.
+const isPnpmWithArgs = (w) => w.length > 2 && w[0].val === "pnpm" && isCleanTarget(w.slice(0, 2));
 
 // The first reason the call stays sandboxed, or null when it leaves it.
 // A chain made ONLY of clean targets leaves it (user decision 2026-10-11).
@@ -415,6 +435,7 @@ function causeOf(r, segs) {
   if (r.fileRedir) return CAUSE.redir;
   if (r.group) return CAUSE.group;
   if (r.background) return CAUSE.background;
+  if (segs.some(isPnpmWithArgs)) return CAUSE.args;
   if (!segs.every(isCleanTarget)) return CAUSE.shape;
   return null;
 }
@@ -444,7 +465,7 @@ function main() {
   let v;
   try { v = decide(cmd); } catch { allow(); return; }
   if (v === null) { allow(); return; }
-  deny("BLOCKED: `" + safe(v.target) + "` leaves the sandbox only when the Bash call is that command alone; here it runs " + v.cause + ", so the whole call stays sandboxed and its network or signing step fails. Run it ALONE in its own Bash call, from the project root: the cwd resets after each call, so neither cd nor git -C can help, and a repo outside the project root has no unsandboxed form (let the sandboxed call fail, then answer the permission prompt). Pass a message by file (git commit -F <file>, gh ... --body-file <file>), filter gh output with --jq instead of a pipe. Give claude-dispatch its brief inline as one quoted line, never through $(...) or a file. Lone git push/commit/pull/fetch, gh and claude-dispatch commands may still be joined with &&.");
+  deny("BLOCKED: `" + safe(v.target) + "` leaves the sandbox only when the Bash call is that command alone; here it runs " + v.cause + ", so the whole call stays sandboxed and its network, signing or docker-socket step fails. Run it ALONE in its own Bash call, from the project root: the cwd resets after each call, so neither cd nor git -C can help, and a repo outside the project root has no unsandboxed form (let the sandboxed call fail, then answer the permission prompt). Pass a message by file (git commit -F <file>, gh ... --body-file <file>), filter gh output with --jq instead of a pipe. Give claude-dispatch its brief inline as one quoted line, never through $(...) or a file. Run pnpm localdb:start / pnpm localdb:stop as exactly those two words: no argument, no pnpm option, no pnpm run; other pnpm scripts (dev:localdb, smoke:localdb) stay sandboxed by design. Lone git push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start and pnpm localdb:stop commands may still be joined with &&.");
 }
 
 function start() {

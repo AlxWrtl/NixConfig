@@ -158,7 +158,7 @@ in
       # An exclusion only applies when the Bash call is that command ALONE:
       # `cd … &&`, `$(…)`, heredoc or redirection keep the call sandboxed.
       # hooks/lone-excluded-bash.js denies those shapes for git push/commit/
-      # pull/fetch, gh and claude-dispatch before they run.
+      # pull/fetch, gh, claude-dispatch and pnpm localdb:start/stop before they run.
       # nix flake check: sandboxed it hits EPERM on the daemon socket
       # (/nix/var/nix/daemon-socket/socket) and on ~/.cache/nix sqlite.
       # Excluding the one command; the daemon socket is never in
@@ -201,6 +201,18 @@ in
         "git pull *"
         "git fetch *"
         "nix flake check"
+        # pnpm localdb:start / localdb:stop (Preliz scripts/localdb-{start,stop}.sh)
+        # call docker on ~/.colima/default/docker.sock, refused sandboxed;
+        # "docker *" above does not help, the child inherits the pnpm call's
+        # sandbox. The socket stays closed (A14b); these two leave instead
+        # (user decision 2026-10-23). Exact, like "nix flake check": no `*`, an
+        # argument or pnpm option reaches other flags. dev:localdb /
+        # smoke:localdb stay sandboxed on purpose (pnpm dev/build/migrate).
+        # Risk accepted: the script body and package.json live in the Preliz
+        # repo, writable from a sandboxed session, and run unsandboxed; still
+        # classifier-reviewed (auto mode).
+        "pnpm localdb:start"
+        "pnpm localdb:stop"
         # nix build/eval + docker: user decision 2026-10-22 — the escape box
         # was always approved anyway. Risk accepted: as a trusted user,
         # nix build/eval with --option/--override-input/--expr is
@@ -841,7 +853,7 @@ in
         {
           matcher = "Bash";
           # No `if`: it holds one rule, and both `git` and `gh` are needed.
-          # Denies a sandbox-excluded command (git push/commit/pull/fetch, gh)
+          # Denies a sandbox-excluded command (git push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start/stop)
           # composed with anything that keeps the call sandboxed. Fail-open.
           hooks = [
             {

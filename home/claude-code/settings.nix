@@ -3,6 +3,8 @@
 let
   # Absolute path to node — /bin/sh can't find nix-installed node in PATH
   node = "/run/current-system/sw/bin/node";
+  # Same for python3 (modules/packages.nix): the apex-metrics-probe hook.
+  python3 = "/run/current-system/sw/bin/python3";
 
   # Obsidian vault — shared constant, reusable by other modules.
   # Real on-disk location (NOT the iCloud~md~obsidian mirror path).
@@ -1010,6 +1012,23 @@ in
               # conversation SUIVANT, alors que ce garde doit parler pendant
               # que la sonde est encore le sujet.
               command = "${node} ~/.claude/hooks/null-result-gate.js";
+              timeout = 5;
+            }
+          ];
+        }
+        {
+          # Écriture d'un 02-acs.md de run APEX : liste les AC qui ne nomment
+          # aucune commande et ne portent ni `[lecture] — raison` ni
+          # `[deferred to user]`. Même classifieur que la métrique B2 (le corps
+          # EST checks/apex-metrics-probe.py). Synchrone : `async = true`
+          # livrerait le contexte un tour trop tard, quand le plan est déjà
+          # passé. Muet hors d'un 02-acs.md et à zéro AC non prouvé ;
+          # fail-open (toute erreur = exit 0, rien sur stdout).
+          matcher = "Write|Edit";
+          hooks = [
+            {
+              type = "command";
+              command = "${python3} -I ~/.claude/hooks/apex-metrics-probe.py --hook";
               timeout = 5;
             }
           ];

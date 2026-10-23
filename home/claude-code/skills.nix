@@ -711,12 +711,20 @@ in
        T5: Wire up route (depends on T3, T4)
        ```
 
-    3. **Acceptance Criteria** — specific, verifiable conditions:
+    3. **Acceptance Criteria** — each one names the command that proves it,
+       with the exit code or output expected:
        ```
-       AC1: User can create a new item via the form
-       AC2: Validation errors display inline
-       AC3: Success redirects to the list page
+       AC1: `pnpm test -- items.create` exits 0: the form creates an item
+       AC2: `pnpm test -- items.validation` exits 0: errors display inline
+       AC3: `pnpm exec playwright test items-redirect.spec.ts` exits 0: success redirects to the list
+       AC4: [lecture] — the error wording matches the product copy; no command judges tone
        ```
+       An AC that names no command is reported non prouvé at validate, never
+       green. Two exceptions, declared on the AC itself: `[lecture] — reason`
+       when no command can prove it (the reason says why), and
+       `[deferred to user]` when the proof needs the user (sudo, a password).
+       Use them rarely: the share of `[lecture]` ACs is measured apart, and the
+       apex-metrics-probe hook lists the unproven ACs each time 02-acs.md is written.
 
     4. **Testing Strategy** (if -t flag active):
        ```
@@ -766,6 +774,7 @@ in
     carries the reasoning, and a reviewer told why the code is right stops
     looking for the reason it is not. Every later step that names an ACs file
     means this one.
+    Each AC keeps its command, or its `[lecture] — reason` / `[deferred to user]` marker, in that file: the verifier sees no other proof.
 
     ## If tasks mode (-k):
     Read [step-02b-tasks.md](step-02b-tasks.md) and execute it before proceeding.
@@ -1060,8 +1069,16 @@ in
 
     ## Verification Checklist
 
-    1. **Acceptance Criteria**: go through each AC from the plan.
-       For each one, verify it is actually implemented. Check the code.
+    1. **Acceptance Criteria**: go through each AC of 02-acs.md and run the
+       command it names; its exit code and output decide, not a reading of the code.
+       An AC with no command and no `[lecture] — reason` / `[deferred to user]` marker is
+       reported **non prouvé** and blocks a green verdict: send it back to plan
+       for a command, never pass it on a reading of the diff.
+       `[lecture]` and `[deferred to user]` ACs are listed apart in
+       `04-validate.md` (lecture: what was read and the verdict; deferred: the
+       command for the user), never counted as proven by a command.
+       `python3 -I ~/.claude/hooks/apex-metrics-probe.py --acs .claude/output/apex/{task-id}/02-acs.md`
+       prints the class of each AC.
 
     2. **Build Check**: run only the SAFE checks (see ORCHESTRATION.md), and
        run the SAME commands step-00 recorded as the baseline:
@@ -1113,7 +1130,7 @@ in
     check, never a deliverable.
 
     ## If any AC is not met:
-    Go back and fix it. Do not proceed until all ACs pass.
+    Go back and fix it. Do not proceed until all ACs pass. A non prouvé AC is not met.
 
     ## If save mode (-s):
     Update progress in context file.
@@ -1974,7 +1991,9 @@ in
     2. Read the execute summary AND the actual diff (`git diff --stat` + the diff
        of touched files). Never trust the summary alone.
     3. Opus 5.5 coordinator self-verifies each acceptance criterion against the real
-       diff (fresh-context adversarial pass — Opus 5.5's strength).
+       diff (fresh-context adversarial pass — Opus 5.5's strength) by running the
+       command the AC names; an AC with no command and no `[lecture] — reason` or
+       `[deferred to user]` marker is non prouvé, never self-verified green.
     4. HIGH-STAKES ONLY (irreversible / security / architecture / prod): the
        external detector (`-e`) over diff + ACs, findings triaged by evidence;
        no usable external verdict → the Fable fallback pass (HIGH-STAKES.md).
@@ -1984,7 +2003,8 @@ in
        exact files/lines, expected end state, exact command that must pass), then
        re-verifies the new diff.
        Correction rounds always run on `model: opus`, whatever model ran the task (quick-fix on sonnet is for planned execute tasks only); the correction-budget hook denies any other model, absent included, before counting the round.
-    6. Loop until every acceptance criterion is green. Max 2 correction rounds,
+    6. Loop until every acceptance criterion is green —
+       an AC reported non prouvé is not green. Max 2 correction rounds,
        enforced by the correction-budget hook (PreToolUse on Agent): every
        correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`
        (<run-id> = this run's `.claude/output/apex/` dir name) or, for a run

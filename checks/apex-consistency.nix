@@ -754,6 +754,23 @@ let
       needle = "version pin the real diff adds must have its source in `AC-docs:`";
       scope = skills.apexStep04Validate;
     }
+    # Step 3 of the verify loop self-verifies in band: the AC rule is pinned
+    # where each of its three decisions is made (plan, validate, verify).
+    {
+      name = "plan: an AC names the command that proves it, or declares why not";
+      needle = "An AC that names no command is reported non prouvé at validate";
+      scope = skills.apexStep02Plan;
+    }
+    {
+      name = "validate: an AC with no command blocks a green verdict";
+      needle = "reported **non prouvé** and blocks a green verdict";
+      scope = skills.apexStep04Validate;
+    }
+    {
+      name = "verify: a non prouvé AC is not green";
+      needle = "an AC reported non prouvé is not green";
+      scope = skills.apexOrchestration;
+    }
     {
       name = "orchestration: approval re-briefs a plan missing its Docs line";
       needle = "re-briefs any plan missing its `Docs:` line";

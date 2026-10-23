@@ -402,6 +402,13 @@ in
   # fail-open, never exit 2 (it would block the prompt).
   hookInstagramWatch = builtins.readFile ./hooks/instagram-watch.js;
 
+  # PostToolUse on Write|Edit: lists the ACs of an APEX 02-acs.md that name no
+  # command and carry no `[lecture] — reason` / `[deferred to user]` marker.
+  # The body IS checks/apex-metrics-probe.py, run with --hook: one classifier for
+  # the gate and the B2 metric, so the replay and the hook cannot drift.
+  # Fail-open: any error exits 0 with nothing on stdout.
+  hookApexAcsProof = builtins.readFile ../../checks/apex-metrics-probe.py;
+
   hookSubagentStop = builtins.readFile ./hooks/subagent-stop.js;
 
   hookCompactContext = builtins.readFile ./hooks/compact-context.sh;

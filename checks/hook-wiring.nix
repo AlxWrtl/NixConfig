@@ -105,6 +105,14 @@
 #      missing denied; a grant for such a run only from the session whose
 #      round stamps name an existing run dir of that shape. One canary per
 #      branch, both allows killed as over-blocks.
+#      The apex-ac-proof run adds apex-metrics-probe.py, the first python
+#      body D runs (`python3 -I <body> --hook`): a Write or Edit of an APEX
+#      run's 02-acs.md lists the ACs that name no command and carry no
+#      `[lecture] — reason` or `[deferred to user]`, count first and capped;
+#      a command, lecture, deferred or AC-docs AC, another file of a run dir,
+#      a 02-acs.md outside one, a missing file and malformed input stay
+#      silent; `--self-test` of the same body exits 0, so the B2 classifier
+#      is graded in the flake. One canary per branch.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -502,6 +510,46 @@ let
     A-iw-json = {
       hook = "instagram-watch.js";
       text = "try { data = JSON.parse(input); } catch { quiet(); return; }";
+    };
+    A-ac-flag = {
+      hook = "apex-metrics-probe.py";
+      text = "flagged = [b for b in parse_ac_blocks(_read(pathlib.Path(path))) if classify(b) == \"unproven\"]";
+    };
+    A-ac-symlink = {
+      hook = "apex-metrics-probe.py";
+      text = "if p.is_symlink() or not p.is_file():";
+    };
+    A-ac-cap = {
+      hook = "apex-metrics-probe.py";
+      text = "HOOK_CAP = 10";
+    };
+    A-ac-lecture-re = {
+      hook = "apex-metrics-probe.py";
+      text = "LECTURE = re.compile(r\"\\[lecture\\]\\s*[—–:-]\\s*\\S\")";
+    };
+    A-ac-lecture = {
+      hook = "apex-metrics-probe.py";
+      text = "if LECTURE.search(text):";
+    };
+    A-ac-deferred = {
+      hook = "apex-metrics-probe.py";
+      text = "if DEFERRED.search(text):";
+    };
+    A-ac-docs = {
+      hook = "apex-metrics-probe.py";
+      text = "if AC_DOCS.match(block.prose[0]):";
+    };
+    A-ac-path = {
+      hook = "apex-metrics-probe.py";
+      text = "ACS_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/02-acs\\.md$\")";
+    };
+    A-ac-failopen = {
+      hook = "apex-metrics-probe.py";
+      text = "except Exception:";
+    };
+    A-ac-gate = {
+      hook = "apex-metrics-probe.py";
+      text = "or GATE.search(joined) is not None";
     };
     A-cb-cron = {
       hook = "correction-budget.js";
@@ -1334,6 +1382,138 @@ let
         {
           anchor = "A-iw-json";
           to = "try { data = JSON.parse(input); } catch { process.exit(2); }";
+        }
+      ];
+    }
+    # Wrong filter: the ACs proven by a command are listed, the unproven not.
+    {
+      id = "M-ac-flag";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-prose-emits";
+      swaps = [
+        {
+          anchor = "A-ac-flag";
+          to = "flagged = [b for b in parse_ac_blocks(_read(pathlib.Path(path))) if classify(b) == \"command\"]";
+        }
+      ];
+    }
+    # Symlink followed: another file's first line reaches the model context.
+    {
+      id = "M-ac-symlink";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-symlink-silent";
+      swaps = [
+        {
+          anchor = "A-ac-symlink";
+          to = "if not p.is_file():";
+        }
+      ];
+    }
+    # Cap above the case's count: every unproven AC is listed, no "+N more".
+    {
+      id = "M-ac-cap";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-cap-emits";
+      swaps = [
+        {
+          anchor = "A-ac-cap";
+          to = "HOOK_CAP = 100";
+        }
+      ];
+    }
+    # A bare `[lecture]` with no reason exempts its AC.
+    {
+      id = "M-ac-reason";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-bare-lecture-emits";
+      swaps = [
+        {
+          anchor = "A-ac-lecture-re";
+          to = "LECTURE = re.compile(r\"\\[lecture\\]\")";
+        }
+      ];
+    }
+    # No lecture test: a `[lecture] — reason` AC is listed as unproven.
+    {
+      id = "M-ac-lecture";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-lecture-silent";
+      swaps = [
+        {
+          anchor = "A-ac-lecture";
+          to = "if False:";
+        }
+      ];
+    }
+    # No deferred test: a `[deferred to user]` AC is listed as unproven.
+    {
+      id = "M-ac-deferred";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-deferred-silent";
+      swaps = [
+        {
+          anchor = "A-ac-deferred";
+          to = "if False:";
+        }
+      ];
+    }
+    # No AC-docs test: the docs line is listed as unproven.
+    {
+      id = "M-ac-docs";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-docs-silent";
+      swaps = [
+        {
+          anchor = "A-ac-docs";
+          to = "if False:";
+        }
+      ];
+    }
+    # Any .md of a run dir is read as its 02-acs.md.
+    {
+      id = "M-ac-name";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-other-file-silent";
+      swaps = [
+        {
+          anchor = "A-ac-path";
+          to = "ACS_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/[^/]+\\.md$\")";
+        }
+      ];
+    }
+    # Any 02-acs.md, inside an APEX run dir or not.
+    {
+      id = "M-ac-dir";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-outside-run-silent";
+      swaps = [
+        {
+          anchor = "A-ac-path";
+          to = "ACS_PATH = re.compile(r\"/02-acs\\.md$\")";
+        }
+      ];
+    }
+    # Fail-open narrowed to OSError: malformed input exits 1 with a traceback.
+    {
+      id = "M-ac-failopen";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-malformed-silent";
+      swaps = [
+        {
+          anchor = "A-ac-failopen";
+          to = "except OSError:";
+        }
+      ];
+    }
+    # No gate rule in the B2 classifier: `--self-test` mislabels a gate AC.
+    {
+      id = "M-ac-gate";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-self-test";
+      swaps = [
+        {
+          anchor = "A-ac-gate";
+          to = "or False";
         }
       ];
     }
@@ -2437,6 +2617,20 @@ let
     "iw-subagent-silent"
     "iw-malformed-silent"
     "iw-no-prompt-silent"
+    "ac-prose-emits"
+    "ac-edit-emits"
+    "ac-cap-emits"
+    "ac-bare-lecture-emits"
+    "ac-lecture-silent"
+    "ac-deferred-silent"
+    "ac-docs-silent"
+    "ac-proven-silent"
+    "ac-other-file-silent"
+    "ac-outside-run-silent"
+    "ac-missing-silent"
+    "ac-symlink-silent"
+    "ac-malformed-silent"
+    "ac-self-test"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -2496,6 +2690,7 @@ let
     "apex-pr-record.js"
     "worktree-in-use.js"
     "instagram-watch.js"
+    "apex-metrics-probe.py"
   ];
   timeoutsOf =
     n:
@@ -2699,6 +2894,48 @@ let
       [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
       [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
       [ ! -s "$d/$lbl.out" ] || { why="context emitted where silence was due"; kind=mismatch; return 1; }
+    }
+
+    # apex-metrics-probe: an APEX run tree under $ACO, a plain one under $ACR.
+    # Fixture lines are real AC text from run dirs (pin-brag-skill, 75, 65,
+    # 76, 27, 53); AC_BARE is AC_LECT with the reason's dash dropped.
+    ACR="$root/acr"; ACO="$ACR/.claude/output/apex"
+    AC_CMD='AC5: nix flake check --no-build green'
+    AC_CMD2='AC1. `python3 -I checks/apex-metrics-probe.py --self-test` exits 0 and prints the fixture count (≥ 10, both labels present).'
+    AC_PROSE='AC6 Header comment explains the linear-time construction in one or two sentences.'
+    AC_LECT='AC13 [lecture] — the new AC rule reads as one rule in step-02, step-04 and the verify loop, its two exceptions named alike in all three; apex-consistency proves the sentences exist, not that a planner reads them unambiguously.'
+    AC_BARE="''${AC_LECT/"[lecture] — "/"[lecture] "}"
+    AC_DEF='- AC20 [deferred to user] Combinaisons de rôles non exercées par R1/R2 (routage par quota) : listées dans 04-validate.'
+    AC_DOCS='- AC-docs: n/a (text).'
+    # $1 file, then its lines.
+    ac_put() { p="$1"; shift; mkdir -p "''${p%/*}" && printf '%s\n' "$@" > "$p"; }
+    # $1 tool (Write / Edit), $2 file_path.
+    ac_in() { ${jq} -cn --arg t "$1" --arg f "$2" '{hook_event_name:"PostToolUse",tool_name:$t,session_id:"probe",cwd:"/probe/cwd",tool_input:{file_path:$f,content:"x"},tool_response:{filePath:$f}}'; }
+    # $1 expected count of unproven ACs, $2 text the context must carry, then
+    # texts it must not: a proven or exempt AC listed is the miss a canary causes.
+    ac_emits() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the unproven ACs were due"; kind=mismatch; return 1; }
+      ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "PostToolUse") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
+      case "$ctx" in "$1 AC(s) in "*) ;; *) why="context does not start with '$1 AC(s) in ': $ctx"; return 1 ;; esac
+      must="$2"
+      shift 2
+      for x in "$@"; do
+        case "$ctx" in *"$x"*) why="context carries '$x': $ctx"; kind=mismatch; return 1 ;; esac
+      done
+      case "$ctx" in *"$must"*) ;; *) why="context lacks '$must': $ctx"; return 1 ;; esac
+    }
+    ac_silent() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ ! -s "$d/$lbl.out" ] || { why="context emitted where silence was due"; kind=mismatch; return 1; }
+    }
+    # --self-test of the same body: a mislabelled fixture exits 1.
+    ac_selftest() {
+      [ "$rc" -eq 0 ] || { why="self-test exit $rc: $(tail -n 3 "$d/$lbl.out" | tr '\n' ' ')"; kind=mismatch; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      grep -q 'failures=0' "$d/$lbl.out" || { why="no failures=0 in the self-test summary"; return 1; }
     }
 
     # research-model: $1 subagent_type, $2 model (absent when empty or unset).
@@ -3012,7 +3249,8 @@ let
       [ -s "$WH/lsof.log" ] || { why="allowed without ever calling lsof: a matched shape must read liveness before it allows"; return 1; }
     }
 
-    # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin. Leaves the exit status in $rc.
+    # $1 label, $2 body, $3 cwd, $4 PATH, $5 stdin, $6 = a python body's
+    # mode, --hook by default. Leaves the exit status in $rc.
     # $tmo is the host's timeout for the hook under test (probe_case sets it);
     # 124 is `timeout` killing it, which the host reads as no decision.
     # The interpreter goes by the body's name: a mutant's ends with its hook's.
@@ -3020,11 +3258,13 @@ let
     run() {
       printf '%s' "$5" > "$d/$1.in"
       rc=0
+      a=""
       case "$2" in
         *.sh) i=${pkgs.bash}/bin/bash ;;
+        *.py) i=${pkgs.python3}/bin/python3; a="''${6:---hook}" ;;
         *) i=${pkgs.nodejs_22}/bin/node ;;
       esac
-      (cd "$3" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH="$4" ${pkgs.coreutils}/bin/timeout "$tmo" "$i" "$2") \
+      (cd "$3" && env -i GIT_CONFIG_NOSYSTEM=1 HOME="$TMPDIR" PATH="$4" ${pkgs.coreutils}/bin/timeout "$tmo" "$i" ''${a:+-I} "$2" ''${a:+"$a"}) \
         < "$d/$1.in" > "$d/$1.out" 2> "$d/$1.err" || rc=$?
     }
 
@@ -3094,6 +3334,7 @@ let
         apr-*) tmo=${hostTimeout "apex-pr-record.js"} ;;
         wh-*) tmo=${hostTimeout "worktree-in-use.js"} ;;
         iw-*) tmo=${hostTimeout "instagram-watch.js"} ;;
+        ac-*) tmo=${hostTimeout "apex-metrics-probe.py"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -4076,6 +4317,58 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit","prompt":"https://www.instagram.com/reel/Derra61CUhb/'; iw_silent ;;
         iw-no-prompt-silent)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit"}'; iw_silent ;;
+        # apex-metrics-probe --hook: a Write or Edit of a run's 02-acs.md lists
+        # the ACs with no command and no lecture/deferred marker, count first,
+        # capped; anything else is silence, exit 0. --self-test exits 0.
+        ac-prose-emits)
+          f="$ACO/$lbl/02-acs.md"; ac_put "$f" "$AC_CMD" "$AC_PROSE" "$AC_LECT" "$AC_DEF" "$AC_DOCS"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_emits 1 "$AC_PROSE" "AC5:" "AC13" "AC20" "AC-docs" ;;
+        ac-edit-emits)
+          f="$ACO/$lbl/02-acs.md"; ac_put "$f" "$AC_PROSE"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Edit "$f")"; ac_emits 1 "$AC_PROSE" ;;
+        # Twelve unproven: ten shown, then the remainder counted.
+        ac-cap-emits)
+          f="$ACO/$lbl/02-acs.md"; mkdir -p "''${f%/*}"
+          for i in 1 2 3 4 5 6 7 8 9 10 11 12; do printf 'AC%s prose line with no command.\n' "$i"; done > "$f"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_emits 12 "AC10 prose line with no command. | +2 more" "AC11 prose line" ;;
+        # `[lecture]` with no reason exempts nothing.
+        ac-bare-lecture-emits)
+          f="$ACO/$lbl/02-acs.md"; ac_put "$f" "$AC_CMD" "$AC_BARE"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_emits 1 "AC13 [lecture] the" ;;
+        ac-lecture-silent)
+          f="$ACO/$lbl/02-acs.md"; ac_put "$f" "$AC_CMD" "$AC_LECT"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-deferred-silent)
+          f="$ACO/$lbl/02-acs.md"; ac_put "$f" "$AC_CMD" "$AC_DEF"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-docs-silent)
+          f="$ACO/$lbl/02-acs.md"; ac_put "$f" "$AC_CMD" "$AC_DOCS"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-proven-silent)
+          f="$ACO/$lbl/02-acs.md"; ac_put "$f" "$AC_CMD" "$AC_CMD2"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # Another file of a run dir, and a 02-acs.md outside one.
+        ac-other-file-silent)
+          f="$ACO/$lbl/02-plan.md"; ac_put "$f" "$AC_PROSE"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-outside-run-silent)
+          f="$ACR/$lbl/02-acs.md"; ac_put "$f" "$AC_PROSE"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-missing-silent)
+          f="$ACO/$lbl/02-acs.md"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # A 02-acs.md symlink is not followed: its target's text stays out.
+        ac-symlink-silent)
+          f="$ACO/$lbl/02-acs.md"; ac_put "$ACR/$lbl-target.md" "$AC_PROSE"
+          mkdir -p "''${f%/*}" && ln -s "$ACR/$lbl-target.md" "$f" || { why="cannot plant the 02-acs.md symlink"; return 1; }
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # A traceback is a hook error shown to the user: fail-open is exit 0.
+        ac-malformed-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"tool_input":{"file_path":"'
+          [ "$rc" -eq 0 ] || { why="exit $rc: fail-open lost"; kind=mismatch; return 1; }
+          ac_silent ;;
+        ac-self-test)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "" --self-test; ac_selftest ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -4096,6 +4389,7 @@ let
         apr-*) echo ${hookFile "apex-pr-record.js"} ;;
         wh-*) echo ${hookFile "worktree-in-use.js"} ;;
         iw-*) echo ${hookFile "instagram-watch.js"} ;;
+        ac-*) echo ${hookFile "apex-metrics-probe.py"} ;;
       esac
     }
 

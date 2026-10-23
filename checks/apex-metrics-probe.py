@@ -4,19 +4,35 @@ harness change.
 
     B1  correction rounds: runs, runs with a correction round, rate, and the
         correction lines (`- … →` / `C1 … ->`) they hold
-    B2  acceptance criteria in */02-acs.md: proven by a command vs prose only
+    B2  acceptance criteria in */02-acs.md: proven by a command vs prose only,
+        and the class of each one (below)
     B3  tokens by phase from the `## Tokens` table of */00-context.md
         (n and median per phase)
     B4  memory index health: MEMORY.md lines/bytes, notes missing from the
         index, index links to missing notes, dangling [[wikilinks]]
 
-Manual probe, outside the flake (the run dirs are git-ignored):
+The metrics stay a manual probe (the run dirs are git-ignored), while
+--self-test and --hook are run by checks/hook-wiring.nix:
 
     python3 -I checks/apex-metrics-probe.py [--runs DIR] [--memory DIR]
     python3 -I checks/apex-metrics-probe.py --self-test
+    python3 -I checks/apex-metrics-probe.py --acs FILE
+    python3 -I checks/apex-metrics-probe.py --hook < event.json
 
 Output: one key=value line per metric, sorted. A missing directory or index
 exits 2 with a message on stderr.
+
+--acs FILE prints the class of each AC of one 02-acs.md, then the counts;
+exit 1 when one is unproven, 2 when the file is missing.
+
+--hook is the same file deployed as the PostToolUse hook on Write|Edit
+(~/.claude/hooks/apex-metrics-probe.py): it reads the event on stdin and,
+when the written file is an APEX run's 02-acs.md, lists its unproven ACs,
+count first and capped, as context for the model. A symlink, a non-regular
+file or one over HOOK_MAX_BYTES is not read: DEFERRED backtracks
+quadratically on a line of unclosed brackets, 0.8 s at 64 KiB. One classifier for the
+plan-time gate and the B2 metric. Anything else, an error included, exits 0
+with nothing on stdout.
 
 B2 CLASSIFIER. An AC is a block: its marker line (`AC1`, `AC-2`, `**AC`,
 `1.` / `1)`, `- ` / `* `) plus its continuation lines, up to a blank line, a
@@ -33,11 +49,21 @@ it follows. The block has a command when:
     `*-probe N/N` score …).
 Everything else is prose. v0 counted any backtick as a command.
 
+B2 CLASSES. Each block gets one of five classes, first match wins:
+  - deferred: a bracket holding `deferred to user` (`[deferred to user]`,
+    `[démarrage deferred to user R-e]`), even when it names a command;
+  - lecture: `[lecture]` then a dash or a colon and a reason;
+  - docs: the block starts with `AC-docs`;
+  - command: the rule above;
+  - unproven: everything else, a subset of the prose blocks.
+
 --self-test grades that classifier on real AC text copied from run dirs,
 then runs the v0 rule on the same table: if v0 mislabels nothing, the
-fixtures cannot fail and the self-test exits 1.
+fixtures cannot fail and the self-test exits 1. The class table is graded
+the same way against the unmarked rule (command or unproven only).
 """
 import argparse
+import json
 import pathlib
 import re
 import sys
@@ -57,6 +83,13 @@ GATE = re.compile(
     r"|[\w./-]+-(?:probe|fuzz|bench)\.(?:sh|py)\b"
     r"|\b[\w-]+-(?:probe|fuzz|bench)(?: stays)? \d+/\d+"
 )
+LECTURE = re.compile(r"\[lecture\]\s*[—–:-]\s*\S")
+DEFERRED = re.compile(r"\[[^\[\]\n]*\bdeferred to user\b[^\]\n]*\]")
+AC_DOCS = re.compile(r"^\s*(?:[-*]\s+)?\**AC-docs\b")
+ACS_PATH = re.compile(r"/\.claude/output/apex/[^/]+/02-acs\.md$")
+CLASSES = ("command", "deferred", "docs", "lecture", "unproven")
+HOOK_CAP = 10
+HOOK_MAX_BYTES = 64 * 1024
 AC_START = re.compile(r"^(\s*)(?:[-*]\s+|\d+[.)]\s+|\*\*AC|AC[-\d])")
 FENCE = re.compile(r"^\s*```")
 BREAK = re.compile(r"^\s*(?:#|---+\s*$)")
@@ -135,6 +168,17 @@ def has_command(block):
     )
 
 
+def classify(block):
+    text = block.text()
+    if DEFERRED.search(text):
+        return "deferred"
+    if LECTURE.search(text):
+        return "lecture"
+    if AC_DOCS.match(block.prose[0]):
+        return "docs"
+    return "command" if has_command(block) else "unproven"
+
+
 def has_command_v0(block):
     """The v0 rule, kept as the self-test's mutant: any backtick = command."""
     return "`" in block.prose[0]
@@ -194,6 +238,38 @@ FIXTURES = [
      "AC6 Header comment explains the linear-time construction in one or two sentences."),
 ]
 
+# Real AC blocks, verbatim from .claude/output/apex/<run>/02-acs.md.
+# (run dir, AC, expected class, text)
+CLASS_FIXTURES = [
+    ("25-goat-worker-launchagent", "AC8", "deferred", (
+        "- AC8 [deferred to user] — Témoin avant bootstrap (après Ctrl-C, ≥25 s) : "
+        "PING20 = 0 ligne ; `launchctl print S` rc ≠ 0.")),
+    ("27-goat-agent-sandbox", "AC20", "deferred", (
+        "- AC20 [deferred to user] Combinaisons de rôles non exercées par R1/R2 "
+        "(routage par quota) : listées dans 04-validate.")),
+    ("24-goat-windmill-poc", "AC15", "deferred", (
+        "AC15 — Routage positif : même job, après démarrage du worker "
+        "[démarrage deferred to user R-e] → terminé, sortie contient `Darwin` "
+        "et les chemins de claude et codex.")),
+    ("53-apex-leftovers", "AC-docs", "docs",
+     "- AC-docs: n/a (text)."),
+    ("54-nix-audit-fixes", "AC-docs", "docs",
+     "- AC-docs: nixfmt@1.5.0 — `nixfmt --check <files>` (rung 5)."),
+    ("76-apex-ac-proof", "AC13", "lecture", (
+        "AC13 [lecture] — the new AC rule reads as one rule in step-02, step-04 and "
+        "the verify loop, its two exceptions named alike in all three; "
+        "apex-consistency proves the sentences exist, not that a planner reads "
+        "them unambiguously.")),
+    ("27-goat-agent-sandbox", "AC3", "unproven", (
+        "- AC3 Chaque exception L4/W6 du profil figure dans "
+        "`scratchpad/apex27/03-exceptions.md` avec la commande D1/D2 qui l'exige "
+        "(relecture coordinateur, 1:1).")),
+    ("65-git-prefix-redos", "AC6", "unproven",
+     "AC6 Header comment explains the linear-time construction in one or two sentences."),
+    ("53-apex-leftovers", "AC3", "command",
+     "- AC3: nix flake check green; diff limited to the 2 files."),
+]
+
 
 def self_test():
     failures = []
@@ -214,10 +290,27 @@ def self_test():
         failures.append(f"table too thin: {n_cmd} command, {n_prose} prose (need >= 6 and >= 4)")
     if v0_wrong == 0:
         failures.append("fixtures cannot fail: the v0 rule mislabels none of them")
+    unmarked_wrong = 0
+    for run, ac, expected, text in CLASS_FIXTURES:
+        blocks = parse_ac_blocks(text)
+        if len(blocks) != 1:
+            failures.append(f"{run} {ac}: parsed as {len(blocks)} blocks, expected 1")
+            continue
+        got = classify(blocks[0])
+        if got != expected:
+            failures.append(f"{run} {ac}: classed {got}, expected {expected}")
+        if ("command" if has_command(blocks[0]) else "unproven") != expected:
+            unmarked_wrong += 1
+    missing = [c for c in CLASSES if c not in {f[2] for f in CLASS_FIXTURES}]
+    if missing:
+        failures.append(f"class table too thin: no fixture for {', '.join(missing)}")
+    if unmarked_wrong == 0:
+        failures.append("class fixtures cannot fail: the unmarked rule mislabels none of them")
     for f in failures:
         print(f"FAIL {f}")
     print(f"self-test fixtures={len(FIXTURES)} command={n_cmd} prose={n_prose} "
-          f"v0_mislabels={v0_wrong} failures={len(failures)}")
+          f"v0_mislabels={v0_wrong} class_fixtures={len(CLASS_FIXTURES)} "
+          f"unmarked_mislabels={unmarked_wrong} failures={len(failures)}")
     return 1 if failures else 0
 
 
@@ -226,7 +319,7 @@ def _label(is_cmd):
 
 
 def _read(path):
-    return path.read_text(errors="replace")
+    return path.read_text(encoding="utf-8", errors="replace")
 
 
 def metrics(runs_root, mem_root):
@@ -250,18 +343,22 @@ def metrics(runs_root, mem_root):
     # B2: ACs proven by a command vs prose only
     ac_files = sorted(runs_root.glob("*/02-acs.md"))
     proven = prose = 0
+    counts = dict.fromkeys(CLASSES, 0)
     for f in ac_files:
         for block in parse_ac_blocks(_read(f)):
             if has_command(block):
                 proven += 1
             else:
                 prose += 1
+            counts[classify(block)] += 1
     total = proven + prose
     out["B2.ac_files"] = len(ac_files)
     out["B2.acs"] = total
     out["B2.with_command"] = proven
     out["B2.prose_only"] = prose
     out["B2.prose_rate"] = f"{prose / total:.1%}" if total else "n/a"
+    for cls in ("deferred", "docs", "lecture", "unproven"):
+        out[f"B2.{cls}"] = counts[cls]
 
     # B3: tokens by phase from 00-context Tokens tables
     phase_tok = {}
@@ -305,6 +402,45 @@ def metrics(runs_root, mem_root):
     return out
 
 
+def acs_report(path):
+    """--acs: the class of each AC of one 02-acs.md, then the counts."""
+    try:
+        text = _read(path)
+    except OSError as e:
+        print(f"apex-metrics-probe: cannot read {path}: {e.strerror or e}", file=sys.stderr)
+        return 2
+    blocks = parse_ac_blocks(text)
+    counts = dict.fromkeys(CLASSES, 0)
+    for block in blocks:
+        cls = classify(block)
+        counts[cls] += 1
+        print(f"{cls}\t{block.prose[0].strip()[:100]}")
+    print(f"acs={len(blocks)} " + " ".join(f"{c}={counts[c]}" for c in CLASSES))
+    return 1 if counts["unproven"] > 0 else 0
+
+
+def hook():
+    data = json.loads(sys.stdin.read())
+    path = data["tool_input"]["file_path"]
+    if not isinstance(path, str) or not ACS_PATH.search(path):
+        return 0
+    p = pathlib.Path(path)
+    if p.is_symlink() or not p.is_file():
+        return 0
+    if p.stat().st_size > HOOK_MAX_BYTES:
+        return 0
+    flagged = [b for b in parse_ac_blocks(_read(pathlib.Path(path))) if classify(b) == "unproven"]
+    if not flagged:
+        return 0
+    shown = " | ".join(b.prose[0].strip()[:120] for b in flagged[:HOOK_CAP])
+    more = f" | +{len(flagged) - HOOK_CAP} more" if len(flagged) > HOOK_CAP else ""
+    msg = (f"{len(flagged)} AC(s) in {path} name no command and carry neither "
+           "`[lecture] — reason` nor `[deferred to user]`; validate reports them non prouvé: "
+           f"{shown}{more}")
+    print(json.dumps({"hookSpecificOutput": dict(hookEventName="PostToolUse", additionalContext=msg)}))
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="APEX run metrics (B1-B4).")
     ap.add_argument("--runs", type=pathlib.Path, default=pathlib.Path(".claude/output/apex"))
@@ -315,9 +451,20 @@ def main():
     )
     ap.add_argument("--self-test", action="store_true",
                     help="grade the B2 classifier on real AC fixtures")
+    ap.add_argument("--acs", type=pathlib.Path,
+                    help="print the class of each AC of one 02-acs.md")
+    ap.add_argument("--hook", action="store_true",
+                    help="PostToolUse hook: read the event on stdin, list unproven ACs")
     args = ap.parse_args()
+    if args.hook:
+        try:
+            return hook()
+        except Exception:
+            return 0
     if args.self_test:
         return self_test()
+    if args.acs is not None:
+        return acs_report(args.acs.expanduser())
     runs_root = args.runs.expanduser()
     mem_root = args.memory.expanduser()
     for label, path in (("runs dir", runs_root), ("memory dir", mem_root)):

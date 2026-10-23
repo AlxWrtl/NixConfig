@@ -1207,6 +1207,19 @@ let
         }
       ];
     }
+    # No normalization: `…/apex/64-z/` or `…//.claude/…` is taken for run
+    # 64-z, the stamped dir no longer the one the grant hook rebuilds.
+    {
+      id = "M-cb-abs-norm";
+      hook = "correction-budget.js";
+      kills = "cb-abs-run-unnormalized-deny";
+      swaps = [
+        {
+          anchor = "A-cb-abs";
+          to = "if (path.isAbsolute(marker) && path.dirname(marker).endsWith(path.sep + APEX_OUT)) {";
+        }
+      ];
+    }
     # Run-ids only: a correction round for a run outside the session's repo
     # is denied, the stub-dir workaround back.
     {
@@ -2232,6 +2245,7 @@ let
     "cb-abs-run-allow"
     "cb-abs-run-cap-deny"
     "cb-abs-run-bad-deny"
+    "cb-abs-run-unnormalized-deny"
     "cg-token-grants"
     "cg-no-token"
     "cg-inline-token-ignored"
@@ -3321,6 +3335,13 @@ let
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/notapex/64-z")"; is_deny "nor an absolute <repo>/.claude/output/apex/<run-id> path" || return 1
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/.claude/output/apex/../apex/64-z")"; is_deny "nor an absolute <repo>/.claude/output/apex/<run-id> path" || return 1
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/.claude/output/apex/65-none")"; is_deny "65-none: run dir not found" || return 1
+          [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
+        # An existing run dir spelled unnormalized (trailing `/`, `//`):
+        # denied, nothing counted.
+        cb-abs-run-unnormalized-deny)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$CBOTHER/")"; is_deny "nor an absolute <repo>/.claude/output/apex/<run-id> path" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother//.claude/output/apex/64-z")"; is_deny "nor an absolute <repo>/.claude/output/apex/<run-id> path" || return 1
           [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
         # correction-grant: only the user's token, as the first non-empty
         # line, only for the project's live run once spent.

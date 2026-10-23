@@ -54,6 +54,9 @@
 #      lone-excluded-bash: behind cd &&, piped, with an argument or via
 #      pnpm run denied; each alone, chained to each other, and other pnpm
 #      scripts allowed.
+#      The preliz-deploy run adds pnpm run deploy / deploy:prod: behind
+#      cd &&, redirected to a file, piped or with an argument denied; each
+#      alone or with 2>&1, and pnpm deploy:prod without run, allowed.
 #      The sandbox-escape run adds sandbox-escape-evidence: an escape with
 #      no sandbox error in the newest Bash batch denied, an older batch's
 #      error, a skill body naming the flag, an allowlisted verb inside
@@ -563,6 +566,10 @@ let
     A-le-pnpm-clean = {
       hook = "lone-excluded-bash.js";
       text = "if (w0.val === \"pnpm\") return words.length === 2 && w1.plain && PNPM_SCRIPTS.includes(w1.val);";
+    };
+    A-le-run-scripts = {
+      hook = "lone-excluded-bash.js";
+      text = "const RUN_SCRIPTS = [\"deploy\", \"deploy:prod\"];";
     };
     A-se-failopen = {
       hook = "sandbox-escape-evidence.js";
@@ -1531,6 +1538,18 @@ let
         }
       ];
     }
+    # The deploy run scripts not targets: `cd … && pnpm run deploy` passes.
+    {
+      id = "M-le-run-scripts";
+      hook = "lone-excluded-bash.js";
+      kills = "le-deploy-cd-deny";
+      swaps = [
+        {
+          anchor = "A-le-run-scripts";
+          to = "const RUN_SCRIPTS = [];";
+        }
+      ];
+    }
     # Sandbox-escape run. Fail-closed on malformed input.
     {
       id = "M-se-failopen";
@@ -2293,6 +2312,10 @@ let
     "le-pnpm-pipe-deny"
     "le-pnpm-args-deny"
     "le-pnpm-run-deny"
+    "le-deploy-cd-deny"
+    "le-deploy-redir-deny"
+    "le-deploy-prod-pipe-deny"
+    "le-deploy-prod-args-deny"
     "le-push-allow"
     "le-push-u-allow"
     "le-commit-F-allow"
@@ -2310,6 +2333,10 @@ let
     "le-pnpm-chain-allow"
     "le-pnpm-install-allow"
     "le-pnpm-pipe-other-allow"
+    "le-deploy-allow"
+    "le-deploy-prod-allow"
+    "le-deploy-dup-allow"
+    "le-deploy-norun-allow"
     "le-retired-bg-cd-allow"
     "le-malformed-allow"
     "le-command-v-allow"
@@ -3516,6 +3543,16 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm localdb:stop --rm')"; is_deny "with arguments after it" ;;
         le-pnpm-run-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm run localdb:start')"; is_deny "next to another command" ;;
+        # pnpm run deploy / deploy:prod are exact entries too: a prefix, a
+        # file redirection, a pipe or an argument keeps the call sandboxed.
+        le-deploy-cd-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'cd ~/projects/Preliz && pnpm run deploy')"; is_deny "next to another command" ;;
+        le-deploy-redir-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm run deploy < /dev/null > $TMPDIR/x')"; is_deny "file redirection" ;;
+        le-deploy-prod-pipe-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm run deploy:prod | tail')"; is_deny "next to another command" ;;
+        le-deploy-prod-args-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm run deploy:prod --force')"; is_deny "with arguments after it" ;;
         le-command-v-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'command -v gh')"; is_allow ;;
         le-push-allow)
@@ -3553,6 +3590,15 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm install')"; is_allow ;;
         le-pnpm-pipe-other-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm typecheck | tail')"; is_allow ;;
+        le-deploy-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm run deploy')"; is_allow ;;
+        le-deploy-prod-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm run deploy:prod')"; is_allow ;;
+        le-deploy-dup-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm run deploy 2>&1')"; is_allow ;;
+        # No `run`: no excluded entry matches, so not a target: silent.
+        le-deploy-norun-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm deploy:prod')"; is_allow ;;
         le-malformed-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
         # Sandbox-escape run: the flag needs sandbox evidence in the newest

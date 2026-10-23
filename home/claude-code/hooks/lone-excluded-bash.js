@@ -2,13 +2,15 @@
 "use strict";
 
 // The sandbox-excluded commands (settings.nix excludedCommands: git
-// push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start/stop) leave
+// push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start/stop,
+// pnpm run deploy/deploy:prod) leave
 // the sandbox only when the Bash call is made of them alone. `cd x && git push`,
 // `git -C x push`, a pipe, `$(...)`, a heredoc or a file redirection keep the
 // WHOLE call sandboxed, where the keychain and ~/.ssh are denied: the network
 // or signing step fails (x509, no SSH key; EPERM on the abduco socket (create-session) for claude-dispatch;
 // EPERM on the colima docker socket for pnpm localdb:start/stop, and those two
-// are exact entries: an argument keeps them in)
+// are exact entries: an argument keeps them in; so are pnpm run deploy /
+// deploy:prod, which need the keychain for wrangler OAuth)
 // and the retry turns into a permission prompt. Refusing that
 // shape up front, with the fix in the reason, costs one retry instead.
 //
@@ -25,6 +27,8 @@ const MAX_INPUT = 4 * 1024 * 1024;
 const MAX_DEPTH = 8;
 const VERBS = ["push", "commit", "pull", "fetch"];
 const PNPM_SCRIPTS = ["localdb:start", "localdb:stop"];
+// Excluded only as `pnpm run <script>` (exact entries, Preliz deploys).
+const RUN_SCRIPTS = ["deploy", "deploy:prod"];
 // pnpm options that take their value as the NEXT word.
 const PNPM_ARG_OPTS = ["-C", "--dir", "-F", "--filter"];
 // Run the word after them (and their options) as the command. Their
@@ -63,7 +67,7 @@ const CAUSE = {
   group: "inside a subshell or a { } group",
   background: "sent to the background with &",
   shape: "next to another command or behind a prefix (cd &&, a pipe, ;, git -C / -c, VAR=, a wrapper, an absolute path, a quoted verb)",
-  args: "with arguments after it (the pnpm localdb:start / localdb:stop exclusions are exact: those two words, nothing after)"
+  args: "with arguments after it (the pnpm localdb:start / localdb:stop and pnpm run deploy / deploy:prod exclusions are exact: those words, nothing after)"
 };
 
 let settled = false;
@@ -375,11 +379,14 @@ function segTargets(words, depth) {
   if (cmd === "claude-dispatch") return [cmd];
   if (cmd === "pnpm") {
     let j = k + 1;
+    let viaRun = false;
     while (j < words.length) {
       const v = words[j].val;
       if (PNPM_ARG_OPTS.includes(v)) { j += 2; continue; }
-      if (v.startsWith("-") || v === "run") { j++; continue; }
-      return PNPM_SCRIPTS.includes(v) ? ["pnpm " + v] : [];
+      if (v === "run") { viaRun = true; j++; continue; }
+      if (v.startsWith("-")) { j++; continue; }
+      if (PNPM_SCRIPTS.includes(v)) return ["pnpm " + v];
+      return viaRun && RUN_SCRIPTS.includes(v) ? ["pnpm run " + v] : [];
     }
     return [];
   }
@@ -414,18 +421,21 @@ function targetsOf(r, depth) {
 
 // Clean = what an excludedCommands entry matches: `git` then the verb, or
 // `gh` / `claude-dispatch`, literal words at the head of the
-// segment; `pnpm` then a localdb script and nothing after (exact entries).
+// segment; `pnpm` then a localdb script, or `pnpm run` then a deploy
+// script, and nothing after (exact entries).
 function isCleanTarget(words) {
   const w0 = words[0];
   const w1 = words[1];
   if (w0 === undefined || !w0.plain) return false;
   if (w0.val === "gh" || w0.val === "claude-dispatch") return true;
+  if (w0.val === "pnpm" && words.length === 3 && w1.plain && w1.val === "run" && words[2].plain && RUN_SCRIPTS.includes(words[2].val)) return true;
   if (w0.val === "pnpm") return words.length === 2 && w1.plain && PNPM_SCRIPTS.includes(w1.val);
   return w0.val === "git" && w1 !== undefined && w1.plain && VERBS.includes(w1.val);
 }
 
-// `pnpm localdb:stop --rm`: the head is clean, the exact entry is not met.
-const isPnpmWithArgs = (w) => w.length > 2 && w[0].val === "pnpm" && isCleanTarget(w.slice(0, 2));
+// `pnpm localdb:stop --rm`, `pnpm run deploy:prod --force`: the head is
+// clean, the exact entry is not met.
+const isPnpmWithArgs = (w) => w[0].val === "pnpm" && ((w.length > 2 && isCleanTarget(w.slice(0, 2))) || (w.length > 3 && isCleanTarget(w.slice(0, 3))));
 
 // The first reason the call stays sandboxed, or null when it leaves it.
 // A chain made ONLY of clean targets leaves it (user decision 2026-10-11).
@@ -465,7 +475,7 @@ function main() {
   let v;
   try { v = decide(cmd); } catch { allow(); return; }
   if (v === null) { allow(); return; }
-  deny("BLOCKED: `" + safe(v.target) + "` leaves the sandbox only when the Bash call is that command alone; here it runs " + v.cause + ", so the whole call stays sandboxed and its network, signing or docker-socket step fails. Run it ALONE in its own Bash call, from the project root: the cwd resets after each call, so neither cd nor git -C can help, and a repo outside the project root has no unsandboxed form (let the sandboxed call fail, then answer the permission prompt). Pass a message by file (git commit -F <file>, gh ... --body-file <file>), filter gh output with --jq instead of a pipe. Give claude-dispatch its brief inline as one quoted line, never through $(...) or a file. Run pnpm localdb:start / pnpm localdb:stop as exactly those two words: no argument, no pnpm option, no pnpm run; other pnpm scripts (dev:localdb, smoke:localdb) stay sandboxed by design. Lone git push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start and pnpm localdb:stop commands may still be joined with &&.");
+  deny("BLOCKED: `" + safe(v.target) + "` leaves the sandbox only when the Bash call is that command alone; here it runs " + v.cause + ", so the whole call stays sandboxed and its network, signing or docker-socket step fails. Run it ALONE in its own Bash call, from the project root: the cwd resets after each call, so neither cd nor git -C can help, and a repo outside the project root has no unsandboxed form (let the sandboxed call fail, then answer the permission prompt). Pass a message by file (git commit -F <file>, gh ... --body-file <file>), filter gh output with --jq instead of a pipe. Give claude-dispatch its brief inline as one quoted line, never through $(...) or a file. Run pnpm localdb:start / pnpm localdb:stop as exactly those two words: no argument, no pnpm option, no pnpm run; other pnpm scripts (dev:localdb, smoke:localdb) stay sandboxed by design. Run pnpm run deploy / pnpm run deploy:prod as exactly those three words, from the project root: no cd, no argument, no redirection. Lone git push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start, pnpm localdb:stop, pnpm run deploy and pnpm run deploy:prod commands may still be joined with &&.");
 }
 
 function start() {

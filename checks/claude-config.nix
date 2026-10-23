@@ -392,6 +392,53 @@ let
     );
   runnerNixExcluded = builtins.filter isRunnerNixEntry excludedCommands;
 
+  # --- A30: Preliz deploys, exact entries only (user decision 2026-10-23) ---
+  # A deploy left the sandbox reaches no classifier and no box: only the two
+  # exact `pnpm run` forms may. A wildcard (`pnpm *`, `pnpm run *`), the
+  # pnpm-builtin `pnpm deploy…` or anything after `pnpm run deploy` would let
+  # any script or argument out. The predicate is proven on fixed samples, so
+  # a regex that flags nothing cannot pass vacuously.
+  deployExcluded = [
+    "pnpm run deploy"
+    "pnpm run deploy:prod"
+  ];
+  deployAllow = map (c: "Bash(${c})") deployExcluded;
+  isWildPnpmEntry =
+    c:
+    builtins.isString c
+    && (
+      (hasPrefix "pnpm" c && hasInfix "*" c)
+      || hasPrefix "pnpm deploy" c
+      || (hasPrefix "pnpm run deploy" c && !(builtins.elem c deployExcluded))
+    );
+  wildPnpmPredicateLive =
+    builtins.all isWildPnpmEntry [
+      "pnpm *"
+      "pnpm run *"
+      "pnpm run deploy:prod *"
+      "pnpm deploy:prod"
+      "pnpm run deploy --force"
+    ]
+    && !(builtins.any isWildPnpmEntry (
+      deployExcluded
+      ++ [
+        "pnpm localdb:start"
+        "pnpm localdb:stop"
+      ]
+    ));
+  missingDeployExcluded = builtins.filter (c: !(builtins.elem c excludedCommands)) deployExcluded;
+  wildPnpmExcluded = builtins.filter isWildPnpmEntry excludedCommands;
+  missingDeployAllow = builtins.filter (c: !(builtins.elem c allow)) deployAllow;
+  prodNeedle = "pnpm run deploy:prod";
+  amProdEnv = builtins.filter (e: builtins.isString e && hasInfix prodNeedle e) (
+    if builtins.isList amEnv then amEnv else [ ]
+  );
+  amProdAllow = builtins.filter (e: builtins.isString e && hasInfix prodNeedle e) (
+    if builtins.isList amAllow then amAllow else [ ]
+  );
+  amProdAllowYes = builtins.filter (hasInfix "explicit yes") amProdAllow;
+  show = xs: if xs == [ ] then "none" else builtins.concatStringsSep ", " xs;
+
   requiredDeny = [
     "Bash(git push --force *)"
     "Bash(git push -f *)"
@@ -802,6 +849,37 @@ let
         + " / excludes a command runner: "
         + builtins.concatStringsSep ", " runnerNixExcluded
         + " — user decision 2026-10-22: `nix build *`, `nix eval *` and `docker *` run unsandboxed (daemon socket = root-equivalent for a trusted user, docker = host-equivalent; risk accepted), while `nix shell`/`nix run`/`nix develop` (and a bare `nix *`) execute arbitrary commands and stay sandboxed. pgrep/ps need the com.apple.sysmond mach service and nothing wider; Node's fetch ignores HTTP(S)_PROXY unless NODE_USE_ENV_PROXY=1, so sandboxed fetch cannot reach the proxy without it";
+    }
+    {
+      name = "A30 settings: Preliz deploys excluded and allowed as exact entries only";
+      ok =
+        wildPnpmPredicateLive
+        && missingDeployExcluded == [ ]
+        && wildPnpmExcluded == [ ]
+        && missingDeployAllow == [ ]
+        && amProdEnv != [ ]
+        && amProdAllowYes != [ ];
+      msg =
+        (
+          if wildPnpmPredicateLive then
+            ""
+          else
+            "the isWildPnpmEntry predicate no longer separates its samples / "
+        )
+        + "sandbox.excludedCommands is missing: "
+        + show missingDeployExcluded
+        + " / lets out a wildcard or loose pnpm form: "
+        + show (map builtins.toJSON wildPnpmExcluded)
+        + " / permissions.allow is missing: "
+        + show missingDeployAllow
+        + (if amProdEnv != [ ] then "" else " / no autoMode.environment entry names `${prodNeedle}`")
+        + (
+          if amProdAllowYes != [ ] then
+            ""
+          else
+            " / no autoMode.allow entry names `${prodNeedle}` together with `explicit yes`"
+        )
+        + " — user decision 2026-10-23: Preliz preprod and prod deploys run unsandboxed and unprompted, as exactly `pnpm run deploy` / `pnpm run deploy:prod` (excluded AND allowed, so the classifier never reviews them: in the sandbox it blocks production deploys by default). Any wildcard, the `pnpm deploy…` builtin or an argument after the script widens that hole to every script or flag. The only guard left on prod is conversational: the classifier context must say prod runs only after the user's explicit yes in the conversation";
     }
     {
       name = "A14d sandbox: no `claude …` entry in excludedCommands, only the claude-dispatch wrapper";

@@ -14,8 +14,14 @@
 # their own `*-listener-config`: after changing it, run
 # `kubectl -n arc-systems delete autoscalinglisteners --all` (ARC recreates them).
 # ⚠️ No public repo here: a fork's pull request would run its code on this Mac.
-{ lib, ... }:
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
 let
+  defaultYaml = "${config.services.colima.colimaHomeDir}/default/colima.yaml";
   arcVersion = "0.15.0";
   charts = "oci://ghcr.io/actions/actions-runner-controller-charts";
   # release name (= `runs-on:` label) → repository
@@ -83,6 +89,17 @@ in
         sshConfig = false;
         autoActivate = true;
         kubernetes.enabled = false;
+        # timesyncd's default 34 min poll lets the VM clock drift ~100 ms.
+        provision = [
+          {
+            mode = "system";
+            script = ''
+              mkdir -p /etc/systemd/timesyncd.conf.d
+              printf '[Time]\nPollIntervalMaxSec=64\n' > /etc/systemd/timesyncd.conf.d/poll.conf
+              systemctl restart systemd-timesyncd
+            '';
+          }
+        ];
       };
     };
     # CI VM: never takes the Docker/Kubernetes context (`default` holds it).
@@ -127,4 +144,17 @@ in
       };
     };
   };
+
+  # `colima start default` rewrites its colima.yaml and fails on the module's
+  # read-only store symlink: install a writable copy instead, reset each switch.
+  home.file.${defaultYaml}.enable = false;
+  home.activation.colimaDefaultYaml = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
+    target="$HOME/${defaultYaml}"
+    if [ -L "$target" ]; then run rm -f "$target"; fi
+    run mkdir -p "$(dirname "$target")"
+    run cp ${
+      (pkgs.formats.yaml { }).generate "colima.yaml" config.services.colima.profiles.default.settings
+    } "$target"
+    run chmod u+w "$target"
+  '';
 }

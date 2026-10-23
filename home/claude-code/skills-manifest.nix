@@ -270,7 +270,7 @@ in
       ];
     }
     {
-      # Router only: the upstream skill directories, LICENSE and
+      # Router + our hig-audit; the upstream skill directories, LICENSE and
       # performance-cheatsheet.md (the emil-skills flake input) are
       # directory/file links declared in home/claude-code.nix.
       name = "ui-expert";
@@ -278,6 +278,10 @@ in
         {
           path = "SKILL.md";
           text = skills.skillUiExpert;
+        }
+        {
+          path = "hig-audit/SKILL.md";
+          text = skills.skillUiExpertHigAudit;
         }
       ];
     }

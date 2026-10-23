@@ -3272,19 +3272,21 @@ in
   # =========================================================================
   # ui-expert — router over Emil Kowalski's UI/motion skills (emil-skills
   # flake input, linked verbatim next to this file by home/claude-code.nix).
-  # Our additions live here only: routing, the greeting rule, the errata.
+  # Our additions live here only: routing, the greeting rule, the errata,
+  # and hig-audit/ (skillUiExpertHigAudit below).
   # =========================================================================
   skillUiExpert = ''
     ---
     name: ui-expert
-    description: "Design-engineering expertise for front-end UI and motion: building, reviewing or auditing animations (easing, duration, springs, enter/exit, stagger, clip-path), gestures (drag, swipe, sheets, drawers, momentum), animation performance and jank, making a web app feel native on a phone, stress-testing UI with worst-case data, prototyping UI variants, picking a front-end library, Sonner toasts, React Native / Expo motion, Apple design principles (materials, typography, reduced motion), and naming an animation effect. Use for any web or React Native UI polish or motion question. Not for backend code, not for Swift/SwiftUI."
+    description: "Design-engineering expertise for front-end UI and motion: building, reviewing or auditing animations (easing, duration, springs, enter/exit, stagger, clip-path), gestures (drag, swipe, sheets, drawers, momentum), animation performance and jank, making a web app feel native on a phone, stress-testing UI with worst-case data, prototyping UI variants, picking a front-end library, Sonner toasts, React Native / Expo motion, Apple design principles (materials, typography, reduced motion), Apple HIG audits (accessibility, touch targets, forms, labels, focus), and naming an animation effect. Use for any web or React Native UI polish or motion question. Not for backend code, not for Swift/SwiftUI."
     ---
 
     # ui-expert — Emil Kowalski's design-engineering skills
 
     Every path below is relative to `~/.claude/skills/ui-expert/`. The
-    sub-skills are Emil Kowalski's own files, unchanged; this file only
-    routes to them and corrects them where they are wrong.
+    sub-skills are Emil Kowalski's own files, unchanged, except
+    `hig-audit/`, which is ours; this file only routes to them and corrects
+    them where they are wrong.
 
     ## Rules
 
@@ -3302,6 +3304,10 @@ in
        (review motion code, choose a library, build variants), not on
        your own initiative.
     5. The Errata section below wins over the sub-skill text.
+    6. Project design skill wins: when the project has its own
+       design-system skill (tokens, colors, components, typography), it
+       overrides any value here; this skill gives the craft, the project
+       skill gives the values.
 
     ## Routing
 
@@ -3322,6 +3328,7 @@ in
     | Stress-test a component with worst-case data | `break-ui/SKILL.md` + `break-ui/CATALOG.md` |
     | Sonner toasts: setup, API, troubleshooting | `ask-sonner/SKILL.md` + `ask-sonner/API.md` |
     | Quick performance fixes | `performance-cheatsheet.md` |
+    | Apple HIG audit of a screen or component: accessibility, touch targets, labels, forms, focus, contrast | `hig-audit/SKILL.md` |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3353,19 +3360,543 @@ in
       the `<meta>` tag itself) before applying.
 
     Source: emilkowalski/skills @ 2d22863 (github.com/emilkowalski/skills),
-    MIT, see `LICENSE` beside this file.
+    MIT, see `LICENSE` beside this file. `hig-audit/` is ours, derived from
+    Apple's Human Interface Guidelines, not upstream.
     ${contract {
       expects = "a UI, motion, gesture, mobile-web, library-choice or toast question, or code to build, review or audit.";
       produces = "the answer or implementation following the routed sub-skill, corrected by the Errata.";
       sideEffects = "none from the router; a sub-skill may write code or plans when the task asks for it.";
     }}
     ${scope {
-      useWhen = "Front-end UI polish, animation, gestures, motion performance, mobile web feel, UI stress tests, UI variants, library picks, Sonner, React Native / Expo motion.";
-      notFor = "Backend or non-visual code, Swift/SwiftUI, or brand look and design tokens (design-md).";
+      useWhen = "Front-end UI polish, animation, gestures, motion performance, mobile web feel, UI stress tests, UI variants, library picks, Sonner, React Native / Expo motion, Apple HIG audits.";
+      notFor = "Backend or non-visual code, Swift/SwiftUI, brand look and design tokens (design-md), or the project's own tokens (its design skill).";
     }}
     ${handoffs [
       "Brand palette, typography or a named brand's look → design-md."
     ]}
+  '';
+
+  # ui-expert/hig-audit/SKILL.md — ours, not upstream: Apple HIG audit
+  # procedure, generalized from a project skill. Plain sub-file read through
+  # the router (not discovered as a skill), so no contract footer; motion
+  # physics stay in apple-design/SKILL.md and are pointed to, not restated.
+  skillUiExpertHigAudit = ''
+    ---
+    name: hig-audit
+    description: Apple HIG compliance audit of a web screen or component — accessibility, touch targets, labels, forms, focus, contrast, feedback, modality, navigation — with a code scan, a per-screen checklist and a severity-graded report. Sub-file of ui-expert, read through its router.
+    ---
+
+    # Apple HIG Audit
+
+    > This file = audit procedure + UX patterns + checks, from Apple's Human
+    > Interface Guidelines (developer.apple.com/design/human-interface-guidelines),
+    > translated for the web. Each rule names its HIG page in parentheses.
+    > Motion feel and gesture physics → `apple-design/SKILL.md` (§1-11);
+    > reduced-motion substitutions → its §14; design principles → its §16.
+    > Token, primitive and typography conventions come from the project's own
+    > design skill when it has one; its values win over any value here.
+
+    Input: a component, file path or screen to audit; optional scope filter
+    (accessibility only, color only, full audit). Read-only: the output is
+    the report in §6.
+
+    ---
+
+    ## 0. CORE PRINCIPLES
+
+    ### 0.1 Accessibility Pillars (HIG: Accessibility)
+    - **Intuitive** → familiar, consistent interactions; tasks are straightforward
+    - **Perceivable** → never rely on a single method (sight, hearing, speech, touch) to convey info
+    - **Adaptable** → respect system accessibility features; let people personalize settings
+
+    ### 0.2 Inclusion Pillars (HIG: Inclusion)
+    - Design through empathy — examine assumptions about how others think/feel
+    - Plain, direct, respectful language; avoid specialized/technical terms without definitions
+    - Replace colloquial expressions with plain language (some have exclusionary origins)
+    - Avoid unnecessary humor — highly subjective, hard to translate, risks confusing/insulting
+    - Address people as "you"/"your" — avoid "the user" (distant/unwelcoming)
+    - Avoid "we"/"our" for personal relationship — reserve for company/product
+    - Gender-neutral defaults — avoid unnecessary gender references in avatars, copy, glyphs
+    - Portray human diversity — range of characteristics, activities; avoid stereotypical representations
+    - Culture-specific color meanings — verify colors send intended message per locale
+    - Each disability is a spectrum — everyone can experience temporary/situational disabilities
+    - Prioritize simplicity and perceivability in all designs
+
+    ### 0.3 Design Principles
+    - Clarity, consistency, familiarity, hierarchy → `apple-design/SKILL.md` §16; this file
+      checks their concrete consequences, it does not restate them.
+
+    ---
+
+    ## 1. UX PATTERNS
+
+    ### 1.1 Empty States
+    - ❌ Never disable or hide tab bar buttons for empty sections (HIG: Tab Bars)
+    - ✅ Show empty state with explanation when section has no content
+    - ✅ Explain WHY section is empty + what user can do about it
+    - ✅ Show cached data + nonintrusive inline status rather than blocking alerts (HIG: Alerts)
+
+    ### 1.2 Error Handling
+    - ✅ Error state: descriptive message near the source — never silent failure (HIG: Feedback)
+    - ✅ Show when commands can't be carried out and explain why (HIG: Feedback)
+    - ✅ Make error text selectable so users can copy error messages, IPs, serial numbers (HIG: Labels)
+    - ✅ Use the error color + icon + message near the source field for form errors
+    - ❌ Never show alerts for form validation — use inline errors near fields
+    - ❌ Never fail silently — always communicate failure state to user
+    - ✅ Match significance to delivery: passive status → inline text; warning → inline banner; critical → alert dialog (HIG: Feedback)
+
+    ### 1.3 Loading States
+    - ✅ Use determinate progress (bar) when duration is known (HIG: Progress Indicators)
+    - ✅ Use indeterminate (spinner) when duration is unknown — switch to determinate when possible
+    - ✅ Keep indicators continuously animated — stationary = perceived frozen/stalled
+    - ✅ Display progress in a consistent location — don't move indicators around
+    - ✅ Be accurate with progress — don't show 90% in 5s then 10% in 5m
+    - ❌ Don't switch from circular to bar style mid-progress (confusing shape/size change)
+    - ✅ Add description for additional context when helpful ("Uploading 3 of 12 photos")
+    - ✅ Let people halt long processes — provide Cancel button; Pause if interrupting has side effects
+    - ✅ Warn before halting if negative consequences — alert with confirm/resume
+
+    ### 1.4 Onboarding (HIG: Onboarding)
+    - ✅ Teach through interactivity — let people perform tasks, not just read instructions
+    - ✅ Context-specific tips near related UI areas > single onboarding flow
+    - ✅ Brief, enjoyable prerequisite flows — too much = overwhelming
+    - ✅ Make tutorials optional — skip on first launch; don't re-present on subsequent launches
+    - ✅ Make tutorials findable in help/account/settings after dismissal
+    - ✅ Focus on YOUR experience — don't teach system/device usage
+    - ❌ Don't block on large downloads — include enough for immediate interaction
+    - ❌ Avoid licensing details in onboarding flow
+    - ✅ Postpone nonessential setup — provide reasonable defaults for immediate use
+    - ✅ Request permissions in onboarding only if needed before functioning — otherwise request on first use
+    - ✅ Let people experience app before prompting for ratings/purchases
+
+    ### 1.5 Account Flows (HIG: Managing Accounts)
+    - ✅ Explain benefits of creating account — brief, friendly description in sign-in view
+    - ✅ Delay sign-in as long as possible — let people explore first; forced early sign-in → abandonment
+    - ✅ Always identify the authentication method explicitly ("Sign In with Face ID", not generic "Sign In")
+    - ✅ Reference only available auth methods on current device
+    - ❌ Never prepopulate password fields (HIG: Entering Data)
+    - ❌ Don't use "passcode" for account auth — reserved for device/Apple services
+    - ✅ If you help create accounts, you must help delete them (not just deactivate)
+    - ✅ Provide clear account deletion within app — easy to discover, not buried
+    - ✅ Consistent deletion experience across app and website
+    - ✅ Communicate deletion timeline — tell when it will complete; notify when finished
+    - ✅ Consider scheduled deletion with option for immediate
+
+    ### 1.6 Notifications (HIG: Managing Notifications)
+    - ✅ Accurately represent urgency — misrepresenting → people turn off ALL notifications
+    - ✅ Passive: view at leisure (recommendation) → Active: appreciate knowing (update) → Time Sensitive: immediate attention (security) → Critical: urgent health/safety
+    - ✅ Time Sensitive only for "right now" — relevant within ~1 hour
+    - ❌ No marketing notifications unless explicitly opted in — even then, use Passive level
+    - ❌ Never use time-sensitive language in marketing notifications
+    - ✅ Badge (red oval) for critical unread info only (HIG: Tab Bars)
+
+    ### 1.7 Data Entry (HIG: Entering Data, Text Fields)
+    - ✅ Get info from system whenever possible — don't ask for data you can derive (settings, location, calendar)
+    - ✅ Be clear about data needed — placeholder prompts + labels + prefilled defaults
+    - ✅ Offer choices instead of text entry when options are finite (pickers, menus, selection)
+    - ✅ Dynamically validate field values — verify as entered, immediate feedback
+    - ✅ Use number formatters for numeric fields (decimal, percentage, currency)
+    - ✅ Disable proceed/submit button until required data is entered
+    - ✅ Show appropriate input type: `inputMode="email"`, `inputMode="tel"`, `inputMode="numeric"` etc. (HIG: Text Fields)
+    - ✅ Support drag-and-drop and paste for data entry (HIG: Entering Data)
+    - ✅ Stack fields vertically, consistent widths (HIG: Text Fields)
+    - ✅ Ensure tabbing flows logically between fields
+    - ✅ Include a Clear button for search/filter text fields (HIG: Text Fields)
+    - ✅ Use secure text-entry for sensitive data — obscure with filled circles (HIG: Entering Data)
+    - ✅ Validate email on field switch; username/password before form switch (HIG: Text Fields)
+
+    ### 1.8 Modality (HIG: Modality)
+    - ✅ Present modally only when there's a clear benefit — takes people out of context
+    - ✅ Keep modal tasks simple, short, streamlined — complex → people lose track of suspended task
+    - ❌ Avoid creating an app-within-app — no deep view hierarchies in modals
+    - ✅ Use full-screen modal for in-depth content or complex tasks (videos, photos, multistep editing)
+    - ✅ Always provide obvious dismiss: close button top-right + Escape key + swipe down
+    - ✅ Confirm before closing if data loss possible — present action sheet with save option
+    - ✅ Title naming the task + optional descriptive text to identify modal purpose
+    - ✅ Dismiss one modal before presenting another — never stack modals
+    - ✅ Exception: one alert CAN overlay a modal — but never multiple alerts simultaneously
+
+    ### 1.9 Undo & Redo (HIG: Undo and Redo)
+    - ✅ Help people predict results — describe what will be undone ("Undo Typing", "Redo Bold")
+    - ✅ Show results of undo/redo — if affected content not visible, scroll/highlight to show restored content
+    - ✅ Let people undo multiple times — no unnecessary limits
+    - ✅ Consider batch undo for related incremental adjustments
+    - ✅ Support standard shortcuts: Cmd+Z (undo), Shift+Cmd+Z (redo) (HIG: Keyboards)
+    - ✅ Provide undo/redo buttons only when necessary — people expect system methods
+    - ❌ Don't redefine standard undo gestures
+
+    ### 1.10 Privacy & Permissions
+    - ✅ Request permissions on first use of specific feature, not at app launch (HIG: Onboarding)
+    - ✅ Integrate permission requests in onboarding ONLY if needed before core functionality
+    - ✅ Show WHY app needs permission + benefits before requesting
+    - ✅ Consider privacy for search history — others might see it (HIG: Searching)
+    - ✅ Offer ways to narrow search without history; provide clear-history option
+    - ✅ Secure text-entry for all sensitive data — never prepopulate passwords
+
+    ### 1.11 Search Patterns (HIG: Searching, Search Fields)
+    - ✅ If search is important, make it a primary action (distinct tab or toolbar field)
+    - ✅ Single search location per context — one clearly identified place
+    - ✅ Descriptive placeholder indicating what's searchable ("Shows, Movies, and More")
+    - ✅ Clearly display current search scope (placeholder, scope control, or title)
+    - ✅ Provide suggestions — recent searches + completions before and during typing
+    - ✅ Start search immediately on typing — feels responsive (HIG: Search Fields)
+    - ✅ Simplify results — most relevant first, consider categorizing
+    - ✅ Let people filter search results with scope controls and tokens (HIG: Search Fields)
+
+    ### 1.12 Feedback Patterns (HIG: Feedback)
+    - ✅ Make all feedback accessible — use multiple channels: color + text + sound
+    - ✅ Integrate status feedback inline near relevant items — no navigation needed to view
+    - ✅ Alerts for critical, actionable information ONLY — overuse = lost impact
+    - ✅ Warn on unexpected, irreversible data loss — don't warn when loss IS the expected result
+    - ✅ Confirm significant completed actions (payment, deletion) — reserve for important activities
+    - ✅ People expect success; they only need to know about failure
+    - ❌ Never show an alert when app starts — show cached data + inline status (HIG: Alerts)
+
+    ### 1.13 Help & Tips (HIG: Offering Help)
+    - ✅ Let tasks inform help types: simple task → inline view; complex → tutorial
+    - ✅ Relate help to current action; make easy to dismiss
+    - ❌ Don't explain standard components — describe the specific action/task the element performs
+    - ✅ Tips: ≤3 actions per tip, 1–2 sentences, direct action-oriented language
+    - ✅ Define eligibility rules — don't show tips for features already used
+    - ❌ No promotional content in tips
+
+    ### 1.14 Drag and Drop (HIG: Drag and Drop)
+    - ✅ Same container = move; different container = copy (default behavior)
+    - ✅ Offer alternative ways (menu commands for copy/move)
+    - ✅ Support multi-item drag
+    - ✅ Support undo for accidental drops; confirm before irreversible operations
+    - ✅ Prefer behavior least likely to cause frustration or data loss
+
+    ---
+
+    ## 2. INPUT PATTERNS
+
+    ### 2.1 Keyboard (HIG: Keyboards)
+    - ✅ Support Full Keyboard Access — navigate and activate all windows, menus, controls using only keyboard
+    - ❌ Don't repurpose standard keyboard shortcuts unless standard action doesn't apply (HIG: Keyboards)
+    - ✅ Respect standard shortcuts: Cmd+Z undo, Cmd+C copy, Cmd+V paste, Cmd+A select all, Cmd+F find, Cmd+S save, Cmd+N new, Cmd+W close, Esc cancel (HIG: Keyboards)
+    - ✅ Create custom shortcuts for frequent app-specific commands — discoverable in menus
+    - ✅ Primary/default button responds to Return/Enter key (HIG: Buttons)
+    - ✅ Cancel button responds to Escape key (HIG: Alerts, Sheets)
+    - ✅ Ensure tabbing flows logically between fields (HIG: Text Fields)
+    - ✅ Web: map `inputMode` to field type — `email`, `tel`, `numeric`, `url`, `search`
+
+    ### 2.2 Pointer/Mouse (HIG: Pointing Devices)
+    - ✅ Consistent experience across pointer, keyboard, and touch inputs
+    - ❌ Don't redefine systemwide trackpad/mouse gestures
+    - ✅ Consistent modifier key behavior (Option+drag = duplicate across input types)
+    - ✅ Pointer reveals auto-minimized controls (e.g., playback controls, toolbar on scroll)
+    - ✅ Support right-click context menus (HIG: Pointing Devices macOS)
+    - ✅ Hover states: visual feedback on pointer hover for interactive elements
+
+    ### 2.3 Gestures (HIG: Gestures)
+    - ✅ Provide multiple interaction methods — don't assume specific gesture capability
+    - ✅ Respond consistently with expectations — tap = activate/select
+    - ❌ Don't repurpose familiar gestures for unique actions
+    - ❌ Don't create unique gestures for standard actions
+    - ✅ Indicate when gesture isn't available — show locked/unavailable states
+    - ✅ Custom gestures: discoverable, simple, distinct, not the only way
+    - ✅ Supplement standard gestures, never replace them (e.g., swipe-back AND Back button)
+    - ✅ Offer onscreen alternatives to gestures for people with limited dexterity (HIG: Accessibility)
+    - How a gesture should FEEL (instant response, 1:1 tracking, interruption, thresholds,
+      release, edges) → `apple-design/SKILL.md` §1-10; not restated here.
+
+    ### 2.4 Focus & Selection (HIG: Focus and Selection)
+    - ✅ Rely on system-provided focus effects (ring, highlight)
+    - ❌ Don't change focus without user interaction (exception: focused item disappears → move to nearest)
+    - ✅ Text/search fields → focus ring; lists/collections → row highlight
+    - ✅ Focus groups: Tab moves between groups; Arrow keys navigate within (HIG: Focus iPadOS)
+    - ✅ Row highlight: accent color background + white text when focused; gray + standard text when unfocused
+    - ✅ Never remove focus indicator — restyle to match design system (HIG: Accessibility)
+    - ✅ All interactive elements reachable via Tab — logical tab order (HIG: Accessibility)
+
+    ---
+
+    ## 3. STRUCTURAL CHECKS
+
+    ### 3.1 Heading Hierarchy
+    - ✅ Use font weight, size, AND color to convey hierarchy — not size alone (HIG: Typography)
+    - ✅ Minimize the number of typefaces — too many obscures hierarchy (HIG: Typography)
+    - ✅ Maintain consistent information hierarchy regardless of current font size (HIG: Typography)
+    - ✅ Four label color levels: primary → secondary → tertiary → quaternary (HIG: Labels)
+    - ✅ Prioritize important content when responding to text-size changes (HIG: Typography)
+    - ✅ System text styles form hierarchy: Large Title (34pt) → Title 1 (28pt) → Title 2 (22pt) → Title 3 (20pt) → Headline (17pt Semibold) → Body (17pt) → Callout (16pt) → Subhead (15pt) → Footnote (13pt) → Caption 1 (12pt) → Caption 2 (11pt) (HIG: Typography iOS)
+
+    ### 3.2 Reading Order & Live Regions
+    - ✅ Place items in reading order: top→bottom, leading→trailing (HIG: Layout)
+    - ✅ Use `aria-live="polite"` on dynamic status/feedback regions (HIG: Accessibility)
+    - ✅ Group related items to help people find information — negative space, backgrounds, separators (HIG: Layout)
+    - ✅ Align components for easier scanning and to communicate organization (HIG: Layout)
+    - ✅ Take advantage of progressive disclosure to reveal hidden content (HIG: Layout)
+    - ❌ Never nest a bordered box inside another bordered box to show sub-grouping (HIG: Boxes)
+    - ✅ Mark a sub-group with padding + alignment instead — tighter spacing reads as more
+      related, looser as less. A second border reads as busy and constrained, not as hierarchy
+    - ✅ Keep a box small relative to its container — a box approaching the size of its
+      containing screen stops communicating separation and just becomes the screen
+
+    ### 3.3 Line Length & Readability
+    - ✅ Minimum font size: 11pt (Caption 2) — never go smaller (HIG: Typography, Accessibility)
+    - ✅ Default body text: 17pt for iOS/web equivalent (HIG: Typography)
+    - ✅ Avoid light font weights (Ultralight, Thin, Light) — prefer Regular, Medium, Semibold, Bold (HIG: Typography)
+    - ✅ Font weight impacts legibility — thin weight → aim larger than recommended sizes (HIG: Accessibility)
+    - ✅ Text must remain legible when zoomed to 200% (HIG: Accessibility)
+    - ✅ Keep text legible — adopt Dynamic Type / responsive sizing; test with bold text (HIG: Content)
+    - ✅ Keep item text succinct — minimize truncation and wrapping (HIG: Lists and Tables)
+    - ✅ Consider middle ellipsis for long strings (paths, IDs) to preserve readability (HIG: Lists and Tables)
+    - ✅ Make useful text selectable — error messages, serial numbers, IPs (HIG: Labels, Content)
+
+    ### 3.4 Layout Adaptation
+    - ✅ Design layout that adapts gracefully to context changes while remaining recognizably consistent (HIG: Layout)
+    - ✅ Be prepared for text-size changes — apps must respond (HIG: Layout)
+    - ✅ Test at multiple device sizes, orientations, localizations, and text sizes (HIG: Layout)
+    - ✅ Content extends to fill the screen or window (HIG: Layout)
+    - ✅ Respect safe areas — don't place content under toolbars, tab bars, or system bars (HIG: Layout)
+    - ✅ Sufficient space around controls — don't crowd them; group in logical sections (HIG: Layout)
+    - ✅ Web: test at 320px, 768px, 1280px minimum viewports
+    - ✅ Increase size of meaningful interface icons as font size increases (HIG: Typography)
+
+    ### 3.5 Capitalization & Labeling
+    - ✅ Menu items: title-style capitalization; remove articles (a, an, the) (HIG: Menus)
+    - ✅ Button labels: title-style capitalization; start with verb ("Add to Cart") (HIG: Buttons)
+    - ✅ Segmented controls: nouns/noun phrases with title-style capitalization (HIG: Segmented Controls)
+    - ✅ Column headings: nouns with title-style capitalization (HIG: Lists and Tables)
+    - ✅ Alert title: complete sentence → sentence-style; fragment → title-style (HIG: Alerts)
+    - ✅ Ellipsis (…) when action requires more information (HIG: Menus, Buttons macOS)
+    - ✅ Tab labels: single words whenever possible (HIG: Tab Bars)
+    - ✅ Toolbar titles: under 15 characters; don't use app name (HIG: Toolbars)
+
+    ### 3.6 Color & Contrast
+    - ✅ Text ≤17pt all weights → min contrast 4.5:1 (HIG: Accessibility)
+    - ✅ Text ≥18pt all weights → min contrast 3:1 (HIG: Accessibility)
+    - ✅ All text bold → min contrast 3:1 (HIG: Accessibility)
+    - ✅ Strive for 7:1 contrast especially in small text for Dark Mode (HIG: Dark Mode)
+    - ✅ Never use color alone to convey info — pair with text label, icon, or shape (HIG: Color, Accessibility)
+    - ✅ Avoid same color for different meanings — semantic consistency (HIG: Color)
+    - ✅ Test contrast in both light and dark, and with Increase Contrast setting (HIG: Color)
+    - ✅ Non-text elements (icons, borders) → min contrast 3:1 against background (WCAG)
+
+    ### 3.7 Cognitive Load
+    - ✅ Keep actions simple and intuitive — prefer familiar system gestures over custom (HIG: Accessibility Cognitive)
+    - ✅ Minimize time-boxed interface elements — prefer explicit dismiss action (HIG: Accessibility)
+    - ✅ Let people control audio/video playback — avoid autoplay without controls (HIG: Accessibility)
+    - ✅ Allow opt-out of flashing lights in video playback (HIG: Accessibility)
+    - ❌ No rapid flashing or oscillation in animations (HIG: Accessibility)
+    - ✅ Honor Reduce Motion (`prefers-reduced-motion`) on every animation; what to swap it
+      for → `apple-design/SKILL.md` §14 (HIG: Accessibility)
+    - ✅ Let people cancel motion — don't make them wait for animation to complete (HIG: Motion)
+    - ✅ Break multistep workflows → one interaction per screen when possible (HIG: Accessibility)
+
+    ### 3.8 Icons — Optical Centering & Stroke Weight (HIG: Icons)
+    - ✅ **Optically** center asymmetric icons — never rely on the bounding box. A shape whose
+      visual mass sits off-centre (play triangle, download arrow, send/paper-plane) looks
+      misplaced when centred geometrically. Nudge it until it *looks* centred, then keep that
+      offset. Applies to any icon inside a round or square control.
+    - ✅ Match size, stroke weight, and level of detail across the WHOLE icon set. One heavier
+      or more detailed glyph stands out for the wrong reason. Pick one set and don't mix.
+    - ✅ Match icon stroke weight to the weight of adjacent text. A deliberate mismatch — to
+      let the icon or the text dominate — must be commented at the call site, otherwise it is
+      indistinguishable from an oversight and every drift becomes "intentional".
+    - 🔴 Geometric centering is not optical centering, and the difference does not show in a
+      screenshot at a glance — it shows once the icon sits next to a correctly centred sibling.
+
+    ---
+
+    ## 4. AUTOMATED AUDIT
+
+    Find the UI source first (`ls`, `rg --files | rg '\.(tsx|jsx|vue|svelte)$'`),
+    then read every command below with `<src>` = the project's component and
+    route directories and `<ui>` = the glob of its UI files (`'*.tsx'`,
+    `'*.{tsx,jsx}'`, `'*.vue'`…). Class-name patterns assume Tailwind; adapt
+    them to the project's styling. Token, primitive and typography conventions
+    come from the project's own design skill when it has one: run its checks,
+    not invented ones here.
+
+    ### Phase 1 — Global Scan
+
+    ```bash
+    # 1. Missing aria-label on icon-only buttons
+    rg -n 'variant.*icon|size.*icon|Icon.*\/>' <src> --glob <ui> | grep -v 'aria-label'
+
+    # 2. outline-none without focus-visible replacement
+    rg -n 'outline-none' <src> --glob <ui> | grep -v 'focus-visible'
+
+    # 3. transition-all (should be targeted)
+    rg -n 'transition-all' <src> --glob <ui>
+
+    # 4. Animation without motion-safe prefix
+    rg -n 'animate-|transition-' <src> --glob <ui> | grep -Ev 'motion-safe|motion-reduce'
+
+    # 5. Placeholder without label
+    rg -n 'placeholder=' <src> --glob <ui> -A2 | grep -Ev 'label|Label|htmlFor|aria-label'
+
+    # 6. Missing prefers-reduced-motion handling
+    rg -n '@keyframes|animation:' <src> --glob '*.css' | grep -v 'prefers-reduced-motion'
+
+    # 7. Touch targets < 44px (look for h-8, h-6, w-8, w-6 etc on interactive elements)
+    rg -n 'className.*\b(h-[1-9]\b|h-10\b|w-[1-9]\b|w-10\b)' <src> --glob <ui> | grep -Ei 'button|click|press|tap'
+
+    # 8. Generic button labels (add the UI language's equivalents)
+    rg -n '>OK<|>Yes<|>No<' <src> --glob <ui>
+
+    # 9. Multiple prominent/primary buttons in same component
+    rg -n 'variant.*default.*primary|variant.*primary' <src> --glob <ui> -c | awk -F: '$2 > 1'
+    ```
+
+    ### Phase 2 — Per-Screen Checklist
+
+    | # | Check | Pass criteria | Severity |
+    |---|---|---|---|
+    | 1 | Touch targets ≥ 44px | All interactive elements ≥ 44×44 CSS px (`min-h-11 min-w-11`) or equivalent padding | CRITICAL |
+    | 2 | Color contrast ≥ 4.5:1 (text ≤17pt) | Body and secondary/muted text on every background they sit on (page, card, popover) | CRITICAL |
+    | 3 | Color contrast ≥ 3:1 (text ≥18pt or bold) | Large text, bold text, non-text elements | HIGH |
+    | 4 | Focus visible on all interactives | `focus-visible:ring-2` or equivalent — never bare `outline-none` | CRITICAL |
+    | 5 | Keyboard navigable | Tab reaches all controls; logical order; Escape dismisses modals | CRITICAL |
+    | 6 | No color-only info | Every status/state uses color + text/icon/shape | HIGH |
+    | 7 | Labels on all inputs | Visible `<label>` + `htmlFor` — placeholder alone is insufficient | HIGH |
+    | 8 | aria-label on icon-only buttons | Every button without visible text has `aria-label` | HIGH |
+    | 9 | prefers-reduced-motion | All animations wrapped in `motion-safe:` or media query | HIGH |
+    | 10 | No transition-all | Use targeted: `transition-colors`, `transition-shadow`, etc. | MEDIUM |
+    | 11 | Project design conventions | Tokens, primitives, typography as the project's design skill defines them, when it has one | MEDIUM |
+    | 12 | ≤1-2 prominent buttons | Max one primary/prominent CTA per view section | MEDIUM |
+    | 13 | Inline errors near fields | Form errors next to source field, not in toast/alert | HIGH |
+    | 14 | Empty states handled | No blank screens — explanation + action when no data | MEDIUM |
+    | 15 | Loading state present | Spinner/skeleton for async operations; determinate when possible | HIGH |
+    | 16 | Modal has dismiss | Close button top-right + Escape key support | HIGH |
+    | 17 | No stacked modals | Only one sheet/dialog open at a time | MEDIUM |
+    | 18 | Descriptive button labels | Verb-based; no "OK"/"Yes"/"No" generics | MEDIUM |
+    | 19 | Alert used sparingly | Alerts only for critical, actionable info; never on page load | HIGH |
+    | 20 | Min font 11px | No text smaller than 11px (~0.6875rem) | HIGH |
+    | 21 | Heading hierarchy | Logical h1→h2→h3 nesting; weights from the project's type scale | MEDIUM |
+    | 22 | Tab labels | Single words + icon; filled icon for active state | LOW |
+    | 23 | Search placeholder | Descriptive ("Search shows, movies…") not just "Search" | LOW |
+    | 24 | Progress accuracy | Determinate bars show realistic progress; don't stall at 90% | MEDIUM |
+    | 25 | Undo support | Destructive actions offer undo or confirmation dialog | HIGH |
+    | 26 | aria-live regions | Dynamic status areas have `aria-live="polite"` | HIGH |
+    | 27 | Auto-dismiss caution | Toasts/banners have explicit dismiss or ≥5s display time | MEDIUM |
+    | 28 | Spacing between controls | ≥12pt padding between bezeled controls; ≥24pt around borderless (HIG: Accessibility) | MEDIUM |
+    | 29 | Text selectable | Error messages, IDs, codes — allow select+copy | LOW |
+    | 30 | Reading order | DOM order matches visual order (top→bottom, leading→trailing) | HIGH |
+    | 31 | No nested bordered frames | Two nested elements each carrying `border-*` or `ring-*`. A radius alone is NOT a frame — `rounded-full` avatars and `rounded-md` badges inside a bordered card are fine | MEDIUM |
+    | 32 | Optical centering | Asymmetric glyph (play triangle, send arrow) in a round/square control carries an explicit offset (`translate-*`/`m[lrtb]-*`). Presence of the offset is the check; its exact value is a judgment call | LOW |
+    | 33 | Uniform icon stroke | `rg -n 'strokeWidth=' <src> --glob <ui>` — every override of the icon set's default (lucide: 2) is a finding unless the whole set overrides identically | LOW |
+
+    ### Phase 3 — Cross-Cutting
+
+    ```bash
+    # A. Count components without aria-label on icon-only patterns
+    rg -n 'size="icon"' <src> --glob <ui> | grep -vc 'aria-label'
+
+    # B. Verify all <Dialog>/<Sheet> support Escape dismiss
+    rg -n '<Dialog|<Sheet' <src> --glob <ui> -l | xargs rg --files-without-match 'onOpenChange|onClose|Escape'
+
+    # C. Check alert usage frequency (should be rare)
+    rg -n '<Alert\b' <src> --glob <ui> -c
+
+    # D. Verify motion-safe coverage
+    echo "Animations without motion-safe:"
+    rg -n 'animate-' <src> --glob <ui> | grep -Evc 'motion-safe|motion-reduce'
+    echo "Total animations:"
+    rg -n 'animate-' <src> --glob <ui> -c
+
+    # E. Check for autoplay media
+    rg -n 'autoPlay|autoplay' <src> --glob <ui>
+
+    # F. Verify password fields never prepopulated
+    rg -n 'type="password"' <src> --glob <ui> -A3 | grep -E 'defaultValue|value='
+
+    # G. Check tabs ≤5
+    rg -n 'TabsTrigger|tab.*label|tab.*title' <src> --glob <ui> -c
+
+    # H. Verify segmented controls ≤5 segments on mobile
+    rg -n 'SegmentedControl|Tabs.*variant.*segment' <src> --glob <ui>
+
+    # I. Repeated rows (nav bars, tab rows, grids): MEASURE, never eyeball
+    #    Uneven spacing in a row of same-role items is the fastest defect a human eye
+    #    catches — faster than colour or copy. It is a first-glance defect, not cosmetic.
+    #    In a headless browser, for the row under audit:
+    #      1. getBoundingClientRect() on each item → diff CENTER-TO-CENTER distances
+    #         between adjacent same-role items; they must match (±1px).
+    #         🔴 Do NOT diff raw edge-to-edge gaps: items with different label lengths
+    #            render at different widths even when their slots are equal, so edge gaps
+    #            legitimately differ — measuring edges first produces a false positive.
+    #      2. Container centre vs the centre of any independently-positioned element
+    #         (FAB, badge, floating control) → diff must be 0 (±1px).
+    #      3. Render the LONGEST real label at the NARROWEST width shipped → no wrap, no clip.
+    #      4. Re-run 1–3 after ANY change to padding, gap, column count, or an added sibling:
+    #         fixing one item's spacing routinely breaks another's.
+    #    Equal `grid`/`flex` columns do NOT guarantee equal visual spacing once a floating or
+    #    absolutely-positioned sibling, or variable-width content, enters the row.
+    ```
+
+    ---
+
+    ## 5. SEVERITY
+
+    | Level | Definition | Examples |
+    |---|---|---|
+    | **CRITICAL** | Blocks users or violates legal accessibility requirements | Touch target < 28px, no keyboard navigation, contrast < 3:1, no focus indicator |
+    | **HIGH** | Significantly degrades experience for subset of users | Missing aria-label, no prefers-reduced-motion, color-only info, missing input labels, no error feedback |
+    | **MEDIUM** | Noticeable quality gap vs HIG standard | transition-all, generic button labels, project design-convention drift, stacked modals, missing empty states |
+    | **LOW** | Polish / best practice deviation | Non-descriptive search placeholder, missing text selectability, tab label is two words |
+
+    ---
+
+    ## 6. REPORT FORMAT
+
+    ```markdown
+    # HIG Audit Report — {Screen/Component Name}
+
+    **Date:** {YYYY-MM-DD}
+    **Auditor:** Claude Code (ui-expert hig-audit)
+    **Scope:** {file paths audited}
+
+    ## Summary
+
+    | Severity | Count |
+    |---|---|
+    | CRITICAL | {n} |
+    | HIGH | {n} |
+    | MEDIUM | {n} |
+    | LOW | {n} |
+
+    ## Findings
+
+    ### CRITICAL
+
+    - [ ] **{Check #}** — {Description} — `{file}:{line}` — Fix: {recommendation}
+
+    ### HIGH
+
+    - [ ] **{Check #}** — {Description} — `{file}:{line}` — Fix: {recommendation}
+
+    ### MEDIUM
+
+    - [ ] **{Check #}** — {Description} — `{file}:{line}` — Fix: {recommendation}
+
+    ### LOW
+
+    - [ ] **{Check #}** — {Description} — `{file}:{line}` — Fix: {recommendation}
+
+    ## Verification Commands
+
+    {bash commands to verify fixes}
+    ```
+
+    ---
+
+    ## 7. HANDOFFS
+
+    - Motion that feels wrong (gesture finished by a fixed transition, animation that
+      cannot be grabbed mid-flight) → `apple-design/SKILL.md`; motion code review →
+      `review-animations/SKILL.md`.
+    - Web app that feels wrong on a phone (hover on touch, 100vh, safe areas, tap
+      delay) → `mobile-native/SKILL.md`.
+    - Layout that may break under real data (long labels, empty, huge counts) →
+      `break-ui/SKILL.md`.
+    - Token, color, typography or primitive findings → the project's own design
+      skill, with the finding list.
+    - Code changes for CRITICAL/HIGH findings → the frontend implementer, with the
+      §6 report.
   '';
 
   # =========================================================================

@@ -24,6 +24,7 @@
     maxTurns: 40
     skills:
       - feature-workflow
+      - ui-expert
     ---
 
     # Frontend Expert

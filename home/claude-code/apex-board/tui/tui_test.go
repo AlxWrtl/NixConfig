@@ -681,6 +681,46 @@ func TestPollOffLoop(t *testing.T) {
 	}
 }
 
+// `r` is never dropped nor a second chain: pressed during the chain's read it reads once more
+// when that lands, the chain passed on; alone it schedules no tick. The header says it.
+func TestManualRefresh(t *testing.T) {
+	f := newFixture(t)
+	m := newModel(f.runs, f.budget, "fixture", 120, 40)
+	header := func() string { return plain(m.View().Content)[1] } // tall: the header's row
+	_, chain := m.Update(pollTickMsg{})
+	if send(m, char('r')) != nil || !m.again || !strings.Contains(header(), "actualisation…") {
+		t.Fatalf("r during a read: again %v, header %q", m.again, header())
+	}
+	again := send(m, chain())
+	if again == nil || !m.polling || !m.chained || !m.manual {
+		t.Fatalf("r during a read was dropped (Cmd %v, polling %v, chained %v)", again != nil, m.polling, m.chained)
+	}
+	read, ok := again().(pollMsg)
+	if !ok {
+		t.Fatal("the read again is no poll")
+	}
+	if next := send(m, read); next == nil || m.chained || m.manual || m.flash != refreshFlash {
+		t.Fatalf("the chain was not passed on (Cmd %v, chained %v, manual %v, flash %d)", next != nil, m.chained, m.manual, m.flash)
+	}
+	if !strings.Contains(header(), "actualisé · ") {
+		t.Fatalf("header after a manual refresh: %q", header())
+	}
+	for range refreshFlash {
+		send(m, tickMsg{})
+	}
+	if strings.Contains(header(), "actualisé") {
+		t.Fatalf("« actualisé » still shown: %q", header())
+	}
+	// Off the chain: the manual read lands without a tick of its own.
+	cmd := send(m, char('r'))
+	if cmd == nil || !m.polling || m.chained {
+		t.Fatal("r alone started no read")
+	}
+	if next := send(m, cmd()); next != nil || m.flash != refreshFlash {
+		t.Fatalf("r alone: a second chain (Cmd %v) or no feedback (flash %d)", next != nil, m.flash)
+	}
+}
+
 func TestPollUnreadableRunsDir(t *testing.T) {
 	m := newModel(filepath.Join(t.TempDir(), "gone"), "", "", 120, 40)
 	_, cmd := m.Update(pollTickMsg{})

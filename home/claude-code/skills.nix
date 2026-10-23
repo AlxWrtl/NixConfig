@@ -1987,7 +1987,9 @@ in
     6. Loop until every acceptance criterion is green. Max 2 correction rounds,
        enforced by the correction-budget hook (PreToolUse on Agent): every
        correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`
-       (<run-id> = this run's `.claude/output/apex/` dir name); any other brief
+       (<run-id> = this run's `.claude/output/apex/` dir name) or, for a run
+       outside the session's repo, its absolute `…/.claude/output/apex/<run-id>`
+       path (no spaces); never create a stub run dir in the session's repo. Any other brief
        naming 06-resolve.md or a correction round carries
        `APEX-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
        both counted, and counts once the spawn/send is attempted, even if later

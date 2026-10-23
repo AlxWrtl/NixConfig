@@ -20,6 +20,8 @@ const (
 	tickEvery = time.Second
 	// Lines one wheel notch scrolls.
 	wheelLines = 3
+	// Clock ticks the header says « actualisé » after a manual refresh lands.
+	refreshFlash = 3
 )
 
 type boardStatus struct {
@@ -73,6 +75,10 @@ type Model struct {
 	runsDir, budgetDir string
 	reader             *Reader
 	polling            bool
+	chained            bool // the poll in flight carries the pollEvery chain
+	manual             bool // a manual refresh not landed yet
+	again              bool // `r` came during a read: read once more when it lands
+	flash              int  // clock ticks left of « actualisé »
 
 	dirty   bool
 	frame   string
@@ -216,8 +222,26 @@ func (m *Model) docCmd() tea.Cmd {
 	return func() tea.Msg { return docMsg{id: id, path: p, doc: loadDocFrom(runsDir, src, run, p)} }
 }
 
+// chainPollCmd: the poll of the pollEvery chain (Init, each pollTickMsg). A poll already in
+// flight takes the chain over: one chain, whatever else polls.
+func (m *Model) chainPollCmd() tea.Cmd {
+	m.chained = true
+	return m.pollCmd()
+}
+
+// refreshCmd: `r` or « ↻ actualiser »: a poll now, off the chain, the header saying it until it
+// lands and a few ticks after. Pressed during a read, it reads once more when that one lands.
+func (m *Model) refreshCmd() tea.Cmd {
+	m.manual, m.dirty = true, true
+	if m.polling {
+		m.again = true
+		return nil
+	}
+	return m.pollCmd()
+}
+
 // Init: first poll now, then every pollEvery after each result; the clock tick.
-func (m *Model) Init() tea.Cmd { return tea.Batch(m.pollCmd(), tickCmd()) }
+func (m *Model) Init() tea.Cmd { return tea.Batch(m.chainPollCmd(), tickCmd()) }
 
 // View draws when the state changed since the last frame.
 func (m *Model) View() tea.View {
@@ -246,9 +270,12 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height, m.dirty = msg.Width, msg.Height, true
 	case tickMsg:
 		m.tick, m.dirty = !m.tick, true
+		if m.flash > 0 {
+			m.flash--
+		}
 		return m, tickCmd()
 	case pollTickMsg:
-		return m, m.pollCmd()
+		return m, m.chainPollCmd()
 	case pollMsg:
 		return m, m.applyPoll(msg)
 	case drawerMsg:
@@ -301,7 +328,20 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (m *Model) applyPoll(msg pollMsg) tea.Cmd {
 	m.polling = false
-	next := pollTickCmd()
+	var next tea.Cmd
+	switch {
+	case m.again:
+		// The press came during this read: read again now; the chain, if this read carried
+		// it, waits on that one.
+		m.again = false
+		next = m.pollCmd()
+	case m.chained:
+		m.chained = false
+		next = pollTickCmd()
+	}
+	if m.manual && !m.polling {
+		m.manual, m.flash = false, refreshFlash
+	}
 	m.applyAgents(msg.agents)
 	if msg.err != nil {
 		// The runs dir itself is unreadable: keep the last board and say why.
@@ -426,7 +466,7 @@ func (m *Model) keyBoard(ev string) tea.Cmd {
 			return m.openDrawer(sel.col, sel.idx, m.columnCards(sel.col)[sel.idx].key())
 		}
 	case "r":
-		return m.pollCmd()
+		return m.refreshCmd()
 	}
 	return nil
 }
@@ -503,7 +543,7 @@ func (m *Model) keyDrawer(ev string) tea.Cmd {
 			return m.fileAt(len(d.files) - 1)
 		}
 	case "r":
-		return m.pollCmd()
+		return m.refreshCmd()
 	}
 	return nil
 }
@@ -524,7 +564,7 @@ func (m *Model) click(x, y int) tea.Cmd {
 			return m.openDrawer(h.col, h.idx, h.id)
 		}
 		if h.kind == hitRefresh {
-			return m.pollCmd()
+			return m.refreshCmd()
 		}
 		return nil
 	}

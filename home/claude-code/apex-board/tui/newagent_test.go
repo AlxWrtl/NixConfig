@@ -618,8 +618,14 @@ func TestRefreshButton(t *testing.T) {
 			t.Fatalf("%s: hit over %q", name, got)
 		}
 		cmd := send(m, tea.MouseClickMsg{X: h.x + 1, Y: h.y, Button: tea.MouseLeft})
-		if cmd == nil || !m.polling {
-			t.Fatalf("%s: click did not poll (Cmd %v, polling %v)", name, cmd != nil, m.polling)
+		if cmd == nil || !m.polling || !m.manual {
+			t.Fatalf("%s: click did not poll (Cmd %v, polling %v, manual %v)", name, cmd != nil, m.polling, m.manual)
+		}
+		if again := send(m, tea.MouseClickMsg{X: h.x + 1, Y: h.y, Button: tea.MouseLeft}); again != nil || !m.again {
+			t.Fatalf("%s: click during a read not queued (Cmd %v, again %v)", name, again != nil, m.again)
+		}
+		if head := plain(m.View().Content)[1]; !strings.Contains(head, "actualisation…") {
+			t.Fatalf("%s: header %q does not say the refresh", name, head)
 		}
 	}
 	m, _ := newAgentModel(t)

@@ -2057,7 +2057,7 @@ func (m *Model) keyAgents(ev string) tea.Cmd {
 			return m.resumeCmd(cols[sel.col][sel.idx])
 		}
 	case "r":
-		return m.pollCmd()
+		return m.refreshCmd()
 	}
 	return nil
 }
@@ -2097,7 +2097,7 @@ func (m *Model) clickAgents(h *hit) tea.Cmd {
 	case hitNew:
 		return m.newAgentCmd()
 	case hitRefresh:
-		return m.pollCmd()
+		return m.refreshCmd()
 	}
 	return nil
 }

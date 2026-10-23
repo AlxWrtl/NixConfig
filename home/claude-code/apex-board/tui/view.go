@@ -287,6 +287,12 @@ func (m *Model) drawHeader(g grid, W, y int) {
 	default:
 		status = toCells(st.err, fg(P.human), cellsOf("● ", fg(P.human)))
 	}
+	// A manual refresh is said first: the clock alone moves every poll.
+	if m.manual {
+		status = append(cellsOf("actualisation… · ", fg(P.active)), status...)
+	} else if m.flash > 0 {
+		status = append(cellsOf("actualisé · ", fg(P.pass).bold()), status...)
+	}
 	tabs, spans := m.tabCells()
 	tabsW := cellsWidth(tabs)
 	room := W - 2*margin

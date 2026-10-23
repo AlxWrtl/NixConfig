@@ -183,7 +183,8 @@ in
     with 00-init `running`; then record the following in it:
     - **Task**: the user's request (everything after flags)
     - **Tier**: from the SKILL.md tier gate, with its `Files:` and
-      `Est-lines:` lines
+      `Est-lines:` lines. That `Files:` line is the pre-analyze guess and is
+      never rewritten: the plan's `Files:` line carries the final list.
     - **Flags**: which flags are active, resolved per SKILL.md
     - **Working directory**: current project path
     - **Git status**: current branch, `{trunk}`, clean/dirty, uncommitted changes
@@ -1062,7 +1063,9 @@ in
     finding — `id | file:line | confirmed | evidence` or
     `id | file:line | dismissed | reason` — then a tally
     `confirmed=N unique=U dismissed=D`, where unique = confirmed and found by
-    no other pass in this run.
+    no other pass in this run. The tally is what the metrics probe reads as
+    B5 (did the pass change the run); a hook recalls a missing one when
+    04-validate.md is written.
 
     No usable external verdict on high-stakes (BLOCKED, or -E typed) → spawn the Fable fallback
     (ORCHESTRATION.md) and record its cause in 04-validate.md.
@@ -1203,6 +1206,11 @@ in
     - **Critical**: security vulnerabilities, data loss risks
     - **Important**: logic bugs, error handling gaps
     - **Minor**: naming, style, minor improvements
+
+    Then write the triage into `.claude/output/apex/{task-id}/05-examine.md`:
+    one line per finding — `id | file:line | confirmed | evidence` or
+    `id | file:line | dismissed | reason` — then the tally
+    `confirmed=N unique=U dismissed=D`, same format as step-04.
 
     ## Next Step
 

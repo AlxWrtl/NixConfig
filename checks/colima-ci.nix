@@ -21,6 +21,8 @@
 #    `docker` reaches it at login without `--context`; its agent passes
 #    `--activate=true`. `setDockerHost` false: DOCKER_HOST would override
 #    `--context colima-ci`. No k3s, no ~/.ssh/config entry.
+# 7. `default`'s colima.yaml is not a home.file symlink: `colima start` rewrites
+#    it and fails on a read-only store path (an activation copies it instead).
 {
   pkgs,
   hm,
@@ -53,6 +55,7 @@ let
   devSettings = if dev == null then { } else dev.settings;
   devAgent = hm.launchd.agents.colima-default.config or null;
   devAgentArgs = if devAgent == null then [ ] else devAgent.ProgramArguments or [ ];
+  devYaml = hm.home.file."${colima.colimaHomeDir}/default/colima.yaml" or null;
 
   failures =
     lib.optional
@@ -114,6 +117,9 @@ let
       ) "default settings.sshConfig must be false (colima would write ~/.ssh/config)"
     )
     ++ lib.optional (dev == null) "no `default` profile"
+    ++ lib.optional (
+      devYaml != null && devYaml.enable
+    ) "default colima.yaml is a home.file symlink: colima start cannot rewrite it"
     ++ lib.optional (devAgent == null) "launchd agent colima-default is missing"
     ++ lib.optional (
       devAgent != null && !(builtins.elem "--activate=true" devAgentArgs)

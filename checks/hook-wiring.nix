@@ -113,6 +113,12 @@
 #      a 02-acs.md outside one, a missing file and malformed input stay
 #      silent; `--self-test` of the same body exits 0, so the B2 classifier
 #      is graded in the flake. One canary per branch.
+#      The step-utility run adds the probe's 04-validate.md branch: a run
+#      whose newest external verify is not BLOCKED and whose triage has no
+#      `confirmed=N … dismissed=D` tally, or whose 05-examine.md has none,
+#      is named in a B5 line; a tally, a BLOCKED verify or a symlinked
+#      05-examine.md stays silent. One
+#      canary: the tally regex that never matches, killed on the silent case.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -550,6 +556,10 @@ let
     A-ac-gate = {
       hook = "apex-metrics-probe.py";
       text = "or GATE.search(joined) is not None";
+    };
+    A-ac-tally = {
+      hook = "apex-metrics-probe.py";
+      text = "TALLY = re.compile(r\"\\bconfirmed=(\\d+)\")";
     };
     A-cb-cron = {
       hook = "correction-budget.js";
@@ -1514,6 +1524,18 @@ let
         {
           anchor = "A-ac-gate";
           to = "or False";
+        }
+      ];
+    }
+    # Tally never detected: every 04-validate.md of a run that ran a pass is flagged.
+    {
+      id = "M-ac-tally";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-validate-tally-silent";
+      swaps = [
+        {
+          anchor = "A-ac-tally";
+          to = "TALLY = re.compile(r\"(?!x)x(\\d+)\")";
         }
       ];
     }
@@ -2631,6 +2653,11 @@ let
     "ac-symlink-silent"
     "ac-malformed-silent"
     "ac-self-test"
+    "ac-validate-untallied-emits"
+    "ac-validate-tally-silent"
+    "ac-validate-blocked-silent"
+    "ac-validate-examine-emits"
+    "ac-validate-examine-link-silent"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -2936,6 +2963,21 @@ let
       [ "$rc" -eq 0 ] || { why="self-test exit $rc: $(tail -n 3 "$d/$lbl.out" | tr '\n' ' ')"; kind=mismatch; return 1; }
       [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
       grep -q 'failures=0' "$d/$lbl.out" || { why="no failures=0 in the self-test summary"; return 1; }
+    }
+    # B5 on a run's 04-validate.md. Real text: the verdicts of the 67 (PASS)
+    # and 54 (BLOCKED) verify json, 67's triage tally, the first line of
+    # 01-worktree-env-sync's 05-examine.md (no tally).
+    AC_VPASS='{"schema_version":1,"tool":"apex-verify-external","verdict":"PASS","reason":"","model":"gpt-6-astra"}'
+    AC_VBLOCK='{"schema_version":1,"tool":"apex-verify-external","verdict":"BLOCKED","reason":"timeout","model":"none"}'
+    AC_TALLY='confirmed=0 unique=0 dismissed=0'
+    AC_EXAM='PHASE: examine (opus Plan, read-only) + external (codex gpt-5.6-terra, FAIL 1 finding)'
+    # $1 the passes the B5 line must name, after "for: ".
+    ac_b5_emits() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the missing tally was due"; kind=mismatch; return 1; }
+      ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "PostToolUse") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
+      case "$ctx" in "B5: $lbl records no confirmed/dismissed tally for: $1 — add "*) ;; *) why="context is not the B5 line for '$1': $ctx"; return 1 ;; esac
     }
 
     # research-model: $1 subagent_type, $2 model (absent when empty or unset).
@@ -4369,6 +4411,29 @@ let
           ac_silent ;;
         ac-self-test)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "" --self-test; ac_selftest ;;
+        # 04-validate.md: a pass that ran with no tally is named, else silence.
+        ac-validate-untallied-emits)
+          f="$ACO/$lbl/04-validate.md"; ac_put "$f" "PASS"; ac_put "$ACO/$lbl/04-external-verify.json" "$AC_VPASS"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_b5_emits "external" ;;
+        ac-validate-tally-silent)
+          f="$ACO/$lbl/04-validate.md"; ac_put "$f" "PASS"; ac_put "$ACO/$lbl/04-external-verify.json" "$AC_VPASS"
+          ac_put "$ACO/$lbl/04-external-triage.md" "# External triage" "" "$AC_TALLY"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # The newest verify decides: an older PASS under a BLOCKED is an unrun
+        # pass. The BLOCKED name sorts FIRST, so picking by name reads the PASS.
+        ac-validate-blocked-silent)
+          f="$ACO/$lbl/04-validate.md"; ac_put "$f" "PASS"; ac_put "$ACO/$lbl/04-external-verify.json" "$AC_VPASS"
+          ${pkgs.coreutils}/bin/touch -t 200001010000 "$ACO/$lbl/04-external-verify.json" || { why="cannot age the PASS verify"; return 1; }
+          ac_put "$ACO/$lbl/03-external-verify.json" "$AC_VBLOCK"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-validate-examine-emits)
+          f="$ACO/$lbl/04-validate.md"; ac_put "$f" "PASS"; ac_put "$ACO/$lbl/05-examine.md" "$AC_EXAM"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Edit "$f")"; ac_b5_emits "examine" ;;
+        # A 05-examine.md the guards refuse is skipped, not reported untallied.
+        ac-validate-examine-link-silent)
+          f="$ACO/$lbl/04-validate.md"; ac_put "$f" "PASS"; ac_put "$ACR/$lbl-examine.md" "$AC_TALLY"
+          ln -s "$ACR/$lbl-examine.md" "$ACO/$lbl/05-examine.md" || { why="cannot plant the 05-examine.md symlink"; return 1; }
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
         *)
           why="no such case"; return 2 ;;
       esac

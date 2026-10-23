@@ -335,6 +335,20 @@ let
       scope = skills.apexStep04Validate;
     }
     {
+      # B5 analyze compares the plan's Files: line with this one: rewritten
+      # after analyze, it hides every file analyze found.
+      name = "init: the 00-context Files: line is the pre-analyze guess, never rewritten";
+      needle = "That `Files:` line is the pre-analyze guess and is";
+      scope = skills.apexStep00Init;
+    }
+    {
+      # B5 of checks/apex-metrics-probe.py reads this tally from 05-examine.md:
+      # without it an examine pass that ran is counted unknown, never changed.
+      name = "examine: the triage carries a confirmed/unique/dismissed tally";
+      needle = "`confirmed=N unique=U dismissed=D`, same format as step-04";
+      scope = skills.apexStep05Examine;
+    }
+    {
       name = "examine: one blind opus reviewer works a merged checklist";
       needle = "Launch ONE blind code-reviewer agent";
       scope = skills.apexStep05Examine;

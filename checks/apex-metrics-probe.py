@@ -36,7 +36,15 @@ file or one over HOOK_MAX_BYTES is not read: DEFERRED backtracks
 quadratically on a line of unclosed brackets, 0.8 s at 64 KiB. One classifier for the
 plan-time gate and the B2 metric. A Write or Edit of a run's 04-validate.md
 instead names the passes that ran and left no tally (B5 below: e, x), same
-guards. Anything else, an error included, exits 0 with nothing on stdout.
+guards. A Write or Edit of a Claude memory note
+(.claude/projects/<project>/memory/<note>.md) names what B4 counts against
+it: each [[link]] that is no sibling's `name:` slug, with the slug when the
+link is a sibling's file stem (exact stem first, then `_` and `-` read as
+each other; a sibling without `name:` is said so), and the note missing
+from MEMORY.md; one of MEMORY.md itself names the notes it links that are
+not in the directory. B4 and that branch share their regexes, same guards
+(a symlinked sibling is not read). Anything else, an error included, exits
+0 with nothing on stdout.
 
 B5 STEPS, per run dir. A run that ran a step and recorded nothing is
 unknown, never a yes or a no.
@@ -118,6 +126,10 @@ DEFERRED = re.compile(r"\[[^\[\]\n]*\bdeferred to user\b[^\]\n]*\]")
 AC_DOCS = re.compile(r"^\s*(?:[-*]\s+)?\**AC-docs\b")
 ACS_PATH = re.compile(r"/\.claude/output/apex/[^/]+/02-acs\.md$")
 VALIDATE_PATH = re.compile(r"/\.claude/output/apex/[^/]+/04-validate\.md$")
+MEMORY_PATH = re.compile(r"/\.claude/projects/[^/]+/memory/[^/]+\.md$")
+MEM_LINK = re.compile(r"\[\[([^\]|#]+)")
+INDEX_LINK = re.compile(r"\]\(([^)]+\.md)\)")
+NAME_LINE = re.compile(r"^name:\s*(\S+)", re.MULTILINE)
 TALLY = re.compile(r"\bconfirmed=(\d+)")
 TALLY_PAIR = re.compile(r"\bdismissed=\d+")
 WIKILINK = re.compile(r"\[\[([^\]\s|#][^\]\n]*)")
@@ -572,6 +584,22 @@ def _read(path):
     return path.read_text(encoding="utf-8", errors="replace")
 
 
+def note_slug(text):
+    """The `name:` slug of a memory note, None when it has none."""
+    m = NAME_LINE.search(text)
+    return m.group(1) if m else None
+
+
+def note_links(text):
+    """The [[link]] targets of a memory note, as B4 counts them."""
+    return set(MEM_LINK.findall(text))
+
+
+def index_links(text):
+    """The note files MEMORY.md links to."""
+    return set(INDEX_LINK.findall(text))
+
+
 def metrics(runs_root, mem_root):
     out = {}
     runs = sorted(p for p in runs_root.iterdir() if p.is_dir())
@@ -634,15 +662,17 @@ def metrics(runs_root, mem_root):
     # B4: memory index health
     idx = _read(mem_root / "MEMORY.md")
     files = {p.name for p in mem_root.glob("*.md")} - {"MEMORY.md"}
-    linked = set(re.findall(r"\]\(([^)]+\.md)\)", idx))
+    linked = index_links(idx)
     names = set()
     wikilinks = set()
     for f in files:
-        body = _read(mem_root / f)
-        m = re.search(r"^name:\s*(\S+)", body, re.MULTILINE)
-        if m:
-            names.add(m.group(1))
-        wikilinks |= set(re.findall(r"\[\[([^\]|#]+)", body))
+        body = _guarded_text(mem_root / f, None)
+        if body is None:
+            continue
+        slug = note_slug(body)
+        if slug is not None:
+            names.add(slug)
+        wikilinks |= note_links(body)
     out["B4.index_lines"] = len(idx.splitlines())
     out["B4.index_bytes"] = len(idx.encode())
     out["B4.files"] = len(files)
@@ -687,6 +717,8 @@ def hook():
     path = data["tool_input"]["file_path"]
     if isinstance(path, str) and VALIDATE_PATH.search(path):
         return validate_hook(pathlib.Path(path))
+    if isinstance(path, str) and MEMORY_PATH.search(path):
+        return memory_hook(pathlib.Path(path))
     if not isinstance(path, str) or not ACS_PATH.search(path):
         return 0
     p = pathlib.Path(path)
@@ -716,6 +748,53 @@ def validate_hook(p):
         return 0
     msg = (f"B5: {p.parent.name} records no confirmed/dismissed tally for: {', '.join(missing)} "
            "— add `confirmed=N unique=U dismissed=D` (step-04/step-05)")
+    print(json.dumps({"hookSpecificOutput": dict(hookEventName="PostToolUse", additionalContext=msg)}))
+    return 0
+
+
+def memory_hook(p):
+    """--hook on a memory note or its MEMORY.md: name what B4 counts against it."""
+    if p.is_symlink():
+        return 0
+    if not p.is_file() or p.stat().st_size > HOOK_MAX_BYTES:
+        return 0
+    text = _read(p)
+    files = {q.name for q in p.parent.glob("*.md")} - {"MEMORY.md"}
+    if p.name == "MEMORY.md":
+        dead = sorted(index_links(text) - files)
+        if not dead:
+            return 0
+        more = f", +{len(dead) - HOOK_CAP} more" if len(dead) > HOOK_CAP else ""
+        msg = f"memory: MEMORY.md links missing notes: {', '.join(dead[:HOOK_CAP])}{more}"
+    else:
+        names = set()
+        by_stem = {}
+        for f in sorted(files):
+            body = _guarded_text(p.parent / f, HOOK_MAX_BYTES)
+            if body is not None:
+                by_stem[f[:-3]] = note_slug(body)
+                names.add(by_stem[f[:-3]])
+        names.discard(None)
+        for stem, slug in list(by_stem.items()):
+            by_stem.setdefault(stem.replace("_", "-"), slug)
+            by_stem.setdefault(stem.replace("-", "_"), slug)
+        items = []
+        for link in sorted(note_links(text) - names):
+            shown = link[:80]
+            if link not in by_stem:
+                items.append(f"[[{shown}]] (no such note)")
+            elif by_stem[link] is None:
+                items.append(f"[[{shown}]] (note has no name: slug)")
+            else:
+                items.append(f"[[{shown}]] → [[{by_stem[link]}]]")
+        if len(items) > HOOK_CAP:
+            items[HOOK_CAP:] = [f"+{len(items) - HOOK_CAP} more"]
+        idx = _guarded_text(p.parent / "MEMORY.md", HOOK_MAX_BYTES)
+        if idx is not None and p.name not in index_links(idx):
+            items.append("not listed in MEMORY.md")
+        if not items:
+            return 0
+        msg = f"memory: {p.name}: {'; '.join(items)}"
     print(json.dumps({"hookSpecificOutput": dict(hookEventName="PostToolUse", additionalContext=msg)}))
     return 0
 

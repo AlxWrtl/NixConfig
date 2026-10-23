@@ -1017,13 +1017,17 @@ in
           ];
         }
         {
-          # Écriture d'un 02-acs.md de run APEX : liste les AC qui ne nomment
-          # aucune commande et ne portent ni `[lecture] — raison` ni
-          # `[deferred to user]`. Même classifieur que la métrique B2 (le corps
-          # EST checks/apex-metrics-probe.py). Synchrone : `async = true`
-          # livrerait le contexte un tour trop tard, quand le plan est déjà
-          # passé. Muet hors d'un 02-acs.md et à zéro AC non prouvé ;
-          # fail-open (toute erreur = exit 0, rien sur stdout).
+          # Trois déclencheurs (le corps EST checks/apex-metrics-probe.py) :
+          # 1. un 02-acs.md de run APEX : liste les AC qui ne nomment aucune
+          #    commande et ne portent ni `[lecture] — raison` ni
+          #    `[deferred to user]` (même classifieur que la métrique B2) ;
+          # 2. un 04-validate.md de run APEX : nomme les passes (e, x) qui ont
+          #    tourné sans laisser de décompte (métrique B5) ;
+          # 3. une note mémoire Claude ou son MEMORY.md : nomme ce que B4
+          #    compte contre elle (lien mort, note absente de l'index).
+          # Synchrone : `async = true` livrerait le contexte un tour trop
+          # tard, quand le plan est déjà passé. Muet ailleurs et à zéro
+          # écart ; fail-open (toute erreur = exit 0, rien sur stdout).
           matcher = "Write|Edit";
           hooks = [
             {

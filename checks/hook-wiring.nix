@@ -119,6 +119,13 @@
 #      is named in a B5 line; a tally, a BLOCKED verify or a symlinked
 #      05-examine.md stays silent. One
 #      canary: the tally regex that never matches, killed on the silent case.
+#      The memory-consolidation run adds the probe's memory branch: a Write
+#      or Edit of a note under .claude/projects/<p>/memory/ names its
+#      [[links]] that are no sibling's `name:` slug (the slug offered when
+#      the link is a sibling's file stem) and its absence from MEMORY.md;
+#      one of MEMORY.md names its links to absent notes. A clean note, the
+#      same note outside a memory dir and a symlinked one stay silent. One
+#      canary per branch.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -560,6 +567,30 @@ let
     A-ac-tally = {
       hook = "apex-metrics-probe.py";
       text = "TALLY = re.compile(r\"\\bconfirmed=(\\d+)\")";
+    };
+    A-mem-path = {
+      hook = "apex-metrics-probe.py";
+      text = "MEMORY_PATH = re.compile(r\"/\\.claude/projects/[^/]+/memory/[^/]+\\.md$\")";
+    };
+    A-mem-slugs = {
+      hook = "apex-metrics-probe.py";
+      text = "for link in sorted(note_links(text) - names):";
+    };
+    A-mem-index = {
+      hook = "apex-metrics-probe.py";
+      text = "if idx is not None and p.name not in index_links(idx):";
+    };
+    A-mem-dead = {
+      hook = "apex-metrics-probe.py";
+      text = "dead = sorted(index_links(text) - files)";
+    };
+    A-mem-symlink = {
+      hook = "apex-metrics-probe.py";
+      text = "if p.is_symlink():";
+    };
+    A-mem-fold = {
+      hook = "apex-metrics-probe.py";
+      text = "by_stem.setdefault(stem.replace(\"_\", \"-\"), slug)";
     };
     A-cb-cron = {
       hook = "correction-budget.js";
@@ -1536,6 +1567,90 @@ let
         {
           anchor = "A-ac-tally";
           to = "TALLY = re.compile(r\"(?!x)x(\\d+)\")";
+        }
+      ];
+    }
+    # Any .md is read as a memory note: a plain notes dir gets the memory line.
+    {
+      id = "M-mem-path";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-mem-outside-silent";
+      swaps = [
+        {
+          anchor = "A-mem-path";
+          to = "MEMORY_PATH = re.compile(r\"\\.md$\")";
+        }
+      ];
+    }
+    # Slugs ignored: a link to a sibling's own slug is reported.
+    {
+      id = "M-mem-slugs";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-mem-clean-silent";
+      swaps = [
+        {
+          anchor = "A-mem-slugs";
+          to = "for link in sorted(note_links(text)):";
+        }
+      ];
+    }
+    # Index never read: a note missing from MEMORY.md goes unnamed.
+    {
+      id = "M-mem-index";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-mem-unindexed-emits";
+      swaps = [
+        {
+          anchor = "A-mem-index";
+          to = "if False:";
+        }
+      ];
+    }
+    # Dead index links never computed: MEMORY.md pointing at nothing is silent.
+    {
+      id = "M-mem-dead";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-mem-index-dead-emits";
+      swaps = [
+        {
+          anchor = "A-mem-dead";
+          to = "dead = []";
+        }
+      ];
+    }
+    # Symlink followed: another file's links are reported as the note's.
+    {
+      id = "M-mem-symlink";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-mem-symlink-silent";
+      swaps = [
+        {
+          anchor = "A-mem-symlink";
+          to = "if False:";
+        }
+      ];
+    }
+    # No `_` → `-` fold: a dashed link to an underscored stem is "no such note".
+    {
+      id = "M-mem-fold";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-mem-dangling-emits";
+      swaps = [
+        {
+          anchor = "A-mem-fold";
+          to = "by_stem.setdefault(stem, slug)";
+        }
+      ];
+    }
+    # Any memory/ dir: a notes/memory/ dir outside .claude/projects/ is read.
+    {
+      id = "M-mem-path-proj";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-mem-notes-memory-silent";
+      swaps = [
+        {
+          anchor = "A-mem-path";
+          to = "MEMORY_PATH = re.compile(r\"/memory/[^/]+\\.md$\")";
         }
       ];
     }
@@ -2658,6 +2773,13 @@ let
     "ac-validate-blocked-silent"
     "ac-validate-examine-emits"
     "ac-validate-examine-link-silent"
+    "ac-mem-dangling-emits"
+    "ac-mem-clean-silent"
+    "ac-mem-unindexed-emits"
+    "ac-mem-index-dead-emits"
+    "ac-mem-outside-silent"
+    "ac-mem-symlink-silent"
+    "ac-mem-notes-memory-silent"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -2978,6 +3100,23 @@ let
       [ -s "$d/$lbl.out" ] || { why="no output: the missing tally was due"; kind=mismatch; return 1; }
       ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "PostToolUse") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
       case "$ctx" in "B5: $lbl records no confirmed/dismissed tally for: $1 — add "*) ;; *) why="context is not the B5 line for '$1': $ctx"; return 1 ;; esac
+    }
+    # Memory branch: a note dir under $ACR/.claude/projects/<case>/memory.
+    # $1 file, $2 its `name:` slug, then its body lines.
+    mem_note() { mn_f="$1"; mn_s="$2"; shift 2; ac_put "$mn_f" "---" "name: $mn_s" "description: probe note" "---" "" "$@"; }
+    # $1 text the memory line must carry, then texts it must not.
+    mem_emits() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the memory line was due"; kind=mismatch; return 1; }
+      ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "PostToolUse") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
+      case "$ctx" in "memory: "*) ;; *) why="context does not start with 'memory: ': $ctx"; return 1 ;; esac
+      must="$1"
+      shift
+      for x in "$@"; do
+        case "$ctx" in *"$x"*) why="context carries '$x': $ctx"; kind=mismatch; return 1 ;; esac
+      done
+      case "$ctx" in *"$must"*) ;; *) why="context lacks '$must': $ctx"; return 1 ;; esac
     }
 
     # research-model: $1 subagent_type, $2 model (absent when empty or unset).
@@ -4433,6 +4572,46 @@ let
         ac-validate-examine-link-silent)
           f="$ACO/$lbl/04-validate.md"; ac_put "$f" "PASS"; ac_put "$ACR/$lbl-examine.md" "$AC_TALLY"
           ln -s "$ACR/$lbl-examine.md" "$ACO/$lbl/05-examine.md" || { why="cannot plant the 05-examine.md symlink"; return 1; }
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # Memory note: a [[link]] that is no sibling's slug is named, with the
+        # slug when it is a sibling's file stem; a note missing from MEMORY.md
+        # and MEMORY.md links to absent notes too. Else silence, exit 0.
+        ac-mem-dangling-emits)
+          m="$ACR/.claude/projects/$lbl/memory"; mem_note "$m/other_note.md" other-note "Body."
+          mem_note "$m/other_note_x.md" ox-slug "Body."; ac_put "$m/bare_note.md" "Body, no front matter."
+          f="$m/n.md"; mem_note "$f" n "See [[other_note]], [[other-note-x]], [[bare_note]] and [[ghost]]."
+          ac_put "$m/MEMORY.md" "- [N](n.md) — probe" "- [O](other_note.md) — probe"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"
+          mem_emits "n.md: [[bare_note]] (note has no name: slug); [[ghost]] (no such note); [[other-note-x]] → [[ox-slug]]; [[other_note]] → [[other-note]]" "not listed" "[[other-note-x]] (no such note)" ;;
+        ac-mem-clean-silent)
+          m="$ACR/.claude/projects/$lbl/memory"; mem_note "$m/other_note.md" other-note "Body."
+          f="$m/n.md"; mem_note "$f" n "See [[other-note]]."
+          ac_put "$m/MEMORY.md" "- [N](n.md) — probe" "- [O](other_note.md) — probe"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-mem-unindexed-emits)
+          m="$ACR/.claude/projects/$lbl/memory"; mem_note "$m/other_note.md" other-note "Body."
+          f="$m/n.md"; mem_note "$f" n "See [[other-note]]."
+          ac_put "$m/MEMORY.md" "- [O](other_note.md) — probe"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Edit "$f")"; mem_emits "memory: n.md: not listed in MEMORY.md" "[[" ;;
+        ac-mem-index-dead-emits)
+          m="$ACR/.claude/projects/$lbl/memory"; mem_note "$m/other_note.md" other-note "Body."
+          f="$m/MEMORY.md"; ac_put "$f" "- [x](absent.md) — probe" "- [y](other_note.md) — probe"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; mem_emits "memory: MEMORY.md links missing notes: absent.md" "other_note.md" ;;
+        # The same dangling note outside a memory dir, and a symlinked one.
+        ac-mem-outside-silent)
+          m="$ACR/$lbl/notes"; mem_note "$m/other_note.md" other-note "Body."
+          f="$m/n.md"; mem_note "$f" n "See [[other_note]] and [[ghost]]."
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-mem-symlink-silent)
+          m="$ACR/.claude/projects/$lbl/memory"; mem_note "$m/other_note.md" other-note "Body."
+          ac_put "$m/MEMORY.md" "- [N](n.md) — probe" "- [O](other_note.md) — probe"
+          f="$m/n.md"; mem_note "$ACR/$lbl-target.md" n "See [[ghost]]."
+          ln -s "$ACR/$lbl-target.md" "$f" || { why="cannot plant the note symlink"; return 1; }
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # A memory/ dir that is not .claude/projects/<p>/memory/.
+        ac-mem-notes-memory-silent)
+          m="$ACR/$lbl/notes/memory"; mem_note "$m/other_note.md" other-note "Body."
+          f="$m/n.md"; mem_note "$f" n "See [[other_note]] and [[ghost]]."
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
         *)
           why="no such case"; return 2 ;;

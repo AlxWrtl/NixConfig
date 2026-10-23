@@ -329,10 +329,18 @@ in
         # du répertoire reste refusé. Le deny `Read(~/.config/secrets/**)`
         # bloque toujours le Read / `cat` de Claude lui-même : seul le wrapper
         # les lit, et il ne les affiche jamais.
+        # Preprod Preliz : même schéma pour le wrapper `preprod-curl`
+        # (home/claude-code/preprod-curl.nix) — service token Cloudflare Access
+        # (id + secret) et mots de passe des deux comptes agents, quatre
+        # FICHIERS exacts, ni répertoire ni glob (checks/preprod-curl.nix B4).
         allowRead = [
           "${homeDirectory}/.ssh/id_ed25519.pub"
           "${homeDirectory}/.config/secrets/trello-api-key"
           "${homeDirectory}/.config/secrets/trello-token"
+          "${homeDirectory}/.config/secrets/cf-access-client-id"
+          "${homeDirectory}/.config/secrets/cf-access-client-secret"
+          "${homeDirectory}/.config/secrets/preliz-preprod-rp-password"
+          "${homeDirectory}/.config/secrets/preliz-preprod-journaliste-password"
         ];
         # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the
@@ -549,6 +557,7 @@ in
         "Source control: master is protected server-side by the GitHub ruleset protect-master (PR required, force-push and deletion refused, no bypass); the agent works on feature branches it creates itself."
         "Trello: api.trello.com is the user's own Trello account, reached only through the packaged `trello` CLI wrapper (reads ~/.config/secrets/trello-* itself, never prints them); reading boards and creating/moving/commenting cards there is trusted user-intended data flow."
         "Preliz: ~/projects/Preliz (github.com/AlxWrtl/Preliz) is the user's own app; the Cloudflare Workers it deploys to (preprod and prod) are the user's own targets, deployed through `pnpm run deploy` (preprod) and `pnpm run deploy:prod` (prod)."
+        "Preliz preprod: https://preliz-preprod.alxwrtl.workers.dev is the user's own preprod (behind Cloudflare Access; holds REAL user data), reached only through the packaged `preprod-curl` wrapper (reads ~/.config/secrets/cf-access-client-* and preliz-preprod-*-password itself, never prints them); requests there as the agent accounts are user-intended; never copy its data to other destinations."
       ];
       allow = [
         "$defaults"
@@ -605,13 +614,20 @@ in
       defaultMode = "auto";
       # `ask` forces a confirmation box for matching commands, overriding
       # skipDangerousModePermissionPrompt and acceptEdits. Precedence: deny > ask > allow.
-      # Box only for sudo (sudo git, sudo darwin-rebuild, …). A bare "Bash" rule
+      # Box only for sudo (sudo git, sudo darwin-rebuild, …) and the preprod
+      # writes (preprod-curl post/put/patch). A bare "Bash" rule
       # here fires on every out-of-sandbox command → box spammée, don't add it.
       ask = [
         "Bash(sudo *)"
         # User decision 2026-09-28: no ask on `gh pr merge` / mutating `gh api`
         # — the agent squash-merges its own green PRs. Server-side barrier for
         # master = GitHub ruleset `protect-master` (id 24043808). A19 pins this.
+        # User decision 2026-10-23: the preprod holds real data, so writes
+        # through `preprod-curl` get a confirmation box (ask beats allow over
+        # `Bash(preprod-curl *)`). Reads stay unboxed. A19 + preprod-curl B7.
+        "Bash(preprod-curl post *)"
+        "Bash(preprod-curl put *)"
+        "Bash(preprod-curl patch *)"
       ];
       allow = [
         "Read(*)"
@@ -637,6 +653,9 @@ in
         # Trello REST API via the packaged wrapper: it reads the secrets itself and
         # keeps them out of argv, URL and output. Narrow on purpose, never `Bash(curl *)`.
         "Bash(trello *)"
+        # Preliz preprod (Cloudflare Access) via the packaged wrapper: same
+        # contract as trello. Writes are boxed by `ask` above.
+        "Bash(preprod-curl *)"
         # Nix option docs at the flake.lock rev: read-only eval, sandboxed, own read-only-store fallback. Never in excludedCommands.
         "Bash(nix-options *)"
         # External cross-vendor verifier (APEX `-e`). Wrapper around a

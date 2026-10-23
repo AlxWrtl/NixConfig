@@ -604,8 +604,15 @@ let
   missingSecretReadDeny = builtins.filter (d: !(builtins.elem d deny)) requiredSecretReadDeny;
 
   # User decision 2026-09-28: the agent squash-merges its own green PRs; only
-  # sudo still shows a box.
-  expectedAsk = [ "Bash(sudo *)" ];
+  # sudo still shows a box. User decision 2026-10-23: preprod writes through
+  # the preprod-curl wrapper (real data) show one too. Compared as a set.
+  expectedAsk = [
+    "Bash(sudo *)"
+    "Bash(preprod-curl post *)"
+    "Bash(preprod-curl put *)"
+    "Bash(preprod-curl patch *)"
+  ];
+  sortStrings = builtins.sort builtins.lessThan;
 
   emptyHookGroups = builtins.filter (g: (g.hooks or null) == [ ]) preToolUse;
 
@@ -1000,14 +1007,14 @@ let
         + " — need exactly one, starting `node \"/` (absolute), containing `/openai-codex/codex/1.0.6/scripts/${companionNeedle}` and no `*` before it: a wildcard or relative path lets `node <any script>` leave the sandbox. Plugin updated? bump the version in settings.nix";
     }
     {
-      name = "A19 settings: ask holds sudo only (user decision 2026-09-28)";
-      ok = ask == expectedAsk;
+      name = "A19 settings: ask holds sudo only (user decision 2026-09-28) + preprod-curl writes (2026-10-23)";
+      ok = builtins.all builtins.isString ask && sortStrings ask == sortStrings expectedAsk;
       msg =
         "permissions.ask is "
         + builtins.toJSON ask
         + ", expected "
         + builtins.toJSON expectedAsk
-        + " — the user removed the merge / mutating gh api asks himself: the agent merges its own green PRs, master stays guarded server-side by the protect-master ruleset. Any extra ask brings back a box that stalls an autonomous run";
+        + " — the user removed the merge / mutating gh api asks himself: the agent merges its own green PRs, master stays guarded server-side by the protect-master ruleset; the preprod-curl writes box on purpose (real preprod data, user decision 2026-10-23). Any other ask brings back a box that stalls an autonomous run";
     }
     {
       name = "A20 settings: codex is not blanket-allowed";

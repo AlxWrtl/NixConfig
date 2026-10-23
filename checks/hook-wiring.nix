@@ -50,6 +50,10 @@
 #      The claude-bg removal retires that wrapper: claude-dispatch next to
 #      another command, behind VAR= or an absolute path denied, alone
 #      allowed; claude-bg chained to git push denied, behind cd && silent.
+#      The preliz-localdb run adds pnpm localdb:start/stop to
+#      lone-excluded-bash: behind cd &&, piped, with an argument or via
+#      pnpm run denied; each alone, chained to each other, and other pnpm
+#      scripts allowed.
 #      The sandbox-escape run adds sandbox-escape-evidence: an escape with
 #      no sandbox error in the newest Bash batch denied, an older batch's
 #      error, a skill body naming the flag, an allowlisted verb inside
@@ -520,11 +524,23 @@ let
     };
     A-le-dispatch-prefilter = {
       hook = "lone-excluded-bash.js";
-      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b/;";
+      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bpnpm\\b/;";
     };
     A-le-dispatch-clean = {
       hook = "lone-excluded-bash.js";
       text = "if (w0.val === \"gh\" || w0.val === \"claude-dispatch\") return true;";
+    };
+    A-le-pnpm-prefilter = {
+      hook = "lone-excluded-bash.js";
+      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bpnpm\\b/;";
+    };
+    A-le-pnpm-target = {
+      hook = "lone-excluded-bash.js";
+      text = "if (cmd === \"pnpm\") {";
+    };
+    A-le-pnpm-clean = {
+      hook = "lone-excluded-bash.js";
+      text = "if (w0.val === \"pnpm\") return words.length === 2 && w1.plain && PNPM_SCRIPTS.includes(w1.val);";
     };
     A-se-failopen = {
       hook = "sandbox-escape-evidence.js";
@@ -1362,7 +1378,7 @@ let
       swaps = [
         {
           anchor = "A-le-dispatch-prefilter";
-          to = "const PREFILTER = /\\bg(?:it|h)\\b/;";
+          to = "const PREFILTER = /\\bg(?:it|h)\\b|\\bpnpm\\b/;";
         }
       ];
     }
@@ -1376,6 +1392,44 @@ let
         {
           anchor = "A-le-dispatch-clean";
           to = "if (w0.val === \"gh\") return true;";
+        }
+      ];
+    }
+    # pnpm not a target: `cd /x && pnpm localdb:start` passes.
+    {
+      id = "M-le-pnpm-target";
+      hook = "lone-excluded-bash.js";
+      kills = "le-pnpm-cd-deny";
+      swaps = [
+        {
+          anchor = "A-le-pnpm-target";
+          to = "if (false) {";
+        }
+      ];
+    }
+    # The prefilter blind to pnpm: a call with no git/gh/claude-dispatch word
+    # is never lexed, `pnpm localdb:start 2>&1 | tail -8` passes.
+    {
+      id = "M-le-pnpm-prefilter";
+      hook = "lone-excluded-bash.js";
+      kills = "le-pnpm-pipe-deny";
+      swaps = [
+        {
+          anchor = "A-le-pnpm-prefilter";
+          to = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b/;";
+        }
+      ];
+    }
+    # A lone pnpm localdb:start not clean: the call it must let out is
+    # denied. Killed on an ALLOW case, as an over-block.
+    {
+      id = "M-le-pnpm-clean";
+      hook = "lone-excluded-bash.js";
+      kills = "le-pnpm-start-allow";
+      swaps = [
+        {
+          anchor = "A-le-pnpm-clean";
+          to = "if (false) return false;";
         }
       ];
     }
@@ -2130,6 +2184,10 @@ let
     "le-retired-bg-push-deny"
     "le-dispatch-env-deny"
     "le-dispatch-abs-deny"
+    "le-pnpm-cd-deny"
+    "le-pnpm-pipe-deny"
+    "le-pnpm-args-deny"
+    "le-pnpm-run-deny"
     "le-push-allow"
     "le-push-u-allow"
     "le-commit-F-allow"
@@ -2142,6 +2200,11 @@ let
     "le-status-diff-allow"
     "le-chain-targets-allow"
     "le-dispatch-allow"
+    "le-pnpm-start-allow"
+    "le-pnpm-stop-allow"
+    "le-pnpm-chain-allow"
+    "le-pnpm-install-allow"
+    "le-pnpm-pipe-other-allow"
     "le-retired-bg-cd-allow"
     "le-malformed-allow"
     "le-command-v-allow"
@@ -3286,6 +3349,16 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'CLAUDE_CONFIG_DIR=/x claude-dispatch fix-a "fix the typo"')"; is_deny "next to another command" ;;
         le-dispatch-abs-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in '/etc/profiles/per-user/alx/bin/claude-dispatch fix-a "fix the typo"')"; is_deny "next to another command" ;;
+        # pnpm localdb:start/stop are exact entries: any prefix, pipe,
+        # argument or `pnpm run` keeps the call sandboxed.
+        le-pnpm-cd-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'cd /x && pnpm localdb:start')"; is_deny "next to another command" ;;
+        le-pnpm-pipe-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm localdb:start 2>&1 | tail -8')"; is_deny "next to another command" ;;
+        le-pnpm-args-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm localdb:stop --rm')"; is_deny "with arguments after it" ;;
+        le-pnpm-run-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm run localdb:start')"; is_deny "next to another command" ;;
         le-command-v-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'command -v gh')"; is_allow ;;
         le-push-allow)
@@ -3312,6 +3385,17 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -F m.txt && git push')"; is_allow ;;
         le-dispatch-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-dispatch fix-a "fix the typo"')"; is_allow ;;
+        le-pnpm-start-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm localdb:start')"; is_allow ;;
+        le-pnpm-stop-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm localdb:stop')"; is_allow ;;
+        le-pnpm-chain-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm localdb:stop && pnpm localdb:start')"; is_allow ;;
+        # Other pnpm calls are lexed (prefilter) but no target: silent.
+        le-pnpm-install-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm install')"; is_allow ;;
+        le-pnpm-pipe-other-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm typecheck | tail')"; is_allow ;;
         le-malformed-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$malformed"; is_allow ;;
         # Sandbox-escape run: the flag needs sandbox evidence in the newest

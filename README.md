@@ -662,6 +662,20 @@ removed, lookup misdirected, budget raised, ordering reversed, worktree
 resolved by toplevel, control-character filter removed, fit test off by
 one, symlinks not followed, byte counting) turns a case red.
 
+`checks/apex-metrics-probe.py` measures the APEX runs on disk, to compare
+before and after a harness change: B1 the runs that needed a correction
+round, B2 the acceptance criteria proven by a command against those stated in
+prose only, B3 the tokens spent per phase, B4 the health of the memory index.
+Run `python3 -I checks/apex-metrics-probe.py` from the repo root; it prints
+sorted `key=value` lines and exits 2 when the runs or memory directory is
+missing. B2 reads each criterion as a whole block, continuation lines and
+fenced code included, and counts a backticked span only when it runs
+something, so a backticked path is prose and an unquoted `nix flake check`
+is a command. Its canary is `--self-test`: it grades that classifier on real
+criteria copied from run directories and exits non-zero unless the old rule
+(any backtick is a command) mislabels some of them. The run directories are
+git-ignored, so this is a manual probe outside the flake.
+
 ### Usage
 
 ```

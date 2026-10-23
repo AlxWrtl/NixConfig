@@ -213,6 +213,16 @@ in
         # classifier-reviewed (auto mode).
         "pnpm localdb:start"
         "pnpm localdb:stop"
+        # Preliz deploys (user decision 2026-10-23): sandboxed, an allow-matched
+        # `pnpm run deploy` still went to server-side classifier review and was
+        # refused [Production Deploy] (Preliz transcripts 2026-10-22/23). A lone
+        # excluded command an allow rule covers resolves before the classifier
+        # (docs sandboxing, excludedCommands); also lets wrangler refresh OAuth.
+        # Exact, no `*`; not path-scoped (any repo with a `deploy` script
+        # matches). Risk accepted: package.json/scripts are writable sandboxed
+        # and run unsandboxed.
+        "pnpm run deploy"
+        "pnpm run deploy:prod"
         # nix build/eval + docker: user decision 2026-10-22 — the escape box
         # was always approved anyway. Risk accepted: as a trusted user,
         # nix build/eval with --option/--override-input/--expr is
@@ -538,10 +548,12 @@ in
         "Organization: personal nix-darwin config repo AlxWrtl/NixConfig (github.com), cloned at ~/.config/nix-darwin; primary use: personal macOS system configuration."
         "Source control: master is protected server-side by the GitHub ruleset protect-master (PR required, force-push and deletion refused, no bypass); the agent works on feature branches it creates itself."
         "Trello: api.trello.com is the user's own Trello account, reached only through the packaged `trello` CLI wrapper (reads ~/.config/secrets/trello-* itself, never prints them); reading boards and creating/moving/commenting cards there is trusted user-intended data flow."
+        "Preliz: ~/projects/Preliz (github.com/AlxWrtl/Preliz) is the user's own app; the Cloudflare Workers it deploys to (preprod and prod) are the user's own targets, deployed through `pnpm run deploy` (preprod) and `pnpm run deploy:prod` (prod)."
       ];
       allow = [
         "$defaults"
         "Local branch housekeeping in ~/.config/nix-darwin (AlxWrtl/NixConfig): switching branches, and deleting LOCAL branches the agent created in this repo — including unmerged disposable/probe branches — and branches already merged. Never master; master is protected by protect-master."
+        "Preliz deploys: running `pnpm run deploy` (preprod) in ~/projects/Preliz is user-authorized; `pnpm run deploy:prod` is user-authorized once the user has given an explicit yes in the conversation for that deploy (decision 2026-10-23). Not wrangler called directly, not other deploy commands, not other repos."
       ];
     };
 
@@ -605,6 +617,10 @@ in
         "Read(*)"
         # Package managers
         "Bash(pnpm *)"
+        # Kept explicit should `pnpm *` ever be narrowed: the deploy
+        # exclusions above resolve without the classifier only when allowed.
+        "Bash(pnpm run deploy)"
+        "Bash(pnpm run deploy:prod)"
         "Bash(npm run *)"
         "Bash(dev-browser *)"
         "Bash(npx dev-browser *)"
@@ -853,8 +869,8 @@ in
         {
           matcher = "Bash";
           # No `if`: it holds one rule, and both `git` and `gh` are needed.
-          # Denies a sandbox-excluded command (git push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start/stop)
-          # composed with anything that keeps the call sandboxed. Fail-open.
+          # Denies a sandbox-excluded command (git push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start/stop,
+          # pnpm run deploy/deploy:prod) composed with anything that keeps the call sandboxed. Fail-open.
           hooks = [
             {
               type = "command";

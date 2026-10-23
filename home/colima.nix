@@ -21,7 +21,9 @@
   ...
 }:
 let
-  defaultYaml = "${config.services.colima.colimaHomeDir}/default/colima.yaml";
+  profileYaml = name: "${config.services.colima.colimaHomeDir}/${name}/colima.yaml";
+  # the profiles the module would link a yaml for
+  yamlProfiles = lib.filterAttrs (_: p: p.settings != { }) config.services.colima.profiles;
   arcVersion = "0.15.0";
   charts = "oci://ghcr.io/actions/actions-runner-controller-charts";
   # release name (= `runs-on:` label) → repository
@@ -110,9 +112,7 @@ in
       settings = {
         # 6 of the M1's 8 cores, 8 of its 16 GB: room freed by Docker Desktop's
         # removal; `default` takes 2 + 2. A colima.yaml change needs a VM
-        # restart (the launchd plist does not change). `colima restart ci` and
-        # `colima start ci` fail on this read-only yaml: run `colima stop ci`,
-        # then `launchctl kickstart -k gui/$UID/org.nix-community.home.colima-ci`.
+        # restart (the launchd plist does not change).
         cpu = 6;
         memory = 8;
         disk = 30;
@@ -145,16 +145,20 @@ in
     };
   };
 
-  # `colima start default` rewrites its colima.yaml and fails on the module's
-  # read-only store symlink: install a writable copy instead, reset each switch.
-  home.file.${defaultYaml}.enable = false;
-  home.activation.colimaDefaultYaml = lib.hm.dag.entryAfter [ "linkGeneration" ] ''
-    target="$HOME/${defaultYaml}"
-    if [ -L "$target" ]; then run rm -f "$target"; fi
-    run mkdir -p "$(dirname "$target")"
-    run cp ${
-      (pkgs.formats.yaml { }).generate "colima.yaml" config.services.colima.profiles.default.settings
-    } "$target"
-    run chmod u+w "$target"
-  '';
+  # `colima start <profile>` rewrites its colima.yaml and fails on the module's
+  # read-only store symlink: install writable copies instead, reset each switch.
+  home.file = lib.mapAttrs' (
+    name: _: lib.nameValuePair (profileYaml name) { enable = false; }
+  ) yamlProfiles;
+  home.activation.colimaYaml = lib.hm.dag.entryAfter [ "linkGeneration" ] (
+    lib.concatStrings (
+      lib.mapAttrsToList (name: profile: ''
+        target="$HOME/${profileYaml name}"
+        if [ -L "$target" ]; then run rm -f "$target"; fi
+        run mkdir -p "$(dirname "$target")"
+        run cp ${(pkgs.formats.yaml { }).generate "colima.yaml" profile.settings} "$target"
+        run chmod u+w "$target"
+      '') yamlProfiles
+    )
+  );
 }

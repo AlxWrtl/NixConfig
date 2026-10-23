@@ -86,7 +86,6 @@ in
   inherit deltaSections;
 
   agentsMd = ''
-    ${shared.preamble}
     # Codex — Global Guardrails
 
     ${shared.trunk}

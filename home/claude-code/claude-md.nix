@@ -97,7 +97,6 @@ in
   inherit deltaSections;
 
   claudeMdGlobal = ''
-    ${shared.preamble}
     # Claude Code — Global Guardrails
 
     ${shared.trunk}

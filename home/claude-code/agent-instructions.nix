@@ -39,12 +39,6 @@ let
   # ligne final, d'où le séparateur simple.
   render = sections: builtins.concatStringsSep "\n" (map (s: "## ${s.name}\n${s.body}") sections);
 
-  preamble = ''
-    Always respond in caveman full mode: terse prose, no filler, fragments over sentences,
-    no articles unless ambiguous. Preserve all code, paths, commands, errors verbatim.
-    Deactivate only for: security warnings, irreversible action confirmations.
-  '';
-
   trunkSections = [
     {
       name = "Non-negotiables";
@@ -124,7 +118,7 @@ let
   ];
 in
 {
-  inherit preamble trunkSections render;
+  inherit trunkSections render;
 
   trunk = render trunkSections;
 }

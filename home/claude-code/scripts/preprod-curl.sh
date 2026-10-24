@@ -2,7 +2,7 @@
 #
 # Why a packaged CLI instead of curl: reaching the preprod needs the Access
 # service token (~/.config/secrets/cf-access-client-*) and, to act as a preprod
-# account, its email + password (~/.config/secrets/preprod-account-<account>).
+# account, its password (~/.config/secrets/preliz-preprod-<account>-password).
 # The auto-mode classifier refused
 # `$(cat ~/.config/secrets/…)` followed by curl as Credential Exploration.
 # This binary reads the secrets itself and never prints them:
@@ -32,9 +32,11 @@
 # -b reads it) at $TMPDIR/preprod-curl-$UID/<account>.jar — dir 0700, file 0600,
 # refused when a symlink or owned by someone else. The jar is reused until its
 # session cookie expires, which also keeps clear of the sign-in rate limit;
-# --fresh signs in again. The account file holds the email on line 1 and the
-# password on line 2; surrounding whitespace (CR included) of both is trimmed,
-# so a password cannot start or end with whitespace.
+# --fresh signs in again. `--as <account>` signs in as
+# agent-<account>@preliz.com with the password from
+# ~/.config/secrets/preliz-preprod-<account>-password: the whole file,
+# surrounding whitespace (CR included) trimmed, so a password cannot start or
+# end with whitespace.
 #
 # Exit codes: 0 ok | 1 runtime (secrets, network, Access, HTTP >= 400) |
 # 2 usage (bad arguments, PATH, body). Only bash builtins + curl + jq +
@@ -49,6 +51,7 @@ set +o xtrace
 umask 077
 
 readonly HOST="https://preliz-preprod.alxwrtl.workers.dev"
+readonly EMAIL_DOMAIN=preliz.com
 readonly SECRETS="$HOME/.config/secrets"
 readonly PW_DIR="$HOME/projects/Preliz"
 readonly PATH_RE='^/[A-Za-z0-9/._~%?&=+,:-]*$'
@@ -58,7 +61,6 @@ readonly NAME_RE='^[A-Za-z0-9._-]{1,64}\.json$'
 # Classes spelled out: a range like a-z follows the locale's collation (under
 # ISO8859-1 it admits A-Y and Latin-1 letters).
 readonly ACCOUNT_RE='^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789_-]{0,31}$'
-readonly EMAIL_RE='^[^[:space:][:cntrl:]@]+@[^[:space:][:cntrl:]@]+$'
 readonly MAX_BODY=1048576
 readonly SIGNIN=/api/auth/sign-in/email
 
@@ -80,11 +82,11 @@ Usage:
   preprod-curl <get|head|post|put|patch> [options] PATH
 
 Options:
-  --as ACCOUNT          sign in as that preprod account (email on line 1,
-                        password on line 2 of
-                        ~/.config/secrets/preprod-account-ACCOUNT, surrounding
-                        whitespace trimmed; a-z 0-9 _ -, 32 chars max; session
-                        cached in
+  --as ACCOUNT          sign in as agent-<ACCOUNT>@preliz.com with the password
+                        from
+                        ~/.config/secrets/preliz-preprod-<ACCOUNT>-password
+                        (surrounding whitespace trimmed; ACCOUNT: a-z 0-9 _ -,
+                        32 chars max; session cached in
                         $TMPDIR/preprod-curl-$UID/ACCOUNT.jar)
   --fresh               sign in again even if the cached session is valid
   --json | --form       request body on stdin (post, put, patch only; 1 MiB max)
@@ -265,7 +267,7 @@ trim() {
 # secret <file> <regex|""> — trimmed value in REPLY; never printed.
 secret() {
   local f="$SECRETS/$1" v
-  [ -r "$f" ] || die 1 "missing $f"
+  [[ -f $f && -r $f ]] || die 1 "missing or unreadable $f (in the Claude sandbox, ~/.config/secrets opens only its exact token files and preliz-preprod-*-password)"
   v=$(<"$f") || die 1 "cannot read $f"
   trim "$v"
   v=$REPLY
@@ -279,26 +281,6 @@ secret() {
   REPLY=$v
 }
 
-# account_secret <account> — email (line 1) and password (line 2) of
-# preprod-account-<account> into $email / $password; never printed.
-account_secret() {
-  local f="$SECRETS/preprod-account-$1" i
-  local -a lines=()
-  [ -r "$f" ] || die 1 "missing or unreadable $f (in the Claude sandbox, list the account in home/claude-code/preprod-accounts.nix and switch)"
-  mapfile -t lines <"$f" || die 1 "cannot read $f"
-  for ((i = 2; i < ${#lines[@]}; i++)); do
-    trim "${lines[i]}"
-    [ -z "$REPLY" ] || die 1 "$f is malformed — expected 2 lines: email, then password"
-  done
-  trim "${lines[0]:-}"
-  [ -n "$REPLY" ] || die 1 "$f: line 1 (email) is empty"
-  [[ $REPLY =~ $EMAIL_RE ]] || die 1 "$f: line 1 is not an email address (one @, no spaces)"
-  email=$REPLY
-  trim "${lines[1]:-}"
-  [ -n "$REPLY" ] || die 1 "$f: line 2 (password) is missing or empty"
-  password=$REPLY
-}
-
 secret cf-access-client-id "$ID_RE" "32 letters/digits + .access"
 CF_ID=$REPLY
 secret cf-access-client-secret "$SECRET_RE" "cfast_ + 48 chars, or 64 hex"
@@ -308,7 +290,10 @@ remember "$CF_SECRET"
 
 jar=""
 if [ -n "$as" ]; then
-  account_secret "$as"
+  email="agent-$as@$EMAIL_DOMAIN"
+  secret "preliz-preprod-$as-password" ""
+  password=$REPLY
+  [[ $password != *[$'\n\r']* ]] || die 1 "$SECRETS/preliz-preprod-$as-password holds more than one line — keep the password only"
   remember "$password"
   # The password as it reads inside a JSON string, should a body echo it.
   remember "$(printf '%s' "$password" | jq -Rsj 'tojson | .[1:-1]')"

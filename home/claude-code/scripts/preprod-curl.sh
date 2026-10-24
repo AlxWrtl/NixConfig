@@ -1,15 +1,17 @@
 # preprod-curl — HTTP to the Preliz preprod (Cloudflare Access) from the shell.
 #
 # Why a packaged CLI instead of curl: reaching the preprod needs the Access
-# service token (~/.config/secrets/cf-access-client-*) and, to act as an agent
-# account, a better-auth password. The auto-mode classifier refused
+# service token (~/.config/secrets/cf-access-client-*) and, to act as a preprod
+# account, its email + password (~/.config/secrets/preprod-account-<account>).
+# The auto-mode classifier refused
 # `$(cat ~/.config/secrets/…)` followed by curl as Credential Exploration.
 # This binary reads the secrets itself and never prints them:
 #   - the Access id + secret travel only as headers inside a curl config fed
 #     on stdin (curl -K, "-" = read the config from stdin; `-q` first so no
 #     curlrc is read), never in argv (visible in `ps`), the URL or the output;
-#   - the sign-in password reaches curl only through a process-substitution
-#     fd (`--data-binary @/dev/fd/N`), built by `jq --rawfile` from the file;
+#   - the sign-in email + password reach curl only through a process-
+#     substitution fd (`--data-binary @/dev/fd/N`); jq builds that body from a
+#     builtin-printf pipe, so the password is never in argv or the environment;
 #   - the host is fixed; PATH is validated BEFORE any secret is read;
 #   - redirects are never followed and there is no -L: curl(1) -H warns that
 #     custom headers "are set in all HTTP requests - even after redirects are
@@ -21,15 +23,18 @@
 #     `-i` prints them, scrubbed;
 #   - every byte printed (body, headers, curl's own stderr, server error text)
 #     goes through scrub(): Set-Cookie values, the id, the secret, the
-#     passwords and every cookie value in the jar become [redacted].
+#     account passwords (raw and JSON-escaped) and every cookie value in the
+#     jar become [redacted].
 # No --noproxy: inside the Claude sandbox, egress goes through its proxy.
 #
 # Accounts (--as): better-auth sign-in (POST /api/auth/sign-in/email with an
 # Origin header), session kept in a Netscape cookie jar (curl -c writes it,
-# -b reads it) at $TMPDIR/preprod-curl-$UID/<role>.jar — dir 0700, file 0600,
+# -b reads it) at $TMPDIR/preprod-curl-$UID/<account>.jar — dir 0700, file 0600,
 # refused when a symlink or owned by someone else. The jar is reused until its
 # session cookie expires, which also keeps clear of the sign-in rate limit;
-# --fresh signs in again.
+# --fresh signs in again. The account file holds the email on line 1 and the
+# password on line 2; surrounding whitespace (CR included) of both is trimmed,
+# so a password cannot start or end with whitespace.
 #
 # Exit codes: 0 ok | 1 runtime (secrets, network, Access, HTTP >= 400) |
 # 2 usage (bad arguments, PATH, body). Only bash builtins + curl + jq +
@@ -50,6 +55,10 @@ readonly PATH_RE='^/[A-Za-z0-9/._~%?&=+,:-]*$'
 readonly ID_RE='^[A-Za-z0-9]{32}\.access$'
 readonly SECRET_RE='^(cfast_[A-Za-z0-9_-]{48}|[0-9a-fA-F]{64})$'
 readonly NAME_RE='^[A-Za-z0-9._-]{1,64}\.json$'
+# Classes spelled out: a range like a-z follows the locale's collation (under
+# ISO8859-1 it admits A-Y and Latin-1 letters).
+readonly ACCOUNT_RE='^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789_-]{0,31}$'
+readonly EMAIL_RE='^[^[:space:][:cntrl:]@]+@[^[:space:][:cntrl:]@]+$'
 readonly MAX_BODY=1048576
 readonly SIGNIN=/api/auth/sign-in/email
 
@@ -58,7 +67,7 @@ SCRUB=()
 CF_ID=""
 CF_SECRET=""
 email=""
-pw_file=""
+password=""
 work=""
 
 usage() {
@@ -71,8 +80,12 @@ Usage:
   preprod-curl <get|head|post|put|patch> [options] PATH
 
 Options:
-  --as rp|journaliste   sign in as that agent account (session cached in
-                        $TMPDIR/preprod-curl-$UID/<role>.jar)
+  --as ACCOUNT          sign in as that preprod account (email on line 1,
+                        password on line 2 of
+                        ~/.config/secrets/preprod-account-ACCOUNT, surrounding
+                        whitespace trimmed; a-z 0-9 _ -, 32 chars max; session
+                        cached in
+                        $TMPDIR/preprod-curl-$UID/ACCOUNT.jar)
   --fresh               sign in again even if the cached session is valid
   --json | --form       request body on stdin (post, put, patch only; 1 MiB max)
   -i                    print the response headers (scrubbed) before the body
@@ -158,7 +171,8 @@ while [ $# -gt 0 ]; do
     exit 0
     ;;
   --as)
-    [ $# -ge 2 ] || die 2 "--as needs rp or journaliste"
+    [ $# -ge 2 ] || die 2 "--as needs an account name"
+    [[ $2 =~ $ACCOUNT_RE ]] || die 2 "--as takes an account name: a-z 0-9 _ -, first char a-z 0-9, 32 chars max"
     as=$2
     shift 2
     ;;
@@ -189,7 +203,6 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ "$have_path" = 1 ] || die 2 "PATH missing (see --help)"
-case $as in "" | rp | journaliste) ;; *) die 2 "--as takes rp or journaliste" ;; esac
 [ "$fresh" = 0 ] || [ -n "$as" ] || die 2 "--fresh needs --as"
 if [ -n "$kind" ]; then
   case $method in post | put | patch) ;; *) die 2 "--$kind needs post, put or patch" ;; esac
@@ -217,13 +230,6 @@ if [ -n "$cookie_out" ]; then
   [ ! -d "$cookie_file" ] || die 2 "--cookie-out refuses a directory: $cookie_file"
 fi
 
-case $as in
-rp) email=agent-rp@preliz.com ;;
-# Empty until the account is recreated on the preprod.
-journaliste) email="" ;;
-esac
-[ -z "$as" ] || [ -n "$email" ] || die 1 "--as $as: account not configured"
-
 if [ -n "$kind" ]; then
   [ ! -t 0 ] || die 2 "--$kind reads the body from stdin, not a terminal"
 fi
@@ -248,13 +254,21 @@ if [ -n "$kind" ]; then
 fi
 
 # --- secrets ----------------------------------------------------------------------
+# trim <value> — value without surrounding whitespace (\r included), in REPLY.
+trim() {
+  local v=$1
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  REPLY=$v
+}
+
 # secret <file> <regex|""> — trimmed value in REPLY; never printed.
 secret() {
   local f="$SECRETS/$1" v
   [ -r "$f" ] || die 1 "missing $f"
   v=$(<"$f") || die 1 "cannot read $f"
-  v="${v#"${v%%[![:space:]]*}"}"
-  v="${v%"${v##*[![:space:]]}"}"
+  trim "$v"
+  v=$REPLY
   [ -n "$v" ] || die 1 "$f is empty"
   if [ -n "$2" ] && ! [[ $v =~ $2 ]]; then
     if [[ $v == *:* ]]; then
@@ -264,6 +278,27 @@ secret() {
   fi
   REPLY=$v
 }
+
+# account_secret <account> — email (line 1) and password (line 2) of
+# preprod-account-<account> into $email / $password; never printed.
+account_secret() {
+  local f="$SECRETS/preprod-account-$1" i
+  local -a lines=()
+  [ -r "$f" ] || die 1 "missing or unreadable $f (in the Claude sandbox, list the account in home/claude-code/preprod-accounts.nix and switch)"
+  mapfile -t lines <"$f" || die 1 "cannot read $f"
+  for ((i = 2; i < ${#lines[@]}; i++)); do
+    trim "${lines[i]}"
+    [ -z "$REPLY" ] || die 1 "$f is malformed — expected 2 lines: email, then password"
+  done
+  trim "${lines[0]:-}"
+  [ -n "$REPLY" ] || die 1 "$f: line 1 (email) is empty"
+  [[ $REPLY =~ $EMAIL_RE ]] || die 1 "$f: line 1 is not an email address (one @, no spaces)"
+  email=$REPLY
+  trim "${lines[1]:-}"
+  [ -n "$REPLY" ] || die 1 "$f: line 2 (password) is missing or empty"
+  password=$REPLY
+}
+
 secret cf-access-client-id "$ID_RE" "32 letters/digits + .access"
 CF_ID=$REPLY
 secret cf-access-client-secret "$SECRET_RE" "cfast_ + 48 chars, or 64 hex"
@@ -273,11 +308,10 @@ remember "$CF_SECRET"
 
 jar=""
 if [ -n "$as" ]; then
-  pw_file="$SECRETS/preliz-preprod-$as-password"
-  secret "preliz-preprod-$as-password" ""
-  remember "$REPLY"
+  account_secret "$as"
+  remember "$password"
   # The password as it reads inside a JSON string, should a body echo it.
-  remember "$(jq -Rsj 'rtrimstr("\n") | rtrimstr("\r") | tojson | .[1:-1]' "$pw_file")"
+  remember "$(printf '%s' "$password" | jq -Rsj 'tojson | .[1:-1]')"
   jar="$tmpd/$as.jar"
   [ ! -L "$jar" ] || die 1 "$jar is a symlink — refusing it"
   if [ -e "$jar" ]; then
@@ -332,8 +366,7 @@ http() {
 }
 
 signin_json() {
-  jq -cn --arg email "$email" --rawfile password "$pw_file" \
-    '{email: $email, password: ($password | rtrimstr("\n") | rtrimstr("\r"))}'
+  printf '%s\n%s' "$email" "$password" | jq -Rsc 'split("\n") | {email: .[0], password: .[1]}'
 }
 
 # Remember the Set-Cookie values of the last response.

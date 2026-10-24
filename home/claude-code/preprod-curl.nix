@@ -3,10 +3,11 @@
 #
 # Why a CLI and not curl: the auto-mode classifier refused
 # `$(cat ~/.config/secrets/…)` followed by curl to the preprod as Credential
-# Exploration. The wrapper reads the Access service token and the agent
-# passwords itself; the token travels only in a curl config on stdin, the
-# password only through a process-substitution fd, never in argv, the URL,
-# stdout or stderr (details in scripts/preprod-curl.sh). The allowlist then
+# Exploration. The wrapper reads the Access service token and each preprod
+# account's email + password itself; the token travels only in a curl config
+# on stdin, the password only through a process-substitution fd, never in
+# argv, the URL, stdout or stderr (details in scripts/preprod-curl.sh). The
+# allowlist then
 # grants `Bash(preprod-curl *)` instead of a blanket `Bash(curl *)`.
 #
 # inheritPath = false: the script runs on bash builtins + curl + jq +

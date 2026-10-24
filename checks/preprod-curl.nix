@@ -5,18 +5,21 @@
 # token and, on request, a better-auth session. That only holds while:
 #   - the host is fixed and the PATH validated before any secret read;
 #   - the Access id/secret travel on curl's stdin config only (`-K -`), the
-#     sign-in password in a process-substitution fd only, never in argv;
+#     sign-in email + password in a process-substitution fd only, never in argv;
+#   - `--as` takes an account slug, validated before any secret read; each
+#     account is one file preprod-account-<account> (email, then password);
 #   - redirects are never followed (an Access header would follow them);
 #   - stdout/stderr are scrubbed (Set-Cookie, id, secret, passwords, jar);
-#   - settings grant `Bash(preprod-curl *)`, box the writes, open the four
-#     secret files and nothing else under ~/.config/secrets.
+#   - settings grant `Bash(preprod-curl *)`, box the writes, open the Access
+#     token files and one file per account of home/claude-code/preprod-accounts.nix,
+#     nothing else under ~/.config/secrets.
 #
 # Two layers, all offline:
-#   B. eval-time asserts on settings.json (B1-B7);
+#   B. eval-time asserts on settings.json and the account list (B1-B8);
 #   C. runtime suite: the BUILT binary runs against a stub curl that records
 #      argv, stdin and every `@/dev/fd/N` payload per call (p01-p16), plus the
 #      PATH line of the built wrapper (p17).
-# Canaries: eight mutants of the script (C1-C8) go through the same suite and
+# Canaries: nine mutants of the script (C1-C9) go through the same suite and
 # must FAIL at the expected case, for the expected reason. An eval-time guard
 # (G1) fails if a canary anchor is not in the script exactly once.
 { pkgs }:
@@ -30,6 +33,11 @@ let
 
   settings = import ../home/claude-code/settings.nix { homeDirectory = "/Users/alx"; };
   preprod = import ../home/claude-code/preprod-curl.nix { inherit pkgs; };
+  preprodAccounts = import ../home/claude-code/preprod-accounts.nix;
+  accounts = if builtins.isList preprodAccounts then preprodAccounts else [ ];
+  badAccounts = builtins.filter (
+    a: !(builtins.isString a && builtins.match "[a-z0-9][a-z0-9_-]{0,31}" a != null)
+  ) accounts;
 
   source = builtins.readFile ../home/claude-code/scripts/preprod-curl.sh;
 
@@ -139,6 +147,17 @@ let
       ];
       kill = "FAIL p10: password in argv";
     }
+    {
+      id = "C9";
+      # account slug check off: `--as` reaches the secret dir unvalidated
+      subs = [
+        {
+          from = "readonly ACCOUNT_RE='^[abcdefghijklmnopqrstuvwxyz0123456789][abcdefghijklmnopqrstuvwxyz0123456789_-]{0,31}$'";
+          to = "readonly ACCOUNT_RE='.*'";
+        }
+      ];
+      kill = "FAIL p12: curl called";
+    }
   ];
   mutate = c: builtins.replaceStrings (map (s: s.from) c.subs) (map (s: s.to) c.subs) source;
   badAnchors = builtins.concatMap (
@@ -160,12 +179,13 @@ let
   autoAllow = attrByPath [ "autoMode" "allow" ] [ ] s;
 
   secretDir = "/Users/alx/.config/secrets/";
-  preprodSecrets = map (n: secretDir + n) [
-    "cf-access-client-id"
-    "cf-access-client-secret"
-    "preliz-preprod-rp-password"
-    "preliz-preprod-journaliste-password"
-  ];
+  preprodSecrets = map (n: secretDir + n) (
+    [
+      "cf-access-client-id"
+      "cf-access-client-secret"
+    ]
+    ++ map (a: "preprod-account-" + a) (builtins.filter builtins.isString accounts)
+  );
   allowedSecretReads = preprodSecrets ++ [
     (secretDir + "trello-api-key")
     (secretDir + "trello-token")
@@ -199,14 +219,25 @@ let
       msg = "sandbox.excludedCommands is empty (vacuous) or names preprod-curl — the wrapper must run sandboxed";
     }
     {
-      name = "B4 allowRead opens the four preprod secret files, nothing else under .config/secrets";
+      name = "B4 allowRead opens the Access token files and one file per preprod account, nothing else under .config/secrets";
       ok = missingReads == [ ] && strayReads == [ ];
       msg =
         "missing "
         + builtins.toJSON missingReads
         + ", not allowed "
         + builtins.toJSON strayReads
-        + " — exact files only (no directory, no glob): trello-api-key, trello-token and the four preprod files";
+        + " — exact files only (no directory, no glob): trello-api-key, trello-token, cf-access-client-id/secret and preprod-account-<account> per account of preprod-accounts.nix";
+    }
+    {
+      name = "B8 preprod-accounts.nix: non-empty list of unique account slugs";
+      ok =
+        builtins.isList preprodAccounts
+        && accounts != [ ]
+        && badAccounts == [ ]
+        && pkgs.lib.unique accounts == accounts;
+      msg =
+        "preprod-accounts.nix must be a non-empty list of distinct strings matching [a-z0-9][a-z0-9_-]{0,31} (the script's ACCOUNT_RE); bad: "
+        + builtins.toJSON badAccounts;
     }
     {
       name = "B5 autoMode.environment: $defaults first + preprod host via `preprod-curl`";
@@ -332,7 +363,7 @@ let
     signok=0
     if [ "$signin" = 1 ] && [ "$code" = 200 ]; then
       signok=1
-      body='{"redirect":false,"token":"${session}","user":{"email":"agent-rp@preliz.com"}}'
+      body='{"redirect":false,"token":"${session}","user":{"email":"agent@example.test"}}'
     fi
     status="HTTP/2 $code$CR"$'\n'
     if [ -n "$loc" ]; then
@@ -418,24 +449,35 @@ let
     ID37=Ab3dEf6hIj9kLm2nOp5qRs8tUv1wXy.access
     SECRET=cfast_Zq9_xW-8vU7tS6rR5qP4oN3mM2lL1kK0jJ9iI8hH7gG6fF5e
     HEX=0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0
-    RP_PW='Rp-Pa55word!s3cret'
-    JOUR_PW='Jn-Pa55word!s3cret'
+    # `"` and `\` so the raw and JSON-escaped forms differ (both scrubbed).
+    AGENT_PW='Ag-Pa55"w\o/rd!s3cret'
+    AGENT_PW_JSON='Ag-Pa55\"w\\o/rd!s3cret'
     CFAUTH='${cfAuth}'
     SESSION='${session}'
-    # home <name> <id> <secret> — fixture HOME with the four secret files.
+    # home <name> <id> <secret> — fixture HOME with the Access token files,
+    # the `agent` account file (padded, CRLF, trailing blank line) and a
+    # decoy `agent.bad` account file only an unvalidated slug can reach.
     home() {
       local d="$work/$1/.config/secrets"
       mkdir -p "$d" "$work/$1/projects/Preliz/.playwright-mcp"
       printf '%s\n' "$2" >"$d/cf-access-client-id"
       printf '%s\n' "$3" >"$d/cf-access-client-secret"
-      printf '%s\n' "$RP_PW" >"$d/preliz-preprod-rp-password"
-      printf '%s\n' "$JOUR_PW" >"$d/preliz-preprod-journaliste-password"
+      printf ' agent@example.test \r\n%s\r\n\n' "$AGENT_PW" >"$d/preprod-account-agent"
+      printf ' agent@example.test \r\n%s\r\n\n' "$AGENT_PW" >"$d/preprod-account-agent.bad"
     }
     home ok "$ID" "$SECRET"
     home badid "$ID37" "$SECRET"
     home shortsec "$ID" cfast_short
     home label "$ID" "CF-Access-Client-Secret:$SECRET"
     home hex "$ID" "$HEX"
+    home badacct "$ID" "$SECRET"
+    printf 'nomail-5c2e\n%s\n' "$AGENT_PW" >"$work/badacct/.config/secrets/preprod-account-agent"
+    home acct3 "$ID" "$SECRET"
+    printf 'agent@example.test\n%s\nextra-line-9d1\n' "$AGENT_PW" >"$work/acct3/.config/secrets/preprod-account-agent"
+    home acct1 "$ID" "$SECRET"
+    printf 'solo-4b7@example.test\n' >"$work/acct1/.config/secrets/preprod-account-agent"
+    home acct0 "$ID" "$SECRET"
+    : >"$work/acct0/.config/secrets/preprod-account-agent"
     mkdir -p "$work/none" "$work/tmp"
     printf ' \t%s \r\n\n' "$ID" >"$work/hex/.config/secrets/cf-access-client-id"
     seq=0
@@ -494,7 +536,7 @@ let
     argv_clean() { argv_lacks "secret in argv" "$ID" "$SECRET" "$HEX"; }
     out_clean() {
       local n
-      for n in "$ID" "$SECRET" "$HEX" "$RP_PW" "$JOUR_PW" "$CFAUTH" "$SESSION"; do
+      for n in "$ID" "$SECRET" "$HEX" "$AGENT_PW" "$AGENT_PW_JSON" "$CFAUTH" "$SESSION"; do
         if grep -qaF -- "$n" "$last/out" "$last/err"; then fail "secret in stdout/stderr"; fi
       done
     }
@@ -645,8 +687,8 @@ let
     case=p10
     jar_dir="$work/tmp-p10/preprod-curl-$UID"
     mkdir -p "$work/tmp-p10"
-    TMPD="$work/tmp-p10" t ok get --as rp /api/me
-    argv_lacks "password in argv" "$RP_PW"
+    TMPD="$work/tmp-p10" t ok get --as agent /api/me
+    argv_lacks "password in argv" "$AGENT_PW" "$AGENT_PW_JSON"
     expect_rc 0
     expect_calls 2
     argv_clean
@@ -655,30 +697,36 @@ let
     argv_has 0 POST || fail "sign-in is not a POST"
     sent 0 "Origin: $HOST" || fail "no Origin on sign-in"
     [ -s "$last/call0.data" ] || fail "no sign-in body on a /dev/fd argument"
-    jq -e --arg pw "$RP_PW" '.email == "agent-rp@preliz.com" and .password == $pw' "$last/call0.data" >/dev/null ||
+    jq -e --arg pw "$AGENT_PW" '.email == "agent@example.test" and .password == $pw' "$last/call0.data" >/dev/null ||
       fail "sign-in body is not {email, password}"
     [ "$(argv_last 1)" = "$HOST/api/me" ] || fail "wrong URL"
-    [ -f "$jar_dir/rp.jar" ] || fail "no jar at \$TMPDIR/preprod-curl-\$UID/rp.jar"
+    [ -f "$jar_dir/agent.jar" ] || fail "no jar at \$TMPDIR/preprod-curl-\$UID/agent.jar"
     if argv_has 1 -b || argv_has 1 --cookie || sent 1 "$SESSION"; then :; else fail "session not sent"; fi
     out_clean
     # Valid jar: no new sign-in; a body echoing the session is scrubbed.
-    MODE=body BODY="tok=$SESSION" TMPD="$work/tmp-p10" t ok get --as rp /api/me
+    MODE=body BODY="tok=$SESSION" TMPD="$work/tmp-p10" t ok get --as agent /api/me
     expect_rc 0
     expect_calls 1
     argv_lacks "session in argv" "$SESSION"
     out_clean
     out_has "tok=[redacted]"
-    TMPD="$work/tmp-p10" t ok get --as rp --fresh /api/me
+    # A body echoing the password JSON-escaped is scrubbed too.
+    MODE=body BODY="{\"pw\":\"$AGENT_PW_JSON\"}" TMPD="$work/tmp-p10" t ok get --as agent /api/me
+    expect_rc 0
+    expect_calls 1
+    out_clean
+    out_has '{"pw":"[redacted]"}'
+    TMPD="$work/tmp-p10" t ok get --as agent --fresh /api/me
     expect_rc 0
     expect_calls 2
     [ "$(argv_last 0)" = "$HOST/api/auth/sign-in/email" ] || fail "--fresh did not sign in"
-    argv_lacks "password in argv" "$RP_PW"
+    argv_lacks "password in argv" "$AGENT_PW" "$AGENT_PW_JSON"
     out_clean
     pass
 
     case=p11
     mkdir -p "$work/tmp-p11"
-    MODE=signin401 TMPD="$work/tmp-p11" t ok get --as rp /api/me
+    MODE=signin401 TMPD="$work/tmp-p11" t ok get --as agent /api/me
     expect_rc 1
     expect_calls 1
     err_has "INVALID_EMAIL_OR_PASSWORD"
@@ -686,12 +734,62 @@ let
     pass
 
     case=p12
-    t ok get --as journaliste /api/me
+    # Unknown account = missing file.
+    t ok get --as ghost /api/me
     expect_calls 0
     expect_rc 1
-    err_has "account not configured"
+    err_has "missing"
+    err_has "preprod-account-ghost"
+    err_has "preprod-accounts.nix"
     out_clean
-    t none get --as admin /api/me
+    # Malformed account file (line 1 not an email): refused, value not echoed.
+    t badacct get --as agent /api/me
+    expect_calls 0
+    expect_rc 1
+    err_has "not an email"
+    if grep -qaF nomail-5c2e "$last/out" "$last/err"; then fail "account file value echoed"; fi
+    out_clean
+    # Non-blank line 3, one line only, empty file: refused, values not echoed.
+    t acct3 get --as agent /api/me
+    expect_calls 0
+    expect_rc 1
+    err_has "malformed"
+    if grep -qaF extra-line-9d1 "$last/out" "$last/err"; then fail "account file value echoed"; fi
+    out_clean
+    t acct1 get --as agent /api/me
+    expect_calls 0
+    expect_rc 1
+    err_has "line 2"
+    if grep -qaF solo-4b7 "$last/out" "$last/err"; then fail "account file value echoed"; fi
+    out_clean
+    t acct0 get --as agent /api/me
+    expect_calls 0
+    expect_rc 1
+    err_has "line 1"
+    out_clean
+    # A 32-char slug using every class member is accepted and signs in.
+    a32=abcdefghijklmnopqrstuvwxyz0_-789
+    [ "''${#a32}" = 32 ] || fail "a32 is ''${#a32} chars"
+    printf ' agent@example.test \r\n%s\r\n\n' "$AGENT_PW" >"$work/ok/.config/secrets/preprod-account-$a32"
+    mkdir -p "$work/tmp-p12"
+    TMPD="$work/tmp-p12" t ok get --as "$a32" /api/me
+    expect_rc 0
+    expect_calls 2
+    [ "$(argv_last 0)" = "$HOST/api/auth/sign-in/email" ] || fail "call 0 is not the sign-in"
+    [ -f "$work/tmp-p12/preprod-curl-$UID/$a32.jar" ] || fail "no jar for the 32-char slug"
+    argv_lacks "password in argv" "$AGENT_PW" "$AGENT_PW_JSON"
+    out_clean
+    # Bad slugs: usage error before any secret read. agent.bad first: its
+    # decoy file exists, so a disabled slug check signs in (C9).
+    printf -v a33 '%*s' 33 ""
+    a33="''${a33// /a}"
+    for a in agent.bad Agent ../agent "" -agent "$a33"; do
+      t ok get --as "$a" /api/me
+      expect_calls 0
+      expect_rc 2
+      if [ -n "$a" ] && grep -qaF -- "$a" "$last/err"; then fail "bad slug echoed on stderr"; fi
+    done
+    t none get --as ../agent /api/me
     expect_calls 0
     expect_rc 2
     pass
@@ -714,10 +812,10 @@ let
     expect_calls 0
     expect_rc 2
     out_clean
-    printf '{"leak":"%s"}' "$RP_PW" >"$work/leakpw.json"
+    printf '{"leak":"%s"}' "$AGENT_PW" >"$work/leakpw.json"
     # A loaded password counts too; refused before the sign-in call.
     mkdir -p "$work/tmp-p13"
-    IN="$work/leakpw.json" TMPD="$work/tmp-p13" t ok put --as rp --json /api/items/1
+    IN="$work/leakpw.json" TMPD="$work/tmp-p13" t ok put --as agent --json /api/items/1
     expect_calls 0
     expect_rc 2
     out_clean

@@ -12,6 +12,9 @@ let
 
   # Claude Code mods: names and the absolute folders the engine loads.
   mods = import ./mods.nix;
+
+  # Preprod accounts of the `preprod-curl` wrapper (exact allowRead files).
+  preprodAccounts = import ./preprod-accounts.nix;
 in
 {
   inherit alxVaultPath;
@@ -333,17 +336,17 @@ in
         # les lit, et il ne les affiche jamais.
         # Preprod Preliz : même schéma pour le wrapper `preprod-curl`
         # (home/claude-code/preprod-curl.nix) — service token Cloudflare Access
-        # (id + secret) et mots de passe des deux comptes agents, quatre
-        # FICHIERS exacts, ni répertoire ni glob (checks/preprod-curl.nix B4).
+        # (id + secret) et un fichier par compte de ./preprod-accounts.nix
+        # (preprod-account-<compte> : e-mail puis mot de passe), FICHIERS exacts,
+        # ni répertoire ni glob (checks/preprod-curl.nix B4).
         allowRead = [
           "${homeDirectory}/.ssh/id_ed25519.pub"
           "${homeDirectory}/.config/secrets/trello-api-key"
           "${homeDirectory}/.config/secrets/trello-token"
           "${homeDirectory}/.config/secrets/cf-access-client-id"
           "${homeDirectory}/.config/secrets/cf-access-client-secret"
-          "${homeDirectory}/.config/secrets/preliz-preprod-rp-password"
-          "${homeDirectory}/.config/secrets/preliz-preprod-journaliste-password"
-        ];
+        ]
+        ++ map (a: "${homeDirectory}/.config/secrets/preprod-account-${a}") preprodAccounts;
         # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the
         # default sandbox write-set (cwd + tmp) would kill it with "operation
@@ -558,7 +561,7 @@ in
         "Source control: master is protected server-side by the GitHub ruleset protect-master (PR required, force-push and deletion refused, no bypass); the agent works on feature branches it creates itself."
         "Trello: api.trello.com is the user's own Trello account, reached only through the packaged `trello` CLI wrapper (reads ~/.config/secrets/trello-* itself, never prints them); reading boards and creating/moving/commenting cards there is trusted user-intended data flow."
         "Preliz: ~/projects/Preliz (github.com/AlxWrtl/Preliz) is the user's own app; the Cloudflare Workers it deploys to (preprod and prod) are the user's own targets, deployed through `pnpm run deploy` (preprod) and `pnpm run deploy:prod` (prod)."
-        "Preliz preprod: https://preliz-preprod.alxwrtl.workers.dev is the user's own preprod (behind Cloudflare Access; holds REAL user data), reached only through the packaged `preprod-curl` wrapper (reads ~/.config/secrets/cf-access-client-* and preliz-preprod-*-password itself, never prints them); requests there as the agent accounts are user-intended; never copy its data to other destinations."
+        "Preliz preprod: https://preliz-preprod.alxwrtl.workers.dev is the user's own preprod (behind Cloudflare Access; holds REAL user data), reached only through the packaged `preprod-curl` wrapper (reads ~/.config/secrets/cf-access-client-* and preprod-account-* itself, never prints them); requests there as the agent accounts are user-intended; never copy its data to other destinations."
       ];
       allow = [
         "$defaults"

@@ -3322,6 +3322,7 @@ in
     | Quick performance fixes | `performance-cheatsheet.md` |
     | Apple HIG audit of a screen or component: accessibility, touch targets, labels, forms, focus, contrast | `hig-audit/SKILL.md` |
     | Chat / messaging screen layout | "Chat screen" below |
+    | UX-law check of a layout or flow (carousels, dialogs, forms, steps, choices) | "UX laws" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3359,6 +3360,23 @@ in
        message only.
     6. Motion: typing dots while the other side writes; new messages
        slide in (~240ms, `animate/SKILL.md`), sent → read flips in place.
+
+    ## UX laws (ours)
+
+    One law, one rule:
+
+    - **Closure** — a row that fits the screen exactly looks complete:
+      let the next card peek (~⅓) so the cut edge says "more".
+    - **Figure-ground** — dim the page behind a dialog (scrim) so only
+      the dialog competes for attention.
+    - **Banner blindness** — important notices must not look like ads:
+      put them in the content flow, styled as content, not a loud banner.
+    - **Parkinson's law** — shrink the task: prefill what you already
+      know (postcode → pick the address, not 30 keystrokes).
+    - **Uniform connectedness** — join the steps of a flow with one line
+      so they read as one path with a start, an end and a next step.
+    - **Choice overload** — show fewer options up front; the rest one
+      level deeper.
 
     ## Errata (ours, measured; they override the sub-skills)
 

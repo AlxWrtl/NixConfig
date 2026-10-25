@@ -3321,6 +3321,7 @@ in
     | Sonner toasts: setup, API, troubleshooting | `ask-sonner/SKILL.md` + `ask-sonner/API.md` |
     | Quick performance fixes | `performance-cheatsheet.md` |
     | Apple HIG audit of a screen or component: accessibility, touch targets, labels, forms, focus, contrast | `hig-audit/SKILL.md` |
+    | Chat / messaging screen layout | "Chat screen" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3341,6 +3342,23 @@ in
        `border-radius`; without one it does nothing. Experimental, not
        Baseline: the plain radius is the fallback. Source: MDN
        `corner-shape`.
+
+    ## Chat screen (six decisions, ours)
+
+    Values are a starting point from a UX demo, not a standard; the
+    project's tokens win (Rule 6).
+
+    1. Side = sender: own messages right, others left.
+    2. Group runs: ~4px between bubbles of one sender, ~18px between
+       senders, one avatar per run.
+    3. Accent on own bubbles (and the send button), text contrast
+       ≥ 4.5:1 (`hig-audit`); others stay neutral.
+    4. Stamp the gap, not every message: one time divider where a
+       conversation (re)starts.
+    5. Status once: presence in the header, sent/read under your last
+       message only.
+    6. Motion: typing dots while the other side writes; new messages
+       slide in (~240ms, `animate/SKILL.md`), sent → read flips in place.
 
     ## Errata (ours, measured; they override the sub-skills)
 

@@ -3329,6 +3329,7 @@ in
     | Loading states, skeletons, optimistic updates, progress bars | "Perceived performance" below |
     | Charts in a UI (bars, lines, legends, annotations) | "Charts" below |
     | View Transitions API: card → page morph, list reorder, theme reveal, page-to-page | "View transitions" below |
+    | Success / done screens, confirmations, celebrations | "Success states" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3497,6 +3498,21 @@ in
       reduced-motion rules (`review-animations`).
       Source: MDN "Using the View Transition API"; caniuse
       `view-transitions`.
+
+    ## Success states (ours)
+
+    Success is not the end of the flow (peak-end, "UX laws").
+
+    - Say what happened, with specifics ("Invoice sent to Northwind,
+      due Oct 12"), not a bare "Success".
+    - Always offer the next action (view it, send another); a check
+      mark with no button is a dead end.
+    - Persistence follows stakes: a saved setting gets a toast that
+      leaves in seconds (`ask-sonner`); a payment gets a page that
+      stays, with a receipt and an email.
+    - Leave one open loop: track, share, invite.
+    - Celebration scales with rarity: confetti for the first invoice
+      paid, never for every save.
 
     ## Errata (ours, measured; they override the sub-skills)
 

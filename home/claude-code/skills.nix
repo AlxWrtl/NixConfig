@@ -3328,6 +3328,7 @@ in
     | Onboarding / first-run flow | "Onboarding" below |
     | Loading states, skeletons, optimistic updates, progress bars | "Perceived performance" below |
     | Charts in a UI (bars, lines, legends, annotations) | "Charts" below |
+    | View Transitions API: card → page morph, list reorder, theme reveal, page-to-page | "View transitions" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3472,6 +3473,30 @@ in
     - Past ~5 series, switch to a sortable table.
     - Annotate the peak or the anomaly ("launch day") so nobody has to
       guess why.
+
+    ## View transitions (ours)
+
+    The browser snapshots two states and morphs between them; no
+    animation library.
+
+    - Shared element: give the card image and the page header the same
+      `view-transition-name`; size, position and corners interpolate.
+    - SPA: wrap the DOM update in `document.startViewTransition(cb)`;
+      feature-detect and call `cb` directly when it is missing.
+    - Lists: one unique name per item, so rows slide on sort, filter,
+      delete. Two rendered elements with the same name skip the whole
+      transition: clear names after use.
+    - Theme toggle: animate a `clip-path` circle on
+      `::view-transition-new(root)` from the clicked button.
+    - Modal: the name sits on the button, moves to the dialog on open,
+      so it grows from where you tapped.
+    - Page to page (MPA): `@view-transition { navigation: auto; }` in
+      both documents, same origin only.
+    - Fallback: no support = instant swap, nothing breaks. Same-document
+      support: Chrome 111, Safari 18, Firefox 144. Keep the
+      reduced-motion rules (`review-animations`).
+      Source: MDN "Using the View Transition API"; caniuse
+      `view-transitions`.
 
     ## Errata (ours, measured; they override the sub-skills)
 

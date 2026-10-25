@@ -3323,6 +3323,7 @@ in
     | Apple HIG audit of a screen or component: accessibility, touch targets, labels, forms, focus, contrast | `hig-audit/SKILL.md` |
     | Chat / messaging screen layout | "Chat screen" below |
     | UX-law check of a layout or flow (carousels, dialogs, forms, steps, choices) | "UX laws" below |
+    | Command palette / ⌘K search UI | "Command palette" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3377,6 +3378,24 @@ in
       so they read as one path with a start, an end and a next step.
     - **Choice overload** — show fewer options up front; the rest one
       level deeper.
+
+    ## Command palette (six decisions, ours)
+
+    Values are a starting point from a UX demo; project tokens win.
+
+    1. Hierarchy: the input is the loudest thing (tall field, large
+       text); result details step down a size.
+    2. Group results by what they do (actions, pages, recents) under
+       headers, an icon per kind.
+    3. Highlight the typed letters in every row, so the match explains
+       itself.
+    4. Lift the panel (soft shadow, `apple-design` §12) and preselect
+       the first result: Enter works at once.
+    5. Show shortcuts where people click: the key on the row,
+       ↑↓ / Enter / Esc in a footer.
+    6. Motion: ⌘K opens in ~150ms, filter on every keystroke (no
+       debounce on local data), selection slides, Enter shows a spinner
+       if the action is slow.
 
     ## Errata (ours, measured; they override the sub-skills)
 

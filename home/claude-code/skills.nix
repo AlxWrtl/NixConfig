@@ -3326,6 +3326,7 @@ in
     | Command palette / ⌘K search UI | "Command palette" below |
     | File upload / drop zone | "File upload" below |
     | Onboarding / first-run flow | "Onboarding" below |
+    | Loading states, skeletons, optimistic updates, progress bars | "Perceived performance" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3411,7 +3412,7 @@ in
        debounce on local data), selection slides, Enter shows a spinner
        if the action is slow.
 
-    ## File upload (six mistakes, ours)
+    ## File upload (ours)
 
     Uploads fail: design for the failure.
 
@@ -3426,6 +3427,12 @@ in
        the rest keeps going.
     6. Never block the app: dock uploads in a corner and let people
        keep working.
+    7. The drop zone answers on drag-over (border, glow, copy change)
+       before the drop.
+    8. Show time left next to the percent; on failure, retry resumes
+       where it stopped, the file stays loaded.
+    9. Prove the right file arrived: thumbnail, type and size, not the
+       file name alone.
 
     ## Onboarding (six mistakes, ours)
 
@@ -3439,6 +3446,19 @@ in
     4. Show where they are: "step 2 of 4" in a bar that moves.
     5. One question per screen on day one; defer the rest.
     6. Every step has skip and back, and the flow can resume later.
+
+    ## Perceived performance (ours)
+
+    Same wait, shorter feel. Animation speed: `emil-design-eng`
+    "Perceived performance".
+
+    - Skeleton in the content's real layout, not a blank screen or a
+      lone spinner.
+    - Optimistic UI: show the result on tap, reconcile with the server,
+      roll back with a visible message if it fails.
+    - Progress bars never slow down near the end; pauses hurt most
+      there, and a bar that speeds up toward the end feels shortest.
+      Source: Harrison et al., "Rethinking the Progress Bar", UIST 2007.
 
     ## Errata (ours, measured; they override the sub-skills)
 

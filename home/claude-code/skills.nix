@@ -257,6 +257,7 @@ in
     ```markdown
     # APEX: {task description}
     Date: {current date}
+    Tier: {tier}
     Flags: {active flags}
     Branch: {branch name}
     Baseline: {gate} -> {green | red: check | skipped: reason}
@@ -1350,7 +1351,9 @@ in
     branch. Once the gate is green, merge it yourself, then return to
     `{trunk}`, pull and delete the local branch (COMMANDS.md shapes).
     Force-pushing and rewriting pushed history still need the user's
-    explicit go.
+    explicit go. Once `gh pr create` succeeds, the apex-metrics-probe hook
+    names the run files this run still lacks (02-acs.md, the examine or
+    external tally): write them before merging.
 
     ## COMPLETE
 

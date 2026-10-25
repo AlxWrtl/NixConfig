@@ -3330,6 +3330,7 @@ in
     | Charts in a UI (bars, lines, legends, annotations) | "Charts" below |
     | View Transitions API: card → page morph, list reorder, theme reveal, page-to-page | "View transitions" below |
     | Success / done screens, confirmations, celebrations | "Success states" below |
+    | Cards: when to use one, border vs shadow vs flat, clickable cards, media grids | "Cards" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3513,6 +3514,22 @@ in
     - Leave one open loop: track, share, invite.
     - Celebration scales with rarity: confetti for the first invoice
       paid, never for every save.
+
+    ## Cards (ours)
+
+    - A card is one entity: one title, one subject, one place to go.
+      Cards for everything is a generated-UI tell; a form section is not
+      a card.
+    - The background picks the treatment: border on white, shadow on a
+      tinted background, flat inside a panel.
+    - A clickable card is clickable everywhere: one action, the whole
+      surface, hover lifts all of it. Two buttons inside = a panel.
+    - Never a card in a card: flatten the inner one, group with dividers
+      (`hig-audit` check 31).
+    - Media keeps one aspect ratio across the grid, cropped
+      (`object-fit: cover`), never stretched.
+    - Dark mode: shadows vanish, so use a border and a surface one step
+      lighter; elevation becomes surface tint.
 
     ## Errata (ours, measured; they override the sub-skills)
 

@@ -3325,6 +3325,23 @@ in
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
 
+    ## Why it feels like an iPhone (six-detail check)
+
+    For "make it feel native/smooth" or a feel review, walk these six;
+    each points at the section that holds the values.
+
+    1. Press feedback on touchdown, not release → `apple-design` §1.
+    2. Springs, not timers → `apple-design` §4 (+ Errata, first bullet).
+    3. Momentum past the finger → `apple-design` §6.
+    4. Rubber band at the edge → `apple-design` §9.
+    5. Interruptible from the current value → `apple-design` §3.
+    6. Continuous corners (ours, not upstream): a plain `border-radius`
+       glues a circle to a straight edge, so curvature jumps. Add
+       `corner-shape: squircle` (= `superellipse(2)`) next to the
+       `border-radius`; without one it does nothing. Experimental, not
+       Baseline: the plain radius is the fallback. Source: MDN
+       `corner-shape`.
+
     ## Errata (ours, measured; they override the sub-skills)
 
     - **Motion springs lose velocity when defined by time.** A spring with

@@ -13,11 +13,15 @@ harness change.
     B5  did a step change the run's outcome: per step, runs where it ran,
         recorded a result, changed something, are unknown (ran, recorded
         nothing), and the changed/recorded rate (below)
+    B6  run files due at the end of a run: tiered non-Direct runs, those
+        with no known tier, those with a 02-acs.md, those owing a tally and
+        those holding every tally they owe (below); the same keys again
+        under B6.since.* for the runs dated on or after --since
 
 The metrics stay a manual probe (the run dirs are git-ignored), while
 --self-test and --hook are run by checks/hook-wiring.nix:
 
-    python3 -I checks/apex-metrics-probe.py [--runs DIR] [--memory DIR]
+    python3 -I checks/apex-metrics-probe.py [--runs DIR] [--memory DIR] [--since DATE]
     python3 -I checks/apex-metrics-probe.py --self-test
     python3 -I checks/apex-metrics-probe.py --acs FILE
     python3 -I checks/apex-metrics-probe.py --hook < event.json
@@ -43,8 +47,23 @@ link is a sibling's file stem (exact stem first, then `_` and `-` read as
 each other; a sibling without `name:` is said so), and the note missing
 from MEMORY.md; one of MEMORY.md itself names the notes it links that are
 not in the directory. B4 and that branch share their regexes, same guards
-(a symlinked sibling is not read). Anything else, an error included, exits
+(a symlinked sibling is not read). The same body is also the PostToolUse
+hook on Bash: after a successful lone `gh pr create`, it finds the branch's
+run (git in the event's cwd; a `--head`/`-H` argv token names the branch
+instead; a command shlex cannot split is silence) and
+names the B6 files it still owes. Anything else, an error included, exits
 0 with nothing on stdout.
+
+B6 RUN FILES. A run's tier is the first word of its LAST `Tier:` line (an
+escalation counts); Direct owes nothing, no or an unknown tier is untiered.
+Every other tier owes a 02-acs.md; an examine tally when 05-examine.md
+exists or a `Flags:` line holds `-x` or `+x`; an external tally when the
+external pass ran (B5 rule). A tally file the guards refuse is never named
+and does not count as held. The hook's run: a non-symlink dir of
+<toplevel>/.claude/output/apex/ whose 00-context.md passes the guards and
+whose first `Branch:` token is the branch, with no pr.md and no commit.txt;
+the newest 00-context.md wins. A run's date is its `Date:` line, else the
+mtime of its 00-context.md.
 
 B5 STEPS, per run dir. A run that ran a step and recorded nothing is
 unknown, never a yes or a no.
@@ -101,9 +120,12 @@ graded on real tally text (changed, not changed, unknown) and on small vault
 and analyze cases; the table must hold all three outcomes.
 """
 import argparse
+import datetime
 import json
 import pathlib
 import re
+import shlex
+import subprocess
 import sys
 
 KNOWN_EXECUTABLES = frozenset({
@@ -135,6 +157,20 @@ TALLY_PAIR = re.compile(r"\bdismissed=\d+")
 WIKILINK = re.compile(r"\[\[([^\]\s|#][^\]\n]*)")
 FILES_LINE = re.compile(r"^Files:(.*)$", re.MULTILINE)
 PATH_TOKEN = re.compile(r"(?<![\w.~/-])[\w.~-]*(?:/[\w.-]+)+")  # starts at a token edge: linear
+GH_PR_CREATE = re.compile(r"^\s*gh\s+pr\s+create(\s|$)")
+TIER_LINE = re.compile(r"^Tier:\s*[*`]*([A-Za-z-]+)", re.MULTILINE)
+BRANCH_LINE = re.compile(r"^Branch:\s*(\S+)", re.MULTILINE)
+FLAGS_LINE = re.compile(r"^(?:Tier:[^\n]*?)?\bFlags:([^\n]*)", re.MULTILINE)
+DATE_LINE = re.compile(r"^Date:\s*(\d{4}-\d{2}-\d{2})", re.MULTILINE)
+X_FLAG = re.compile(r"(?<![\w-])[-+]x(?![\w-])")
+NON_DIRECT = frozenset({"Standard", "High-stakes", "Diagnosis"})
+GIT_TIMEOUT = 2
+B6_SINCE = "2026-10-26"
+B6_ITEMS = (
+    ("acs", "02-acs.md (the ACs, each with its proving command)"),
+    ("x", "the confirmed=N unique=U dismissed=D tally in 05-examine.md"),
+    ("e", "the confirmed=N unique=U dismissed=D tally in 04-external-triage.md"),
+)
 B5_STEPS = ("analyze", "e", "o", "x")
 CLASSES = ("command", "deferred", "docs", "lecture", "unproven")
 HOOK_CAP = 10
@@ -389,6 +425,34 @@ B5_ANALYZE_FIXTURES = [
      "Files: checks/hook-wiring.nix\n", "Tier: standard\n"),
 ]
 
+# Real 00-context.md lines, verbatim from .claude/output/apex/<run>/.
+# (source, expected tier, expected examine due, text). "escalated" joins two
+# real Tier: lines in escalation order: the last one decides.
+B6_FIXTURES = [
+    ("escalated: 77-correction-lessons + deck-bg-open", "High-stakes", True, (
+        "Flags: -t -pr -o -n (Standard, provisoire : revu sur le diff réel par apex-tier)\n"
+        "Tier: Standard (provisoire)\n"
+        "Tier: High-stakes. Flags: -t -x -pr -o -n -e\n")),
+    ("77-correction-lessons", "Standard", False, (
+        "Flags: -t -pr -o -n (Standard, provisoire : revu sur le diff réel par apex-tier)\n"
+        "Tier: Standard (provisoire)\n")),
+    ("76-apex-ac-proof", "Standard", True, (
+        "Tier: Standard (provisional) — Files: unknown (analyze)\n"
+        "Flags: -t -pr -o -n; escalated +x +e at validate\n")),
+    ("ui-expert-skill", "Standard", False,
+     "Flags: -t -pr -o -n (Standard defaults)\nTier: Standard\n"),
+    ("01-worktree-env-sync", "High-stakes", True, (
+        "Tier: High-stakes (sandbox denyRead/allowRead keys; new hook)\n"
+        "Flags: -t -f -x -pr -o -n -e\n")),
+    ("skills-header-count", "Direct", False,
+     "Tier: Direct · Flags: -pr · Files: home/claude-code/skills.nix · Est-lines: 2\n"),
+    ("session-state-child-overwrite", "Diagnosis", True,
+     "Tier: Diagnosis (bug; coordinator inline, reproduced by probe)\nFlags: -x -pr -o -n\n"),
+    # `Mode:` predates the Tier: line: untiered.
+    ("task-board-ui", None, False,
+     "Date: 2026-10-07\nMode: Standard\nFlags: -t -pr -o -n\nBranch: feat/task-board-ui\n"),
+]
+
 
 def tally(text):
     """The confirmed count of the file's last tally line, None when it has none."""
@@ -509,6 +573,145 @@ def b5_run(run):
     return out
 
 
+def run_tier(ctx):
+    """The first word of the last `Tier:` line, None when there is none."""
+    found = TIER_LINE.findall(ctx)
+    return found[-1] if found else None
+
+
+def run_branch(ctx):
+    m = BRANCH_LINE.search(ctx)
+    return m.group(1).strip("`") if m else None
+
+
+def x_due(ctx):
+    """A `Flags:` line asks for the examine pass (`-x`, or `+x` on escalation);
+    any of them, as an escalation writes its flags on a later line."""
+    return any(X_FLAG.search(f) is not None for f in FLAGS_LINE.findall(ctx))
+
+
+def run_date(run, ctx):
+    m = DATE_LINE.search(ctx)
+    if m:
+        return m.group(1)
+    return datetime.date.fromtimestamp((run / "00-context.md").stat().st_mtime).isoformat()
+
+
+def _file_state(p):
+    """ok for a regular file, unreadable for a symlink or another kind, else missing."""
+    if p.is_symlink() or (p.exists() and not p.is_file()):
+        return "unreadable"
+    return "ok" if p.exists() else "missing"
+
+
+def run_gaps(run, cap):
+    """{item: ok | missing | unreadable} for each B6 file a tiered non-Direct
+    run owes, in B6_ITEMS order; None when it owes nothing (Direct, untiered,
+    unknown tier) or its 00-context.md is refused by the guards."""
+    ctx = _guarded_text(run / "00-context.md", cap)
+    if ctx is None or run_tier(ctx) not in NON_DIRECT:
+        return None
+    tallied = b5_tallied(run, cap)
+    if tallied["x"] == "not run" and x_due(ctx):
+        tallied["x"] = "unknown"
+    out = {"acs": _file_state(run / "02-acs.md")}
+    for step in ("x", "e"):
+        got = tallied[step]
+        if got != "not run":
+            out[step] = {"unknown": "missing", "unreadable": "unreadable"}.get(got, "ok")
+    return out
+
+
+def _tool_failed(resp):
+    return isinstance(resp, dict) and (resp.get("interrupted") is True or resp.get("is_error") is True)
+
+
+def head_flag(argv):
+    """The value of the first `-H`/`--head` token (`--head=` included), None
+    when absent: read from argv, so a `-H` inside a quoted title never counts."""
+    for i, tok in enumerate(argv):
+        if tok in ("-H", "--head") and i + 1 < len(argv):
+            return argv[i + 1]
+        if tok.startswith("--head="):
+            return tok[len("--head="):]
+    return None
+
+
+def current_run(cwd, cmd):
+    """The run dir of the branch a `gh pr create` opens (module docstring), None when unknown."""
+    if not isinstance(cwd, str):
+        return None
+    try:
+        got = subprocess.run(
+            ["git", "-c", "core.fsmonitor=false", "rev-parse", "--show-toplevel", "--abbrev-ref", "HEAD"],
+            cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=GIT_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines = got.stdout.splitlines()
+    if got.returncode != 0 or len(lines) != 2 or lines[1] == "HEAD":
+        return None
+    top, branch = lines
+    try:
+        argv = shlex.split(cmd)
+    except ValueError:
+        return None
+    head = head_flag(argv)
+    if head is not None:
+        branch = head.split(":", 1)[-1]
+    apex = pathlib.Path(top) / ".claude" / "output" / "apex"
+    if apex.is_symlink() or not apex.is_dir():
+        return None
+    found = []
+    for r in apex.iterdir():
+        if r.is_symlink() or not r.is_dir():
+            continue
+        ctx = _guarded_text(r / "00-context.md", HOOK_MAX_BYTES)
+        if ctx is None or run_branch(ctx) != branch:
+            continue
+        if any((r / n).exists() or (r / n).is_symlink() for n in ("pr.md", "commit.txt")):
+            continue
+        found.append(((r / "00-context.md").stat().st_mtime, r.name, r))
+    return max(found)[2] if found else None
+
+
+def pr_hook(data):
+    """--hook after a lone `gh pr create`: name the B6 files the branch's run lacks."""
+    cmd = data.get("tool_input", {}).get("command")
+    if not isinstance(cmd, str) or not GH_PR_CREATE.match(cmd):
+        return 0
+    if _tool_failed(data.get("tool_response")):
+        return 0
+    run = current_run(data.get("cwd"), cmd)
+    gaps = run_gaps(run, HOOK_MAX_BYTES) if run is not None else None
+    items = [text for key, text in B6_ITEMS if (gaps or {}).get(key) == "missing"]
+    if not items:
+        return 0
+    msg = (f"APEX run .claude/output/apex/{run.name}/ is missing: {'; '.join(items)}. "
+           "Write them before merging (B6).")
+    print(json.dumps({"hookSpecificOutput": dict(hookEventName="PostToolUse", additionalContext=msg)}))
+    return 0
+
+
+def b6_self_test(failures):
+    """Tier and examine-due on real 00-context lines; the first-Tier-line rule
+    must mislabel one, or the escalation fixture cannot fail."""
+    first_wrong = 0
+    for source, tier, due, text in B6_FIXTURES:
+        got = run_tier(text)
+        if got != tier:
+            failures.append(f"B6 {source}: tier {got}, expected {tier}")
+        if x_due(text) != due:
+            failures.append(f"B6 {source}: examine due {x_due(text)}, expected {due}")
+        first = TIER_LINE.search(text)
+        if (first.group(1) if first else None) != tier:
+            first_wrong += 1
+    if first_wrong == 0:
+        failures.append("B6 fixtures cannot fail: the first-Tier-line rule mislabels none of them")
+    if {f[2] for f in B6_FIXTURES} != {True, False}:
+        failures.append("B6 table too thin: examine due needs both outcomes")
+    return len(B6_FIXTURES)
+
+
 def b5_self_test(failures):
     outcomes = {"changed", "not changed", "unknown"}
     for run, name, expected, text in B5_TALLY_FIXTURES:
@@ -568,11 +771,13 @@ def self_test():
     if unmarked_wrong == 0:
         failures.append("class fixtures cannot fail: the unmarked rule mislabels none of them")
     n_b5 = b5_self_test(failures)
+    n_b6 = b6_self_test(failures)
     for f in failures:
         print(f"FAIL {f}")
     print(f"self-test fixtures={len(FIXTURES)} command={n_cmd} prose={n_prose} "
           f"v0_mislabels={v0_wrong} class_fixtures={len(CLASS_FIXTURES)} "
-          f"unmarked_mislabels={unmarked_wrong} b5_fixtures={n_b5} failures={len(failures)}")
+          f"unmarked_mislabels={unmarked_wrong} b5_fixtures={n_b5} b6_fixtures={n_b6} "
+          f"failures={len(failures)}")
     return 1 if failures else 0
 
 
@@ -600,7 +805,7 @@ def index_links(text):
     return set(INDEX_LINK.findall(text))
 
 
-def metrics(runs_root, mem_root):
+def metrics(runs_root, mem_root, since=B6_SINCE):
     out = {}
     runs = sorted(p for p in runs_root.iterdir() if p.is_dir())
 
@@ -692,6 +897,30 @@ def metrics(runs_root, mem_root):
         out[f"B5.{s}.changed"] = changed
         out[f"B5.{s}.unknown"] = ran - recorded
         out[f"B5.{s}.rate"] = f"{changed / recorded:.1%}" if recorded else "n/a"
+
+    # B6: run files due at the end of a run (see the module docstring)
+    rows = []
+    for r in runs:
+        ctx = _guarded_text(r / "00-context.md", None)
+        if ctx is None:
+            rows.append((datetime.date.fromtimestamp(r.stat().st_mtime).isoformat(), "untiered", None))
+            continue
+        tier = run_tier(ctx)
+        kind = "untiered" if tier not in NON_DIRECT | {"Direct"} else tier
+        rows.append((run_date(r, ctx), kind, run_gaps(r, None)))
+    out["B6.since"] = since
+    for prefix, keep in (("B6", rows), ("B6.since", [row for row in rows if row[0] >= since])):
+        gaps = [g for _, _, g in keep if g is not None]
+        acs = sum(1 for g in gaps if g["acs"] == "ok")
+        due = [g for g in gaps if "x" in g or "e" in g]
+        held = sum(1 for g in due if all(g.get(s, "ok") == "ok" for s in ("x", "e")))
+        out[f"{prefix}.runs"] = len(gaps)
+        out[f"{prefix}.untiered"] = sum(1 for _, kind, _ in keep if kind == "untiered")
+        out[f"{prefix}.with_acs"] = acs
+        out[f"{prefix}.acs_rate"] = f"{acs / len(gaps):.1%}" if gaps else "n/a"
+        out[f"{prefix}.tally_due"] = len(due)
+        out[f"{prefix}.with_tally"] = held
+        out[f"{prefix}.tally_rate"] = f"{held / len(due):.1%}" if due else "n/a"
     return out
 
 
@@ -714,6 +943,8 @@ def acs_report(path):
 
 def hook():
     data = json.loads(sys.stdin.read())
+    if data.get("tool_name") == "Bash":
+        return pr_hook(data)
     path = data["tool_input"]["file_path"]
     if isinstance(path, str) and VALIDATE_PATH.search(path):
         return validate_hook(pathlib.Path(path))
@@ -800,7 +1031,7 @@ def memory_hook(p):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="APEX run metrics (B1-B5).")
+    ap = argparse.ArgumentParser(description="APEX run metrics (B1-B6).")
     ap.add_argument("--runs", type=pathlib.Path, default=pathlib.Path(".claude/output/apex"))
     ap.add_argument(
         "--memory",
@@ -813,6 +1044,8 @@ def main():
                     help="print the class of each AC of one 02-acs.md")
     ap.add_argument("--hook", action="store_true",
                     help="PostToolUse hook: read the event on stdin, list unproven ACs")
+    ap.add_argument("--since", type=lambda s: datetime.date.fromisoformat(s).isoformat(),
+                    default=B6_SINCE, help="B6.since.*: runs dated on or after DATE (YYYY-MM-DD)")
     args = ap.parse_args()
     if args.hook:
         try:
@@ -832,7 +1065,7 @@ def main():
     if not (mem_root / "MEMORY.md").is_file():
         print(f"apex-metrics-probe: no MEMORY.md in {mem_root}", file=sys.stderr)
         return 2
-    for key, val in sorted(metrics(runs_root, mem_root).items()):
+    for key, val in sorted(metrics(runs_root, mem_root, args.since).items()):
         print(f"{key}={val}")
     return 0
 

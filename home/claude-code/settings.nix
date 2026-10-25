@@ -1019,14 +1019,16 @@ in
           ];
         }
         {
-          # Trois déclencheurs (le corps EST checks/apex-metrics-probe.py) :
+          # Quatre déclencheurs (le corps EST checks/apex-metrics-probe.py) :
           # 1. un 02-acs.md de run APEX : liste les AC qui ne nomment aucune
           #    commande et ne portent ni `[lecture] — raison` ni
           #    `[deferred to user]` (même classifieur que la métrique B2) ;
           # 2. un 04-validate.md de run APEX : nomme les passes (e, x) qui ont
           #    tourné sans laisser de décompte (métrique B5) ;
           # 3. une note mémoire Claude ou son MEMORY.md : nomme ce que B4
-          #    compte contre elle (lien mort, note absente de l'index).
+          #    compte contre elle (lien mort, note absente de l'index) ;
+          # 4. un `gh pr create` réussi (groupe suivant, Bash) : nomme les
+          #    fichiers B6 que le run de la branche n'a pas encore écrits.
           # Synchrone : `async = true` livrerait le contexte un tour trop
           # tard, quand le plan est déjà passé. Muet ailleurs et à zéro
           # écart ; fail-open (toute erreur = exit 0, rien sur stdout).
@@ -1034,6 +1036,25 @@ in
           hooks = [
             {
               type = "command";
+              command = "${python3} -I ~/.claude/hooks/apex-metrics-probe.py --hook";
+              timeout = 5;
+            }
+          ];
+        }
+        {
+          # Déclencheur 4 du même corps. `if` est un champ du handler, pas du
+          # groupe (au niveau du groupe il est ignoré et python tourne après
+          # chaque Bash) ; une seule règle de permission : simple filtre de
+          # coût, le corps se restreint lui-même à un `gh pr create` seul.
+          # hook-wiring vérifie qu'il reste sur le handler. PostToolUse : ne
+          # part qu'après un succès, et les fichiers de run (ignorés par git)
+          # écrits après la PR arrivent encore avant le merge. Même timeout :
+          # hook-wiring en exige un seul par corps.
+          matcher = "Bash";
+          hooks = [
+            {
+              type = "command";
+              "if" = "Bash(gh pr create *)";
               command = "${python3} -I ~/.claude/hooks/apex-metrics-probe.py --hook";
               timeout = 5;
             }

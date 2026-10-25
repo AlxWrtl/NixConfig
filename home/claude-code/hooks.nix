@@ -406,6 +406,8 @@ in
   # command and carry no `[lecture] — reason` / `[deferred to user]` marker.
   # The body IS checks/apex-metrics-probe.py, run with --hook: one classifier for
   # the gate and the B2 metric, so the replay and the hook cannot drift.
+  # Also PostToolUse on Bash: after a lone `gh pr create`, names the B6 run
+  # files (02-acs.md, examine/external tallies) the branch's run still lacks.
   # Fail-open: any error exits 0 with nothing on stdout.
   hookApexAcsProof = builtins.readFile ../../checks/apex-metrics-probe.py;
 

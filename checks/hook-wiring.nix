@@ -126,6 +126,17 @@
 #      one of MEMORY.md names its links to absent notes. A clean note, the
 #      same note outside a memory dir and a symlinked one stay silent. One
 #      canary per branch.
+#      The run-files-end-check run adds the probe's Bash branch: after a
+#      lone, successful `gh pr create`, the newest unfinished run of the
+#      branch (git in the cwd, or a `--head` argv token, never one inside a
+#      quoted title) that is tiered and not Direct is told the B6 files it
+#      lacks, the external tally included; a complete run, a Standard run
+#      owing no tally, Direct, untiered, another branch, a finished run, an
+#      older incomplete run behind a newer complete one, another command, a
+#      failed call, an unsplittable command, no git and a symlinked
+#      00-context.md stay silent. One canary per branch, plus the
+#      last-Tier-line rule through `--self-test`; D8 asserts at eval that
+#      the probe's Bash group puts its `if` on the handler.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -591,6 +602,50 @@ let
     A-mem-fold = {
       hook = "apex-metrics-probe.py";
       text = "by_stem.setdefault(stem.replace(\"_\", \"-\"), slug)";
+    };
+    A-pr-cmd = {
+      hook = "apex-metrics-probe.py";
+      text = "GH_PR_CREATE = re.compile(r\"^\\s*gh\\s+pr\\s+create(\\s|$)\")";
+    };
+    A-pr-branch = {
+      hook = "apex-metrics-probe.py";
+      text = "if ctx is None or run_branch(ctx) != branch:";
+    };
+    A-pr-done = {
+      hook = "apex-metrics-probe.py";
+      text = "if any((r / n).exists() or (r / n).is_symlink() for n in (\"pr.md\", \"commit.txt\")):";
+    };
+    A-pr-direct = {
+      hook = "apex-metrics-probe.py";
+      text = "NON_DIRECT = frozenset({\"Standard\", \"High-stakes\", \"Diagnosis\"})";
+    };
+    A-pr-xflag = {
+      hook = "apex-metrics-probe.py";
+      text = "X_FLAG = re.compile(r\"(?<![\\w-])[-+]x(?![\\w-])\")";
+    };
+    A-pr-head = {
+      hook = "apex-metrics-probe.py";
+      text = "head = head_flag(argv)";
+    };
+    A-pr-shlex = {
+      hook = "apex-metrics-probe.py";
+      text = "argv = shlex.split(cmd)";
+    };
+    A-pr-ext = {
+      hook = "apex-metrics-probe.py";
+      text = "for step in (\"x\", \"e\"):";
+    };
+    A-pr-newest = {
+      hook = "apex-metrics-probe.py";
+      text = "return max(found)[2] if found else None";
+    };
+    A-pr-failed = {
+      hook = "apex-metrics-probe.py";
+      text = "if _tool_failed(data.get(\"tool_response\")):";
+    };
+    A-b6-tier = {
+      hook = "apex-metrics-probe.py";
+      text = "return found[-1] if found else None";
     };
     A-cb-cron = {
       hook = "correction-budget.js";
@@ -1651,6 +1706,138 @@ let
         {
           anchor = "A-mem-path";
           to = "MEMORY_PATH = re.compile(r\"/memory/[^/]+\\.md$\")";
+        }
+      ];
+    }
+    # Any `gh pr` command reads as a PR creation: `gh pr view` gets the B6 line.
+    {
+      id = "M-pr-cmd";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-other-command-silent";
+      swaps = [
+        {
+          anchor = "A-pr-cmd";
+          to = "GH_PR_CREATE = re.compile(r\"^\\s*gh\\s+pr\\s\")";
+        }
+      ];
+    }
+    # Branch ignored: another branch's newer unfinished run is named.
+    {
+      id = "M-pr-branch";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-other-branch-silent";
+      swaps = [
+        {
+          anchor = "A-pr-branch";
+          to = "if ctx is None:";
+        }
+      ];
+    }
+    # A finished run (pr.md, commit.txt) is still told what it lacks.
+    {
+      id = "M-pr-done";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-finished-run-silent";
+      swaps = [
+        {
+          anchor = "A-pr-done";
+          to = "if False:";
+        }
+      ];
+    }
+    # Direct owes the Standard files: a Direct run is told it lacks 02-acs.md.
+    {
+      id = "M-pr-direct";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-direct-silent";
+      swaps = [
+        {
+          anchor = "A-pr-direct";
+          to = "NON_DIRECT = frozenset({\"Standard\", \"High-stakes\", \"Diagnosis\", \"Direct\"})";
+        }
+      ];
+    }
+    # `+x` never read: an escalated run with no 05-examine.md owes nothing.
+    {
+      id = "M-pr-xflag";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-xflag-noexamine-emits";
+      swaps = [
+        {
+          anchor = "A-pr-xflag";
+          to = "X_FLAG = re.compile(r\"(?!x)x\")";
+        }
+      ];
+    }
+    # `--head` ignored: the cwd's branch, whose run is complete, is read.
+    {
+      id = "M-pr-head";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-head-flag-emits";
+      swaps = [
+        {
+          anchor = "A-pr-head";
+          to = "head = None";
+        }
+      ];
+    }
+    # The raw command split on blanks: a `-H` inside a quoted title names the branch.
+    {
+      id = "M-pr-shlex";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-head-in-title-emits";
+      swaps = [
+        {
+          anchor = "A-pr-shlex";
+          to = "argv = cmd.split()";
+        }
+      ];
+    }
+    # External tally never owed: a run whose verify passed and has no triage is silent.
+    {
+      id = "M-pr-ext";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-external-untallied-emits";
+      swaps = [
+        {
+          anchor = "A-pr-ext";
+          to = "for step in (\"x\",):";
+        }
+      ];
+    }
+    # Oldest unfinished run read: the complete older run hides the newer one's gap.
+    {
+      id = "M-pr-newest";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-newest-incomplete-emits";
+      swaps = [
+        {
+          anchor = "A-pr-newest";
+          to = "return min(found)[2] if found else None";
+        }
+      ];
+    }
+    # An interrupted `gh pr create` (no PR) still gets the B6 line.
+    {
+      id = "M-pr-failed";
+      hook = "apex-metrics-probe.py";
+      kills = "pr-failed-tool-silent";
+      swaps = [
+        {
+          anchor = "A-pr-failed";
+          to = "if False:";
+        }
+      ];
+    }
+    # First Tier: line wins: an escalated run keeps its provisional tier.
+    {
+      id = "M-b6-tier";
+      hook = "apex-metrics-probe.py";
+      kills = "ac-self-test";
+      swaps = [
+        {
+          anchor = "A-b6-tier";
+          to = "return found[0] if found else None";
         }
       ];
     }
@@ -2780,6 +2967,25 @@ let
     "ac-mem-outside-silent"
     "ac-mem-symlink-silent"
     "ac-mem-notes-memory-silent"
+    "pr-missing-acs-emits"
+    "pr-examine-untallied-emits"
+    "pr-xflag-noexamine-emits"
+    "pr-complete-silent"
+    "pr-standard-notally-silent"
+    "pr-direct-silent"
+    "pr-untiered-silent"
+    "pr-other-branch-silent"
+    "pr-head-flag-emits"
+    "pr-finished-run-silent"
+    "pr-other-command-silent"
+    "pr-failed-tool-silent"
+    "pr-nogit-silent"
+    "pr-ctx-symlink-silent"
+    "pr-head-in-title-emits"
+    "pr-unsplittable-silent"
+    "pr-external-untallied-emits"
+    "pr-newest-incomplete-emits"
+    "pr-newest-complete-silent"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -2854,6 +3060,17 @@ let
     !(builtins.length ts == 1 && builtins.isInt (builtins.head ts) && builtins.head ts > 0)
   ) runHooks;
   hostTimeout = n: toString (builtins.head (timeoutsOf n));
+
+  # The probe's Bash trigger: `if` must sit on the handler, where the host reads it.
+  prProbeIf = "Bash(gh pr create *)";
+  prProbeGroups = builtins.filter (
+    g:
+    (g.matcher or null) == "Bash"
+    && builtins.any (h: builtins.elem "apex-metrics-probe.py" (hookRefsIn (h.command or ""))) (
+      entriesOf g
+    )
+  ) (groupsOf "PostToolUse");
+  prProbeGated = g: !(g ? "if") && builtins.all (h: (h."if" or null) == prProbeIf) (entriesOf g);
 
   hookFile = n: pkgs.writeText n (bodyText n);
   mutantFile = m: pkgs.writeText "${m.id}-${m.hook}" (mutantBody m);
@@ -3113,6 +3330,43 @@ let
       case "$ctx" in "memory: "*) ;; *) why="context does not start with 'memory: ': $ctx"; return 1 ;; esac
       must="$1"
       shift
+      for x in "$@"; do
+        case "$ctx" in *"$x"*) why="context carries '$x': $ctx"; kind=mismatch; return 1 ;; esac
+      done
+      case "$ctx" in *"$must"*) ;; *) why="context lacks '$must': $ctx"; return 1 ;; esac
+    }
+    # `gh pr create` branch (B6): one repo per case at $PR, on feat/p with an
+    # empty commit, `.claude/` ignored, its runs under $PRO.
+    PR_CMD='gh pr create --title "feat: probe" --body-file b.md'
+    pr_repo() {
+      PR="$root/pr/$lbl"
+      PRO="$PR/.claude/output/apex"
+      {
+        g init -q -b feat/p "$PR" &&
+          printf '%s\n' '.claude/' > "$PR/.gitignore" &&
+          g -C "$PR" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q --allow-empty -m probe &&
+          mkdir -p "$PRO"
+      } || { why="gh pr create fixture could not be built"; return 1; }
+    }
+    # $1 run id, $2 its tier line, $3 its flags line, $4 its branch, then the
+    # run files it holds, each a tally line.
+    pr_run() {
+      r="$PRO/$1"
+      mkdir -p "$r" && printf '%s\n' "# APEX: probe" "Date: 2026-10-25" "$2" "$3" "Branch: $4 (trunk: master)" > "$r/00-context.md"
+      shift 4
+      for f in "$@"; do printf '%s\n' "$AC_TALLY" > "$r/$f"; done
+    }
+    # $1 command, $2 tool_response as raw JSON (a plain success when empty or unset).
+    pr_in() { ${jq} -cn --arg c "$1" --arg w "$PR" --arg r "''${2-}" '{hook_event_name:"PostToolUse",session_id:"probe",cwd:$w,tool_name:"Bash",tool_input:{command:$c,description:"probe"},tool_response:(if $r == "" then {stdout:"",stderr:"",interrupted:false,isImage:false} else ($r | fromjson) end)}'; }
+    # $1 run id the B6 line must name, $2 text it must carry, then texts it must not.
+    pr_emits() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the missing run files were due"; kind=mismatch; return 1; }
+      ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "PostToolUse") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
+      case "$ctx" in "APEX run .claude/output/apex/$1/ is missing: "*". Write them before merging (B6).") ;; *) why="context is not the B6 line for $1: $ctx"; return 1 ;; esac
+      must="$2"
+      shift 2
       for x in "$@"; do
         case "$ctx" in *"$x"*) why="context carries '$x': $ctx"; kind=mismatch; return 1 ;; esac
       done
@@ -3515,7 +3769,7 @@ let
         apr-*) tmo=${hostTimeout "apex-pr-record.js"} ;;
         wh-*) tmo=${hostTimeout "worktree-in-use.js"} ;;
         iw-*) tmo=${hostTimeout "instagram-watch.js"} ;;
-        ac-*) tmo=${hostTimeout "apex-metrics-probe.py"} ;;
+        ac-* | pr-*) tmo=${hostTimeout "apex-metrics-probe.py"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -4613,6 +4867,95 @@ let
           m="$ACR/$lbl/notes/memory"; mem_note "$m/other_note.md" other-note "Body."
           f="$m/n.md"; mem_note "$f" n "See [[other_note]] and [[ghost]]."
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # apex-metrics-probe --hook on Bash: after a lone, successful `gh pr
+        # create`, the branch's newest unfinished run is told the B6 files it
+        # lacks (02-acs.md, the examine and external tallies). Else silence.
+        pr-missing-acs-emits)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; pr_emits r1 "02-acs.md (the ACs, each with its proving command)" "05-examine" "04-external" ;;
+        pr-examine-untallied-emits)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md
+          ac_put "$PRO/r1/05-examine.md" "$AC_EXAM"
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; pr_emits r1 "dismissed=D tally in 05-examine.md" "02-acs.md (" "04-external" ;;
+        # Real flags line (76-apex-ac-proof): `+x` owes the examine tally
+        # before any 05-examine.md exists.
+        pr-xflag-noexamine-emits)
+          pr_repo || return 1; pr_run r1 "Tier: Standard (provisional)" "Flags: -t -pr -o -n; escalated +x +e at validate" feat/p 02-acs.md
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; pr_emits r1 "dismissed=D tally in 05-examine.md" "02-acs.md (" "04-external" ;;
+        pr-complete-silent)
+          pr_repo || return 1; pr_run r1 "Tier: High-stakes" "Flags: -t -f -x -pr -o -n -e" feat/p 02-acs.md 05-examine.md 04-external-triage.md
+          ac_put "$PRO/r1/04-external-verify.json" "$AC_VPASS"
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        pr-standard-notally-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n (Standard defaults)" feat/p 02-acs.md
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        pr-direct-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Direct" "Flags: -pr" feat/p
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # `Mode:` predates the Tier: line (task-board-ui): untiered, silent.
+        pr-untiered-silent)
+          pr_repo || return 1; pr_run r1 "Mode: Standard" "Flags: -t -pr -o -n" feat/p
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # The branch's run is complete and OLDER; a run on feat/p-2 (a name
+        # the branch is a prefix of) lacks 02-acs.md and is newer.
+        pr-other-branch-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md
+          ${pkgs.coreutils}/bin/touch -t 200001010000 "$PRO/r1/00-context.md" || { why="cannot age r1"; return 1; }
+          pr_run r2 "Tier: Standard" "Flags: -t -pr -o -n" feat/p-2
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # `--head owner:feat/q` names the branch; the cwd's feat/p run is complete.
+        pr-head-flag-emits)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md
+          pr_run r2 "Tier: Standard" "Flags: -t -pr -o -n" feat/q
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in 'gh pr create --head owner:feat/q --title x')"; pr_emits r2 "02-acs.md (the ACs" "/r1/" ;;
+        # Finished runs: one with pr.md, one with commit.txt, both lacking 02-acs.md.
+        pr-finished-run-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          ac_put "$PRO/r1/pr.md" "#1 https://example.invalid/1 — merged (abcdef12)"
+          pr_run r2 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          ac_put "$PRO/r2/commit.txt" "abcdef1234567890"
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        pr-other-command-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in 'gh pr view 42')"; ac_silent ;;
+        pr-failed-tool-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD" '{"stdout":"","stderr":"","interrupted":true,"isImage":false}')"; ac_silent ;;
+        pr-nogit-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          run "$lbl" "$2" "$PR" "$root/emptybin" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # A symlinked 00-context.md is not read: its target's Branch: stays out.
+        pr-ctx-symlink-silent)
+          pr_repo || return 1; mkdir -p "$PRO/r1"
+          ac_put "$PR/ctx.md" "# APEX: probe" "Tier: Standard" "Flags: -t -pr -o -n" "Branch: feat/p"
+          ln -s "$PR/ctx.md" "$PRO/r1/00-context.md" || { why="cannot plant the 00-context.md symlink"; return 1; }
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # `-H other` inside the quoted title is no flag: the cwd's feat/p run is read.
+        pr-head-in-title-emits)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in 'gh pr create --title "fix: drop -H other" --body-file b.md')"; pr_emits r1 "02-acs.md (the ACs" "05-examine" ;;
+        # An unclosed quote: no argv, so no branch, fail-open silence.
+        pr-unsplittable-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in 'gh pr create --title "x')"; ac_silent ;;
+        # Verify passed (not BLOCKED), no 04-external-triage.md: the external tally is owed.
+        pr-external-untallied-emits)
+          pr_repo || return 1; pr_run r1 "Tier: High-stakes" "Flags: -t -f -x -pr -o -n -e" feat/p 02-acs.md 05-examine.md
+          ac_put "$PRO/r1/04-external-verify.json" "$AC_VPASS"
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; pr_emits r1 "dismissed=D tally in 04-external-triage.md" "02-acs.md (" "05-examine" ;;
+        # Two unfinished runs of feat/p: the newer (r2) lacks 02-acs.md, the
+        # older (r1) is complete. The newer is named.
+        pr-newest-incomplete-emits)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md
+          ${pkgs.coreutils}/bin/touch -t 200001010000 "$PRO/r1/00-context.md" || { why="cannot age r1"; return 1; }
+          pr_run r2 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; pr_emits r2 "02-acs.md (the ACs" "/r1/" ;;
+        # The reverse: the older lacks 02-acs.md, the newer is complete. Silent.
+        pr-newest-complete-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
+          ${pkgs.coreutils}/bin/touch -t 200001010000 "$PRO/r1/00-context.md" || { why="cannot age r1"; return 1; }
+          pr_run r2 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -4633,7 +4976,7 @@ let
         apr-*) echo ${hookFile "apex-pr-record.js"} ;;
         wh-*) echo ${hookFile "worktree-in-use.js"} ;;
         iw-*) echo ${hookFile "instagram-watch.js"} ;;
-        ac-*) echo ${hookFile "apex-metrics-probe.py"} ;;
+        ac-* | pr-*) echo ${hookFile "apex-metrics-probe.py"} ;;
       esac
     }
 
@@ -4780,6 +5123,11 @@ let
       name = "D7 lsof seam: worktree-in-use.js carries its lsof path literal exactly once";
       ok = !whLsofMiscount;
       msg = "`${whLsofLit}` is not in exactly one line of the installed worktree-in-use.js (home/claude-code/hooks.nix, hooks.hookWorktreeInUse; occurrences: ${toString (occurrences whLsofLit (bodyText "worktree-in-use.js"))}). The wh cases repoint that one literal at a fake lsof; missing, they run the real path the build sandbox lacks, and twice, the copy is only half repointed";
+    }
+    {
+      name = "D8 pr probe: the Bash apex-metrics-probe group filters on its handler's `if`";
+      ok = prProbeGroups != [ ] && builtins.all prProbeGated prProbeGroups;
+      msg = "PostToolUse group(s) with matcher Bash running apex-metrics-probe.py: ${toString (builtins.length prProbeGroups)}; each must carry no group-level `if` and `\"if\" = \"${prProbeIf}\"` on every handler. `if` is a handler field (hooks reference, common fields): on the group it is ignored without a word and python runs after every Bash call";
     }
   ];
 

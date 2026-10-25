@@ -3327,6 +3327,7 @@ in
     | File upload / drop zone | "File upload" below |
     | Onboarding / first-run flow | "Onboarding" below |
     | Loading states, skeletons, optimistic updates, progress bars | "Perceived performance" below |
+    | Charts in a UI (bars, lines, legends, annotations) | "Charts" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3459,6 +3460,18 @@ in
     - Progress bars never slow down near the end; pauses hurt most
       there, and a bar that speeds up toward the end feels shortest.
       Source: Harrison et al., "Rethinking the Progress Bar", UIST 2007.
+
+    ## Charts (ours)
+
+    A chart that misleads is worse than none.
+
+    - Bars compare length: the value axis starts at zero.
+    - One accent on the series that matters, the rest neutral gray;
+      never one bright color per series.
+    - Label lines at their end instead of a legend box.
+    - Past ~5 series, switch to a sortable table.
+    - Annotate the peak or the anomaly ("launch day") so nobody has to
+      guess why.
 
     ## Errata (ours, measured; they override the sub-skills)
 

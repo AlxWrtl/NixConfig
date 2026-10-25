@@ -3324,6 +3324,7 @@ in
     | Chat / messaging screen layout | "Chat screen" below |
     | UX-law check of a layout or flow (carousels, dialogs, forms, inputs, progress, steps, choices, list order, final screens) | "UX laws" below |
     | Command palette / ⌘K search UI | "Command palette" below |
+    | File upload / drop zone | "File upload" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3408,6 +3409,22 @@ in
     6. Motion: ⌘K opens in ~150ms, filter on every keystroke (no
        debounce on local data), selection slides, Enter shows a spinner
        if the action is slow.
+
+    ## File upload (six mistakes, ours)
+
+    Uploads fail: design for the failure.
+
+    1. The whole card is the drop zone, not a tiny "choose file" button.
+    2. Progress shows percent (or bytes) and a cancel, never a bare
+       spinner.
+    3. Validate type and size on the client before sending, not after
+       the upload finishes.
+    4. Max size and accepted types are written on the drop zone, not
+       revealed by the error.
+    5. One bad file never kills the batch: per-row status and retry,
+       the rest keeps going.
+    6. Never block the app: dock uploads in a corner and let people
+       keep working.
 
     ## Errata (ours, measured; they override the sub-skills)
 

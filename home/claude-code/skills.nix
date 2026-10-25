@@ -3322,7 +3322,7 @@ in
     | Quick performance fixes | `performance-cheatsheet.md` |
     | Apple HIG audit of a screen or component: accessibility, touch targets, labels, forms, focus, contrast | `hig-audit/SKILL.md` |
     | Chat / messaging screen layout | "Chat screen" below |
-    | UX-law check of a layout or flow (carousels, dialogs, forms, steps, choices) | "UX laws" below |
+    | UX-law check of a layout or flow (carousels, dialogs, forms, inputs, progress, steps, choices, list order, final screens) | "UX laws" below |
     | Command palette / ⌘K search UI | "Command palette" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
@@ -3378,6 +3378,18 @@ in
       so they read as one path with a start, an end and a next step.
     - **Choice overload** — show fewer options up front; the rest one
       level deeper.
+    - **Goal gradient** — people speed up near the end: never start a
+      progress bar or card at zero (count the steps already done).
+    - **Postel's law** — accept any input format (spaces, dashes,
+      case), then normalize; reject only what cannot be parsed.
+    - **Tesler's law** — complexity moves, it does not vanish: let the
+      system carry it (postcode → fill city and region).
+    - **Similarity** — what taps must look tappable: rows that act get
+      an affordance (chevron), static rows do not.
+    - **Serial position** — first and last items are remembered: key
+      actions go first or last, never mid-list.
+    - **Peak-end** — an experience is judged by its peak and its end:
+      design the final screen (receipt, confirmation) on purpose.
 
     ## Command palette (six decisions, ours)
 

@@ -3325,6 +3325,7 @@ in
     | UX-law check of a layout or flow (carousels, dialogs, forms, inputs, progress, steps, choices, list order, final screens) | "UX laws" below |
     | Command palette / ⌘K search UI | "Command palette" below |
     | File upload / drop zone | "File upload" below |
+    | Onboarding / first-run flow | "Onboarding" below |
 
     A task spanning two rows (a drawer with drag-to-dismiss: `animate` +
     `apple-design`) reads both; stop at two or three files.
@@ -3425,6 +3426,19 @@ in
        the rest keeps going.
     6. Never block the app: dock uploads in a corner and let people
        keep working.
+
+    ## Onboarding (six mistakes, ours)
+
+    Onboarding is the first impression.
+
+    1. Ask for a permission at the moment it is needed, never as a
+       stack of prompts before hello.
+    2. No slide tour: teach inside the product, where the feature is.
+    3. Let people try before the sign-up wall; ask for the account
+       once there is something worth saving.
+    4. Show where they are: "step 2 of 4" in a bar that moves.
+    5. One question per screen on day one; defer the rest.
+    6. Every step has skip and back, and the flow can resume later.
 
     ## Errata (ours, measured; they override the sub-skills)
 

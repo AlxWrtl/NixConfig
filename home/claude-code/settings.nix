@@ -348,6 +348,8 @@ in
           # Scaleway TEM : sans wrapper, toute commande sandboxée peut les lire.
           "${homeDirectory}/.config/secrets/scaleway-tem-access-key"
           "${homeDirectory}/.config/secrets/scaleway-tem-secret-key"
+          # Neon : clé API, sans wrapper non plus (console.neon.tech déjà couvert par allowedDomains "*").
+          "${homeDirectory}/.config/secrets/neon-api-key"
         ];
         # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the

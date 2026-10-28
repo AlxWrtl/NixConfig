@@ -31,7 +31,8 @@
       macos-icon-screen-color = 292b3b
 
       # Window
-      confirm-close-surface = false
+      # Cmd+Q / Cmd+W ask first while a process runs (claude, board); an idle shell closes at once
+      confirm-close-surface = true
       window-new-tab-position = current
       window-save-state = always
       window-padding-x = 10

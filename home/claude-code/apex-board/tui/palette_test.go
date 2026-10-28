@@ -87,6 +87,25 @@ func TestKeysRowsMuted(t *testing.T) {
 	check("agents", agentsModel(t, newSessionsFixture(t), 180, 50), 49, "naviguer")
 }
 
+// A card's branch and an inactive chip's label are text, so muted, not faint.
+func TestCardMetaMuted(t *testing.T) {
+	line := chipLines([]Chip{{Key: "x", Label: "ext"}}, 60, P.card)[0]
+	if x := cellIndex(line, "ext"); x < 0 || line[x].st.fg != P.muted || line[x-1].st.fg != P.faint {
+		t.Fatal("inactive chip: label not muted or bracket not faint")
+	}
+	branch := "fix/some-branch"
+	memo := cardRows(&Card{ID: "01-x", Title: "titre", Branch: &branch}, 40, false)
+	for _, row := range memo.rows {
+		if x := cellIndex(row, branch); x >= 0 {
+			if row[x].st.fg != P.muted {
+				t.Fatalf("branch drawn in %v", row[x].st.fg)
+			}
+			return
+		}
+	}
+	t.Fatal("branch row not drawn")
+}
+
 // AC3: chips and file verdicts read without colour: ✓ / ✗ before a pass / fail label, and
 // ✓ ~ ✗ · beside a file; the derived Label itself is untouched.
 func TestStateGlyphs(t *testing.T) {

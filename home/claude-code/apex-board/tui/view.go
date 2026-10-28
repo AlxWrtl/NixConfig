@@ -112,7 +112,7 @@ func (c *Card) pulses() bool { return c.Live && c.Column != "done" }
 func chipLines(chips []Chip, iw int, bg rgb) [][]cell {
 	lines := [][]cell{nil}
 	for _, c := range chips {
-		l, r, f, edge, cbg := "[", "]", P.faint, P.faint, bg
+		l, r, f, edge, cbg := "[", "]", P.muted, P.faint, bg
 		switch c.State {
 		case "info":
 			f, edge = P.muted, P.line
@@ -202,7 +202,7 @@ func cardRows(card *Card, cw int, selected bool) *rowsMemo {
 	}
 	body = append(body, wrapText(card.Title, iw, 3, st(P.text))...)
 	if card.Branch != nil {
-		body = append(body, fitCells(cellsOf(*card.Branch, st(P.faint)), iw))
+		body = append(body, fitCells(cellsOf(*card.Branch, st(P.muted)), iw))
 	}
 	body = append(body, chipLines(card.Chips, iw, bg)...)
 	if human {
@@ -689,7 +689,7 @@ func (m *Model) drawDrawer(g grid, W, H int, view *viewInfo) {
 			y++
 		}
 		if card.Branch != nil {
-			g.put(left, y, fitCells(cellsOf(*card.Branch, fg(P.faint)), headW))
+			g.put(left, y, fitCells(cellsOf(*card.Branch, fg(P.muted)), headW))
 			y++
 		}
 		if card.Column == "human" {

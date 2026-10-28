@@ -44,6 +44,9 @@ const ENVELOPE = /^\s*<(bash-(input|stdout|stderr)|task-notification|command-nam
 // reports "not logged in" with no EPERM; pnpm run deploy wraps it.
 // curl --noproxy bypasses the sandbox proxy: the direct connection is
 // refused and curl -s prints only 000.
+// Direct Postgres clients (migrations, preflight, RLS tests) skip the proxy
+// and their DNS lookup or local socket is blocked; some fail with no
+// error text at all.
 const ALLOW = [
   /^nix\s+(?:flake\s+check|build|eval)\b/,
   /^git(?:\s+-C\s+\S+)?\s+branch\b.*\s(?:-[dDmMu]|--delete|--move|--set-upstream-to)(?=[\s=]|$)/,
@@ -57,6 +60,7 @@ const ALLOW = [
   /^sandbox-exec\b/,
   /^(?:pnpm\s+(?:exec\s+|dlx\s+)?|npx\s+)?wrangler\b/,
   /^pnpm\s+run\s+deploy(?::[\w-]+)?(?=\s|$)/,
+  /^pnpm\s+(?:run\s+)?(?:db:migrate|preflight|test:rls\w*)(?::[\w-]+)?(?=\s|$)/,
   /^curl\b(?=.*\s--noproxy(?:[\s=]|$))/,
   /^apex-verify-external\b/
 ];

@@ -4,6 +4,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 import { BG_KEEP_MS, SESSION_NAME, bgCounts, bgSummary, bgWord, inProject, parseSessionState, projectOf, recentBg, sessionKind, sortBg } from '../hooks/background'
+import { BG_NAME_MIN, bgRowFit, fmtAge } from '../hooks/core'
 import type { DeckBgAgent } from '../types'
 
 const NOW = 1_000_000_000_000
@@ -130,6 +131,29 @@ test('only the sessions of the current project: its root, a subfolder, one of it
   expect(inProject(list, '/p/repo/.claude/worktrees/y').map(a => a.id)).toEqual(['root', 'sub', 'wt'])
 })
 
+test('a background row at panel width 54 keeps at least 16 cells for the name: no project, the arrow only', () => {
+  const narrow = bgRowFit(54)
+  expect(narrow.nameCols >= BG_NAME_MIN).toBe(true)
+  expect([narrow.hasProject, narrow.pick]).toEqual([false, ' ↗'])
+  // Wide enough for everything: the project and the full label, the name still at 16 or more.
+  const roomy = bgRowFit(72)
+  expect([roomy.hasProject, roomy.pick, roomy.nameCols]).toEqual([true, ' ↗ afficher', 16])
+  expect(bgRowFit(71).hasProject).toBe(false)
+})
+
+test('a background age is whole minutes', () => {
+  expect([0, 29_000, 30_000, 60_000, 89_000, 12 * 60_000, 3 * 3_600_000 + 5 * 60_000 + 20_000, 24 * 3_600_000].map(fmtAge)).toEqual([
+    '<1m',
+    '<1m',
+    '1m',
+    '1m',
+    '1m',
+    '12m',
+    '3h05m',
+    '24h00m',
+  ])
+})
+
 // ---------------------------------------------------------------- through the hooks
 
 const ROOT = '/home/u/.claude/session-state'
@@ -217,7 +241,10 @@ test('with the pane open, only the current project shows (root, subfolder, workt
   await $.session.start(START)
   await $.command.run(deck)
   await clock.settle()
-  for (const cols of [66, 120]) {
+  // 80 and 150 (two 74-col columns) leave room for the project column; 66 and 120 (two 59-col
+  // columns) drop it for the name.
+  for (const cols of [66, 80, 120, 150]) {
+    const hasProject = cols === 80 || cols === 150
     const ui = await $.ui.mount(pane(cols))
     expect(await ui.find({ type: 'Text', text: /^background agents · 3$/ })).toBeDefined()
     const names = (await ui.findAll({ type: 'Text', text: /^s-/ })).map(t => t.text)
@@ -225,14 +252,40 @@ test('with the pane open, only the current project shows (root, subfolder, workt
     expect(await ui.find({ type: 'Text', text: /^approve the plan$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^ paused$/ })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: /^ needs you$/ })).toBeDefined()
-    expect(await ui.findAll({ type: 'Text', text: /^ Preliz$/ })).toHaveLength(2) // the root, and a worktree read as its repo
-    expect(await ui.find({ type: 'Text', text: /^ web$/ })).toBeDefined() // a subfolder shows by its own name
+    expect(await ui.findAll({ type: 'Text', text: /^ Preliz$/ })).toHaveLength(hasProject ? 2 : 0) // the root, and a worktree read as its repo
+    expect((await ui.find({ type: 'Text', text: /^ web$/ })) !== undefined).toBe(hasProject) // a subfolder shows by its own name
     expect(await ui.find({ text: /s-elsewhere/ })).toBeUndefined() // another project
     expect(await ui.find({ type: 'Text', text: /^ nix$/ })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /^ 1m00s$/ })).toBeDefined() // age since updatedAt
+    expect(await ui.find({ type: 'Text', text: /^ 1m$/ })).toBeDefined() // age since updatedAt, whole minutes
     expect(await ui.find({ text: /s-ancient/ })).toBeUndefined() // silent over 24 h
     await ui.unmount()
   }
+})
+
+test('at 110 columns (two 54-col panels) a long name keeps 16 cells: no project, « ↗ », needs-you `!` bold, waiting `◌`', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const long = 'fix-the-vin-decoder-for-imported-trucks'
+  const entries: Entry[] = [file(long, NOW - 2000, { state: 'needs-you' }), file('s-waits', NOW - 1000, { state: 'waiting' })]
+  world(on, { entries, listed: 0, reads: [] })
+  await $.session.start(START)
+  await $.command.run(deck)
+  await clock.settle()
+  const ui = await $.ui.mount(pane(110))
+  expect(await ui.find({ type: 'Text', text: long })).toBeDefined()
+  // The name's box holds 16 cells at least; a shorter name holds its own length.
+  expect((await ui.findAll({ type: 'Box' })).map(b => b.props.minWidth).filter(m => m !== undefined)).toEqual([BG_NAME_MIN, 's-waits'.length])
+  expect(await ui.find({ type: 'Text', text: /^ Preliz$/ })).toBeUndefined()
+  expect(await ui.findAll({ type: 'Text', text: /^ ↗$/ })).toHaveLength(2)
+  expect(await ui.find({ type: 'Text', text: /afficher/ })).toBeUndefined()
+  const asks = await ui.find({ type: 'Text', text: /^! $/ })
+  expect([asks?.props.color, asks?.props.bold]).toEqual(['error', true])
+  expect((await ui.find({ type: 'Text', text: /^◌ $/ }))?.props.color).toBe('warning')
+  expect(await ui.find({ type: 'Text', text: /^[◆◇] $/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: /^ 1m$/ }))?.props.color).toBe('inactive')
+  // The legend's swatch is a stroke of the border it names, not ■ (stopped).
+  expect((await ui.findAll({ type: 'Text', text: /^──$/ })).length > 0).toBe(true)
+  expect(await ui.find({ type: 'Text', text: /^■$/ })).toBeUndefined()
+  await ui.unmount()
 })
 
 test('links, dotted temp files, invalid stems, other kinds and oversized files are never read', async ($, on) => {
@@ -402,7 +455,7 @@ test('« ↗ afficher » on every row not done: one agent-pane run per name at a
   await $.session.start(START)
   await $.command.run(deck)
   await clock.settle()
-  const ui = await $.ui.mount(pane(120))
+  const ui = await $.ui.mount(pane(150))
   expect(await ui.findAll({ type: 'Text', text: /^ ↗ afficher$/ })).toHaveLength(2)
   expect(await ui.find({ key: 'bg-pick-s-waits' })).toBeDefined()
   expect(await ui.find({ key: 'bg-pick-s-runs' })).toBeDefined()

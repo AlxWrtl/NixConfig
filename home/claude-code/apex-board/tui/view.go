@@ -119,11 +119,19 @@ func chipLines(chips []Chip, iw int, bg rgb) [][]cell {
 		case "pass":
 			l, r, f, edge, cbg = " ", " ", P.pass, P.pass, mix(P.pass, bg, 0.14)
 		case "fail":
-			f, edge = P.human, P.human
+			f, edge = P.err, P.err
 		case "used":
 			l, r, f, edge, cbg = " ", " ", P.changes, P.changes, mix(P.changes, bg, 0.16)
 		}
-		label := fitCells(cellsOf(c.Label, fgbg(f, cbg)), max(1, iw-2))
+		// The state readable without colour: render only, the derived Label stays the web's.
+		text := c.Label
+		switch c.State {
+		case "pass":
+			text = "✓ " + text
+		case "fail":
+			text = "✗ " + text
+		}
+		label := fitCells(cellsOf(text, fgbg(f, cbg)), max(1, iw-2))
 		chip := make([]cell, 0, len(label)+2)
 		chip = append(chip, cell{ch: l, w: 1, st: fgbg(edge, cbg)})
 		chip = append(chip, label...)
@@ -285,7 +293,7 @@ func (m *Model) drawHeader(g grid, W, y int) {
 	case st.ok:
 		status = toCells(what+" · "+strconv.Itoa(st.count)+" · "+st.time, fg(P.muted), cellsOf("● ", fg(P.pass)))
 	default:
-		status = toCells(st.err, fg(P.human), cellsOf("● ", fg(P.human)))
+		status = toCells(st.err, fg(P.err), cellsOf("● ", fg(P.err)))
 	}
 	// A manual refresh is said first: the clock alone moves every poll.
 	if m.manual {
@@ -493,7 +501,7 @@ func (m *Model) render() {
 		g.put(margin, H-2, fitCells(cellsOf(footerText, fg(P.muted)), W-2*margin))
 	}
 	btn := cellsOf(refreshLabel, fg(P.active).bold())
-	keys := toCells(" · "+keysBoard, fg(P.faint), slices.Clone(btn))
+	keys := toCells(" · "+keysBoard, fg(P.muted), slices.Clone(btn))
 	var where []cell
 	if nVis < n {
 		where = cellsOf("colonnes "+strconv.Itoa(first+1)+"-"+strconv.Itoa(first+nVis)+"/"+strconv.Itoa(n), fg(P.faint))
@@ -747,11 +755,11 @@ func (m *Model) drawDrawer(g grid, W, H int, view *viewInfo) {
 			g.fillRow(yy, fx, fx+fw, bg)
 			st = func(f rgb) style { return fgbg(f, bg) }
 		}
-		dot := P.faint
+		dot, glyph := P.faint, "·"
 		if t, ok := tones[d.tones[it.path]]; ok {
-			dot = t
+			dot, glyph = t, toneGlyphs[d.tones[it.path]]
 		}
-		g.put(fx+1, yy, cellsOf("●", st(dot)))
+		g.put(fx+1, yy, cellsOf(glyph, st(dot)))
 		name := it.path[strings.LastIndexByte(it.path, '/')+1:]
 		nc := P.muted
 		if on {
@@ -791,7 +799,7 @@ func (m *Model) drawDrawer(g grid, W, H int, view *viewInfo) {
 	if d.focus == "doc" {
 		k = "↑↓ défiler · ⇥ fichiers"
 	}
-	keys := cellsOf(k+" · pgup/pgdn page · esc fermer", fg(P.faint))
+	keys := cellsOf(k+" · pgup/pgdn page · esc fermer", fg(P.muted))
 	kw := right - left
 	if len(tail) > 0 {
 		kw -= cellsWidth(tail) + 2

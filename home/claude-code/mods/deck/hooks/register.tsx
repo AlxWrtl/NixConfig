@@ -53,7 +53,10 @@ import {
   endConsult,
   fitLegend,
   fmtClock,
+  fmtAge,
   fmtDuration,
+  bgRowFit,
+  BG_NAME_MIN,
   fmtTimer,
   fmtUsd,
   plural,
@@ -768,7 +771,7 @@ const alertText = (a: DeckApexAlert) =>
     ? `✗ step ${a.step} failed`
     : a.kind === 'verify'
       ? `✗ external verify ${a.verdict} · ${plural(a.findings, 'finding')}`
-      : `■ correction budget spent · ${a.rounds}/${a.cap} rounds`
+      : `∅ correction budget spent · ${a.rounds}/${a.cap} rounds`
 
 /** /deck and its aliases: open (the default), close, reset, layout <auto|compact|wide|mini>. */
 async function runCommand($: EngineInterface, args: string) {
@@ -1383,7 +1386,7 @@ export const register: Register = (on, options) => {
               </Text>
             ))}
             {shownShells.map(s => shellRow(s, w))}
-            {hiddenShells > 0 ? <Text color={C.faint}>{`+${hiddenShells} earlier shells`}</Text> : null}
+            {hiddenShells > 0 ? <Text color={C.dim}>{`+${hiddenShells} earlier shells`}</Text> : null}
           </Box>
           {rail('apex-link', m.isRunning || shellsRunning > 0, C.apex, w)}
         </Box>
@@ -1480,7 +1483,7 @@ export const register: Register = (on, options) => {
                   </Text>
                 )
               })}
-              <Text color={C.faint}>(inferred)</Text>
+              <Text color={C.dim}>(inferred)</Text>
             </Box>
           ) : null}
           {a.lastAdvice ? (
@@ -1505,14 +1508,14 @@ export const register: Register = (on, options) => {
       const header = (
         <Box justifyContent="space-between" width={w}>
           <Text bold>{`agents · ${running.length} running · ${cards.length} total`}</Text>
-          {cards.length > 0 ? <Text color={C.faint}>1-{Math.min(cards.length, useLanes ? 6 : fit)} expand</Text> : null}
+          {cards.length > 0 ? <Text color={C.dim}>1-{Math.min(cards.length, useLanes ? 6 : fit)} expand</Text> : null}
         </Box>
       )
       if (cards.length === 0) {
         return (
           <Box flexDirection="column" width={w}>
             {header}
-            <Text color={C.faint}>no subagents yet</Text>
+            <Text color={C.dim}>no subagents yet</Text>
           </Box>
         )
       }
@@ -1523,7 +1526,7 @@ export const register: Register = (on, options) => {
         return (
           <Box flexDirection="column" width={w}>
             {header}
-            {cards.length > shown.length ? <Text color={C.faint}>{`+${cards.length - shown.length} earlier`}</Text> : null}
+            {cards.length > shown.length ? <Text color={C.dim}>{`+${cards.length - shown.length} earlier`}</Text> : null}
             {shown.map((c, i) => {
               const gm = geo[i]
               const isViewed = viewed === c.id
@@ -1596,7 +1599,7 @@ export const register: Register = (on, options) => {
             {expandedCard.description || expandedCard.type}
           </Text>
           <Text dimColor wrap="truncate">{`${expandedCard.type} · ${prettyModel(expandedCard.model)} · ${expandedCard.status} · ${expandedCard.steps} steps`}</Text>
-          {expandedCard.tools.length === 0 ? <Text color={C.faint}>no tool calls yet</Text> : null}
+          {expandedCard.tools.length === 0 ? <Text color={C.dim}>no tool calls yet</Text> : null}
           {expandedCard.tools.map(n => (
             <Text color={n.isError ? C.warn : C.text} wrap="truncate">
               {`${n.isError ? '✗' : '·'} ${n.text}`}
@@ -1611,9 +1614,9 @@ export const register: Register = (on, options) => {
       ) : null
 
     // ---- background agents: sessions of the current project (~/.claude/session-state), what waits on you first
-    const bgMark: Record<DeckBgKind, { glyph: string; color: string }> = {
-      'needs-you': { glyph: '◆', color: C.warn },
-      waiting: { glyph: '◇', color: C.amber },
+    const bgMark: Record<DeckBgKind, { glyph: string; color: string; isBold?: boolean }> = {
+      'needs-you': { glyph: '!', color: C.warn, isBold: true },
+      waiting: { glyph: '◌', color: C.amber },
       idle: { glyph: '·', color: C.faint },
       working: { glyph: '◐', color: C.main },
       other: { glyph: '·', color: C.faint },
@@ -1640,56 +1643,61 @@ export const register: Register = (on, options) => {
         </Box>
       </Box>
     )
-    const backgroundPanel = (w: number) => (
-      <Box flexDirection="column" borderStyle="round" borderColor={needsYou ? C.warn : C.faint} paddingX={1} width={w}>
-        <Box justifyContent="space-between">
-          <Text bold wrap="truncate">{`background agents · ${jobs.length}`}</Text>
-          {w >= 44 ? <Text color={C.faint}>click: details</Text> : null}
-        </Box>
-        {bgShown.map(j => {
-          const mk = bgMark[j.kind]
-          const isOpen = j === bgOpen
-          return (
-            <Box flexDirection="column">
-              <Box>
-                <Text color={mk.color}>{`${mk.glyph} `}</Text>
-                <Box flexShrink={1}>
-                  <Button key={`bg-${j.id}`} plain onPress={() => toggleBgRow($, j.id)}>
-                    <Text bold={isOpen} wrap="truncate">
-                      {j.name}
-                    </Text>
-                  </Button>
-                </Box>
-                <Box flexShrink={0}>
-                  <Text color={C.dim}>{` ${shorten(j.project, 18)}`}</Text>
-                </Box>
-                <Box flexShrink={0}>
-                  <Text color={mk.color}>{` ${shorten(bgWord(j), 12)}`}</Text>
-                </Box>
-                {j.kind !== 'done' ? (
-                  <Box flexShrink={0}>
-                    <Button key={`bg-pick-${j.id}`} plain onPress={() => pickRow($, j.name)}>
-                      <Text color={C.main}>{' ↗ afficher'}</Text>
+    const backgroundPanel = (w: number) => {
+      const fit = bgRowFit(w)
+      return (
+        <Box flexDirection="column" borderStyle="round" borderColor={needsYou ? C.warn : C.faint} paddingX={1} width={w}>
+          <Box justifyContent="space-between">
+            <Text bold wrap="truncate">{`background agents · ${jobs.length}`}</Text>
+            {w >= 44 ? <Text color={C.dim}>click: details</Text> : null}
+          </Box>
+          {bgShown.map(j => {
+            const mk = bgMark[j.kind]
+            const isOpen = j === bgOpen
+            return (
+              <Box flexDirection="column">
+                <Box>
+                  <Text color={mk.color} bold={mk.isBold === true}>{`${mk.glyph} `}</Text>
+                  <Box flexShrink={1} minWidth={Math.min(BG_NAME_MIN, j.name.length)}>
+                    <Button key={`bg-${j.id}`} plain onPress={() => toggleBgRow($, j.id)}>
+                      <Text bold={isOpen} wrap="truncate">
+                        {j.name}
+                      </Text>
                     </Button>
                   </Box>
+                  {fit.hasProject ? (
+                    <Box flexShrink={0}>
+                      <Text color={C.dim}>{` ${shorten(j.project, 18)}`}</Text>
+                    </Box>
+                  ) : null}
+                  <Box flexShrink={0}>
+                    <Text color={mk.color}>{` ${shorten(bgWord(j), 12)}`}</Text>
+                  </Box>
+                  {j.kind !== 'done' ? (
+                    <Box flexShrink={0}>
+                      <Button key={`bg-pick-${j.id}`} plain onPress={() => pickRow($, j.name)}>
+                        <Text color={C.main}>{fit.pick}</Text>
+                      </Button>
+                    </Box>
+                  ) : null}
+                  <Box flexShrink={0}>
+                    <Text color={C.dim}>{` ${j.updatedAt > 0 ? fmtAge(now - j.updatedAt) : '—'}`}</Text>
+                  </Box>
+                </Box>
+                {j.kind === 'needs-you' && j.detail !== '' ? bgLine(j.detail, C.dim) : null}
+                {isOpen ? (
+                  <Box flexDirection="column">
+                    {j.intent !== '' ? bgLine(shorten(j.intent, 200), C.text, 'wrap') : null}
+                    {j.detail !== '' && j.kind !== 'needs-you' ? bgLine(j.detail, C.main) : null}
+                  </Box>
                 ) : null}
-                <Box flexShrink={0}>
-                  <Text color={C.faint}>{` ${j.updatedAt > 0 ? fmtDuration(now - j.updatedAt) : '—'}`}</Text>
-                </Box>
               </Box>
-              {j.kind === 'needs-you' && j.detail !== '' ? bgLine(j.detail, C.dim) : null}
-              {isOpen ? (
-                <Box flexDirection="column">
-                  {j.intent !== '' ? bgLine(shorten(j.intent, 200), C.text, 'wrap') : null}
-                  {j.detail !== '' && j.kind !== 'needs-you' ? bgLine(j.detail, C.main) : null}
-                </Box>
-              ) : null}
-            </Box>
-          )
-        })}
-        {bgMore > 0 ? <Text color={C.faint} wrap="truncate">{`+${bgMore} more`}</Text> : null}
-      </Box>
-    )
+            )
+          })}
+          {bgMore > 0 ? <Text color={C.dim} wrap="truncate">{`+${bgMore} more`}</Text> : null}
+        </Box>
+      )
+    }
 
     // ---- receipt: the turn now, or the last one
     const receiptPanel = (w: number) => {
@@ -1709,7 +1717,7 @@ export const register: Register = (on, options) => {
               {r.costDelta !== null ? <Text color={C.main}>{` · +${fmtUsd(r.costDelta)}`}</Text> : null}
             </Text>
           ) : (
-            <Text color={C.faint}>no turn finished yet</Text>
+            <Text color={C.dim}>no turn finished yet</Text>
           )}
           {isReview ? <Text color={C.arch}>{`${cfg.architectLabel.toLowerCase()} reviewing before done (inferred)`}</Text> : null}
         </Box>
@@ -1736,11 +1744,11 @@ export const register: Register = (on, options) => {
     const logPanel = (w: number) => (
       <Box flexDirection="column" borderStyle="round" borderColor={C.faint} paddingX={1} width={w}>
         <Text dimColor>{viewed ? 'session log · this agent' : 'session log'}</Text>
-        {shownLines.length === 0 ? <Text color={C.faint}>nothing yet</Text> : null}
+        {shownLines.length === 0 ? <Text color={C.dim}>nothing yet</Text> : null}
         {shownLines.map(l => (
           <Box>
             <Box width={9} flexShrink={0}>
-              <Text color={C.faint}>{fmtClock(l.at)}</Text>
+              <Text color={C.dim}>{fmtClock(l.at)}</Text>
             </Box>
             <Box width={13} flexShrink={0}>
               <Text color={colorOf(l)} bold wrap="truncate">
@@ -1882,7 +1890,7 @@ export const register: Register = (on, options) => {
             </Box>
           ))}
           {showMore ? (
-            <Text color={C.faint} wrap="truncate">{`+${cards.length - live.length} more agents · /deck layout compact for all`}</Text>
+            <Text color={C.dim} wrap="truncate">{`+${cards.length - live.length} more agents · /deck layout compact for all`}</Text>
           ) : null}
           {showReceipt && r ? (
             <Text dimColor wrap="truncate">
@@ -1931,7 +1939,7 @@ export const register: Register = (on, options) => {
         <Box justifyContent="center" columnGap={2}>
           {legend.map(l => (
             <Text>
-              <Text color={l.color}>■</Text>
+              <Text color={l.color}>──</Text>
               <Text dimColor>{` ${l.label}`}</Text>
             </Text>
           ))}

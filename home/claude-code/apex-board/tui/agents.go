@@ -809,6 +809,7 @@ type agentsState struct {
 	follow   bool
 	view     agentsView
 	note     string // a one-off footer message: the outcome of a pick, a stop or a launch
+	noteErr  bool   // note reports a failure or a refusal (P.err), else a neutral line (P.muted)
 	armed    string // the card a first `x` / × asked to stop; "" = none
 	group    string // the expanded group's key; "" = the tab's project (agentGroups)
 	// A launch runs: a second `n` waits for it, two launches in one second would pick one name.
@@ -1348,7 +1349,8 @@ func (m *Model) pickCmd(name string) tea.Cmd {
 		return nil
 	}
 	if agentPaneBin == "" {
-		m.ag.note, m.dirty = "agent-pane : binaire absent, rien lancé", true
+		m.ag.say("agent-pane : binaire absent, rien lancé", true)
+		m.dirty = true
 		return nil
 	}
 	pane := agentPaneBin
@@ -1367,14 +1369,15 @@ func pickTop(pane, name string) pickMsg {
 func (m *Model) applyPick(msg pickMsg) {
 	switch {
 	case msg.err != "":
-		m.ag.note = "agent-pane pick " + msg.name + " : " + msg.err
+		m.ag.say("agent-pane pick "+msg.name+" : "+msg.err, true)
 	case msg.paneErr != "":
-		m.ag.note = "affichée en haut : " + msg.name + paneNote(msg.paneErr)
+		m.ag.say("affichée en haut : "+msg.name+paneNote(msg.paneErr), true)
 	default:
-		m.ag.note = "affichée en haut : " + msg.name
+		m.ag.say("affichée en haut : "+msg.name, false)
 	}
 	if msg.ghostty != "" {
 		m.ag.note += " · Ghostty : " + msg.ghostty
+		m.ag.noteErr = true
 	}
 	m.dirty = true
 }
@@ -1605,7 +1608,8 @@ func (m *Model) showCmd(name string) tea.Cmd {
 		return nil
 	}
 	if agentPaneBin == "" {
-		m.ag.note, m.dirty = "agent-pane : binaire absent, rien lancé", true
+		m.ag.say("agent-pane : binaire absent, rien lancé", true)
+		m.dirty = true
 		return nil
 	}
 	pane := agentPaneBin
@@ -1649,15 +1653,15 @@ func (m *Model) applyPlaceStart(msg placeStartMsg) tea.Cmd {
 		m.applyPick(*msg.top)
 		return nil
 	case msg.shown && msg.err != "":
-		a.note = "focus " + msg.name + " : osascript : " + msg.err
+		a.say("focus "+msg.name+" : osascript : "+msg.err, true)
 		return nil
 	case msg.shown:
-		a.note = "affichée : " + msg.name
+		a.say("affichée : "+msg.name, false)
 		return nil
 	}
 	a.placeGen++
 	a.place = &placeState{name: msg.name, tab: msg.tab, board: msg.board, until: time.Now().Add(placeTimeout), gen: a.placeGen}
-	a.note = "clique le pane où afficher " + msg.name + " · Entrée = nouveau split · Échap = annuler"
+	a.say("clique le pane où afficher "+msg.name+" · Entrée = nouveau split · Échap = annuler", false)
 	return placeTick(a.placeGen)
 }
 
@@ -1669,10 +1673,14 @@ func (m *Model) placing(gen int) *placeState {
 	return nil
 }
 
-// endPlace leaves placement mode, the footer saying note.
-func (m *Model) endPlace(note string) {
-	m.ag.place, m.ag.note, m.dirty = nil, note, true
+// endPlace leaves placement mode, the footer saying note (failed: as a failure).
+func (m *Model) endPlace(note string, failed bool) {
+	m.ag.place, m.dirty = nil, true
+	m.ag.say(note, failed)
 }
+
+// say sets the footer note; failed: it reports a failure or a refusal, drawn in P.err.
+func (a *agentsState) say(note string, failed bool) { a.note, a.noteErr = note, failed }
 
 // applyPlaceTick: past placeTimeout the placement ends; else one osascript in a Cmd asks the
 // board's tab for its focused terminal (the next tick waits for its answer).
@@ -1682,7 +1690,7 @@ func (m *Model) applyPlaceTick(msg placeTickMsg) tea.Cmd {
 		return nil
 	}
 	if !time.Now().Before(p.until) {
-		m.endPlace("placement de " + p.name + " annulé (" + strconv.Itoa(int(placeTimeout/time.Second)) + " s)")
+		m.endPlace("placement de "+p.name+" annulé ("+strconv.Itoa(int(placeTimeout/time.Second))+" s)", true)
 		return nil
 	}
 	gen, argv := p.gen, ghosttyArgv(focusedScript, p.tab)
@@ -1702,10 +1710,10 @@ func (m *Model) applyPlaceFocus(msg placeFocusMsg) tea.Cmd {
 	case p == nil:
 		return nil
 	case msg.err != "":
-		m.endPlace("placement annulé : osascript : " + msg.err)
+		m.endPlace("placement annulé : osascript : "+msg.err, true)
 		return nil
 	case msg.term == "":
-		m.endPlace("onglet du board introuvable : placement annulé")
+		m.endPlace("onglet du board introuvable : placement annulé", true)
 		return nil
 	case msg.term == p.board:
 		return placeTick(p.gen)
@@ -1717,7 +1725,7 @@ func (m *Model) applyPlaceFocus(msg placeFocusMsg) tea.Cmd {
 // whatever runs there: Enter on the board).
 func (m *Model) placeCmd(p *placeState, term string, split bool) tea.Cmd {
 	name, pane := p.name, agentPaneBin
-	m.endPlace("placement de " + name + "…")
+	m.endPlace("placement de "+name+"…", false)
 	return func() tea.Msg { return placeInto(pane, name, term, split) }
 }
 
@@ -1764,11 +1772,11 @@ func pickInto(pane, name, slot string, split bool) placedMsg {
 func (m *Model) applyPlaced(msg placedMsg) {
 	switch {
 	case msg.err != "":
-		m.ag.note = msg.name + " : " + msg.err
+		m.ag.say(msg.name+" : "+msg.err, true)
 	case msg.split:
-		m.ag.note = "affichée : " + msg.name + " (nouveau split)"
+		m.ag.say("affichée : "+msg.name+" (nouveau split)", false)
 	default:
-		m.ag.note = "affichée : " + msg.name
+		m.ag.say("affichée : "+msg.name, false)
 	}
 	m.dirty = true
 }
@@ -1781,7 +1789,7 @@ func (m *Model) keyPlace(ev string) tea.Cmd {
 	case "enter":
 		return m.placeCmd(p, p.board, true)
 	case "esc":
-		m.endPlace("placement annulé")
+		m.endPlace("placement annulé", false)
 	}
 	return nil
 }
@@ -1792,7 +1800,8 @@ func (m *Model) stopCmd(name string) tea.Cmd {
 		return nil
 	}
 	if agentPaneBin == "" {
-		m.ag.note, m.dirty = "agent-pane : binaire absent, rien éteint", true
+		m.ag.say("agent-pane : binaire absent, rien éteint", true)
+		m.dirty = true
 		return nil
 	}
 	argv := []string{agentPaneBin, "stop", name}
@@ -1807,9 +1816,9 @@ func (m *Model) stopCmd(name string) tea.Cmd {
 // applyStop: the footer says it, and a poll at once moves the card (session fermée).
 func (m *Model) applyStop(msg stopMsg) tea.Cmd {
 	if msg.err != "" {
-		m.ag.note = "agent-pane stop " + msg.name + " : " + msg.err
+		m.ag.say("agent-pane stop "+msg.name+" : "+msg.err, true)
 	} else {
-		m.ag.note = "éteinte : " + msg.name
+		m.ag.say("éteinte : "+msg.name, false)
 	}
 	m.dirty = true
 	return m.pollCmd()
@@ -1822,16 +1831,16 @@ func (m *Model) newAgentCmd() tea.Cmd {
 	a := &m.ag
 	m.dirty = true
 	if a.launching {
-		a.note = "nouvel agent : un lancement est en cours"
+		a.say("nouvel agent : un lancement est en cours", true)
 		return nil
 	}
 	if dispatchBin == "" {
-		a.note = "claude-dispatch : binaire absent, rien lancé"
+		a.say("claude-dispatch : binaire absent, rien lancé", true)
 		return nil
 	}
 	repo := tabRepo(m.runsDir)
 	if repo == "" {
-		a.note = "nouvel agent : dépôt inconnu, rien lancé"
+		a.say("nouvel agent : dépôt inconnu, rien lancé", true)
 		return nil
 	}
 	sessionsDir := ""
@@ -1839,7 +1848,8 @@ func (m *Model) newAgentCmd() tea.Cmd {
 		sessionsDir = a.reader.Dir
 	}
 	bin, pane := dispatchBin, agentPaneBin
-	a.launching, a.note = true, "nouvel agent : lancement…"
+	a.launching = true
+	a.say("nouvel agent : lancement…", false)
 	return func() tea.Msg { return launchAgent(bin, pane, repo, sessionsDir, time.Now()) }
 }
 
@@ -1850,17 +1860,18 @@ func (m *Model) resumeCmd(ag *Agent) tea.Cmd {
 	m.dirty = true
 	switch {
 	case !ag.Resumable:
-		a.note = ag.Name + " : rien à reprendre (session encore listée, abduco muet ou hors worktree)"
+		a.say(ag.Name+" : rien à reprendre (session encore listée, abduco muet ou hors worktree)", true)
 		return nil
 	case a.launching:
-		a.note = "reprise : un lancement est en cours"
+		a.say("reprise : un lancement est en cours", true)
 		return nil
 	case abducoBin == "" || claudeBin == "":
-		a.note = "reprise : binaire absent, rien lancé"
+		a.say("reprise : binaire absent, rien lancé", true)
 		return nil
 	}
 	abduco, claude, pane, name, cwd := abducoBin, claudeBin, agentPaneBin, ag.Name, ag.Cwd
-	a.launching, a.note = true, "reprise de "+name+"…"
+	a.launching = true
+	a.say("reprise de "+name+"…", false)
 	return func() tea.Msg { return resumeAgent(abduco, claude, pane, name, cwd) }
 }
 
@@ -1871,15 +1882,15 @@ func (m *Model) genericCmd() tea.Cmd {
 	m.dirty = true
 	switch {
 	case a.launching:
-		a.note = "générique : un lancement est en cours"
+		a.say("générique : un lancement est en cours", true)
 		return nil
 	case abducoBin == "" || claudeBin == "":
-		a.note = "générique : binaire absent, rien lancé"
+		a.say("générique : binaire absent, rien lancé", true)
 		return nil
 	}
 	root := genericRoot()
 	if root == "" || !filepath.IsAbs(root) {
-		a.note = "générique : dossier inconnu, rien lancé"
+		a.say("générique : dossier inconnu, rien lancé", true)
 		return nil
 	}
 	sessionsDir := ""
@@ -1887,7 +1898,8 @@ func (m *Model) genericCmd() tea.Cmd {
 		sessionsDir = a.reader.Dir
 	}
 	abduco, claude, pane := abducoBin, claudeBin, agentPaneBin
-	a.launching, a.note = true, "générique : lancement…"
+	a.launching = true
+	a.say("générique : lancement…", false)
 	return func() tea.Msg { return launchGeneric(abduco, claude, pane, root, sessionsDir, time.Now()) }
 }
 
@@ -1904,30 +1916,31 @@ func (m *Model) applyNewAgent(msg newAgentMsg) tea.Cmd {
 	}
 	switch {
 	case msg.name == "":
-		a.note = label + msg.err
+		a.say(label+msg.err, true)
 	case msg.err != "":
-		a.note = launch + msg.name + " : " + msg.err
+		a.say(launch+msg.name+" : "+msg.err, true)
 	case msg.pickErr != "":
-		a.note = label + msg.name + " · agent-pane pick : " + msg.pickErr
+		a.say(label+msg.name+" · agent-pane pick : "+msg.pickErr, true)
 	case msg.paneErr != "":
-		a.note = label + msg.name + paneNote(msg.paneErr)
+		a.say(label+msg.name+paneNote(msg.paneErr), true)
 	default:
-		a.note = label + msg.name
+		a.say(label+msg.name, false)
 	}
 	if msg.blank && msg.err == "" {
 		a.note += " (aucune conversation : session vierge)"
 	}
 	if msg.ghostty != "" {
 		a.note += " · Ghostty : " + msg.ghostty
+		a.noteErr = true
 	}
 	if msg.name != "" && msg.err == "" {
 		a.sel, a.follow = &selState{id: msg.name}, true
 	}
 	if msg.show != nil && msg.err == "" {
 		// The launch's line, then the show path's (the placement prompt, or the focus).
-		head := a.note
+		head, headErr := a.note, a.noteErr
 		tick := m.applyPlaceStart(*msg.show)
-		a.note = head + " · " + a.note
+		a.say(head+" · "+a.note, headErr || a.noteErr)
 		return tea.Batch(m.pollCmd(), tick)
 	}
 	return m.pollCmd()
@@ -1940,10 +1953,11 @@ func (m *Model) stopAgent(ag *Agent, armed string) tea.Cmd {
 	m.dirty = true
 	switch {
 	case !ag.Stoppable:
-		a.note = ag.Name + " : pas de session à éteindre"
+		a.say(ag.Name+" : pas de session à éteindre", true)
 		return nil
 	case armed != ag.ID:
-		a.armed, a.note = ag.ID, "éteindre "+ag.Name+" ? × ou x encore pour confirmer · Échap annule"
+		a.armed = ag.ID
+		a.say("éteindre "+ag.Name+" ? × ou x encore pour confirmer · Échap annule", true)
 		return nil
 	}
 	return m.stopCmd(ag.ID)
@@ -2164,6 +2178,8 @@ func agentRows(a *Agent, cw int, selected, armed bool) *rowsMemo {
 	}
 	border := P.line
 	switch {
+	case armed:
+		border = P.err
 	case selected:
 		border = P.active
 	case a.Column == "ask":
@@ -2196,7 +2212,7 @@ func agentRows(a *Agent, cw int, selected, armed bool) *rowsMemo {
 		top = append(top, spaces(iw-cellsWidth(top)-1, bgOnly(bg))...)
 		xc := P.muted
 		if armed {
-			xc = P.human
+			xc = P.err
 		}
 		top = toCells("×", st(xc).bold(), top)
 	}
@@ -2440,13 +2456,18 @@ func (m *Model) renderAgents() {
 	// Footer: the note or what is hidden, then the keys (and the hidden count when short).
 	info := cellsOf(hiddenText(a.board), fg(P.muted))
 	if a.note != "" {
-		info = cellsOf(a.note, fg(P.human))
+		nc := P.muted
+		if a.noteErr {
+			nc = P.err
+		}
+		info = cellsOf(a.note, fg(nc))
 	}
 	if tall {
 		g.put(margin, H-2, fitCells(info, W-2*margin))
 		info = nil
 	}
-	if nVis < n {
+	// Short: a note wins over the columns indicator, the ‹ › arrows still say more columns.
+	if nVis < n && (tall || a.note == "") {
 		info = cellsOf("colonnes "+strconv.Itoa(first+1)+"-"+strconv.Itoa(first+nVis)+"/"+strconv.Itoa(n), fg(P.faint))
 	}
 	btn := cellsOf(newAgentLabel, fg(P.active).bold())
@@ -2456,7 +2477,7 @@ func (m *Model) renderAgents() {
 		// The slot to type for `ap --slot <slot>` by hand.
 		keys = toCells(" · panneau "+paneSlot, fg(P.muted), keys)
 	}
-	keys = toCells(" · "+keysAgents, fg(P.faint), keys)
+	keys = toCells(" · "+keysAgents, fg(P.muted), keys)
 	kw := W - 2*margin
 	if len(info) > 0 {
 		kw -= min(cellsWidth(info), kw/2) + 2

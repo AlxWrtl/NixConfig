@@ -22,7 +22,7 @@ func hexColor(h string) rgb {
 
 // Palette: index.html :root.
 var P = struct {
-	bg, panel, card, cardHover, line, text, muted, faint, active, pass, changes, human, merged rgb
+	bg, panel, card, cardHover, line, text, muted, faint, active, pass, changes, human, merged, err rgb
 }{
 	bg:        hexColor("#14151b"),
 	panel:     hexColor("#1a1c24"),
@@ -37,6 +37,7 @@ var P = struct {
 	changes:   hexColor("#ffb86c"),
 	human:     hexColor("#ff79c6"),
 	merged:    hexColor("#bd93f9"),
+	err:       hexColor("#ff5555"), // failures and refusals; human stays the decision pink
 }
 
 // scrim is the page's rgba(5, 6, 10, .55).
@@ -56,7 +57,10 @@ func jsRound(x float64) float64 {
 	return f
 }
 
-var tones = map[string]rgb{"good": P.pass, "warn": P.changes, "stop": P.human}
+var tones = map[string]rgb{"good": P.pass, "warn": P.changes, "stop": P.err}
+
+// toneGlyphs: a file verdict readable without colour; "·" when the file has none.
+var toneGlyphs = map[string]string{"good": "✓", "warn": "~", "stop": "✗"}
 
 // style: fg / bg unset take the color under them when drawn.
 type style struct {

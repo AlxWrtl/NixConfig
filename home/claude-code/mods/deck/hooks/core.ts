@@ -173,7 +173,7 @@ export const PALETTES: Record<Palette, Colors> = {
     apex: '#fdba74',
     amber: '#fcd34d',
     warn: '#fca5a5',
-    dim: '#6b7280',
+    dim: '#9ca3af',
     faint: '#3f4654',
     text: '#e5e7eb',
   },
@@ -213,6 +213,28 @@ export const fmtDuration = (ms: number) => {
   if (s < 60) return `${s}s`
   const m = Math.floor(s / 60)
   return m < 60 ? `${m}m${String(s % 60).padStart(2, '0')}s` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
+}
+
+/** An age in whole minutes, as the background rows show it: `<1m`, `12m`, `3h05m`. */
+export const fmtAge = (ms: number) => {
+  const m = Math.max(0, Math.round(ms / 60_000))
+  if (m < 1) return '<1m'
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
+}
+
+/** The fewest cells a background row's session name keeps. */
+export const BG_NAME_MIN = 16
+
+/**
+ * A background row's columns in a panel `w` wide. Beside the name, at most: border and padding 4,
+ * mark 2, project 19, state 13, « ↗ afficher » 11, age 7. When the name would get fewer than
+ * BG_NAME_MIN cells, the project goes and the button keeps its arrow only.
+ */
+export const bgRowFit = (w: number) => {
+  const rest = (hasProject: boolean, pick: string) => w - 4 - 2 - (hasProject ? 19 : 0) - 13 - pick.length - 7
+  const full = ' ↗ afficher'
+  if (rest(true, full) >= BG_NAME_MIN) return { hasProject: true, pick: full, nameCols: rest(true, full) }
+  return { hasProject: false, pick: ' ↗', nameCols: rest(false, ' ↗') }
 }
 
 /** A running clock as the live cards draw it: m:ss, or XhYY past an hour. */

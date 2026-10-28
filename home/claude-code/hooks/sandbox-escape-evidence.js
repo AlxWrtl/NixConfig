@@ -24,7 +24,10 @@ const MAX_INPUT = 4 * 1024 * 1024;
 const MAX_TAIL = 4 * 1024 * 1024;
 
 // Read in the tool_result text only, never in the command or a prompt.
-const EVIDENCE = /Operation not permitted|\bEPERM\b|\bEACCES\b|Read-only file system|sandbox_violations|Unable to create .*\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory/i;
+// A direct TCP client (pg to a hosted database) skips the proxy and
+// resolves the host itself; the sandbox blocks that lookup, so it fails on
+// getaddrinfo ENOTFOUND even with the domain allowed.
+const EVIDENCE = /Operation not permitted|\bEPERM\b|\bEACCES\b|Read-only file system|sandbox_violations|Unable to create .*\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory|getaddrinfo ENOTFOUND/i;
 // The flag's bare name is no ask: "do not use dangerouslyDisableSandbox".
 const USER_ASK = /(sans|hors|without|bypass|outside|disable)\W+(?:the\s+|le\s+|du\s+)?sandbox/i;
 // Harness envelopes written with the user role: not a request.

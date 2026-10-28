@@ -767,6 +767,10 @@ let
       hook = "sandbox-escape-evidence.js";
       text = "/^pnpm\\s+run\\s+deploy(?::[\\w-]+)?(?=\\s|$)/,";
     };
+    A-se-directpg = {
+      hook = "sandbox-escape-evidence.js";
+      text = "/^pnpm\\s+(?:run\\s+)?(?:db:migrate|preflight|test:rls\\w*)(?::[\\w-]+)?(?=\\s|$)/,";
+    };
     A-se-mkdir = {
       hook = "sandbox-escape-evidence.js";
       text = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory|getaddrinfo ENOTFOUND/i;";
@@ -2198,6 +2202,30 @@ let
         }
       ];
     }
+    # Direct Postgres scripts not allowlisted: a migration retry denied.
+    {
+      id = "M-se-directpg";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-directpg-allow";
+      swaps = [
+        {
+          anchor = "A-se-directpg";
+          to = "/^pnpm\\b(?!)/,";
+        }
+      ];
+    }
+    # Any db: script allowlisted: a seed escapes untried.
+    {
+      id = "M-se-directpg-broad";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-directpg-near-deny";
+      swaps = [
+        {
+          anchor = "A-se-directpg";
+          to = "/^pnpm\\s+(?:run\\s+)?(?:db:|preflight|test:rls)/,";
+        }
+      ];
+    }
     # git's ref mkdir refusal unread: the retry denied.
     {
       id = "M-se-mkdir";
@@ -2939,6 +2967,7 @@ let
     "se-curl-proxy-deny"
     "se-pnpm-deploy-builtin-deny"
     "se-deployer-deny"
+    "se-directpg-near-deny"
     "se-eperm-allow"
     "se-violations-allow"
     "se-mkdir-ref-allow"
@@ -2949,6 +2978,8 @@ let
     "se-allowlist-verify-allow"
     "se-noproxy-allow"
     "se-deploy-allow"
+    "se-directpg-allow"
+    "se-directpg-test-allow"
     "se-wrangler-allow"
     "se-wrangler-exec-allow"
     "se-wrangler-npx-allow"
@@ -4427,6 +4458,15 @@ let
         se-deploy-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'pnpm run deploy < /dev/null > deploy.log 2>&1' "$2"; is_allow ;;
+        se-directpg-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm db:migrate:prod' "$2"; is_allow ;;
+        se-directpg-test-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm run test:rlsuserscoped' "$2"; is_allow ;;
+        se-directpg-near-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'pnpm db:seed' "$2"; is_deny "Run this command sandboxed first" ;;
         se-wrangler-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'wrangler deploy --config build/server/wrangler-preprod.json' "$2"; is_allow ;;

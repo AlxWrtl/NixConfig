@@ -8,7 +8,8 @@
 // evidence"; text alone did not hold. So the flag is denied unless:
 //   - the newest Bash result batch (every Bash call of the assistant message
 //     that produced the newest Bash result) shows sandbox evidence;
-//   - the newest real user prompt asks to leave the sandbox;
+//   - the newest real user prompt, or the answer the user picked in an
+//     AskUserQuestion, asks to leave the sandbox;
 //   - one segment of the command is known to fail sandboxed whatever it
 //     does (git writes to .git/config, the nix daemon socket, docker…).
 //
@@ -29,7 +30,8 @@ const MAX_TAIL = 4 * 1024 * 1024;
 // getaddrinfo ENOTFOUND even with the domain allowed.
 const EVIDENCE = /Operation not permitted|\bEPERM\b|\bEACCES\b|Read-only file system|sandbox_violations|Unable to create .*\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory|getaddrinfo ENOTFOUND/i;
 // The flag's bare name is no ask: "do not use dangerouslyDisableSandbox".
-const USER_ASK = /(sans|hors|without|bypass|outside|disable)\W+(?:the\s+|le\s+|du\s+)?sandbox/i;
+// French prompts say "bac à sable" as often as "sandbox".
+const USER_ASK = /(sans|hors|without|bypass|outside|disable)\W+(?:the\s+|le\s+|du\s+)?(?:sandbox|bac\s+[àa]\s+sable)/i;
 // Harness envelopes written with the user role: not a request.
 const ENVELOPE = /^\s*<(bash-(input|stdout|stderr)|task-notification|command-name|local-command-|system-reminder)/;
 
@@ -199,10 +201,42 @@ function bashResults(lines, current) {
   return results;
 }
 
-// The newest prompt the user typed. Tool results, isMeta lines (skill
-// bodies, injected context) and harness envelopes are skipped; a sidechain
-// prompt is a coordinator's brief, not the user, and ends the walk.
+// Ids of the AskUserQuestion calls in the tail, from the assistant's
+// tool_use blocks, as bashResults matches them.
+function askIds(lines) {
+  const ids = new Set();
+  for (const line of lines) {
+    if (line.indexOf("\"tool_use\"") === -1) continue;
+    const msg = parse(line);
+    const c = msg && msg.type === "assistant" && msg.message && msg.message.content;
+    if (!Array.isArray(c)) continue;
+    for (const b of c) if (b && b.type === "tool_use" && b.name === "AskUserQuestion") ids.add(b.id);
+  }
+  return ids;
+}
+
+// The answers the user picked or typed in an AskUserQuestion, from the
+// harness's toolUseResult; null when the result answers no AskUserQuestion
+// call in the tail (an MCP tool's structured result lands in toolUseResult
+// verbatim) or carries no answers. The questions are the agent's words and
+// are never read: an agent asking "je le lance hors sandbox ?" must not
+// pass on its own question. Residual: option labels are the agent's words
+// too, only the pick is the user's, so misleading options still pass; text
+// matching is a safety net, not a barrier.
+function askAnswers(msg, asks) {
+  const c = msg.message.content;
+  if (!c.some((b) => b && b.type === "tool_result" && asks.has(b.tool_use_id))) return null;
+  const r = msg.toolUseResult;
+  if (!r || typeof r !== "object" || !r.answers || typeof r.answers !== "object") return null;
+  return Object.values(r.answers).filter((a) => typeof a === "string").join("\n");
+}
+
+// The newest prompt the user typed, or the newest AskUserQuestion answer.
+// Other tool results, isMeta lines (skill bodies, injected context) and
+// harness envelopes are skipped; a sidechain prompt is a coordinator's
+// brief, not the user, and ends the walk.
 function userPrompt(lines) {
+  const asks = askIds(lines);
   for (let i = lines.length - 1; i >= 0; i--) {
     const line = lines[i];
     if (line.indexOf("\"type\":\"user\"") === -1) continue;
@@ -210,7 +244,11 @@ function userPrompt(lines) {
     if (!msg || msg.type !== "user") continue;
     if (msg.isMeta === true) continue;
     const c = msg.message && msg.message.content;
-    if (Array.isArray(c) && c.some((b) => b && b.type === "tool_result")) continue;
+    if (Array.isArray(c) && c.some((b) => b && b.type === "tool_result")) {
+      const answers = msg.isSidechain === true ? null : askAnswers(msg, asks);
+      if (answers !== null) return answers;
+      continue;
+    }
     const text = textOf(c);
     if (ENVELOPE.test(text)) continue;
     if (msg.isSidechain === true) return "";
@@ -240,7 +278,7 @@ function main() {
   const texts = results.filter((r) => r.mid === newest.mid).map((r) => r.text);
   if (texts.some((t) => EVIDENCE.test(t))) { allow(); return; }
   if (USER_ASK.test(userPrompt(lines))) { allow(); return; }
-  deny("BLOCKED: Run this command sandboxed first, without dangerouslyDisableSandbox. The newest Bash result shows no sandbox evidence (Operation not permitted, EPERM, Read-only file system, sandbox_violations, a refused socket) and the user did not ask to leave the sandbox. If the sandboxed run fails with such an error, the retry with dangerouslyDisableSandbox: true passes. Phase agents do not escalate: report the command to the coordinator.");
+  deny("BLOCKED: Run this command sandboxed first, without dangerouslyDisableSandbox. The newest Bash result shows no sandbox evidence (Operation not permitted, EPERM, Read-only file system, sandbox_violations, a refused socket) and the user did not ask to leave the sandbox. If the sandboxed run fails with such an error, the retry with dangerouslyDisableSandbox: true passes. Asking through AskUserQuestion counts only when the answer the user picks says it (an option such as \"Oui, lance-le hors sandbox\"). Phase agents do not escalate: report the command to the coordinator.");
 }
 
 function start() {

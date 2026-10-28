@@ -757,7 +757,7 @@ let
     };
     A-se-mkdir = {
       hook = "sandbox-escape-evidence.js";
-      text = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory/i;";
+      text = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory|getaddrinfo ENOTFOUND/i;";
     };
     A-wes-symlink = {
       hook = "worktree-env-sync.sh";
@@ -2194,7 +2194,19 @@ let
       swaps = [
         {
           anchor = "A-se-mkdir";
-          to = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key/i;";
+          to = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|getaddrinfo ENOTFOUND/i;";
+        }
+      ];
+    }
+    # A direct client's blocked DNS lookup unread: the retry denied.
+    {
+      id = "M-se-dns";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-dns-allow";
+      swaps = [
+        {
+          anchor = "A-se-mkdir";
+          to = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory/i;";
         }
       ];
     }
@@ -2855,6 +2867,7 @@ let
     "se-eperm-allow"
     "se-violations-allow"
     "se-mkdir-ref-allow"
+    "se-dns-allow"
     "se-batch-allow"
     "se-nonbash-skip-allow"
     "se-allowlist-allow"
@@ -4312,6 +4325,9 @@ let
         se-mkdir-ref-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 "fatal: cannot lock ref 'refs/heads/y': unable to create directory for .git/refs/heads/y")"
           se_run 'git -C /x checkout -b y' "$2"; is_allow ;;
+        se-dns-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'Error: getaddrinfo ENOTFOUND ep-x.eu-central-1.aws.neon.tech')"
+          se_run 'pnpm test:db' "$2"; is_allow ;;
         se-batch-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_use u2 m1)" "$(se_res u1 'Error: EPERM: open x')" "$(se_res u2 'built')"
           se_run 'pnpm build' "$2"; is_allow ;;

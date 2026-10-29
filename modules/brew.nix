@@ -126,6 +126,7 @@ _:
       "Numbers" = 361304891;
       "Pages" = 361309726;
       "Trello" = 1278508951;
+      "Xcode" = 497799835;
       "Affinity Photo" = 824183456;
       "Affinity Publisher" = 881418622;
     };

@@ -284,6 +284,20 @@ let
       needle = "read-only for the implementer";
     }
     {
+      # Direct spawns no test agent, so its test-first is the coordinator's
+      # own red run before the edit. Lose the step and Direct edits blind.
+      name = "direct: the coordinator runs a failing test before the edit";
+      needle = "Red first";
+      scope = skills.apexDirect;
+    }
+    {
+      # The only way out of test-first: a diff with no behaviour to test.
+      # Without the narrow wording, "skipped" becomes a free pass.
+      name = "orchestration: test-first exemption is limited to diffs with no behaviour";
+      needle = "no behaviour to test";
+      scope = skills.apexOrchestration;
+    }
+    {
       name = "examine: reviewers never see the implementer's rationale";
       needle = "never the implementer's rationale";
     }
@@ -917,11 +931,12 @@ let
     || rowHas "Standard / complex" "-e"
     || rowHas "Direct" "-e";
 
-  # -f (test-first) likewise: a default of the High-stakes row ONLY.
+  # -f (test-first) is a default of every tier that spawns agents. Direct
+  # stays inline: it runs its own red test (DIRECT.md), never the -f agent.
   testFirstDefaultDrift =
     !(rowHas "High-stakes" "-f")
-    || rowHas "Diagnosis" "-f"
-    || rowHas "Standard / complex" "-f"
+    || !(rowHas "Diagnosis" "-f")
+    || !(rowHas "Standard / complex" "-f")
     || rowHas "Direct" "-f";
 
   # Direct is the inline tier: a test agent, an adversarial reviewer, a
@@ -1154,7 +1169,7 @@ let
       "reference(s) to non-existent step file(s): " + builtins.concatStringsSep ", " danglingSteps
     )
     ++ pkgs.lib.optional externalDefaultDrift "-e (external verify) drifted: it must be in the High-stakes tier row of skillApex and absent from the Direct, Diagnosis and Standard rows."
-    ++ pkgs.lib.optional testFirstDefaultDrift "-f (test-first) drifted: it must be in the High-stakes tier row of skillApex and absent from the Direct, Diagnosis and Standard rows."
+    ++ pkgs.lib.optional testFirstDefaultDrift "-f (test-first) drifted: it must be in the Diagnosis, Standard and High-stakes tier rows of skillApex and absent from the Direct row (Direct writes its own red test inline)."
     ++ pkgs.lib.optional (directDrift != [ ]) (
       "the Direct tier row carries "
       + builtins.concatStringsSep ", " directDrift

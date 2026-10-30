@@ -371,9 +371,9 @@ indentation ancestry of each changed line.
 
 | Mode | Default flags | Notes |
 |------|---------------|-------|
-| Direct | `-pr` | ≤ 4 files, ≤ 30 changed lines, no sensitive surface |
-| Diagnosis | `-x -pr -o -n` | bug/crash — reproduce first, debugger agent implements, ships as a PR |
-| Standard | `-t -pr -o -n` | full orchestration |
+| Direct | `-pr` | ≤ 4 files, ≤ 30 changed lines, no sensitive surface; the coordinator writes its own failing test before the edit |
+| Diagnosis | `-f -x -pr -o -n` | bug/crash — reproduce first (the test-first failing test is the reproduction), debugger agent implements, ships as a PR |
+| Standard | `-t -f -pr -o -n` | full orchestration |
 | High-stakes | `-t -f -x -pr -o -n -e` | irreversible / security / architecture / prod — one examine reviewer, then Codex `-e` as read-only detector whose findings are triaged by evidence; Fable only as fallback when no usable external verdict (BLOCKED or `-E`), or under `-p` |
 | Pure research | none | analyze only, no branch |
 
@@ -387,7 +387,7 @@ Lowercase forces ON, **uppercase forces OFF** (`-PR` cancels an automatic
 | `-q` | `-Q` | Clarify — ambiguities become up to 3 targeted questions before planning |
 | `-x` | `-X` | Examine — adversarial, checklist-driven review |
 | `-t` | `-T` | Test — create and run tests |
-| `-f` | `-F` | Test-first — a separate agent writes failing tests from the ACs; read-only for the implementer |
+| `-f` | `-F` | Test-first — a separate agent writes failing tests from the ACs; read-only for the implementer; default outside Direct, skipped only for a diff with no behaviour to test (doc, comment, formatting) |
 | `-2` | | Divergence — second independent implementation of the core logic, behavioural diff |
 | `-p` | `-P` | Premises — force/forbid the independent premises pass |
 | `-e` | `-E` | External verify — one cross-vendor read-only pass (Codex/GPT) over the same diff; default in high-stakes |

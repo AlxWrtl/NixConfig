@@ -66,8 +66,8 @@ in
     | Mode | Default flags | When | Read |
     |------|---------------|------|------|
     | Direct | `-pr` | ≤ 4 files, ≤ 30 changed lines, no sensitive surface, not a bug | `steps/DIRECT.md` + `steps/COMMANDS.md` |
-    | Diagnosis | `-x -pr -o -n` | bug / error / crash / broken: reproduce first, debugger agent implements | as Standard |
-    | Standard / complex | `-t -pr -o -n` | everything else that changes files | `steps/step-00-init.md`, `steps/ORCHESTRATION.md`, `steps/ROUTING.md`, `steps/COMMANDS.md`, then steps as routed |
+    | Diagnosis | `-f -x -pr -o -n` | bug / error / crash / broken: reproduce first, debugger agent implements | as Standard |
+    | Standard / complex | `-t -f -pr -o -n` | everything else that changes files | `steps/step-00-init.md`, `steps/ORCHESTRATION.md`, `steps/ROUTING.md`, `steps/COMMANDS.md`, then steps as routed |
     | High-stakes | `-t -f -x -pr -o -n -e` | the diff touches a sensitive surface | Standard list + `steps/HIGH-STAKES.md` |
     | Pure research | none | zero file change | none — answer directly; no branch, no PR |
 
@@ -93,7 +93,7 @@ in
     | -q | -Q | Clarify — detected ambiguities become targeted questions (3 max) before planning |
     | -x | -X | Examine — adversarial review, checklist-driven |
     | -t | -T | Test — create + run tests after implementation |
-    | -f | -F | Test-first — a SEPARATE agent writes failing tests from the ACs before execute; read-only for the implementer |
+    | -f | -F | Test-first — a SEPARATE agent writes failing tests from the ACs before execute; read-only for the implementer; default outside Direct |
     | -2 | | Divergence — second independent implementation of the core logic, behavioral diff; high-stakes logic only |
     | -p | -P | Premises — force/forbid the Fable premises pass (runs ONLY when -p is typed) |
     | -e | -E | External verify — one cross-vendor read-only pass (Codex/GPT) over the same diff; default in high-stakes, opt-in elsewhere |
@@ -115,8 +115,9 @@ in
     3. OFF.
 
     Never on by default — must be typed: `-q`, `-2`, `-p`, `-k`, `-v`.
-    `-e` and `-f` are defaults of High-stakes only. State the tier and the resolved
-    flags in `00-context.md`.
+    `-e` is a default of High-stakes only. `-f` is a default of every tier
+    except Direct, which runs its own red test inline (`steps/DIRECT.md`).
+    State the tier and the resolved flags in `00-context.md`.
 
     ## Common Usage
 
@@ -1972,9 +1973,27 @@ in
     does so BEFORE spawning execute — the same applies to a contradiction raised
     later, mid-run.
 
+    ## Test-first (`-f`) — a SEPARATE agent writes the failing tests
+
+    If `-f` is active, between plan approval and execute the coordinator spawns a
+    test-author agent (`model: opus`) whose only input is the ACs. It writes
+    tests that FAIL against the current code, and nothing else — no
+    implementation, no fixture that quietly makes them pass. The resulting files
+    are then read-only for the implementer: editing, deleting or weakening one is
+    a finding at validate, never an option on the table. The separation is the
+    point — the agent that writes the code cannot also be the agent that decides
+    what "passing" means. In Diagnosis, the test-author's failing test IS the
+    reproduction: it fails on the bug before the debugger agent touches the code.
+
+    `-f` is a default of Diagnosis, Standard and High-stakes; `-F` cancels it.
+    Direct spawns no test-author: it writes its own red test inline (DIRECT.md).
+    The one exemption is a diff with no behaviour to test (doc, comment,
+    formatting): the test-author is skipped and the reason is written in
+    `00-context.md` as `Test-first: skipped — {reason}`.
+
     ## High-stakes blocks live in HIGH-STAKES.md
 
-    Test-first (`-f`), Divergence (`-2`), the Fable rule and premises pass,
+    Divergence (`-2`), the Fable rule and premises pass,
     External verify (`-e`), Worktree isolation and the Pressure-test are in
     `steps/HIGH-STAKES.md`. Read it on High-stakes, or when one of those
     flags is typed.
@@ -2139,21 +2158,6 @@ in
 
     Read on top of ORCHESTRATION.md when the tier is High-stakes, or when
     one of the flags below is typed in another tier.
-
-    ## Test-first (`-f`) — a SEPARATE agent writes the failing tests
-
-    If `-f` is active, between plan approval and execute the coordinator spawns a
-    test-author agent (`model: opus`) whose only input is the ACs. It writes
-    tests that FAIL against the current code, and nothing else — no
-    implementation, no fixture that quietly makes them pass. The resulting files
-    are then read-only for the implementer: editing, deleting or weakening one is
-    a finding at validate, never an option on the table. The separation is the
-    point — the agent that writes the code cannot also be the agent that decides
-    what "passing" means.
-
-    `-f` is a default of the High-stakes set only; a run escalated to
-    High-stakes by `apex-tier` gains it, `-F` cancels it, and in Diagnosis or
-    Standard it runs only when typed.
 
     ## Divergence (`-2`) — a second independent implementation
 
@@ -2353,7 +2357,7 @@ in
 
     Default flags: `-pr` only; -o and -n run only when typed — a vault
     read and a session note buy nothing on a one-line change. Typed `-t`,
-    `-x` or `-e` are honoured: they run after step 5 as in Standard.
+    `-x` or `-e` are honoured: they run after step 6 as in Standard.
 
     ## Steps (in order)
 
@@ -2370,6 +2374,7 @@ in
        Files: {path}, {path}
        Est-lines: {N}
        Baseline: {gate} -> {green | red: check | skipped: reason}
+       Test-first: {command} -> red: {line} | skipped — {reason}
 
        ## Progress
        | Step | Status | Notes |
@@ -2388,21 +2393,28 @@ in
        ACs go in the same file under `## ACs`, one line each. The Progress
        table is what apex-board reads (NN prefix → column): without it a
        Direct run sits in Init until it goes stale. One edit per change:
-       04-gate goes `running` (03-edit `complete`) at step 5, 08-ship
-       `running` at step 8 and `complete` once merged (`-PR`: once the
+       04-gate goes `running` (03-edit `complete`) at step 6, 08-ship
+       `running` at step 9 and `complete` once merged (`-PR`: once the
        diff is left on the branch). An escalation replaces the table with
        step-00b's.
     3. **Baseline gate.** Run the project's own gate BEFORE the first edit —
-       the same command step 5 will run (`pnpm typecheck && pnpm lint`,
+       the same command step 6 will run (`pnpm typecheck && pnpm lint`,
        `nix flake check --no-build`, `cargo check`). Record its verdict.
        Already red → name the failing check; only that check may be blamed
        on the baseline later. Only a `sudo` gate is skipped (COMMANDS.md),
        and a skipped baseline dismisses nothing as pre-existing.
-    4. **Edit inline**, only the paths in `Files:`. A path outside `Files:`
-       is not a quiet addition — it is a re-tier: go to step 6's escalation.
-    5. **Machine gate.** Re-run the baseline command; read the exit code and
+    4. **Red first.** Before the edit, write the test, check or canary that
+       proves the AC (its path goes in `Files:`), run it, and record the red
+       output in `00-context.md` as `Test-first: {command} -> red: {line}`.
+       Step 6 re-runs it with the gate and it must be green. A test that
+       cannot fail proves nothing: no red, no edit. The one exemption is a
+       diff with no behaviour to test (doc, comment, formatting), written as
+       `Test-first: skipped — {reason}` (ORCHESTRATION.md "Test-first").
+    5. **Edit inline**, only the paths in `Files:`. A path outside `Files:`
+       is not a quiet addition — it is a re-tier: go to step 7's escalation.
+    6. **Machine gate.** Re-run the baseline command; read the exit code and
        the tail only (ORCHESTRATION.md "Coordinator context").
-    6. **Tier re-check.** Run `apex-tier --base {trunk}` and read its verdict
+    7. **Tier re-check.** Run `apex-tier --base {trunk}` and read its verdict
        line. Escalate when it is anything but `tier=direct`, OR the gate is
        red (a red gate never gets a fix inline):
        - Direct escalates to Standard (or to High-stakes when `apex-tier`
@@ -2414,10 +2426,10 @@ in
          brief after an escalation runs on `model: opus` and carries `APEX-CORRECTION-ROUND: {run-id}`
          ({run-id} = this run's `.claude/output/apex/` dir name), so the
          correction budget counts it.
-    7. **Self-check.** Read `git diff` of the touched files and check each AC
+    8. **Self-check.** Read `git diff` of the touched files and check each AC
        against it, one line per AC: `AC — met | not met — evidence`. A not-met
-       AC is an escalation (step 6), not a second inline edit.
-    8. **Ship.** Commit, push, PR and merge per `steps/COMMANDS.md`
+       AC is an escalation (step 7), not a second inline edit.
+    9. **Ship.** Commit, push, PR and merge per `steps/COMMANDS.md`
        (`-pr` default; `-PR` opts out of the whole ship step — no commit, the
        change stays uncommitted on the run's branch, as in Standard). Fill the `## Tokens`
        end row, then present: tier, files, gate verdict, `apex-tier` line,
@@ -2429,6 +2441,7 @@ in
     - Skip `apex-tier --base {trunk}`, or trust `Est-lines:` over its verdict.
     - Edit a path outside `Files:` without re-tiering.
     - Correct a red gate inline.
+    - Edit before a red test, unless the diff has no behaviour to test.
   '';
 
   # --- Commands: privileged/sandbox classification, stated once (steps/COMMANDS.md) ---

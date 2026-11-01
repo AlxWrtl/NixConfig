@@ -11,7 +11,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, TextProps, Timer } from 'claude-code'
 
 import type { StatusBarLimit, StatusBarStep, StatusBarUsage } from '../types'
-import { contextFill, layout, parentDir, parseHead, pickModel, resolveGitdir } from './format.ts'
+import { contextFill, gaugeSource, layout, parentDir, parseHead, pickModel, resolveGitdir } from './format.ts'
 import type { Seg } from './format.ts'
 
 // Reset countdowns move by the minute.
@@ -19,7 +19,7 @@ const TICK_MS = 60_000
 // Folders walked up from the working directory to find `.git`.
 const MAX_DEPTH = 64
 
-const NO_USAGE: StatusBarUsage = { contextPercent: null, contextTokens: null, limits: [] }
+const NO_USAGE: StatusBarUsage = { contextPercent: null, contextTokens: null, contextWindow: null, limits: [] }
 
 const usage = atom({ plugin: 'status-bar', key: 'usage' } as const, NO_USAGE)
 const step = atom({ plugin: 'status-bar', key: 'step' } as const, null)
@@ -43,7 +43,13 @@ function toUsage(
     percentUsed: l.percentUsed,
     resetsAt: l.resetsAt ?? null,
   }))
-  return { contextPercent: contextFill(context, raw).pct, contextTokens: context.tokens ?? null, limits }
+  const fill = contextFill(context, raw)
+  return {
+    contextPercent: fill.pct,
+    contextTokens: context.tokens ?? null,
+    contextWindow: fill.window > 0 ? fill.window : null,
+    limits,
+  }
 }
 
 // Writes only on change, so readers redraw only when a figure moved (the
@@ -172,6 +178,12 @@ function segProps(seg: Seg): TextProps {
   }
 }
 
+// A line as a surface that draws SVG shows it: one segment per gauge (its
+// first cell), the others as they are.
+function oneCellPerGauge(line: readonly Seg[]): Seg[] {
+  return line.filter((seg, i) => seg.gauge === undefined || line[i - 1]?.gauge !== seg.gauge)
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     ensurePolling($)
@@ -226,9 +238,11 @@ export const register: Register = on => {
   })
 
   // Our rows, then the engine's own hint line (what next(e) answers: its
-  // drawing, pills live). Reads state only.
+  // drawing, pills live). Reads state only. Off the terminal, each bar is one
+  // SVG drawing instead of its block cells.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     const { Box, Text } = $.ui.resolve(e)
+    const Svg = e.surface === 'terminal' ? undefined : $.ui.resolve(e).Svg
     const last = await read($, step)
     const figures = await read($, usage)
     const lines = layout(
@@ -239,6 +253,8 @@ export const register: Register = on => {
         tokensIn: last?.tokensIn ?? figures.contextTokens ?? 0,
         tokensOut: last?.tokensOut ?? 0,
         contextPercent: figures.contextPercent ?? 0,
+        contextTokens: figures.contextTokens,
+        contextWindow: figures.contextWindow,
         limits: figures.limits,
         now: await read($, now),
       },
@@ -249,11 +265,15 @@ export const register: Register = on => {
       <Box flexDirection="column">
         {lines.map(line => (
           <Box flexDirection="row">
-            {line.map(seg => (
-              <Text {...segProps(seg)} wrap="truncate-end">
-                {seg.text}
-              </Text>
-            ))}
+            {(Svg === undefined ? line : oneCellPerGauge(line)).map(seg =>
+              Svg !== undefined && seg.gauge !== undefined ? (
+                <Svg source={gaugeSource(seg.gauge)} alt={seg.gauge.alt} />
+              ) : (
+                <Text {...segProps(seg)} wrap="truncate-end">
+                  {seg.text}
+                </Text>
+              ),
+            )}
           </Box>
         ))}
         {theirs}

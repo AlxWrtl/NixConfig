@@ -8,8 +8,12 @@ import type { Color } from 'claude-code'
 
 import type { StatusBarLimit } from '../types'
 
+// What a bar shows, kept on each of its cells: a surface that draws SVG
+// swaps those cells for one drawing (a pill when it carries a label).
+export type Gauge = { pct: number; alt: string; label?: string }
+
 // One run of text drawn with one style; index.tsx maps it to a Text.
-export type Seg = { text: string; color?: Color; dim?: boolean }
+export type Seg = { text: string; color?: Color; dim?: boolean; gauge?: Gauge }
 
 // The script's ANSI colours as their xterm-256 hex, the same on every surface.
 export const PALETTE = {
@@ -27,6 +31,18 @@ const EMPTY = '░'
 const SEP = ' | '
 // Cells left free at the row's end before the bar breaks onto two lines.
 const MARGIN = 4
+// Length of each quota window, by the kind the engine names it with.
+const WINDOW_MS: Readonly<Record<string, number>> = { five_hour: 5 * 3_600_000, seven_day: 7 * 86_400_000 }
+// Short names of the quota windows, as the SVG gauges' alt text says them.
+const WINDOW_LABEL: Readonly<Record<string, string>> = { five_hour: '5h', seven_day: '7d' }
+// SVG sizes in CSS pixels: the quota gauge, the context pill.
+const GAUGE_W = 48
+const GAUGE_H = 6
+const PILL_W = 84
+const PILL_H = 16
+// Empty-track colours: the quota gauge's (drawn faint), the context pill's.
+const TRACK = '#8b8b8b'
+const PILL_TRACK = '#3a3f47'
 
 // `claude-opus-5-5[1m]` → `Opus 5.5`, `claude-3-5-sonnet-20241022` →
 // `Sonnet 3.5`, `opus` → `Opus`; a display name (`Opus 5.5 (1M context)`)
@@ -93,11 +109,74 @@ export function contextFill(
 export function bar(pct: number): Seg[] {
   const clamped = Math.min(100, Math.max(0, Math.trunc(pct)))
   const filled = Math.floor(clamped / 10)
-  const color = clamped >= 85 ? PALETTE.red : clamped >= 60 ? PALETTE.orange : PALETTE.green
+  const color = barColor(clamped)
   const segs: Seg[] = []
   if (filled > 0) segs.push({ text: FULL.repeat(filled), color })
   if (filled < BAR_CELLS) segs.push({ text: EMPTY.repeat(BAR_CELLS - filled), color: PALETTE.grey })
   return segs
+}
+
+// The bar's fill colour for a whole percentage: green, orange from 60, red from 85.
+function barColor(clamped: number): Color {
+  return clamped >= 85 ? PALETTE.red : clamped >= 60 ? PALETTE.orange : PALETTE.green
+}
+
+// `pct` clamped to 0-100, as a share of `width` pixels.
+function fillWidth(pct: number, width: number): number {
+  return Math.round((Math.min(100, Math.max(0, pct)) / 100) * width)
+}
+
+// Text made safe inside SVG markup.
+function escapeXml(text: string): string {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+// A quota bar as SVG: a rounded grey track, a rounded fill in bar()'s colour.
+export function gaugeSvg(pct: number): string {
+  const color = barColor(Math.min(100, Math.max(0, Math.trunc(pct))))
+  const r = GAUGE_H / 2
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${GAUGE_W}" height="${GAUGE_H}" viewBox="0 0 ${GAUGE_W} ${GAUGE_H}"><rect width="${GAUGE_W}" height="${GAUGE_H}" rx="${r}" fill="${TRACK}" fill-opacity="0.25"/><rect width="${fillWidth(pct, GAUGE_W)}" height="${GAUGE_H}" rx="${r}" fill="${color}"/></svg>`
+}
+
+// The context bar as SVG: a rounded pill filled in bar()'s colour, `label` centered inside.
+export function pillSvg(pct: number, label: string): string {
+  const color = barColor(Math.min(100, Math.max(0, Math.trunc(pct))))
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${PILL_W}" height="${PILL_H}" viewBox="0 0 ${PILL_W} ${PILL_H}"><defs><clipPath id="p"><rect width="${PILL_W}" height="${PILL_H}" rx="${PILL_H / 2}"/></clipPath></defs><g clip-path="url(#p)"><rect width="${PILL_W}" height="${PILL_H}" fill="${PILL_TRACK}"/><rect width="${fillWidth(pct, PILL_W)}" height="${PILL_H}" fill="${color}"/></g><text x="${PILL_W / 2}" y="11.5" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, system-ui, sans-serif" font-size="10.5" font-weight="700" fill="#ffffff" stroke="#000000" stroke-opacity="0.45" stroke-width="2" paint-order="stroke">${escapeXml(label)}</text></svg>`
+}
+
+// The drawing that stands for a gauge's cells on a surface that draws SVG.
+export function gaugeSource(gauge: Gauge): string {
+  return gauge.label === undefined ? gaugeSvg(gauge.pct) : pillSvg(gauge.pct, gauge.label)
+}
+
+// Ahead (+) or behind (-) of an even spend: the share of the window elapsed
+// less the share used, in points; null when its reset or length is unknown.
+export function pace(limit: StatusBarLimit, now: number): number | null {
+  const windowMs = WINDOW_MS[limit.kind]
+  const resetMs = limit.resetsAt === null ? Number.NaN : Date.parse(limit.resetsAt)
+  if (windowMs === undefined || !Number.isFinite(resetMs)) return null
+  const elapsed = Math.min(100, Math.max(0, ((windowMs - (resetMs - now)) / windowMs) * 100))
+  return elapsed - limit.percentUsed
+}
+
+// Green when on or ahead of pace, yellow less than 10 points behind, else red.
+export function paceColor(points: number): Color {
+  return points >= 0 ? PALETTE.green : points > -10 ? PALETTE.yellow : PALETTE.red
+}
+
+// A pace as `+24.5%` / `-5.0%`: sign, one decimal.
+export function fmtPace(points: number): string {
+  return `${points >= 0 ? '+' : ''}${points.toFixed(1)}%`
+}
+
+// A token count as `84k` from a thousand up (rounded), else as it is.
+export function fmtTokens(count: number): string {
+  return count >= 1000 ? `${Math.round(count / 1000)}k` : String(count)
+}
+
+// Each cell of `segs` tagged with the one gauge they draw.
+function tag(segs: readonly Seg[], gauge: Gauge): Seg[] {
+  return segs.map(seg => ({ ...seg, gauge }))
 }
 
 // Time left until `resetMs`: under an hour `42min`, under a day `5.07h`
@@ -181,6 +260,9 @@ export type StatusData = {
   tokensIn: number
   tokensOut: number
   contextPercent: number
+  // The context's tokens and the window they fill, for the SVG pill's label.
+  contextTokens?: number | null
+  contextWindow?: number | null
   limits: readonly StatusBarLimit[]
   now: number
 }
@@ -199,18 +281,31 @@ export function sessionGroup(data: StatusData): Seg[] {
   return segs
 }
 
-// One quota window: glyph, bar, percentage and the time to its reset.
+// One quota window: glyph, bar, percentage, pace and the time to its reset.
 function limitSegs(glyph: string, limit: StatusBarLimit, now: number): Seg[] {
   const pct = roundPct(limit.percentUsed)
+  const gauge: Gauge = { pct, alt: `${WINDOW_LABEL[limit.kind] ?? limit.kind} ${pct}%` }
+  const segs: Seg[] = [sep(), { text: `${glyph} ` }, ...tag(bar(pct), gauge), { text: ` ${pct}%`, color: PALETTE.cyan }]
+  const ahead = pace(limit, now)
+  if (ahead !== null) segs.push({ text: ` ${fmtPace(ahead)}`, color: paceColor(ahead) })
   const resetMs = limit.resetsAt === null ? Number.NaN : Date.parse(limit.resetsAt)
-  const reset = Number.isFinite(resetMs) ? ` · ${fmtReset(resetMs, now)}` : ''
-  return [sep(), { text: `${glyph} ` }, ...bar(pct), { text: ` ${pct}%${reset}`, color: PALETTE.cyan }]
+  if (Number.isFinite(resetMs)) segs.push({ text: ` · ${fmtReset(resetMs, now)}`, color: PALETTE.cyan })
+  return segs
+}
+
+// The context pill's label: `84k/200k` when both figures are known, else the percentage.
+function contextLabel(data: StatusData, pct: number): string {
+  const tokens = data.contextTokens ?? null
+  const window = data.contextWindow ?? null
+  return tokens === null || window === null || window <= 0 ? `${pct}%` : `${fmtTokens(tokens)}/${fmtTokens(window)}`
 }
 
 // Group 2: context bar, then the 5h and 7d windows that have a reading.
 export function usageGroup(data: StatusData): Seg[] {
   const ctx = roundPct(data.contextPercent)
-  const segs: Seg[] = [{ text: '🧠 ' }, ...bar(ctx), { text: ` ${ctx}%`, color: PALETTE.cyan }]
+  const label = contextLabel(data, ctx)
+  const gauge: Gauge = { pct: ctx, alt: `context ${label} (${ctx}%)`, label }
+  const segs: Seg[] = [{ text: '🧠 ' }, ...tag(bar(ctx), gauge), { text: ` ${ctx}%`, color: PALETTE.cyan }]
   const five = data.limits.find(l => l.kind === 'five_hour')
   const seven = data.limits.find(l => l.kind === 'seven_day')
   if (five !== undefined) segs.push(...limitSegs('⏳', five, data.now))

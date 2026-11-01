@@ -9,6 +9,8 @@ export type StatusBarLimit = { kind: string; percentUsed: number; resetsAt: stri
 export type StatusBarUsage = {
   contextPercent: number | null
   contextTokens: number | null
+  // The window the context fill is measured against (auto-compact or model's).
+  contextWindow: number | null
   limits: StatusBarLimit[]
 }
 

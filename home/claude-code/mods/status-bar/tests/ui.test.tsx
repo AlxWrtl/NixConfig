@@ -44,11 +44,41 @@ test('the status rows are drawn above the hint line, which is kept', async ($, o
     expect((await ui.find({ type: 'Text', text: '⎇ feat/x' }))?.props.color).toBe('#ffd75f')
     expect(await ui.find({ type: 'Text', text: '📊 84,000/0' })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: ' 42%' })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: ' 62% · 42min' })).toBeDefined()
-    expect((await ui.find({ type: 'Text', text: '██████' }))?.props.color).toBe('#ff8700')
+    // The 5h window: percentage, pace (86% elapsed less 61.5% used), reset.
+    expect(await ui.find({ type: 'Text', text: /^ 62%$/ })).toBeDefined()
+    expect((await ui.find({ type: 'Text', text: /^ \+24\.5%$/ }))?.props.color).toBe('#5fd75f')
+    expect(await ui.find({ type: 'Text', text: /^ · 42min$/ })).toBeDefined()
+    if (surface === 'terminal') {
+      expect((await ui.find({ type: 'Text', text: '██████' }))?.props.color).toBe('#ff8700')
+      expect(await ui.findAll({ type: 'Svg' })).toHaveLength(0)
+    }
     const hint = await ui.find({ type: 'Text', text: '? for shortcuts' })
     expect(hint?.props.dimColor).toBe(true)
     const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
+    expect(texts.at(-1)).toBe('? for shortcuts')
+    await ui.unmount()
+  }
+})
+
+test('the remote surfaces draw the bars as SVG, the pace as text', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on)
+  await $.session.start({ cwd: '/work/sub', surface: 'terminal', isInteractive: true })
+  await clock.settle()
+  for (const surface of ['desktop', 'vscode', 'mobile'] as const) {
+    const ui = await $.ui.mount({ plugin: 'status-bar', surface, ...HINT })
+    const svgs = await ui.findAll({ type: 'Svg' })
+    const alt = (svg: (typeof svgs)[number]) => String(svg.props.alt)
+    const context = svgs.find(svg => alt(svg).includes('84k/200k'))
+    expect(context).toBeDefined()
+    expect(String(context?.props.source)).toContain('84k/200k')
+    expect(String(context?.props.source).startsWith('<svg')).toBe(true)
+    const five = svgs.find(svg => alt(svg).includes('5h') && alt(svg).includes('62%'))
+    expect(five).toBeDefined()
+    expect(String(five?.props.source).startsWith('<svg')).toBe(true)
+    const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
+    expect(texts.filter(t => t.includes('█') || t.includes('░'))).toEqual([])
+    expect((await ui.find({ type: 'Text', text: /^ \+24\.5%$/ }))?.props.color).toBe('#5fd75f')
     expect(texts.at(-1)).toBe('? for shortcuts')
     await ui.unmount()
   }

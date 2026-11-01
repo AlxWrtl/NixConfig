@@ -7,12 +7,18 @@ import {
   cellWidth,
   compactWindow,
   contextFill,
+  fmtPace,
   fmtReset,
+  fmtTokens,
+  gaugeSvg,
   layout,
   modelName,
+  pace,
+  paceColor,
   parentDir,
   parseHead,
   pickModel,
+  pillSvg,
   resolveGitdir,
   thousands,
 } from '../hooks/format.ts'
@@ -20,7 +26,9 @@ import type { StatusData } from '../hooks/format.ts'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
+const DAY = 24 * HOUR
 const NOW = Date.parse('2026-10-09T12:00:00Z')
+const at = (ms: number) => new Date(NOW + ms).toISOString()
 
 describe('modelName', () => {
   test('ids, aliases and display names', () => {
@@ -73,6 +81,80 @@ describe('fmtReset', () => {
     expect(fmtReset(NOW + 120 * HOUR + 52 * MIN, NOW)).toBe('5j 0h')
     expect(fmtReset(NOW + 25 * HOUR, NOW)).toBe('1j 1h')
     expect(fmtReset(NOW - MIN, NOW)).toBe('0min')
+  })
+})
+
+describe('pace', () => {
+  // Thousandths: the figures go through float division.
+  const near = (value: number | null) => (value === null ? null : Math.round(value * 1000) / 1000)
+
+  test('elapsed share of the window less the share used', () => {
+    // 5h window, 42 min left: 258/300 = 86% elapsed, 61.5% used.
+    expect(near(pace({ kind: 'five_hour', percentUsed: 61.5, resetsAt: at(42 * MIN) }, NOW))).toBe(24.5)
+    // 7d window, 6 days left: 1/7 elapsed, 80% used.
+    expect(near(pace({ kind: 'seven_day', percentUsed: 80, resetsAt: at(6 * DAY) }, NOW))).toBe(-65.714)
+    // 5h window, 2.5h left: 50% elapsed, 55% used.
+    expect(near(pace({ kind: 'five_hour', percentUsed: 55, resetsAt: at(150 * MIN) }, NOW))).toBe(-5)
+  })
+
+  test('no reset time or an unknown window: no pace', () => {
+    expect(pace({ kind: 'five_hour', percentUsed: 61.5, resetsAt: null }, NOW)).toBeNull()
+    expect(pace({ kind: 'seven_day_opus', percentUsed: 10, resetsAt: at(DAY) }, NOW)).toBeNull()
+  })
+})
+
+describe('paceColor', () => {
+  test('green from 0, yellow above -10, red from -10 down', () => {
+    expect(paceColor(24.5)).toBe('#5fd75f')
+    expect(paceColor(0)).toBe(PALETTE.green)
+    expect(paceColor(-0.1)).toBe(PALETTE.yellow)
+    expect(paceColor(-5)).toBe('#ffd75f')
+    expect(paceColor(-9.9)).toBe(PALETTE.yellow)
+    expect(paceColor(-10)).toBe(PALETTE.red)
+    expect(paceColor(100 / 7 - 80)).toBe('#ff5f5f')
+  })
+})
+
+describe('fmtPace', () => {
+  test('sign, one decimal, percent', () => {
+    expect(fmtPace(24.5)).toBe('+24.5%')
+    expect(fmtPace(-5)).toBe('-5.0%')
+    expect(fmtPace(100 / 7 - 80)).toBe('-65.7%')
+    expect(fmtPace(3)).toBe('+3.0%')
+  })
+})
+
+describe('fmtTokens', () => {
+  test('thousands as k, rounded; small counts as they are', () => {
+    expect(fmtTokens(84_000)).toBe('84k')
+    expect(fmtTokens(200_000)).toBe('200k')
+    expect(fmtTokens(1_000)).toBe('1k')
+    expect(fmtTokens(1_499)).toBe('1k')
+    expect(fmtTokens(1_500)).toBe('2k')
+    expect(fmtTokens(999)).toBe('999')
+    expect(fmtTokens(0)).toBe('0')
+  })
+})
+
+describe('gaugeSvg / pillSvg', () => {
+  const isSvg = (markup: string) => {
+    expect(markup.startsWith('<svg')).toBe(true)
+    expect(markup.trimEnd().endsWith('</svg>')).toBe(true)
+    expect(markup.length).toBeLessThanOrEqual(131_072)
+  }
+
+  test('a gauge is one SVG document that moves with the percentage', () => {
+    isSvg(gaugeSvg(62))
+    isSvg(gaugeSvg(0))
+    isSvg(gaugeSvg(100))
+    expect(gaugeSvg(10)).not.toBe(gaugeSvg(90))
+  })
+
+  test('a pill is one SVG document carrying its label', () => {
+    const markup = pillSvg(42, '84k/200k')
+    isSvg(markup)
+    expect(markup).toContain('84k/200k')
+    expect(pillSvg(10, '84k/200k')).not.toBe(pillSvg(90, '84k/200k'))
   })
 })
 
@@ -145,8 +227,31 @@ describe('layout', () => {
     const one = text(lines[0])
     expect(one.startsWith('🤖 Opus 5.5 | 📁 nix-darwin | ⎇ feat/status-bar-mod | 📊 123,456/789 | 🧠 ')).toBe(true)
     expect(one.includes(' 42% | ⏳ ')).toBe(true)
-    expect(one.includes(' 62% · 5.07h | 📆 ')).toBe(true)
-    expect(one.endsWith(' 85% · 5j 0h')).toBe(true)
+    expect(one).toMatch(/ 62% [+-]\d+\.\d% · 5\.07h \| 📆 /)
+    expect(one.endsWith(' 85% -56.9% · 5j 0h')).toBe(true)
+  })
+
+  test('a quota window draws its percentage, its pace, then its reset', () => {
+    const segsAfter = (limit: StatusData['limits'][number], pct: string) => {
+      const line = layout({ ...data, limits: [limit] }, 200)[0] ?? []
+      const i = line.findIndex(s => s.text === pct)
+      expect(i).toBeGreaterThan(-1)
+      expect(line[i]?.color).toBe(PALETTE.cyan)
+      return line.slice(i + 1)
+    }
+    const ahead = segsAfter({ kind: 'five_hour', percentUsed: 61.5, resetsAt: at(42 * MIN) }, ' 62%')
+    expect(ahead).toEqual([
+      { text: ' +24.5%', color: '#5fd75f' },
+      { text: ' · 42min', color: PALETTE.cyan },
+    ])
+    const behind = segsAfter({ kind: 'seven_day', percentUsed: 80, resetsAt: at(6 * DAY) }, ' 80%')
+    expect(behind).toEqual([
+      { text: ' -65.7%', color: '#ff5f5f' },
+      { text: ' · 6j 0h', color: PALETTE.cyan },
+    ])
+    const close = segsAfter({ kind: 'five_hour', percentUsed: 55, resetsAt: at(150 * MIN) }, ' 55%')
+    expect(close[0]).toEqual({ text: ' -5.0%', color: '#ffd75f' })
+    expect(segsAfter({ kind: 'five_hour', percentUsed: 61.5, resetsAt: null }, ' 62%')).toEqual([])
   })
 
   test('two groups when narrow, or one line when the width is unknown', () => {

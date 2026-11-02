@@ -350,6 +350,8 @@ in
           "${homeDirectory}/.config/secrets/scaleway-tem-secret-key"
           # Neon : clé API, sans wrapper non plus (console.neon.tech déjà couvert par allowedDomains "*").
           "${homeDirectory}/.config/secrets/neon-api-key"
+          # TypeSafe Jev : clé API pour le banc de sélection de blocs (sans wrapper, comme Neon ; api.typesafe.ai passe par allowed_domains, commande par commande).
+          "${homeDirectory}/.config/secrets/typesafe-api-key"
         ];
         # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the

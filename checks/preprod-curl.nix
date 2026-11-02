@@ -210,6 +210,7 @@ let
     (secretDir + "scaleway-tem-access-key")
     (secretDir + "scaleway-tem-secret-key")
     (secretDir + "neon-api-key")
+    (secretDir + "typesafe-api-key")
   ];
   secretReads = builtins.filter (e: builtins.isString e && hasInfix ".config/secrets" e) allowRead;
   strayReads = builtins.filter (e: !(builtins.elem e allowedSecretReads)) secretReads;
@@ -255,7 +256,7 @@ let
         + builtins.toJSON missingReads
         + ", not allowed "
         + builtins.toJSON strayReads
-        + " — exactly: trello-api-key, trello-token, cf-access-client-id/secret, scaleway-tem-access/secret-key, neon-api-key (exact files) and ONE glob preliz-preprod-*-password; no directory, no other glob";
+        + " — exactly: trello-api-key, trello-token, cf-access-client-id/secret, scaleway-tem-access/secret-key, neon-api-key, typesafe-api-key (exact files) and ONE glob preliz-preprod-*-password; no directory, no other glob";
     }
     {
       name = "B8 the only glob under .config/secrets is preliz-preprod-*-password, inside one path component";

@@ -32,6 +32,7 @@ let
   apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
   apexTier = import ./claude-code/apex-tier.nix { inherit pkgs; };
   apexHealth = import ./claude-code/apex-health.nix { inherit pkgs; };
+  jevLocate = import ./claude-code/jev-locate.nix { inherit pkgs; };
   apexBoard = import ./claude-code/apex-board.nix { inherit pkgs; };
   claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
   agentPane = import ./claude-code/agent-pane.nix { inherit pkgs; };
@@ -51,6 +52,7 @@ let
   inherit (apexVerifyExternal) apexVerifyExternalPkg;
   inherit (apexTier) apexTierPkg;
   inherit (apexHealth) apexHealthPkg;
+  inherit (jevLocate) jevLocatePkg;
   inherit (apexBoard) apexBoardPkg;
   inherit (claudeDispatch) claudeDispatchPkg;
   inherit (agentPane) agentPanePkg;
@@ -474,7 +476,7 @@ in
     # spares nixfmt re-indenting that whole attrset.
     file = claudeHomeFiles // uiExpertLinks;
 
-    # `libdocs` + `nix-options` + `trello` + `preprod-curl` +
+    # `libdocs` + `nix-options` + `trello` + `preprod-curl` + `jev-locate` +
     # `graphify-reindex` + `claude-dispatch` + `agent-pane` on PATH — usable by
     # Claude, by APEX and its subagents, and by the user in a plain terminal.
     # `abduco` too, from the same pkgs as the claude-dispatch wrapper and
@@ -490,6 +492,7 @@ in
       apexVerifyExternalPkg
       apexTierPkg
       apexHealthPkg
+      jevLocatePkg
       apexBoardPkg
       claudeDispatchPkg
       pkgs.abduco

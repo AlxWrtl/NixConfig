@@ -95,6 +95,7 @@
           hm = self.darwinConfigurations."alex-mbp".config.home-manager.users.alx;
         };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };
+        jev-locate = import ./checks/jev-locate.nix { inherit pkgs; };
         js-lint = import ./checks/js-lint.nix { inherit pkgs; };
         preprod-curl = import ./checks/preprod-curl.nix { inherit pkgs; };
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };

@@ -137,6 +137,12 @@
 #      00-context.md stay silent. One canary per branch, plus the
 #      last-Tier-line rule through `--self-test`; D8 asserts at eval that
 #      the probe's Bash group puts its `if` on the handler.
+#      The jev-read-gate run adds jev-read-gate.js, run with a fresh HOME
+#      per label: the first whole Read of a text file over 30 KB denied,
+#      naming jev-locate, again in another session and for another agent of
+#      the same session; the second attempt, offset or limit, a small file,
+#      an image, a missing file, malformed input and an unwritable state dir
+#      allowed. One canary per branch, the allows killed as over-blocks.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -662,6 +668,54 @@ let
     A-rm-overflow = {
       hook = "research-model.js";
       text = "if (input.length + c.length > MAX_INPUT) { overflow = true; input = \"\"; return; }";
+    };
+    A-jr-once = {
+      hook = "jev-read-gate.js";
+      text = "if (e && e.code === \"EEXIST\") { allow(); return; }";
+    };
+    A-jr-first = {
+      hook = "jev-read-gate.js";
+      text = "deny(reason);";
+    };
+    A-jr-range = {
+      hook = "jev-read-gate.js";
+      text = "if (present(ti.offset) || present(ti.limit) || present(ti.pages)) { allow(); return; }";
+    };
+    A-jr-size = {
+      hook = "jev-read-gate.js";
+      text = "const THRESHOLD = 30 * 1024;";
+    };
+    A-jr-ext = {
+      hook = "jev-read-gate.js";
+      text = "const SKIP_EXT = /\\.(png|jpe?g|gif|webp|bmp|tiff?|heic|ico|pdf|ipynb)$/i;";
+    };
+    A-jr-session = {
+      hook = "jev-read-gate.js";
+      text = "const sid = String(data.session_id || \"\");";
+    };
+    A-jr-agent = {
+      hook = "jev-read-gate.js";
+      text = "const aid = typeof data.agent_id === \"string\" ? data.agent_id : \"\";";
+    };
+    A-jr-malformed = {
+      hook = "jev-read-gate.js";
+      text = "try { data = JSON.parse(input); } catch { allow(); return; }";
+    };
+    A-jr-refresh = {
+      hook = "jev-read-gate.js";
+      text = "fs.utimesSync(dir, now, now);";
+    };
+    A-jr-base = {
+      hook = "jev-read-gate.js";
+      text = "if (!realDir(base)) { allow(); return; }";
+    };
+    A-jr-large = {
+      hook = "jev-read-gate.js";
+      text = "if (ti.allow_large === true) { allow(); return; }";
+    };
+    A-jr-isfile = {
+      hook = "jev-read-gate.js";
+      text = "if (!st.isFile()) { allow(); return; }";
     };
     A-le-chain = {
       hook = "lone-excluded-bash.js";
@@ -1908,6 +1962,165 @@ let
         }
       ];
     }
+    # jev-read-gate. The second attempt denied again: a file that must be
+    # read whole could never be.
+    {
+      id = "M-jr-once";
+      hook = "jev-read-gate.js";
+      kills = "jr-second-allow";
+      swaps = [
+        {
+          anchor = "A-jr-once";
+          to = "if (e && e.code === \"EEXIST\") { deny(reason); return; }";
+        }
+      ];
+    }
+    # The first whole Read let through: the nudge never fires.
+    {
+      id = "M-jr-first";
+      hook = "jev-read-gate.js";
+      kills = "jr-big-deny";
+      swaps = [
+        {
+          anchor = "A-jr-first";
+          to = "allow();";
+        }
+      ];
+    }
+    # offset/limit ignored: the located Read jev-locate pointed at is denied.
+    {
+      id = "M-jr-range";
+      hook = "jev-read-gate.js";
+      kills = "jr-limit-allow";
+      swaps = [
+        {
+          anchor = "A-jr-range";
+          to = "if (present(ti.pages)) { allow(); return; }";
+        }
+      ];
+    }
+    # No size floor: every small file pays a round trip.
+    {
+      id = "M-jr-size";
+      hook = "jev-read-gate.js";
+      kills = "jr-small-allow";
+      swaps = [
+        {
+          anchor = "A-jr-size";
+          to = "const THRESHOLD = 0;";
+        }
+      ];
+    }
+    # Images sent to the text gate: jev-locate cannot read them.
+    {
+      id = "M-jr-ext";
+      hook = "jev-read-gate.js";
+      kills = "jr-png-allow";
+      swaps = [
+        {
+          anchor = "A-jr-ext";
+          to = "const SKIP_EXT = /(?!)/;";
+        }
+      ];
+    }
+    # Key without the session: a new session inherits the old markers.
+    {
+      id = "M-jr-session";
+      hook = "jev-read-gate.js";
+      kills = "jr-other-session-deny";
+      swaps = [
+        {
+          anchor = "A-jr-session";
+          to = "const sid = \"\";";
+        }
+      ];
+    }
+    # Key without the agent: a subagent inherits its coordinator's markers.
+    {
+      id = "M-jr-agent";
+      hook = "jev-read-gate.js";
+      kills = "jr-other-agent-deny";
+      swaps = [
+        {
+          anchor = "A-jr-agent";
+          to = "const aid = \"\";";
+        }
+      ];
+    }
+    # Unparseable input denied: a fault of the hook would block every Read.
+    {
+      id = "M-jr-malformed";
+      hook = "jev-read-gate.js";
+      kills = "jr-malformed-allow";
+      swaps = [
+        {
+          anchor = "A-jr-malformed";
+          to = "try { data = JSON.parse(input); } catch { deny(\"malformed\"); return; }";
+        }
+      ];
+    }
+    # No mtime refresh: a second Read writes nothing, so a session active
+    # past 7 days looks idle and another session's prune deletes its markers.
+    {
+      id = "M-jr-refresh";
+      hook = "jev-read-gate.js";
+      kills = "jr-active-session-kept-allow";
+      swaps = [
+        {
+          anchor = "A-jr-refresh";
+          to = "";
+        }
+      ];
+    }
+    # No base check: through a symlinked base, markers and pruning land in
+    # the link's target.
+    {
+      id = "M-jr-base";
+      hook = "jev-read-gate.js";
+      kills = "jr-symlink-base-allow";
+      swaps = [
+        {
+          anchor = "A-jr-base";
+          to = "";
+        }
+      ];
+    }
+    # pages ignored: a paged Read of a large file is denied.
+    {
+      id = "M-jr-pages";
+      hook = "jev-read-gate.js";
+      kills = "jr-pages-allow";
+      swaps = [
+        {
+          anchor = "A-jr-range";
+          to = "if (present(ti.offset) || present(ti.limit)) { allow(); return; }";
+        }
+      ];
+    }
+    # allow_large ignored: the explicit whole-file opt-in is denied once.
+    {
+      id = "M-jr-large";
+      hook = "jev-read-gate.js";
+      kills = "jr-allow-large-allow";
+      swaps = [
+        {
+          anchor = "A-jr-large";
+          to = "";
+        }
+      ];
+    }
+    # No regular-file test: a directory over 30 KB is denied as a text file.
+    {
+      id = "M-jr-isfile";
+      hook = "jev-read-gate.js";
+      kills = "jr-dir-allow";
+      swaps = [
+        {
+          anchor = "A-jr-isfile";
+          to = "";
+        }
+      ];
+    }
     # Sandbox-shape run. One clean segment enough: `git add . && git commit`
     # passes, and the whole chain stays sandboxed.
     {
@@ -2907,6 +3120,22 @@ let
     "rm-plan-opus-allow"
     "rm-malformed-allow"
     "rm-oversize-allow"
+    "jr-big-deny"
+    "jr-second-allow"
+    "jr-other-session-deny"
+    "jr-other-agent-deny"
+    "jr-limit-allow"
+    "jr-offset-allow"
+    "jr-small-allow"
+    "jr-png-allow"
+    "jr-missing-allow"
+    "jr-malformed-allow"
+    "jr-state-unwritable-allow"
+    "jr-active-session-kept-allow"
+    "jr-symlink-base-allow"
+    "jr-pages-allow"
+    "jr-allow-large-allow"
+    "jr-dir-allow"
     "le-cd-chain-deny"
     "le-git-C-deny"
     "le-git-c-deny"
@@ -3159,6 +3388,7 @@ let
     "correction-budget.js"
     "correction-grant.js"
     "research-model.js"
+    "jev-read-gate.js"
     "lone-excluded-bash.js"
     "sandbox-escape-evidence.js"
     "worktree-env-sync.sh"
@@ -3496,6 +3726,31 @@ let
 
     # research-model: $1 subagent_type, $2 model (absent when empty or unset).
     rm_in() { ${jq} -cn --arg t "$1" --arg m "''${2-}" '{hook_event_name:"PreToolUse",tool_name:"Agent",session_id:"probe",tool_input:({description:"probe",subagent_type:$t,prompt:"Find the hook wiring."} + (if $m == "" then {} else {model:$m} end))}'; }
+
+    # jev-read-gate: fixtures in $JR — big.md (40000 bytes of lines), small.md
+    # (1 KB), big.png (40000 bytes). A fresh HOME $JH per label holds the
+    # markers, so a mutant's run never inherits the real run's. jr_in $1 file,
+    # $2 session id, $3 extra tool_input JSON (none when empty or unset), $4
+    # agent_id (absent when empty or unset). jr_run $1 body, $2 stdin, with
+    # the env cleared as in run().
+    JR="$root/jr"
+    mkdir -p "$JR"
+    # 1000 lines of 40 bytes. No `yes | head`: under pipefail its SIGPIPE fails the build.
+    printf '%039d\n' $(${pkgs.coreutils}/bin/seq 1 1000) > "$JR/big.md"
+    ${pkgs.coreutils}/bin/head -c 1024 "$JR/big.md" > "$JR/small.md"
+    ${pkgs.coreutils}/bin/head -c 40000 /dev/zero > "$JR/big.png"
+    # A directory whose stat size passes 30 KB (APFS: ~32 bytes an entry),
+    # so only the regular-file test can let it through.
+    mkdir -p "$JR/bigdir"
+    (cd "$JR/bigdir" && ${pkgs.coreutils}/bin/touch $(${pkgs.coreutils}/bin/seq -f 'f%g' 1 1500))
+    jr_home() { JH="$root/jr/home/$lbl"; rm -rf "$JH"; mkdir -p "$JH"; }
+    jr_in() { ${jq} -cn --arg f "$1" --arg s "$2" --arg x "''${3-}" --arg a "''${4-}" '{hook_event_name:"PreToolUse",tool_name:"Read",tool_use_id:"toolu_probe",session_id:$s,cwd:"/probe",tool_input:({file_path:$f} + (if $x == "" then {} else ($x | fromjson) end))} + (if $a == "" then {} else {agent_id:$a,agent_type:"general-purpose"} end)'; }
+    jr_run() {
+      printf '%s' "$2" > "$d/$lbl.in"
+      rc=0
+      (cd "$NOREPO" && env -i HOME="$JH" PATH="${pkgs.coreutils}/bin" ${pkgs.coreutils}/bin/timeout "$tmo" ${pkgs.nodejs_22}/bin/node "$1") \
+        < "$d/$lbl.in" > "$d/$lbl.out" 2> "$d/$lbl.err" || rc=$?
+    }
 
     # sandbox-escape-evidence: $1 command, $2 transcript, $3 the flag
     # (true when unset, absent when empty). Transcript lines, in Claude's
@@ -3887,6 +4142,7 @@ let
         cb-*) tmo=${hostTimeout "correction-budget.js"} ;;
         cg-*) tmo=${hostTimeout "correction-grant.js"} ;;
         rm-*) tmo=${hostTimeout "research-model.js"} ;;
+        jr-*) tmo=${hostTimeout "jev-read-gate.js"} ;;
         le-*) tmo=${hostTimeout "lone-excluded-bash.js"} ;;
         se-*) tmo=${hostTimeout "sandbox-escape-evidence.js"} ;;
         wes-*) tmo=${hostTimeout "worktree-env-sync.sh"} ;;
@@ -4292,6 +4548,61 @@ let
         rm-oversize-allow)
           { rm_in Explore sonnet; ${pkgs.coreutils}/bin/head -c 4400000 /dev/zero | ${pkgs.coreutils}/bin/tr '\0' ' '; printf '}garbage'; } > "$d/$lbl.big"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(${pkgs.coreutils}/bin/cat "$d/$lbl.big")"; is_allow ;;
+        # jev-read-gate: the first whole Read of a text file > 30 KB is
+        # denied per (session, agent), naming jev-locate; the second passes.
+        jr-big-deny)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_deny "jev-locate" ;;
+        jr-second-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_deny "jev-locate" || { why="first attempt: $why"; return 1; }
+          jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_allow ;;
+        jr-other-session-deny)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_deny "jev-locate" || { why="session s1: $why"; return 1; }
+          jr_run "$2" "$(jr_in "$JR/big.md" s2)"; is_deny "jev-locate" ;;
+        jr-other-agent-deny)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_deny "jev-locate" || { why="no agent: $why"; return 1; }
+          jr_run "$2" "$(jr_in "$JR/big.md" s1 "" a1)"; is_deny "jev-locate" ;;
+        jr-limit-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1 '{"limit":50}')"; is_allow ;;
+        jr-offset-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1 '{"offset":100}')"; is_allow ;;
+        jr-small-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/small.md" s1)"; is_allow ;;
+        jr-png-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.png" s1)"; is_allow ;;
+        jr-missing-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/missing.md" s1)"; is_allow ;;
+        jr-malformed-allow)
+          jr_home; jr_run "$2" "$malformed"; is_allow ;;
+        # HOME read-only: no marker can be written, so no deny is sent.
+        jr-state-unwritable-allow)
+          JH="$root/jr/ro/$lbl"; rm -rf "$JH"; mkdir -p "$JH"; chmod 500 "$JH"
+          jr_run "$2" "$(jr_in "$JR/big.md" s1)"
+          chmod 700 "$JH"
+          is_allow ;;
+        # s1's key dir aged 8 days, then s1 reads again (refresh), then s2's
+        # new key dir prunes idle siblings: s1's marker must survive.
+        jr-active-session-kept-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_deny "jev-locate" || { why="s1 first: $why"; return 1; }
+          for k in "$JH/.claude/jev-read-gate"/*; do ${pkgs.coreutils}/bin/touch -d "@$(( $(${pkgs.coreutils}/bin/date +%s) - 8 * 86400 ))" "$k"; done
+          jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_allow || { why="s1 second, key dir aged: $why"; return 1; }
+          jr_run "$2" "$(jr_in "$JR/big.md" s2)"; is_deny "jev-locate" || { why="s2 first: $why"; return 1; }
+          jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_allow ;;
+        # The state base is a symlink to another dir holding an idle key dir:
+        # allow, nothing created in the target, the idle dir not pruned.
+        jr-symlink-base-allow)
+          jr_home; JT="$root/jr/target/$lbl"; rm -rf "$JT"; mkdir -p "$JT/idle" "$JH/.claude"
+          ${pkgs.coreutils}/bin/touch -t 200001010000 "$JT/idle"
+          ln -s "$JT" "$JH/.claude/jev-read-gate"
+          jr_run "$2" "$(jr_in "$JR/big.md" s1)"; is_allow || return 1
+          [ "$(ls -A "$JT")" = idle ] || { why="target holds '$(ls -A "$JT" | tr '\n' ' ')', want idle alone"; return 1; } ;;
+        jr-pages-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1 '{"pages":"1-2"}')"; is_allow ;;
+        jr-allow-large-allow)
+          jr_home; jr_run "$2" "$(jr_in "$JR/big.md" s1 '{"allow_large":true}')"; is_allow ;;
+        jr-dir-allow)
+          sz=$(${pkgs.coreutils}/bin/stat -c %s "$JR/bigdir")
+          [ "$sz" -gt 30720 ] || { why="fixture bigdir is $sz bytes, not over 30 KB: the regular-file test cannot be seen"; return 1; }
+          jr_home; jr_run "$2" "$(jr_in "$JR/bigdir" s1)"; is_allow ;;
         # Sandbox-shape run: an excluded command leaves the sandbox only
         # alone, or chained with other lone excluded commands.
         le-cd-chain-deny)
@@ -5121,6 +5432,7 @@ let
         cb-*) echo ${hookFile "correction-budget.js"} ;;
         cg-*) echo ${hookFile "correction-grant.js"} ;;
         rm-*) echo ${hookFile "research-model.js"} ;;
+        jr-*) echo ${hookFile "jev-read-gate.js"} ;;
         le-*) echo ${hookFile "lone-excluded-bash.js"} ;;
         se-*) echo ${hookFile "sandbox-escape-evidence.js"} ;;
         wes-*) echo ${hookFile "worktree-env-sync.sh"} ;;

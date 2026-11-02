@@ -1,8 +1,10 @@
 """jev-locate FILE QUESTION: ask TypeSafe Jev which ~2.5 KB block of FILE answers QUESTION.
 
-Prints `JEV block N/M present=P conf=C` then blocks N-1 and N verbatim when Jev is trusted,
-else `JEV FULL ...` (read the whole file). Any error: stderr + exit 1, the caller reads the
-whole file. The API key is read from KEY_FILE and only ever sent in the Authorization header.
+Prints `JEV block N/M lines A-B present=P conf=C` then blocks N-1 and N verbatim when Jev is
+trusted (A-B: their 1-based line span, counted on LF as Read numbers lines), then Read FILE
+offset=A limit=B-A+1; else `JEV FULL ...` (read the whole file). Blocks break only after
+"\n" (a CR, VT or FF stays inside its line) or inside an over-long line. Any error: stderr +
+exit 1, the caller reads the whole file. The API key is read from KEY_FILE and only ever sent in the Authorization header.
 
 `jev-locate --self-test` runs offline asserts on the split and the decision; no network.
 """
@@ -28,10 +30,16 @@ class JevError(Exception):
     pass
 
 
+def lf_lines(text):
+    """Lines ended by "\\n" only, kept (the last may lack it): \\r, \\v, \\f... stay inside a line, as Read counts them."""
+    parts = text.split("\n")
+    return [p + "\n" for p in parts[:-1]] + ([parts[-1]] if parts[-1] else [])
+
+
 def split(text, size=BLOCK_CHARS):
-    """Blocks of whole lines, each <= size; a longer line is hard-wrapped into size pieces."""
+    """Blocks of whole LF lines, each <= size; a longer line is hard-wrapped into size pieces."""
     out, cur = [], ""
-    for line in text.splitlines(keepends=True):
+    for line in lf_lines(text):
         for piece in (line[i:i + size] for i in range(0, len(line), size)):
             if cur and len(cur) + len(piece) > size:
                 out.append(cur)
@@ -93,11 +101,20 @@ def decide(present, conf, idx):
     return None
 
 
+def line_span(blocks, first, last):
+    """1-based (A, B) lines of blocks[first..last]; counts "\\n" only, the one line end split() breaks on."""
+    start = sum(b.count("\n") for b in blocks[:first]) + 1
+    body = "".join(blocks[first:last + 1])
+    end = start + body[:-1].count("\n")
+    return start, end
+
+
 def render(blocks, present, idx, conf):
     shown = decide(present, conf, idx)
     if shown is None:
         return f"JEV FULL present={present:.2f} conf={conf:.2f} — read the whole file\n"
-    head = f"JEV block {idx + 1}/{len(blocks)} present={present:.2f} conf={conf:.2f}\n"
+    first, last = line_span(blocks, shown[0], shown[-1])
+    head = f"JEV block {idx + 1}/{len(blocks)} lines {first}-{last} present={present:.2f} conf={conf:.2f}\n"
     return head + "".join(blocks[i] for i in shown)
 
 
@@ -227,9 +244,23 @@ def self_test():
 
     bl = ["first\n", "second\n", "third\n"]
     out = render(bl, 0.97, 2, 0.91)
-    expect(out == "JEV block 3/3 present=0.97 conf=0.91\nsecond\nthird\n", f"render: trusted output {out!r}")
+    expect(out == "JEV block 3/3 lines 2-3 present=0.97 conf=0.91\nsecond\nthird\n", f"render: trusted output {out!r}")
     out = render(bl, 0.97, 0, 0.91)
-    expect(out == "JEV block 1/3 present=0.97 conf=0.91\nfirst\n", f"render: block 1 output {out!r}")
+    expect(out == "JEV block 1/3 lines 1-1 present=0.97 conf=0.91\nfirst\n", f"render: block 1 output {out!r}")
+
+    got = line_span(["a\n", "b\nc\n", "d"], 1, 2)
+    expect(got == (2, 4), f"line_span: blocks 2-3 of a/b,c/d gave {got}, want (2, 4)")
+    got = line_span(["a\n", "b\nc"], 1, 1)
+    expect(got == (2, 3), f"line_span: block without trailing newline gave {got}, want (2, 3)")
+    got = line_span(split("a\n" + "z" * 6000 + "\nb\n"), 1, 1)
+    expect(got == (2, 2), f"line_span: over-long line, block 2 gave {got}, want (2, 2)")
+    ff = "".join(f"{i:04d}\f" + "b" * (40 + i % 50) + "\v" + "c" * 5 + "\n" for i in range(300))
+    fb = split(ff)
+    ref = [r + "\n" for r in ff.split("\n")[:-1]]
+    expect(len(fb) > 1 and all(b.endswith("\n") for b in fb), f"split: \\f/\\v text broke a block mid-line {[b[-3:] for b in fb]!r}")
+    for i in range(len(fb)):
+        a, b = line_span(fb, i, i)
+        expect("".join(ref[a - 1:b]) == fb[i], f"line_span: \\f/\\v text, block {i + 1} lines {a}-{b} differ from the printed passage")
     out = render(bl, 0.2, 1, 0.99)
     expect(out.startswith("JEV FULL present=0.20 conf=0.99") and "second" not in out, f"render: FULL output {out!r}")
 
@@ -303,7 +334,10 @@ def self_test():
     out = locate(page, "q", fake_ask)
     pb = split(page)
     expect(len(seen) == 2 and seen[0] == ["present", "where"], f"locate: windows asked {seen}")
-    expect(out == f"JEV block 30/{len(pb)} present=0.95 conf=0.90\n" + pb[28] + pb[29], "locate: best window not kept")
+    lo = int(pb[28].split()[1]) + 1
+    hi = int(pb[29].splitlines()[-1].split()[1]) + 1
+    expect(out == f"JEV block 30/{len(pb)} lines {lo}-{hi} present=0.95 conf=0.90\n" + pb[28] + pb[29],
+           f"locate: best window not kept or lines not {lo}-{hi}: {out.splitlines()[0]!r}")
     try:
         locate("", "q", fake_ask)
         failures.append("locate: empty text accepted")
@@ -317,7 +351,7 @@ def self_test():
         got = read_text(crlf)
         expect(got == "alpha\r\nbeta\r\ngamma\r\n", f"read_text: CRLF not kept verbatim {got!r}")
         out = locate(got, "q", lambda state, qs: resp(0.9, "block_1", 0.9))
-        expect(out == "JEV block 1/1 present=0.90 conf=0.90\nalpha\r\nbeta\r\ngamma\r\n",
+        expect(out == "JEV block 1/1 lines 1-3 present=0.90 conf=0.90\nalpha\r\nbeta\r\ngamma\r\n",
                f"locate: CRLF block not printed verbatim {out!r}")
 
         kf = os.path.join(tmp, "key")

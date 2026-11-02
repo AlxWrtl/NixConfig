@@ -97,6 +97,11 @@ let
       needle = "never inherit";
     }
     {
+      name = "orchestration: a phase agent locates a big text file before reading it whole";
+      needle = "jev-locate FILE";
+      scope = skills.apexOrchestration;
+    }
+    {
       name = "orchestration: Fable stays read-only";
       needle = "`fable` — READ-ONLY";
       scope = skills.apexOrchestration;

@@ -94,6 +94,7 @@ let
     hookCorrectionBudget
     hookCorrectionGrant
     hookResearchModel
+    hookJevReadGate
     hookLoneExcludedBash
     hookWorktreeInUse
     hookSandboxEscapeEvidence
@@ -383,6 +384,10 @@ let
     };
     "${claudeDir}/hooks/research-model.js" = {
       text = hookResearchModel;
+      executable = true;
+    };
+    "${claudeDir}/hooks/jev-read-gate.js" = {
+      text = hookJevReadGate;
       executable = true;
     };
     "${claudeDir}/hooks/lone-excluded-bash.js" = {

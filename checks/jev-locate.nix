@@ -3,7 +3,9 @@
 #   S1  the BUILT binary's `--self-test` exits 0: split (block sizes, line
 #       boundaries, concatenation equals input), window numbering, decision
 #       (inclusive thresholds, prev block, block 1 alone, FULL on low present
-#       or low confidence), response parsing and window selection
+#       or low confidence), the 1-based `lines A-B` span of the shown blocks
+#       (counted on \n, as Read numbers lines), response parsing and window
+#       selection
 #   S2  no key file (HOME isolated) -> exit 1, stderr names the key file,
 #       stdout empty: the caller falls back to a full read
 #   S3  empty input file -> exit 1 before the key is read
@@ -11,6 +13,8 @@
 # Canary C1: a copy of the script with CONF_MIN 0.8 -> 0.0 must FAIL its
 # self-test; if it passes, the confidence threshold is untested. A guard fails
 # the build if the sed anchor is gone (the mutant would equal the source).
+# Canary C2: a copy with the line span's `+ 1` dropped (every span off by one)
+# must FAIL its self-test on a `line_span:` assertion; same guard.
 #
 # No network: S2/S3 stop before any request, the self-test injects a fake ask.
 { pkgs }:
@@ -43,6 +47,12 @@ pkgs.runCommand "jev-locate-check" { } ''
     fail "canary anchor '$anchor' gone from the script — the mutant equals the source"
   fi
 
+  anchor2='^    start = sum(.*) + 1$'
+  sed "/$anchor2/s/ + 1\$//" ${script} > "$TMPDIR/mutant2.py"
+  if [ "$(grep -c "$anchor2" ${script})" != 1 ] || grep -q "$anchor2" "$TMPDIR/mutant2.py" || cmp -s ${script} "$TMPDIR/mutant2.py"; then
+    fail "canary anchor '$anchor2' gone from the script — the mutant equals the source"
+  fi
+
   rc=0
   ${jev}/bin/jev-locate --self-test > "$TMPDIR/s1.out" 2> "$TMPDIR/s1.err" || rc=$?
   [ "$rc" = 0 ] || fail "S1 self-test exit $rc, want 0"
@@ -73,6 +83,12 @@ pkgs.runCommand "jev-locate-check" { } ''
   grep -q '^FAIL decide: low confidence must be FULL$' "$TMPDIR/c1.err" || fail "canary C1 killed by the wrong assertion"
   echo "jev-locate: canary C1 killed — $(head -n 1 "$TMPDIR/c1.err")"
 
-  echo "jev-locate: 3 cases, 1 canary — OK"
+  rc=0
+  python3 -I "$TMPDIR/mutant2.py" --self-test > "$TMPDIR/c2.out" 2> "$TMPDIR/c2.err" || rc=$?
+  [ "$rc" != 0 ] || fail "canary C2 SURVIVED — a line span off by one still passes the self-test"
+  grep -q '^FAIL line_span: ' "$TMPDIR/c2.err" || fail "canary C2 killed by the wrong assertion"
+  echo "jev-locate: canary C2 killed — $(grep -m 1 '^FAIL line_span: ' "$TMPDIR/c2.err")"
+
+  echo "jev-locate: 3 cases, 2 canaries — OK"
   touch $out
 ''

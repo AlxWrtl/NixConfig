@@ -58,10 +58,10 @@ let
           défaut. Rend la RÉPONSE, pas la page, ~20× moins de tokens que lire un
           fichier de 33 Ko. Les rungs 1-3 du tronc ne servent qu'après son échec.
         - Chrome/Playwright JAMAIS pour lire. Seulement pour AGIR : login, clic.
-        - Page scrapling > ~20 Ko, question factuelle : `jev-locate FICHIER "question"`
-          (allowed_domains api.typesafe.ai) AVANT de la lire. Pages web publiques seules,
-          jamais un fichier local, du vault ou d'un projet (contenu envoyé à TypeSafe).
-          Rend bloc + précédent ; `JEV FULL`/erreur → tout lire ; synthèse multi-sections → lire direct.
+        - Fichier texte > ~30 Ko (page scrapling, code, log, note), question ciblée :
+          `jev-locate FICHIER "question"` (allowed_domains api.typesafe.ai) AVANT de le lire.
+          Contenu envoyé à TypeSafe : jamais un secret ni un .env. Rend `lines A-B` + texte →
+          Read offset=A limit=B-A+1 ; `JEV FULL`/erreur ou synthèse multi-sections → lire entier.
       '';
     }
     {

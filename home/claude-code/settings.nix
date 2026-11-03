@@ -976,17 +976,6 @@ in
           ];
         }
         {
-          matcher = "Read";
-          # Denies the first whole Read of a text file > 30 KB per session and agent (jev-locate first). NOT async; fail-open.
-          hooks = [
-            {
-              type = "command";
-              command = "${node} ~/.claude/hooks/jev-read-gate.js";
-              timeout = 5;
-            }
-          ];
-        }
-        {
           matcher = "Edit|Write";
           hooks = [
             {

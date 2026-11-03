@@ -21,7 +21,7 @@
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
     memory: project
-    maxTurns: 40
+    maxTurns: 60
     skills:
       - feature-workflow
       - ui-expert
@@ -65,7 +65,7 @@
     tools: Read, Write, Edit, Grep, Glob, Bash, WebFetch
     permissionMode: default
     memory: project
-    maxTurns: 40
+    maxTurns: 60
     skills:
       - feature-workflow
     ---
@@ -270,7 +270,7 @@
     memory: project
     skills:
       - nix-darwin
-    maxTurns: 40
+    maxTurns: 60
     ---
 
     # Nix Expert

@@ -1921,9 +1921,9 @@ in
     - **Phase agent** = a fresh subagent (Agent tool) per phase. Receives a
       self-contained brief, works in its own window, returns ONLY a bounded
       summary (~1-2k tokens). Its raw context is discarded after it returns.
-      A text file > ~30 KB is located before it is read whole: `jev-locate FILE "question"`
-      (allowed_domains api.typesafe.ai), then Read with offset/limit (the
-      jev-read-gate hook denies the first whole Read).
+      A targeted question in a text file > ~30 KB that is not an instruction file
+      (skill, step, plan): `jev-locate FILE "question"` (allowed_domains
+      api.typesafe.ai) may replace the whole Read; instructions are read whole.
 
     ## Model routing — Opus 5.5 workhorse, Codex detector, Fable = fallback verifier
 

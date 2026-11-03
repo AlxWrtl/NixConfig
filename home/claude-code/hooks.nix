@@ -87,16 +87,6 @@ in
   # barrier — unreadable input, a throw or the watchdog let the spawn through.
   hookResearchModel = builtins.readFile ./hooks/research-model.js;
 
-  # PreToolUse on Read: the first whole Read (no offset/limit/pages, no
-  # allow_large) of a text file over 30 KB, per session and per agent, is
-  # denied with the jev-locate command to run first; the same Read re-issued
-  # passes. Images, PDFs and notebooks are not text and pass. Any non-secret
-  # text file may go to api.typesafe.ai (user decision 2026-11-02). State:
-  # one marker per file under ~/.claude/jev-read-gate/. Fail-open: a workflow
-  # nudge, not a guard — bad input, a throw, the watchdog or unwritable state
-  # allow, and no deny is sent without its marker on disk.
-  hookJevReadGate = builtins.readFile ./hooks/jev-read-gate.js;
-
   # PreToolUse on Bash: a sandbox-excluded command (git push/commit/pull/fetch,
   # gh) leaves the sandbox only when the call is that command alone. Composed
   # forms (`cd x &&`, `git -C`, a pipe, `$(…)`, a heredoc, a file redirect, a

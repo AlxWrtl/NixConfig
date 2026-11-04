@@ -43,7 +43,8 @@
 #    activationScripts.launchd (the only named slot run before the daemons
 #    load) is non-empty, copies the PAT from ~/.config/secrets with
 #    `-m 0400 -o root` and without `-g _github-runner` (jobs must never read
-#    it), warns with `warning:` when it is absent, and holds no `exit` nor
+#    it), warns with `warning:` on a line naming that source when it is absent
+#    (any other warning would satisfy a bare `warning:`), and holds no `exit` nor
 #    `return` (one `set -e` shell: either kills every later step) and no
 #    `|| true` nor `|| :`. Root never mkdir/chown/chmods a path INSIDE a
 #    runner-owned dir (state, work, cache: a job shapes that tree), and its
@@ -51,6 +52,38 @@
 # 9. HOME = RUNNER_ROOT = the state dir, RUSTUP_HOME under the shared cache
 #    /var/lib/github-runners/_cache/ (the state dir is wiped per job); the
 #    daemon PATH holds /usr/bin (cc from the CLT) and a rustup store path.
+# 10. Full Disk Access: TCC charges a launchd job to the FIRST binary launchd
+#    runs, so ProgramArguments is exactly [ /usr/local/libexec/github-runner-
+#    browser-macos ] and Program is unset or that path (no /bin/sh, no store
+#    path). The slice `mkdir -p`s /usr/local/libexec and its `.d`, `chown -h
+#    root:wheel` and `chmod -h 0755` both; on a line `if ! … cmp -s` naming the
+#    launcher store path (name ending `-github-runner-browser-macos-launcher`)
+#    and the fixed path, and before the next `fi`, it `install -m 0700 -o root
+#    -g wheel`s that store path to `<fixed>.tmp`, `mv`s it onto the fixed path
+#    and prints a `warning:` naming Full Disk Access and the fixed path (a new
+#    binary loses the grant). After that `fi`, on every activation, it `chown
+#    -h root:wheel`s, `chmod -h 0700`s and `chmod -N`s the fixed path (equal
+#    bytes skip the block, a drifted owner/mode/ACL is repaired here). The
+#    launcher is root-only: no mode on the fixed path or its `.tmp` has a
+#    non-zero group/other digit or a symbolic r/w/x grant to g/o/a (anyone who
+#    runs it, DYLD_INSERT_LIBRARIES included, acts with its Full Disk Access).
+#    Outside the block, only the `cmp` line and those three lines name the
+#    fixed path or its `.tmp`. `ln -sfn` points `.d/start` at the daemon's
+#    generated start script (`command`), on the one slice line naming
+#    `.d/start`. Every ln/install/cp/mv/ditto/rsync line naming
+#    /usr/local/libexec takes its sources only from the launcher store path,
+#    `<fixed>.tmp` and `command`; no slice line redirects (`>`) into it.
+#    serviceConfig.EnvironmentVariables.GITHUB_RUNNER_START is `command`:
+#    activation reloads a daemon only when its plist changes, and
+#    ProgramArguments no longer does. No slice line under /usr/local/libexec
+#    names the runner account, chowns to or installs `-o` a non-root owner,
+#    nor grants group/other write (octal g/o digit 2/3/6/7, `g+w`, `o=rw`,
+#    `+w`, `a+w`…) or an ACL (`+a`).
+#    NOT covered here: the launcher's C content (waits for `.d/start` to be
+#    executable, execs it, loops on ENOENT, unsets BASH_ENV/ENV, embeds no
+#    store path). Its store path is only a string in the evaluated config and
+#    `--no-build` compiles nothing: AC3 is verified only by reviewing the
+#    build (`strings` on the built launcher), by hand, not by any check.
 {
   pkgs,
   darwin,
@@ -206,6 +239,239 @@ let
     builtins.filter (l: lib.hasInfix "install" l || lib.hasInfix "-m 0" l) sliceLines
   );
 
+  libexec = "/usr/local/libexec";
+  launcherPath = "${libexec}/${name}";
+  launcherTmp = "${launcherPath}.tmp";
+  launcherDir = "${launcherPath}.d";
+  startLink = "${launcherDir}/start";
+  # The generated start script: a derivation, a string once set by hand. Its
+  # context is dropped: builtins.match refuses a regex that carries one.
+  command =
+    let
+      c = if daemon == null then "" else daemon.command or "";
+    in
+    builtins.unsafeDiscardStringContext (
+      if builtins.isString c then
+        c
+      else if lib.isDerivation c then
+        c.outPath
+      else
+        ""
+    );
+  re = lib.escapeRegex;
+  words = l: builtins.filter (w: builtins.isString w && w != "") (builtins.split "[[:space:]]+" l);
+  # `re` as one whitespace-delimited word (or word sequence) of the line.
+  hasWordRe = r: l: builtins.match "(.*[[:space:]])?${r}([[:space:]].*)?" l != null;
+  captures = r: l: map builtins.head (builtins.filter builtins.isList (builtins.split r l));
+  namesLauncherStore =
+    l:
+    builtins.match "(.*[[:space:]\"'])?${storeDir}/[a-z0-9]{32}-${name}-launcher(/[^[:space:]\"';]*)?([[:space:]\"';].*)?" l
+    != null;
+  indexed = lib.imap0 (i: l: { inherit i l; });
+  launcherCmp =
+    l:
+    builtins.match "[[:space:]]*if[[:space:]]+![[:space:]].*" l != null
+    && hasWord "cmp" l
+    && hasFlagWith "s" l
+    && namesLauncherStore l
+    && namesDir launcherPath l;
+  cmpAt = lib.findFirst (x: launcherCmp x.l) null (indexed sliceLines);
+  afterCmp = if cmpAt == null then [ ] else lib.drop (cmpAt.i + 1) sliceLines;
+  fiAt = lib.findFirst (x: builtins.match "[[:space:]]*fi([[:space:];].*)?" x.l != null) null (
+    indexed afterCmp
+  );
+  # The lines run only when the installed launcher differs from the store one.
+  cmpBlock = if fiAt == null then [ ] else lib.take fiAt.i afterCmp;
+  installsLauncher =
+    l:
+    hasWord "install" l
+    && hasWordRe "-m[[:space:]]+0700" l
+    && hasWordRe "-o[[:space:]]+root" l
+    && hasWordRe "-g[[:space:]]+wheel" l
+    && namesLauncherStore l
+    && namesDir launcherTmp l;
+  movesLauncher =
+    l:
+    hasWord "mv" l
+    &&
+      builtins.match ".*${re launcherTmp}[\"']?[[:space:]]+[\"']?${re launcherPath}[\"']?([[:space:];].*)?" l
+      != null;
+  fdaWarning =
+    l: lib.hasInfix "warning:" l && lib.hasInfix "Full Disk Access" l && lib.hasInfix launcherPath l;
+  linksStart =
+    l:
+    command != ""
+    && hasWord "ln" l
+    && builtins.all (c: hasFlagWith c l) [
+      "s"
+      "f"
+      "n"
+    ]
+    &&
+      builtins.match ".*${re command}[\"']?[[:space:]]+[\"']?${re startLink}[\"']?([[:space:];].*)?" l
+      != null;
+  dirFailures =
+    d:
+    lib.optional (
+      !(builtins.any (l: hasWord "mkdir" l && hasFlagWith "p" l && namesDir d l) sliceLines)
+    ) "activation slice does not `mkdir -p` ${d}"
+    ++ lib.optional (
+      !(builtins.any (
+        l: hasWord "chown" l && hasFlagWith "h" l && hasWord "root:wheel" l && namesDir d l
+      ) sliceLines)
+    ) "activation slice does not `chown -h root:wheel` ${d}"
+    ++ lib.optional (
+      !(builtins.any (
+        l: hasWord "chmod" l && hasFlagWith "h" l && hasWordRe "0?755" l && namesDir d l
+      ) sliceLines)
+    ) "activation slice does not `chmod -h 0755` ${d}";
+
+  libexecLines = builtins.filter (lib.hasInfix libexec) sliceLines;
+  unquote = builtins.replaceStrings [ "\"" "'" ] [ "" "" ];
+  modeWords =
+    l:
+    map unquote (
+      lib.optionals (hasWord "chmod" l) (words (afterFirst "chmod" l))
+      ++ lib.optionals (hasWord "install" l) (captures "[[:space:]]-m[[:space:]]*([^[:space:]]+)" l)
+    );
+  writeDigit =
+    d:
+    builtins.elem d [
+      "2"
+      "3"
+      "6"
+      "7"
+    ];
+  symbolicWrite =
+    c:
+    let
+      m = builtins.match "([ugoa]*)([+=])([rwxXstugo]*)" c;
+    in
+    m != null
+    && lib.hasInfix "w" (builtins.elemAt m 2)
+    && (builtins.elemAt m 0 == "" || builtins.match ".*[goa].*" (builtins.elemAt m 0) != null);
+  grantsWrite =
+    w:
+    let
+      n = builtins.stringLength w;
+    in
+    if builtins.match "[0-7]{3,4}" w != null then
+      writeDigit (builtins.substring (n - 2) 1 w) || writeDigit (builtins.substring (n - 1) 1 w)
+    else
+      builtins.match "[+=]a.*" w != null || builtins.any symbolicWrite (lib.splitString "," w);
+  chownSpec =
+    l:
+    let
+      ws = builtins.filter (w: !(lib.hasPrefix "-" w)) (words (afterFirst "chown" l));
+    in
+    if ws == [ ] then "" else unquote (builtins.head ws);
+  nonRootOwner =
+    l:
+    (hasWord "chown" l && builtins.match "root(:wheel)?" (chownSpec l) == null)
+    || (
+      hasWord "install" l
+      && builtins.any (o: unquote o != "root") (captures "[[:space:]]-o[[:space:]]*([^[:space:]]+)" l)
+    );
+
+  # The launcher is root-only: a mode with any group/other bit, or a symbolic
+  # r/w/x grant (or a copy of another class) to g/o/a, lends its access.
+  grantsGroupOther =
+    w:
+    if builtins.match "[0-7]{3,4}" w != null then
+      builtins.match ".*00" w == null
+    else
+      builtins.match "[+=]a.*" w != null
+      || builtins.any (
+        c:
+        let
+          m = builtins.match "([ugoa]*)([+=])([rwxXstugo]*)" c;
+        in
+        m != null
+        && builtins.match ".*[rwxXugo].*" (builtins.elemAt m 2) != null
+        && (builtins.elemAt m 0 == "" || builtins.match ".*[goa].*" (builtins.elemAt m 0) != null)
+      ) (lib.splitString "," w);
+  namesLauncher = l: namesDir launcherPath l || namesDir launcherTmp l;
+  chownsLauncher =
+    l: hasWord "chown" l && hasFlagWith "h" l && hasWord "root:wheel" l && namesDir launcherPath l;
+  chmodsLauncher =
+    l: hasWord "chmod" l && hasFlagWith "h" l && hasWordRe "0700" l && namesDir launcherPath l;
+  dropsLauncherAcl = l: hasWord "chmod" l && hasFlagWith "N" l && namesDir launcherPath l;
+  # Lines after the cmp block's `fi`: they run on every activation.
+  postBlock = if fiAt == null then [ ] else lib.drop (fiAt.i + 1) afterCmp;
+  inCmpBlock = x: cmpAt != null && fiAt != null && x.i >= cmpAt.i && x.i <= cmpAt.i + fiAt.i;
+  strayLauncherLines = map (x: x.l) (
+    builtins.filter (
+      x:
+      namesLauncher x.l
+      && !(inCmpBlock x)
+      && !(chownsLauncher x.l || chmodsLauncher x.l || dropsLauncherAcl x.l)
+    ) (indexed sliceLines)
+  );
+
+  # Operands of a copy-like command: words after the verb, options dropped
+  # (with the argument of install's -m/-o/-g/-f/-B). The last is the target.
+  copyVerbs = [
+    "ln"
+    "install"
+    "cp"
+    "mv"
+    "ditto"
+    "rsync"
+  ];
+  copyVerb =
+    l:
+    lib.findFirst (x: builtins.elem (baseNameOf x.l) copyVerbs) null (indexed (map unquote (words l)));
+  operands =
+    l:
+    let
+      ws = map unquote (words l);
+      v = copyVerb l;
+      verb = baseNameOf v.l;
+      step =
+        st: w:
+        if st.skip then
+          st // { skip = false; }
+        else if lib.hasPrefix "-" w then
+          st
+          // {
+            skip =
+              verb == "install"
+              && builtins.elem w [
+                "-m"
+                "-o"
+                "-g"
+                "-f"
+                "-B"
+              ];
+          }
+        else
+          st // { ops = st.ops ++ [ w ]; };
+    in
+    (builtins.foldl' step {
+      skip = false;
+      ops = [ ];
+    } (lib.drop (v.i + 1) ws)).ops;
+  allowedSource =
+    s:
+    s == launcherTmp
+    || (command != "" && s == command)
+    || builtins.match "${storeDir}/[a-z0-9]{32}-${name}-launcher/bin/${name}" s != null;
+  copyLines = builtins.filter (l: lib.hasInfix libexec l && copyVerb l != null) sliceLines;
+  badCopies = builtins.filter (
+    l:
+    let
+      ops = operands l;
+    in
+    builtins.length ops < 2 || !(builtins.all allowedSource (lib.init ops))
+  ) copyLines;
+  startLines = builtins.filter (namesDir startLink) sliceLines;
+  startEnv =
+    let
+      ev = sc.EnvironmentVariables or null;
+      v = if builtins.isAttrs ev then ev.GITHUB_RUNNER_START or null else null;
+    in
+    if builtins.isString v then builtins.unsafeDiscardStringContext v else null;
+
   failures =
     # 1
     lib.optional (daemon == null) "launchd daemon ${name} is missing"
@@ -329,8 +595,8 @@ let
     ) "activationScripts.launchd has no non-empty slice between `${beginMarker}` and `${endMarker}`"
     ++ lib.optional (!(lib.hasInfix patSource slice)) "activation slice does not read ~/${patSource}"
     ++ lib.optional (
-      !(lib.hasInfix "warning:" slice)
-    ) "activation slice has no `warning:` for a missing PAT"
+      !(builtins.any (l: lib.hasInfix "warning:" l && lib.hasInfix patSource l) sliceLines)
+    ) "activation slice has no `warning:` line naming ~/${patSource} for a missing PAT"
     ++ lib.optional (
       !(builtins.any (l: lib.hasInfix "-m 0400" l && lib.hasInfix "-o root" l) sliceLines)
     ) "activation slice has no token copy with `-m 0400 -o root`"
@@ -374,7 +640,78 @@ let
     ) "daemon path lacks /usr/bin"
     ++ lib.optional (
       builtins.match ".*${storeDir}/[a-z0-9]{32}-rustup-.*" daemonPath == null
-    ) "daemon path lacks a rustup store path";
+    ) "daemon path lacks a rustup store path"
+    # 10
+    ++
+      lib.optional ((sc.ProgramArguments or null) != [ launcherPath ])
+        "serviceConfig.ProgramArguments must be exactly [ \"${launcherPath}\" ] (TCC charges the job to the first binary launchd runs), got ${
+          builtins.toJSON (sc.ProgramArguments or null)
+        }"
+    ++ lib.optional (
+      !(builtins.elem (sc.Program or null) [
+        null
+        launcherPath
+      ])
+    ) "serviceConfig.Program must be unset or ${launcherPath}, got ${builtins.toJSON sc.Program}"
+    ++ dirFailures libexec
+    ++ dirFailures launcherDir
+    ++
+      lib.optional (cmpAt == null)
+        "activation slice has no `if ! … cmp -s` comparing the ${name}-launcher store path with ${launcherPath}"
+    ++ lib.optional (
+      cmpAt != null && fiAt == null
+    ) "activation slice: the launcher `cmp -s` block has no closing `fi`"
+    ++
+      lib.optional (!(builtins.any installsLauncher cmpBlock))
+        "activation slice: no `install -m 0700 -o root -g wheel <launcher store path> ${launcherTmp}` inside the `cmp -s` block"
+    ++ lib.optional (
+      !(builtins.any movesLauncher cmpBlock)
+    ) "activation slice: no `mv ${launcherTmp} ${launcherPath}` inside the `cmp -s` block"
+    ++
+      lib.optional (!(builtins.any fdaWarning cmpBlock))
+        "activation slice: no `warning:` naming Full Disk Access and ${launcherPath} inside the `cmp -s` block"
+    ++ lib.optional (
+      !(builtins.any chownsLauncher postBlock)
+    ) "activation slice: no `chown -h root:wheel ${launcherPath}` after the `cmp -s` block"
+    ++ lib.optional (
+      !(builtins.any chmodsLauncher postBlock)
+    ) "activation slice: no `chmod -h 0700 ${launcherPath}` after the `cmp -s` block"
+    ++ lib.optional (
+      !(builtins.any dropsLauncherAcl postBlock)
+    ) "activation slice: no `chmod -N ${launcherPath}` (drop ACLs) after the `cmp -s` block"
+    ++ map (l: "activation slice: a launcher mode grants group/other access: ${lib.strings.trim l}") (
+      builtins.filter (l: namesLauncher l && builtins.any grantsGroupOther (modeWords l)) sliceLines
+    )
+    ++ map (
+      l:
+      "activation slice: a line outside the `cmp -s` block writes ${launcherPath} or its .tmp: ${lib.strings.trim l}"
+    ) strayLauncherLines
+    ++ map (
+      l:
+      "activation slice: a ${libexec} copy/link takes a source other than the launcher store path, ${launcherTmp} or the start script: ${lib.strings.trim l}"
+    ) badCopies
+    ++ map (l: "activation slice: a line redirects into ${libexec}: ${lib.strings.trim l}") (
+      builtins.filter (l: builtins.match ".*>[[:space:]]*[\"']?${re libexec}.*" l != null) sliceLines
+    )
+    ++
+      lib.optional (builtins.length startLines != 1 || !(builtins.all linksStart startLines))
+        "activation slice: ${toString (builtins.length startLines)} lines name ${startLink}, expected exactly one, the `ln -sfn <start script>`"
+    ++
+      lib.optional (command == "" || startEnv != command)
+        "serviceConfig.EnvironmentVariables.GITHUB_RUNNER_START must be the start script ${command} (activation reloads a daemon only when its plist changes), got ${builtins.toJSON startEnv}"
+    ++ lib.optional (command == "") "daemon has no generated start script (`command`) for ${startLink}"
+    ++ lib.optional (
+      !(builtins.any linksStart sliceLines)
+    ) "activation slice: no `ln -sfn <daemon start script> ${startLink}`"
+    ++ map (l: "activation slice: a ${libexec} line names ${account}: ${lib.strings.trim l}") (
+      builtins.filter (lib.hasInfix account) libexecLines
+    )
+    ++ map (l: "activation slice: a ${libexec} line sets a non-root owner: ${lib.strings.trim l}") (
+      builtins.filter nonRootOwner libexecLines
+    )
+    ++ map (
+      l: "activation slice: a ${libexec} line grants group/other write or an ACL: ${lib.strings.trim l}"
+    ) (builtins.filter (l: builtins.any grantsWrite (modeWords l)) libexecLines);
 in
 if failures != [ ] then
   throw ("github-runner:\n  - " + builtins.concatStringsSep "\n  - " failures)

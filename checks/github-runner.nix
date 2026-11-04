@@ -66,8 +66,11 @@ let
   runnerDirs = [
     stateDir
     "/var/lib/github-runners/_work/browser-macos"
+    workDir
     "${cacheDir}browser-macos"
   ];
+  # The real path: under /var, checkout's includeIf gitdir never matches.
+  workDir = "/private/var/lib/github-runners/_work/browser-macos";
   tokenFile = "/var/lib/github-runners/browser-macos.token";
   patSource = ".config/secrets/github-runner-browser-pat";
   repo = "AlxWrtl/browser";
@@ -257,6 +260,9 @@ let
     ++ lib.optional (
       !(builtins.any (l: lib.hasInfix jitUrl l) (builtins.filter (hasWord "curl") flagLines))
     ) "script has no curl code line on ${jitUrl}"
+    ++ lib.optional (
+      !(builtins.any (l: lib.hasInfix "--arg work ${workDir}" l) flagLines)
+    ) "the JIT work_folder must be ${workDir} (`--arg work`), not a path under the /var link"
     ++ map (l: "curl line does not read its config from stdin (`--config -`): ${lib.strings.trim l}") (
       builtins.filter (
         l: builtins.match ".*[[:space:]]--config[[:space:]]+-([[:space:]].*)?" l == null

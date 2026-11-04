@@ -27,7 +27,9 @@ let
   root = "/var/lib/github-runners";
   stateDir = "${root}/${name}";
   logDir = "/var/log/github-runners/${name}";
-  workDir = "${root}/_work/${name}";
+  # /var links to /private/var: actions/checkout keys its credentials on the
+  # workspace path in an includeIf gitdir, which git matches on the real path.
+  workDir = "/private${root}/_work/${name}";
   cacheDir = "${root}/_cache/${name}";
   rustupHome = "${cacheDir}/rustup";
   cargoHome = "${stateDir}/.cargo";

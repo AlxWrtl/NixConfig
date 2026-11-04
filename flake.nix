@@ -94,6 +94,10 @@
           inherit pkgs;
           hm = self.darwinConfigurations."alex-mbp".config.home-manager.users.alx;
         };
+        github-runner = import ./checks/github-runner.nix {
+          inherit pkgs;
+          darwin = self.darwinConfigurations."alex-mbp".config;
+        };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };
         jev-locate = import ./checks/jev-locate.nix { inherit pkgs; };
         js-lint = import ./checks/js-lint.nix { inherit pkgs; };
@@ -120,6 +124,7 @@
           ./modules/system.nix
           ./modules/packages.nix
           ./modules/services.nix
+          ./modules/github-runner.nix
           ./modules/ui.nix
           ./modules/brew.nix
 

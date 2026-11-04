@@ -13,6 +13,13 @@
 # Root never creates, chowns or chmods anything inside a `_github-runner`
 # dir: activation touches only the dirs themselves (`-h`), whose parents are
 # root-owned 0755; everything below them is created or wiped as the runner.
+#
+# TCC charges a launchd job to the first binary launchd runs (/bin/sh by
+# default), so jobs needing Full Disk Access start through a compiled launcher
+# at a fixed root-owned path, to which the user grants Full Disk Access by
+# hand; it execs `.d/start`, a link to the generated start script. Root-only
+# (0700, no ACL): any user running it, DYLD_INSERT_LIBRARIES included, would
+# act with its Full Disk Access.
 {
   config,
   lib,
@@ -39,6 +46,45 @@ let
   package = pkgs.github-runner;
   find = "${pkgs.findutils}/bin/find";
   jq = "${pkgs.jq}/bin/jq";
+  libexec = "/usr/local/libexec";
+  launcherPath = "${libexec}/${svc}";
+  launcherDir = "${launcherPath}.d";
+  startLink = "${launcherDir}/start";
+  # No store path inside: its bytes, hence its cdhash and the Full Disk Access
+  # grant, survive every rebuild that only changes the start script.
+  launcherSrc = pkgs.writeText "${svc}-launcher.c" ''
+    #include <errno.h>
+    #include <stdio.h>
+    #include <stdlib.h>
+    #include <unistd.h>
+
+    #define START "${startLink}"
+
+    int main(void)
+    {
+      char *const argv[] = { (char *)START, NULL };
+
+      /* The start script is bash: these would make it source a file first. */
+      unsetenv("BASH_ENV");
+      unsetenv("ENV");
+      for (;;) {
+        /* At boot /nix/store is mounted late: the link dangles until it is. */
+        while (access(START, X_OK) != 0)
+          sleep(1);
+        execv(START, argv);
+        if (errno != ENOENT) {
+          perror(START);
+          return 1;
+        }
+        sleep(1);
+      }
+    }
+  '';
+  launcher = pkgs.runCommandCC "${svc}-launcher" { } ''
+    mkdir -p $out/bin
+    $CC -O2 -Wall -Werror -o $out/bin/${svc} ${launcherSrc}
+  '';
+  launcherBin = "${launcher}/bin/${svc}";
 in
 {
   users.users.${account} = {
@@ -79,6 +125,18 @@ in
     else
       echo >&2 "warning: ${patSrc} is missing or empty: the GitHub runner ${name} stays stopped until it is filled"
     fi
+    /bin/mkdir -p ${libexec} ${launcherDir}
+    /usr/sbin/chown -h root:wheel ${libexec} ${launcherDir}
+    /bin/chmod -h 0755 ${libexec} ${launcherDir}
+    if ! /usr/bin/cmp -s ${launcherBin} ${launcherPath}; then
+      /usr/bin/install -m 0700 -o root -g wheel ${launcherBin} ${launcherPath}.tmp
+      /bin/mv -f ${launcherPath}.tmp ${launcherPath}
+      echo >&2 "warning: ${launcherPath} changed: grant Full Disk Access to ${launcherPath} again (System Settings > Privacy & Security)"
+    fi
+    /usr/sbin/chown -h root:wheel ${launcherPath}
+    /bin/chmod -h 0700 ${launcherPath}
+    /bin/chmod -N ${launcherPath}
+    /bin/ln -sfn ${config.launchd.daemons.${svc}.command} ${startLink}
     # ${svc} END
   '';
 
@@ -166,6 +224,10 @@ in
     '';
 
     serviceConfig = {
+      ProgramArguments = lib.mkForce [ launcherPath ];
+      # Activation reloads a daemon only when its plist changes: this names
+      # the start script in it, so a new script restarts the runner.
+      EnvironmentVariables.GITHUB_RUNNER_START = "${config.launchd.daemons.${svc}.command}";
       # launchd ORs KeepAlive keys: `Crashed = false` would respawn every
       # non-crash exit, exit 78 included. Only exit 0 (job done) restarts.
       KeepAlive = {

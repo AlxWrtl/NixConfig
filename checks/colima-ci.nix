@@ -23,6 +23,8 @@
 #    `--context colima-ci`. No k3s, no ~/.ssh/config entry.
 # 7. No profile's colima.yaml is a home.file symlink: `colima start` rewrites
 #    it and fails on a read-only store path (an activation copies it instead).
+# 8. `arc-wake-watchdog` polls at most every 10 s: after a sleep, a listener
+#    keeps a dead long-poll for ~1 min and a job offered to it is lost.
 {
   pkgs,
   hm,
@@ -51,6 +53,7 @@ let
       (builtins.head settings.provision).script;
   agent = hm.launchd.agents.colima-ci.config or null;
   agentArgs = if agent == null then [ ] else agent.ProgramArguments or [ ];
+  wakeAgent = hm.launchd.agents.arc-wake-watchdog.config or { };
 
   dev = colima.profiles.default or null;
   devSettings = if dev == null then { } else dev.settings;
@@ -122,6 +125,9 @@ let
         builtins.attrNames colima.profiles
       )
     )
+    ++
+      lib.optional ((wakeAgent.StartInterval or 999) > 10)
+        "launchd agent arc-wake-watchdog missing or slower than 10 s: a job offered to a dead listener session after a wake is lost"
     ++ lib.optional (devAgent == null) "launchd agent colima-default is missing"
     ++ lib.optional (
       devAgent != null && !(builtins.elem "--activate=true" devAgentArgs)

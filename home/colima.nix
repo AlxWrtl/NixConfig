@@ -146,6 +146,28 @@ in
     };
   };
 
+  # After a sleep, a listener keeps its dead long-poll for ~1 min and a job
+  # offered meanwhile is lost: a new session never sees it, only a re-run does
+  # (Preliz PR #701, 2026-11-04). On each wake, recreate the listeners at once.
+  # A failed kubectl (VM not up yet) records nothing, so the next tick retries.
+  launchd.agents.arc-wake-watchdog = {
+    enable = true;
+    config = {
+      ProgramArguments = [
+        "${pkgs.writeShellScript "arc-wake-watchdog" ''
+          state="$HOME/.cache/arc-wake-watchdog"
+          wake=$(/usr/sbin/sysctl -n kern.waketime) || exit 0
+          [ "$wake" = "$(cat "$state" 2>/dev/null)" ] && exit 0
+          ${pkgs.kubectl}/bin/kubectl --context colima-ci --request-timeout=20s \
+            -n arc-systems delete autoscalinglisteners --all || exit 0
+          mkdir -p "$HOME/.cache" && printf '%s' "$wake" > "$state"
+        ''}"
+      ];
+      StartInterval = 10;
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/arc-wake-watchdog.log";
+    };
+  };
+
   # `colima start <profile>` rewrites its colima.yaml and fails on the module's
   # read-only store symlink: install writable copies instead, reset each switch.
   home.file = lib.mapAttrs' (

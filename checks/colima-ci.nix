@@ -39,6 +39,7 @@ let
     "preliz-mac"
     "browser-mac"
     "brasserie-mac"
+    "portfolio-mac"
   ];
   publicRepos = [ "NixConfig" ];
 

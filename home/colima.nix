@@ -31,6 +31,7 @@ let
     preliz-mac = "Preliz";
     browser-mac = "browser";
     brasserie-mac = "brasserie-les-ecrivains";
+    portfolio-mac = "portfolio";
   };
   helmChart = name: spec: {
     apiVersion = "helm.cattle.io/v1";

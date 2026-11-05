@@ -640,7 +640,8 @@ in
         "Bash(preprod-curl patch *)"
       ];
       allow = [
-        "Read(*)"
+        # Bare "Read" = every read path (docs: permissions); `Read(*)` no longer means that and warns at startup. The Read denies below still win: deny is evaluated first. A13b pins this.
+        "Read"
         # Package managers
         "Bash(pnpm *)"
         # Kept explicit should `pnpm *` ever be narrowed: the deploy

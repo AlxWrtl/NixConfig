@@ -259,6 +259,7 @@ let
   # Bare or scoped: any WebFetch in deny/ask blocks or prompts the run's fetches.
   webFetchGated = builtins.filter (e: builtins.isString e && hasPrefix "WebFetch" e) (deny ++ ask);
   webFetchBad = webFetchScoped ++ webFetchGated;
+  readScopedAllow = builtins.filter (e: builtins.isString e && hasPrefix "Read(" e) allow;
 
   codexAllowed = builtins.filter (e: builtins.isString e && hasPrefix "Bash(codex" e) allow;
 
@@ -599,6 +600,7 @@ let
     "Read(~/.aws/**)"
     "Read(~/.gnupg/**)"
     "Read(~/.config/secrets/**)"
+    "Read(**/secrets/**)"
   ];
   missingSecretReadDeny = builtins.filter (d: !(builtins.elem d deny)) requiredSecretReadDeny;
 
@@ -787,6 +789,14 @@ let
         "permissions.allow lacks bare \"WebFetch\", a domain-scoped entry is back in allow, or a WebFetch (bare or scoped) sits in deny/ask: "
         + builtins.concatStringsSep ", " webFetchBad
         + " — research must never stall on a permission box for an unlisted domain (an autonomous run has nobody to click it); a `WebFetch(domain:…)` in allow re-narrows nothing but signals the allowlist is back, and one in deny/ask blocks or prompts exactly the fetches the run needs. Secrets stay guarded by denyRead and the Read denies, not by the fetch allowlist";
+    }
+    {
+      name = "A13b settings: Read allowed on every path as bare \"Read\", no scoped Read in allow";
+      ok = builtins.elem "Read" allow && readScopedAllow == [ ] && missingSecretReadDeny == [ ];
+      msg =
+        "permissions.allow lacks bare \"Read\", a scoped Read(…) entry sits in allow, or a secret Read deny is missing: "
+        + builtins.concatStringsSep ", " (readScopedAllow ++ missingSecretReadDeny)
+        + " — bare \"Read\" is the documented all-reads form (https://code.claude.com/docs/en/permissions); `Read(*)` triggers a startup warning and no longer equals \"Read\" in current Claude Code. The secret Read denies still win because deny is evaluated before allow";
     }
     {
       name = "A14 sandbox: excludedCommands covers keychain/SSH-bound commands";

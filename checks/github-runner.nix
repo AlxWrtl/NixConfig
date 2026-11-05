@@ -24,7 +24,7 @@
 # 5. The runner is a just-in-time one (single job, so ephemeral by
 #    construction): the script POSTs to generate-jitconfig on the literal
 #    AlxWrtl/browser API URL with exactly one label, `["browser-macos"]`
-#    (`browser-mac` is the Linux label: a typo sends the job elsewhere).
+#    (no other runner carries it: a typo leaves the job with no runner).
 #    Every curl line reads its config (the Authorization header) from stdin,
 #    `--config -`, and passes no Authorization nor `$token` after `curl`: the
 #    PAT never enters an argv. No `--pat`, `--token` nor `config.sh`

@@ -39,7 +39,6 @@ let
   arcVersion = "0.15.0";
   labels = [
     "preliz-mac"
-    "browser-mac"
     "brasserie-mac"
     "portfolio-mac"
   ];

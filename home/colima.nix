@@ -29,7 +29,6 @@ let
   # release name (= `runs-on:` label) → repository
   scaleSets = {
     preliz-mac = "Preliz";
-    browser-mac = "browser";
     brasserie-mac = "brasserie-les-ecrivains";
     portfolio-mac = "portfolio";
   };

@@ -3,6 +3,7 @@
 # --now 2026-10-20, cut-off 2026-10-10, 30-day BEFORE window.
 #
 #   F1  6 BEFORE + 6 AFTER APEX sessions, 1 round each side -> exit 0, VERDICT: ok
+#       (AFTER sessions: a0 calls Skill "apex", a1-a5 Skill "ttw"; both count)
 #   F2  same sessions, AFTER sessions carry 2 rounds each, 0 before
 #                                     -> exit 2, VERDICT: DÉRIVE (rounds / run)
 #   F3  6 BEFORE + 2 AFTER sessions   -> exit 0, VERDICT: insuffisant
@@ -54,10 +55,10 @@ let
         return json.dumps({"type": "assistant", "timestamp": ts, "message": {"id": msg_id, "role": "assistant", "usage": usage, "content": content}})
 
 
-    def session(proj, sid, ts, usage=None, extra=()):
+    def session(proj, sid, ts, usage=None, extra=(), skill="apex"):
         d = root / "projects" / proj
         d.mkdir(parents=True, exist_ok=True)
-        apex = [{"type": "tool_use", "name": "Skill", "input": {"skill": "apex", "args": "x"}}]
+        apex = [{"type": "tool_use", "name": "Skill", "input": {"skill": skill, "args": "x"}}]
         lines = [json.dumps({"type": "user", "timestamp": ts, "message": {"role": "user", "content": "go"}})]
         lines.append(assistant(sid + "-m1", ts, apex, usage or ZERO))
         lines.extend(extra)
@@ -73,8 +74,9 @@ let
     def base(after_count):
         for i in range(6):
             session("-Users-t-repo", "b%d" % i, "2026-09-%02dT10:00:00.000Z" % (20 + i))
+        # The skill's visible name is `ttw`, its directory `apex`: both count.
         for i in range(after_count):
-            session("-Users-t-repo", "a%d" % i, "2026-10-%02dT10:00:00.000Z" % (11 + i))
+            session("-Users-t-repo", "a%d" % i, "2026-10-%02dT10:00:00.000Z" % (11 + i), skill="apex" if i == 0 else "ttw")
 
 
     if scenario in ("f1", "f4"):

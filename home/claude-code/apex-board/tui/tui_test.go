@@ -303,7 +303,7 @@ func TestRenderBoard180x50(t *testing.T) {
 		last = at
 	}
 	all := strings.Join(text, "\n")
-	for _, want := range []string{"live-failed", "done-pr", "stale", "À TOI", "INACTIF", "étape 04-validate", "APEX board · fixture", "/apex -x <tâche>", "╭", "╯"} {
+	for _, want := range []string{"live-failed", "done-pr", "stale", "À TOI", "INACTIF", "étape 04-validate", "APEX board · fixture", "/ttw -x <tâche>", "╭", "╯"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("%q not drawn", want)
 		}

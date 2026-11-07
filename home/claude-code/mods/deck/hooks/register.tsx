@@ -1021,11 +1021,12 @@ export const register: Register = (on, options) => {
     return ran
   }).catch(($, e, next) => next(e))
 
-  // A main-loop Skill(apex) call that ran: a run without a folder (yet), a new run once any run
+  // A main-loop Skill(apex) or Skill(ttw) call that ran: a run without a folder (yet), a new run once any run
   // was seen. A subagent's call, another skill, a failed or refused call: nothing.
   on('tool.call', { tool: 'Skill' }, async ($, e, next) => {
     const ran = await next(e)
-    if (stringField(e, 'skill') === 'apex' && !e.agentId && ran.isError !== true && ran.result !== undefined) {
+    const skillName = stringField(e, 'skill')
+    if ((skillName === 'apex' || skillName === 'ttw') && !e.agentId && ran.isError !== true && ran.result !== undefined) {
       await record(async () => {
         const now = await $.clock.now()
         const sw = callSwitch(lastRunDir, sessionKey(now))

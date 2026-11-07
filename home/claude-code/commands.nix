@@ -62,7 +62,7 @@
     Analyze request and route to best workflow/agent:
 
     **APEX** (create|add|implement|build|new|feature):
-    - Route: `/apex -a "$ARGUMENTS"`
+    - Route: `/ttw -a "$ARGUMENTS"`
     - Reason: "Detected feature implementation"
     - Only `-a` is passed: apex's mode gate already resolves `-b -s -t -pr`
       by default, and `-a` is never auto-enabled — so it is the one flag
@@ -88,8 +88,8 @@
     ## Examples
 
     Input: "create health check"
-    → Routed to /apex because detected "create" keyword
-    → Execute: /apex -a "create health check"
+    → Routed to /ttw because detected "create" keyword
+    → Execute: /ttw -a "create health check"
 
     Input: "fix database timeout"
     → Routed to debugger agent because detected "fix" keyword
@@ -107,7 +107,7 @@
     ---
     tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Task, AskUserQuestion
     description: "Run a Trello card through APEX, then write the result back to Trello and Obsidian."
-    argument-hint: "<id|url|titre> [flags apex]"
+    argument-hint: "<id|url|titre> [flags ttw]"
     ---
 
     # Card: $ARGUMENTS
@@ -181,7 +181,7 @@
 
     ## 3. APEX brief
 
-    Invoke the `apex` skill with a brief built from the card:
+    Invoke the `ttw` skill with a brief built from the card:
 
     - **Task** = card name + description, quoted VERBATIM. The card IS the spec:
       its text is an admissible premise source, not a paraphrase to reinterpret.
@@ -255,7 +255,7 @@
 
   commandDiscuss = ''
     Capture implementation decisions before planning a feature.
-    Run this BEFORE any planning step (/apex, Plan agent, feature-chain.sh).
+    Run this BEFORE any planning step (/ttw, Plan agent, feature-chain.sh).
     Produces a CONTEXT.md that all subsequent agents reference.
 
     ## Input
@@ -267,7 +267,7 @@
     Read project CLAUDE.md for domain map, then determine:
     - **Domains:** Which parts of the codebase are touched?
     - **Users:** Which user types affected? Primary device/context?
-    - **Complexity:** S (< 5 files, 1 agent) / M (5-15 files, 2-3 agents) / L (15+ files, /apex -m waves)
+    - **Complexity:** S (< 5 files, 1 agent) / M (5-15 files, 2-3 agents) / L (15+ files, /ttw -m waves)
     - **Risk level:** Security-sensitive? Schema migration? Breaking API change? Public-facing?
     - **Existing patterns:** Grep for 2-3 files that solve a similar problem already
 
@@ -326,8 +326,8 @@
 
     Recommended next step based on complexity:
     - S → "Run directly with {agent}: {exact prompt}"
-    - M → "Run /apex referencing this context (plan step reads CONTEXT-*.md)"
-    - L → "Run /apex -m (teams) or feature-chain.sh referencing this context"
+    - M → "Run /ttw referencing this context (plan step reads CONTEXT-*.md)"
+    - L → "Run /ttw -m (teams) or feature-chain.sh referencing this context"
   '';
 
   commandVerifyFeature = ''

@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	footerText = strings.Join([]string{"/apex <tâche>", "/apex -x <tâche>", "apex: +1 tour", "/deck"}, "   ")
+	footerText = strings.Join([]string{"/ttw <tâche>", "/ttw -x <tâche>", "apex: +1 tour", "/deck"}, "   ")
 	keysBoard  = "←→↑↓ naviguer · ⏎ ouvrir · esc fermer · a agents · q quitter"
 	cardBox    = lipgloss.RoundedBorder()
 )

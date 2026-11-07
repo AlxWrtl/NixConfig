@@ -240,7 +240,7 @@ in
   # FAIL-OPEN on any error, unlike protect-main and block-main-bash. This is a
   # workflow hook, not a safety one: a missed APEX costs little, a session
   # where no edit can land costs a lot.
-  hookRequireApex = builtins.readFile ./hooks/require-apex.js;
+  hookRequireTtw = builtins.readFile ./hooks/require-ttw.js;
 
   # Turns the React Docs Gate from advice into a delivered reminder.
   #
@@ -250,7 +250,7 @@ in
   # itself.
   #
   # Emits `additionalContext` ONLY, with no permissionDecision. Returning
-  # "allow" here would bypass every downstream check — require-apex,
+  # "allow" here would bypass every downstream check — require-ttw,
   # protect-main, block-main-bash — on any .tsx edit. Staying silent on the
   # decision keeps the normal permission flow intact.
   #
@@ -302,7 +302,7 @@ in
   # (apex-tier.nix), per the tier table in SKILL.md.
   #
   # FAIL-OPEN: any error exits 0 (no output, or context=unknown).
-  hookApexFlags = builtins.readFile ./hooks/apex-flags.js;
+  hookTtwFlags = builtins.readFile ./hooks/ttw-flags.js;
 
   hookFormatTypescript = builtins.readFile ./hooks/format-typescript.js;
 
@@ -390,13 +390,13 @@ in
   # that actually hurts (the rule silently not firing).
   # NO TABLE HERE: it used to carry a hand-maintained copy of the mode table,
   # which drifted twice. It now only points at the single tier table in
-  # SKILL.md (skillApex in skills.nix), so there is nothing to keep in sync.
+  # SKILL.md (skillTtw in skills.nix), so there is nothing to keep in sync.
   # File kept ≤ 200 bytes: this line is paid on every prompt.
-  hookApexReminder = builtins.readFile ./hooks/apex-reminder.sh;
+  hookTtwReminder = builtins.readFile ./hooks/ttw-reminder.sh;
 
   # UserPromptSubmit: a pasted Instagram post/reel/tv link → one context line
   # asking for the `watch` skill (the user's standing wish, 2026-10-22).
-  # Keyword matching is right here, unlike apex-reminder (above): a URL is not
+  # Keyword matching is right here, unlike ttw-reminder (above): a URL is not
   # an ambiguous case, and a miss costs one manual `/watch`, not a silently
   # skipped rule. Wrapped harness turns and any agent_id are ignored;
   # fail-open, never exit 2 (it would block the prompt).

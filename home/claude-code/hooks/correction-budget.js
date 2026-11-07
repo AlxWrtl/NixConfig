@@ -8,12 +8,12 @@ const MAX_ROUNDS = 2;
 const BUDGET_MS = 3000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const APEX_OUT = path.join(".claude", "output", "apex");
-const MARKER = /^[\s>*`-]*APEX-CORRECTION-ROUND:\s*([^\s`]*)[\s`]*$/;
+const MARKER = /^[\s>*`-]*(?:APEX|TTW)-CORRECTION-ROUND:\s*([^\s`]*)[\s`]*$/;
 const MENTIONS = /06-resolve\.md|correction round/i;
 const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
 // Same line as correction-grant.js: a scheduled prompt comes back as a user
 // turn, so the model may not schedule the user's grant.
-const TOKEN = /^\s*apex\s*:\s*\+1\s+tour\s*$/i;
+const TOKEN = /^\s*(?:apex|ttw)\s*:\s*\+1\s+tour\s*$/i;
 const SCHEDULERS = ["CronCreate", "ScheduleWakeup"];
 
 let settled = false;
@@ -61,7 +61,7 @@ function allow() {
 }
 
 function denyNoMarker() {
-  deny("BLOCKED: this brief names 06-resolve.md or a correction round but has no APEX-CORRECTION-ROUND line. Add one on its own line: APEX-CORRECTION-ROUND: <run-id> for a correction round, APEX-CORRECTION-ROUND: none for any other brief, then retry.");
+  deny("BLOCKED: this brief names 06-resolve.md or a correction round but has no TTW-CORRECTION-ROUND line. Add one on its own line: TTW-CORRECTION-ROUND: <run-id> for a correction round, TTW-CORRECTION-ROUND: none for any other brief, then retry.");
 }
 
 function denyState(what, file) {
@@ -114,7 +114,7 @@ function main() {
     const m = MARKER.exec(line);
     if (!m) continue;
     if (marker !== null && marker !== m[1]) {
-      deny("BLOCKED: this brief carries conflicting APEX-CORRECTION-ROUND lines (" + safe(marker) + ", " + safe(m[1]) + "); keep exactly one, then retry.");
+      deny("BLOCKED: this brief carries conflicting TTW-CORRECTION-ROUND lines (" + safe(marker) + ", " + safe(m[1]) + "); keep exactly one, then retry.");
       return;
     }
     marker = m[1];
@@ -130,7 +130,7 @@ function main() {
     marker = path.basename(marker);
   }
   if (!RUN_ID.test(marker) || named.includes("..")) {
-    deny("BLOCKED: APEX-CORRECTION-ROUND names \"" + safe(named) + "\", which is neither none, a run-id like 62-correction-budget, nor an absolute <repo>/.claude/output/apex/<run-id> path; fix the line, then retry.");
+    deny("BLOCKED: TTW-CORRECTION-ROUND names \"" + safe(named) + "\", which is neither none, a run-id like 62-correction-budget, nor an absolute <repo>/.claude/output/apex/<run-id> path; fix the line, then retry.");
     return;
   }
   marked = marker;
@@ -140,7 +140,7 @@ function main() {
   let isDir;
   try { isDir = fs.statSync(runDir).isDirectory(); } catch { isDir = false; }
   if (!isDir) {
-    deny("BLOCKED: APEX-CORRECTION-ROUND " + safe(named) + ": run dir not found (" + safe(runDir) + "); name the run this round belongs to, then retry.");
+    deny("BLOCKED: TTW-CORRECTION-ROUND " + safe(named) + ": run dir not found (" + safe(runDir) + "); name the run this round belongs to, then retry.");
     return;
   }
 
@@ -174,7 +174,7 @@ function main() {
     allow();
     return;
   }
-  deny("budget de correction épuisé (" + cap + "/" + cap + ") pour le run " + marker + " : STOP. Livrer avec la liste des résiduels, ou demander à l'utilisateur de taper `apex: +1 tour` seul sur une ligne (une ronde de plus, sur opus) ; un « continue » n'accorde rien. Ne jamais faire la ronde soi-même inline : le coordinateur ne corrige pas son propre travail.");
+  deny("budget de correction épuisé (" + cap + "/" + cap + ") pour le run " + marker + " : STOP. Livrer avec la liste des résiduels, ou demander à l'utilisateur de taper `ttw: +1 tour` seul sur une ligne (une ronde de plus, sur opus) ; un « continue » n'accorde rien. Ne jamais faire la ronde soi-même inline : le coordinateur ne corrige pas son propre travail.");
 }
 
 function start() {

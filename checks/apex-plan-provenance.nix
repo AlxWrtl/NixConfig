@@ -51,7 +51,7 @@ let
   # needle handed to the regex engine makes nix refuse the pattern outright, so
   # the check would die on a trace instead of naming the problem.
   taggingClause = "[M] measured or [I] inferred";
-  ruleMissing = !(lib.hasInfix taggingClause skills.apexStep02Plan);
+  ruleMissing = !(lib.hasInfix taggingClause skills.ttwStep02Plan);
 
   # ------------------------------------------------------------ the slice
   # splitString, not builtins.match: POSIX matching is leftmost-longest and `.`
@@ -168,7 +168,7 @@ let
 in
 pkgs.runCommand "apex-plan-provenance-check" { } (
   if ruleMissing then
-    fail "step-02-plan no longer contains '${taggingClause}'. This check has lost its subject: it guards a provenance-tagging rule that the skill no longer states, so every assertion below would be enforcing a convention nothing asks for. Restore the clause in apexStep02Plan, or delete this check deliberately."
+    fail "step-02-plan no longer contains '${taggingClause}'. This check has lost its subject: it guards a provenance-tagging rule that the skill no longer states, so every assertion below would be enforcing a convention nothing asks for. Restore the clause in ttwStep02Plan, or delete this check deliberately."
   else if untaggedGood != [ ] then
     fail (
       "the detector rejects a correctly tagged plan (false positive) on: "

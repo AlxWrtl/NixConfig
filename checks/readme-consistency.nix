@@ -75,7 +75,7 @@ let
   readmeFlagTable = section "README flag table" "\n### Flags\n" "\n### Invariants\n" readme;
   skillFlagTable =
     section "skill flag table" "\n## Available Flags\n" "\nBranch-first and on-disk"
-      skills.skillApex;
+      skills.skillTtw;
 
   # Header + separator are the two non-data rows every markdown table carries.
   tableRowCount =

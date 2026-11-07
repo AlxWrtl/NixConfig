@@ -9,7 +9,7 @@
 #
 # `path` is RELATIVE to the skill's own directory; the consumer prefixes it
 # itself (`.claude/skills/<name>/<path>`). Skills are Claude-only: Codex is a
-# reviewer, not an APEX runner, and no longer receives a translated copy. It
+# reviewer, not a TTW runner, and no longer receives a translated copy. It
 # sits here rather than in a new top-level directory for one mechanical
 # reason: `checks/readme-consistency.nix` does not walk the tree recursively,
 # so a file in a new directory would be invisible to the inventory it enforces.
@@ -23,7 +23,7 @@
 # `apex/eval-suite.json`; no file under `steps/` carried it. The flag exists
 # because the desymlink activation script replaces every `*/SKILL.md` with a
 # real copy, so home-manager must be allowed to clobber them. It does NOT
-# touch apex/eval-suite.json: that `force` is not required by desymlink, kept
+# touch ttw/eval-suite.json: that `force` is not required by desymlink, kept
 # as-is, harmless. A consumer computes
 # it — `force = baseNameOf path == "SKILL.md" || path == "eval-suite.json"` —
 # and never stores it, because a stored flag is one more hand-kept list.
@@ -50,95 +50,95 @@ in
       ];
     }
     {
-      name = "apex";
+      name = "ttw";
       files = [
         {
           path = "SKILL.md";
-          text = skills.skillApex;
+          text = skills.skillTtw;
         }
         {
           path = "steps/step-00-init.md";
-          text = skills.apexStep00Init;
+          text = skills.ttwStep00Init;
         }
         {
           path = "steps/step-00b-save.md";
-          text = skills.apexStep00bSave;
+          text = skills.ttwStep00bSave;
         }
         {
           path = "steps/step-01-analyze.md";
-          text = skills.apexStep01Analyze;
+          text = skills.ttwStep01Analyze;
         }
         {
           path = "steps/step-01b-obsidian-context.md";
-          text = skills.apexStep01bObsidianContext;
+          text = skills.ttwStep01bObsidianContext;
         }
         {
           path = "steps/step-02-plan.md";
-          text = skills.apexStep02Plan;
+          text = skills.ttwStep02Plan;
         }
         {
           path = "steps/step-02c-verify.md";
-          text = skills.apexStep02cVerify;
+          text = skills.ttwStep02cVerify;
         }
         {
           path = "steps/step-02b-tasks.md";
-          text = skills.apexStep02bTasks;
+          text = skills.ttwStep02bTasks;
         }
         {
           path = "steps/step-03-execute.md";
-          text = skills.apexStep03Execute;
+          text = skills.ttwStep03Execute;
         }
         {
           path = "steps/step-04-validate.md";
-          text = skills.apexStep04Validate;
+          text = skills.ttwStep04Validate;
         }
         {
           path = "steps/step-05-examine.md";
-          text = skills.apexStep05Examine;
+          text = skills.ttwStep05Examine;
         }
         {
           path = "steps/step-06-resolve.md";
-          text = skills.apexStep06Resolve;
+          text = skills.ttwStep06Resolve;
         }
         {
           path = "steps/step-07-tests.md";
-          text = skills.apexStep07Tests;
+          text = skills.ttwStep07Tests;
         }
         {
           path = "steps/step-08-run-tests.md";
-          text = skills.apexStep08RunTests;
+          text = skills.ttwStep08RunTests;
         }
         {
           path = "steps/step-09-finish.md";
-          text = skills.apexStep09Finish;
+          text = skills.ttwStep09Finish;
         }
         {
           path = "steps/step-09b-obsidian-note.md";
-          text = skills.apexStep09bObsidianNote;
+          text = skills.ttwStep09bObsidianNote;
         }
         {
           path = "steps/ROUTING.md";
-          text = skills.apexRouting;
+          text = skills.ttwRouting;
         }
         {
           path = "steps/ORCHESTRATION.md";
-          text = skills.apexOrchestration;
+          text = skills.ttwOrchestration;
         }
         {
           path = "steps/DIRECT.md";
-          text = skills.apexDirect;
+          text = skills.ttwDirect;
         }
         {
           path = "steps/HIGH-STAKES.md";
-          text = skills.apexHighStakes;
+          text = skills.ttwHighStakes;
         }
         {
           path = "steps/COMMANDS.md";
-          text = skills.apexCommands;
+          text = skills.ttwCommands;
         }
         {
           path = "eval-suite.json";
-          text = skills.apexEvalSuite;
+          text = skills.ttwEvalSuite;
         }
       ];
     }

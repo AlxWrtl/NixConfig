@@ -75,14 +75,14 @@ let
     ;
   inherit (hooks)
     hookProtectMain
-    hookRequireApex
-    hookApexFlags
+    hookRequireTtw
+    hookTtwFlags
     hookFormatTypescript
     hookBlockMainBash
     hookSessionStart
     hookGraphifyReindex
     hookVaultSnapshot
-    hookApexReminder
+    hookTtwReminder
     hookSubagentStop
     hookCompactContext
     hookStopFailure
@@ -309,12 +309,23 @@ let
       text = hookProtectMain;
       executable = true;
     };
+    "${claudeDir}/hooks/require-ttw.js" = {
+      text = hookRequireTtw;
+      executable = true;
+    };
+    "${claudeDir}/hooks/ttw-flags.js" = {
+      text = hookTtwFlags;
+      executable = true;
+    };
+    # Pre-rename names (apex -> ttw), same text, wired nowhere: a live
+    # settings.json or a running session that still names them keeps a
+    # current hook until phase 4 drops them.
     "${claudeDir}/hooks/require-apex.js" = {
-      text = hookRequireApex;
+      text = hookRequireTtw;
       executable = true;
     };
     "${claudeDir}/hooks/apex-flags.js" = {
-      text = hookApexFlags;
+      text = hookTtwFlags;
       executable = true;
     };
     "${claudeDir}/hooks/format-typescript.js" = {
@@ -337,8 +348,12 @@ let
       text = hookVaultSnapshot;
       executable = true;
     };
+    "${claudeDir}/hooks/ttw-reminder.sh" = {
+      text = hookTtwReminder;
+      executable = true;
+    };
     "${claudeDir}/hooks/apex-reminder.sh" = {
-      text = hookApexReminder;
+      text = hookTtwReminder;
       executable = true;
     };
     "${claudeDir}/hooks/subagent-stop.js" = {

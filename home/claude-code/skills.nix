@@ -41,11 +41,11 @@ in
 
   skillApex = ''
     ---
-    name: apex
-    description: "Universal task workflow (APEX) — EVERY task that modifies files routes through APEX, in any project, any size or type: feature, fix, bug, refactor, config, docs. A tier gate sizes the run from the diff: Direct (inline), Diagnosis, Standard, High-stakes. Not for pure questions or research with zero file modification."
+    name: ttw
+    description: "Universal task workflow (TTW, ex-APEX) — EVERY task that modifies files routes through APEX, in any project, any size or type: feature, fix, bug, refactor, config, docs. A tier gate sizes the run from the diff: Direct (inline), Diagnosis, Standard, High-stakes. Not for pure questions or research with zero file modification."
     ---
 
-    # APEX: tiered implementation workflow
+    # TTW (ex-APEX): tiered implementation workflow
 
     This file is the router. Read ONLY the file for your tier — every other
     step file stays unread unless your tier's route reaches it.
@@ -122,10 +122,10 @@ in
     ## Common Usage
 
     ```
-    /apex fix typo in README        # Direct
-    /apex -t -pr add endpoint       # Standard + tests + PR
-    /apex -q -x migrate schema      # Clarify first, then adversarial review
-    /apex -e refactor auth guard    # + one cross-vendor read-only verify pass
+    /ttw fix typo in README        # Direct
+    /ttw -t -pr add endpoint       # Standard + tests + PR
+    /ttw -q -x migrate schema      # Clarify first, then adversarial review
+    /ttw -e refactor auth guard    # + one cross-vendor read-only verify pass
     ```
 
     ## Execution
@@ -134,7 +134,7 @@ in
     Read column now and follow them.
 
     ${contract {
-      expects = "task description with optional flags. Example: /apex -q -t implement user auth";
+      expects = "task description with optional flags. Example: /ttw -q -t implement user auth";
       produces = "the change on its own branch, verified by the machine gate, shipped per -pr; Standard and High-stakes run init → analyze → plan → execute → validate.";
       sideEffects = "modifies source files, optionally creates tests, commits, creates PRs.";
     }}
@@ -1558,9 +1558,9 @@ in
 
     | Complexity | Files | Approach | Command |
     |-----------|-------|----------|---------|
-    | S (small) | < 5 | APEX, minimum depth | /apex |
-    | M (medium) | 5-15 | Discuss → plan → execute | /discuss → /apex |
-    | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh or /apex -k |
+    | S (small) | < 5 | APEX, minimum depth | /ttw |
+    | M (medium) | 5-15 | Discuss → plan → execute | /discuss → /ttw |
+    | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh or /ttw -k |
     | XL (epic) | 30+ | Split into L milestones | Chain per milestone |
 
     ## The 5-Phase Cycle
@@ -1613,8 +1613,8 @@ in
       notFor = "Quick fixes (<20 lines), pure debugging, single-file edits, or anything classified S complexity";
     }}
     ${handoffs [
-      "If task is S complexity → /apex at minimum depth; APEX still owns it, specialist agents execute inside it, never instead of it"
-      "After DISCUSS phase → hand off to the Plan agent (or /apex step 02) for PLAN creation"
+      "If task is S complexity → /ttw at minimum depth; APEX still owns it, specialist agents execute inside it, never instead of it"
+      "After DISCUSS phase → hand off to the Plan agent (or /ttw step 02) for PLAN creation"
       "After PLAN phase → hand off to code-reviewer for two-pass REVIEW before EXECUTE"
       "After EXECUTE phase → hand off to code-reviewer for VERIFY (6-layer check)"
       "If XL epic → split into L milestones first, run full cycle per milestone"
@@ -1914,7 +1914,7 @@ in
 
     ## Roles
 
-    - **Coordinator** = the main `/apex` run. It is the ONLY agent allowed to
+    - **Coordinator** = the main `/ttw` run. It is the ONLY agent allowed to
       spawn (subagents cannot spawn subagents — depth is capped at 1). Outside
       Direct it does NOT do the analysis/coding itself; it spawns a phase agent, receives its
       summary, verifies it, persists it, then spawns the next phase.

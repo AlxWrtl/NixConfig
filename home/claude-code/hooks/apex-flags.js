@@ -49,7 +49,7 @@ process.stdin.on("end", () => {
   try {
     const data = JSON.parse(input);
     const ti = data.tool_input || {};
-    if (ti.skill !== "apex") process.exit(0);
+    if (ti.skill !== "apex" && ti.skill !== "ttw") process.exit(0);
     const n = contextTokens(data.transcript_path);
     const tp = typeof data.transcript_path === "string" ? data.transcript_path : "unknown";
     process.stdout.write(JSON.stringify({

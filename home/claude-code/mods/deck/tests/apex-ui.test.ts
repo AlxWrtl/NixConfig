@@ -684,6 +684,30 @@ test('a main-loop Skill(apex) call without a run folder draws HEAD as header and
   await ui.unmount()
 })
 
+// The skill's visible name is `ttw` (its folder stays `apex`): either name draws the run.
+test('a main-loop Skill(ttw) call draws the same session run as Skill(apex); Skill(ttwx) draws none', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh())
+  const seen: unknown[] = []
+  skillTool(on, seen)
+  await $.session.start(START)
+  await openDeck($, clock)
+  await $.tool.call(skill('ttwx', 1))
+  await clock.advance(5000)
+  const other = await $.ui.mount(pane(120))
+  expect(await other.find({ text: /^APEX/ })).toBeUndefined()
+  await other.unmount()
+
+  const call = skill('ttw', 2)
+  expect(await $.tool.call(call)).toEqual({ result: { success: true, commandName: 'ttw' } })
+  expect(seen[1]).toEqual(call)
+  await clock.advance(5000)
+  const ui = await $.ui.mount(pane(120))
+  expect((await ui.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  expect(await ui.find({ type: 'Text', text: exact('○ edit') })).toBeDefined()
+  await ui.unmount()
+})
+
 test('the session run hides on master or main, 1 h after the last call, and on /clear or /deck reset', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w = fresh()

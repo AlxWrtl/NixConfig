@@ -634,6 +634,7 @@ process.stdin.on("end", () => {
     if (!t || !fs.existsSync(t)) process.exit(0);
 
     const APEX = "\"name\":\"Skill\",\"input\":{\"skill\":\"apex\"";
+    const TTW = "\"name\":\"Skill\",\"input\":{\"skill\":\"ttw\"";
     const lines = fs.readFileSync(t, "utf8").split("\n");
 
     // Walk backwards from line `from`: whichever comes first decides. An
@@ -644,7 +645,7 @@ process.stdin.on("end", () => {
       const line = lines[i];
       if (!line) continue;
 
-      if (line.indexOf(APEX) !== -1) return true;
+      if (line.indexOf(APEX) !== -1 || line.indexOf(TTW) !== -1) return true;
 
       // A prompt typed while the model works is often recorded only as an
       // attachment, never as a user line: a queued_command marked human
@@ -770,7 +771,7 @@ process.stdin.on("end", () => {
       + "inside a repo, and APEX has not run for THIS request. "
       + "The gate matches shapes, not proven writes — a heredoc trips it even with no "
       + "redirect, so prefer the Write tool. "
-      + "Invoke the apex skill first — nothing to type: the Mode Gate picks the depth on "
+      + "Invoke the ttw skill first — nothing to type: the Mode Gate picks the depth on "
       + "its own. "
       + "Fires once per task; every edit after APEX starts passes until your next message.";
     process.stdout.write(JSON.stringify({

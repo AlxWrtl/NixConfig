@@ -902,7 +902,7 @@ let
   #
   # The tier table in SKILL.md (skillApex) is the single source of the default
   # flags. The UserPromptSubmit reminder used to restate it and drifted twice;
-  # since 2026-10-07 it carries no mode list at all, only a pointer to /apex,
+  # since 2026-10-07 it carries no mode list at all, only a pointer to /ttw,
   # so the row-vs-reminder comparison is replaced by the absence guards below.
   #
   # Flags are READ FROM THE TABLE, never restated here. A reformatted table is
@@ -984,9 +984,9 @@ let
     "(hook|settings"
   ];
 
-  # The reminder points at /apex and lists no modes: a mode list in it is the
+  # The reminder points at /ttw and lists no modes: a mode list in it is the
   # hand-maintained copy that drifted twice.
-  reminderDrift = pkgs.lib.hasInfix "Modes:" reminder || !(pkgs.lib.hasInfix "/apex" reminder);
+  reminderDrift = pkgs.lib.hasInfix "Modes:" reminder || !(pkgs.lib.hasInfix "/ttw" reminder);
 
   # The table lives in SKILL.md only; a second copy in step-00 is the drift
   # source the router refactor removed.
@@ -1190,7 +1190,7 @@ let
       + builtins.concatStringsSep ", " hookFlagsRewrites
       + ". Rewriting the call or keyword-classifying the brief is what forced a 28-line settings change to high-stakes."
     )
-    ++ pkgs.lib.optional reminderDrift "hookApexReminder lists modes ('Modes:') or no longer points at /apex. The tier table lives in SKILL.md only; a copy in the reminder drifted twice."
+    ++ pkgs.lib.optional reminderDrift "hookApexReminder lists modes ('Modes:') or no longer points at /ttw. The tier table lives in SKILL.md only; a copy in the reminder drifted twice."
     ++ pkgs.lib.optional initTableCopy "step-00-init carries a '| Diagnosis |' table row. The tier table lives in SKILL.md only."
     ++ pkgs.lib.optional manifestDrift (
       "skills-manifest.nix apex paths ["

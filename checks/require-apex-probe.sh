@@ -163,6 +163,8 @@
 #   m95 a Write's repo check starts in its missing parent dir (no walk up).
 #   m96 the walk up climbs one level only (two missing levels pass).
 #   m97 the codex door's repo check starts in its missing dir (no walk up).
+#   m98 the `ttw` needle never matches (only the old `apex` name opens).
+#   m99 the `ttw` needle loses its closing quote (`"skill":"ttwx"` opens).
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
@@ -177,7 +179,7 @@
 #
 # usage: require-apex-probe.sh [hook.js]
 #        require-apex-probe.sh --mutants
-#        require-apex-probe.sh --mutant m1..m97
+#        require-apex-probe.sh --mutant m1..m99
 
 set -euo pipefail
 
@@ -191,7 +193,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97 m98 m99"
 
 MODE="run"
 ONE_MUTANT=""
@@ -330,7 +332,7 @@ fi
 # repository. The runtime-case count is read back from the child run.
 
 M1_EXPECT="perl-0pi-in-place"
-M2_EXPECT="cd-temp-after-inline-write node-e-rmdirsync node-e-writefilesync node-r-then-e-write python-W-ignore-c-write python-c-open-space python-c-writes-package-json ruby-e-file-write"
+M2_EXPECT="cd-temp-after-inline-write node-e-rmdirsync node-e-writefilesync node-r-then-e-write python-W-ignore-c-write python-c-open-space python-c-writes-package-json ruby-e-file-write ttw-prefix-not-the-skill"
 M3_EXPECT="heredoc-quoted-hash-body"
 M4_EXPECT="comment-apostrophe-then-script multi-script-second-writes script-W-ignore script-cd-chain script-cd-relative script-dollar-brace-var script-newline-var script-npx-tsx script-out-of-repo-plain script-out-of-repo-quoted script-env-home script-cd-pwd script-quoted-var-bare-tail script-same-command-var script-single-quoted script-tilde-unquoted script-tmpdir-empty script-tmpdir-split script-tmpdir-unset script-tmpdir-var"
 M5_EXPECT="cp-helper-not-a-write"
@@ -426,6 +428,8 @@ M94_EXPECT="queued-human-flag-notification-mode"
 M95_EXPECT="write-new-dir-in-repo"
 M96_EXPECT="write-new-dir-in-repo"
 M97_EXPECT="codex-cd-new-dir-in-repo-from-nogit codex-C-new-dir-in-repo-from-nogit"
+M98_EXPECT="ttw-already-ran"
+M99_EXPECT="ttw-prefix-not-the-skill"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -566,6 +570,8 @@ build_mutant() { # build_mutant <mN> <destination>
     m95) from='      while (!isDir(probeDir) && path.dirname(probeDir) !== probeDir) probeDir = path.dirname(probeDir);' to='' ;;
     m96) from='while (!isDir(probeDir) &&' to='if (!isDir(probeDir) &&' ;;
     m97) from='              while (!isDir(p) && path.dirname(p) !== p) p = path.dirname(p);' to='' ;;
+    m98) from='{\"skill\":\"ttw\""' to='{\"skill\":\"ttw-never\""' ;;
+    m99) from='{\"skill\":\"ttw\""' to='{\"skill\":\"ttw"' ;;
   esac
   if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
@@ -723,6 +729,18 @@ printf '%s\n' '{"type":"user","message":{"role":"user","content":"please edit th
   cat "$T_NOAPEX"
   printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"apex"}}]}}'
 } > "$T_APEX"
+# The skill's visible name is `ttw` (its directory stays `apex`): either name
+# in the Skill call opens the gate. `ttwx` is another skill, never the gate's.
+T_TTW="$WORK/transcript-ttw.jsonl"
+T_TTWX="$WORK/transcript-ttwx.jsonl"
+{
+  cat "$T_NOAPEX"
+  printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"ttw"}}]}}'
+} > "$T_TTW"
+{
+  cat "$T_NOAPEX"
+  printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"ttwx"}}]}}'
+} > "$T_TTWX"
 
 # Compaction fixtures. The summary the harness writes after /compact is a
 # `type:"user"` line flagged isCompactSummary:true, appended to the SAME jsonl:
@@ -1165,6 +1183,8 @@ check assign-over-4096-env-unresolved pass "$REPO" "$T_NOAPEX" "$LONG_HOME"
 # --- MUST PASS: the gate's own exits -----------------------------------------
 check apex-already-ran pass "$REPO" "$T_APEX" "python3 -c \"open('package.json', 'w').write('{}')\""
 check apex-already-ran-script pass "$REPO" "$T_APEX" "python3 $EXT/edit.py"
+check ttw-already-ran pass "$REPO" "$T_TTW" "python3 -c \"open('package.json', 'w').write('{}')\""
+check ttw-prefix-not-the-skill deny "$REPO" "$T_TTWX" "python3 -c \"open('package.json', 'w').write('{}')\""
 check outside-git-inline pass "$NOGIT" "$T_NOAPEX" "python3 -c \"open('package.json', 'w').write('{}')\""
 check outside-git-script pass "$NOGIT" "$T_NOAPEX" "python3 $EXT/edit.py"
 # --- a write into a directory that does not exist yet -----------------------

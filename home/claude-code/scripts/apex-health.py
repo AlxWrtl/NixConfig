@@ -110,7 +110,7 @@ def scan_session(path, stats, with_subagents):
     for record in iter_json_lines(path, stats):
         for use in tool_uses(record):
             data = use.get("input") if isinstance(use.get("input"), dict) else {}
-            if use.get("name") == "Skill" and data.get("skill") == "apex":
+            if use.get("name") == "Skill" and data.get("skill") in ("apex", "ttw"):
                 when = parse_ts(record.get("timestamp"))
                 if when is not None and (first_apex is None or when < first_apex):
                     first_apex = when

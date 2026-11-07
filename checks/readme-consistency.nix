@@ -127,15 +127,15 @@ let
   # A flag can leave the table and survive in a usage example — which is what
   # happened: all six examples typed -a and -s.
   #
-  # Scoped to lines that actually invoke /apex. An earlier draft scanned the
+  # Scoped to lines that actually invoke /ttw. An earlier draft scanned the
   # whole section for a fixed list of letters, and -a -s -b -m -i -r are the
   # commonest CLI letters there are: `git checkout -b`, `ls -a`, `grep -i` in
   # ordinary prose all turned the gate red on a correct document.
   knownFlags = lib.unique (
     lib.concatMap (p: builtins.filter (s: s != "") (lib.splitString "/" p)) skillPairs
   );
-  apexInvocations = nonEmpty "/apex usage examples" (
-    builtins.filter (l: builtins.match ".*/apex .*" l != null) (splitLines apexSection)
+  apexInvocations = nonEmpty "/ttw usage examples" (
+    builtins.filter (l: builtins.match ".*/ttw .*" l != null) (splitLines apexSection)
   );
   invocationFlags = lib.unique (
     map (m: "-" + builtins.head m) (
@@ -277,7 +277,7 @@ let
       "the README flag table no longer matches the APEX skill. In the README only: ${builtins.concatStringsSep ", " flagsOnlyInReadme}. In the skill only: ${builtins.concatStringsSep ", " flagsOnlyInSkill}. Pairs are 'enable/disable', so a mismatch can be a missing flag OR a wrong disable letter; skills.nix is the source of truth."
     ++
       lib.optional (unknownFlags != [ ])
-        "/apex example(s) type flag(s) the skill does not declare: ${builtins.concatStringsSep ", " unknownFlags}. A usage example that types a removed flag teaches a command that does nothing."
+        "/ttw example(s) type flag(s) the skill does not declare: ${builtins.concatStringsSep ", " unknownFlags}. A usage example that types a removed flag teaches a command that does nothing."
     ++
       lib.optional (underDocumented != [ ])
         "module(s) missing from the Structure tree: ${builtins.concatStringsSep ", " underDocumented}. Add an entry per file — two files sharing a basename need two lines."

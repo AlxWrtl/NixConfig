@@ -173,7 +173,7 @@ function main() {
       if (code === "EEXIST") continue;
       break;
     }
-    say("correction-grant: the user granted run " + target.id + " one more correction round (cap now " + (MAX_ROUNDS + target.grants + 1) + "). Spawn it on model: \"opus\" with APEX-CORRECTION-ROUND: " + (target.where === null ? target.id : target.where) + "; never run it inline.");
+    say("correction-grant: the user granted run " + target.id + " one more correction round (cap now " + (MAX_ROUNDS + target.grants + 1) + "). Spawn it on model: \"opus\" with TTW-CORRECTION-ROUND: " + (target.where === null ? target.id : target.where) + "; never run it inline.");
     return;
   }
   say("correction-grant: could not record the grant for run " + target.id + " (" + code + "); nothing was granted.");

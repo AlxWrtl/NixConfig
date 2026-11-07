@@ -89,6 +89,9 @@ let
     "symlink-dir-kept"
     "symlink-skill-kept"
     "name-other-kept"
+    "name-in-body-kept"
+    "unterminated-frontmatter-kept"
+    "duplicate-name-kept"
     "ttw-missing-kept"
     "dry-run-kept"
     "absent-noop"
@@ -132,6 +135,8 @@ let
     }
     # The apex dir the switch leaves: SKILL.md alone, a regular file.
     apex_leftover() { mk_skill "$A/SKILL.md" "$1"; }
+    # $1 printf format: a SKILL.md spelled by hand, for the frontmatter shapes.
+    apex_raw() { mkdir -p "$A"; printf -- "$1" > "$A/SKILL.md"; }
 
     # $1 script, then env assignments. Leaves $rc and $log.
     retire() {
@@ -201,6 +206,19 @@ let
         # Frontmatter anchored: apex-legacy is another skill.
         name-other-kept)
           apex_leftover apex-legacy
+          retire "$2"; ran_through && kept "$A/SKILL.md" && warned && ttw_intact ;;
+        # The name is read inside a closed frontmatter that opens on line 1,
+        # never from the body: a body line naming apex is another skill's text.
+        name-in-body-kept)
+          apex_raw '---\nname: other\ndescription: probe\n---\nname: apex\n'
+          retire "$2"; ran_through && kept "$A/SKILL.md" && warned && ttw_intact ;;
+        # No closing `---`: there is no frontmatter, whatever line 2 says.
+        unterminated-frontmatter-kept)
+          apex_raw '---\nname: apex\ndescription: probe\nbody\n'
+          retire "$2"; ran_through && kept "$A/SKILL.md" && warned && ttw_intact ;;
+        # Two `name:` lines: which one the host reads is not ours to guess.
+        duplicate-name-kept)
+          apex_raw '---\nname: other\nname: apex\ndescription: probe\n---\nbody\n'
           retire "$2"; ran_through && kept "$A/SKILL.md" && warned && ttw_intact ;;
         # No installed ttw: removing apex would leave no skill at all.
         ttw-missing-kept)

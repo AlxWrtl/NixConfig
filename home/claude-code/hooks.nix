@@ -37,11 +37,11 @@ in
     builtins.toJSON alxVaultPath
   );
 
-  # PreToolUse on Agent and SendMessage: a hard cap on APEX correction rounds
+  # PreToolUse on Agent and SendMessage: a hard cap on APEX/TTW correction rounds
   # (run 62). A correction round goes through either channel, a fresh spawn
   # or a re-brief sent to a live agent, and both are counted. Its brief
-  # carries `APEX-CORRECTION-ROUND: <run-id>` or, for a run outside the
-  # session's repo, its absolute `…/.claude/output/apex/<run-id>` path (an
+  # carries `APEX-CORRECTION-ROUND: <run-id>` (or `TTW-CORRECTION-ROUND:`)
+  # or, for a run outside the session's repo, its absolute `…/.claude/output/apex/<run-id>` path (an
   # existing dir, no `..`; never a stub run dir created in the session's
   # repo), counted under the run-id and stamped in the slot as `dir`; each
   # round claims the first
@@ -60,13 +60,14 @@ in
   # before any slot is claimed; SendMessage carries no model. The cap is
   # MAX_ROUNDS plus one per <run-id>.grant<n> file correction-grant.js wrote.
   # Also on CronCreate/ScheduleWakeup: a scheduled prompt comes back as a user
-  # turn, so one with an `apex: +1 tour` line is denied (same TOKEN line as
-  # correction-grant.js); any other scheduler call passes, uncounted.
+  # turn, so one with an `apex: +1 tour` or `ttw: +1 tour` line is denied
+  # (same TOKEN line as correction-grant.js); any other scheduler call
+  # passes, uncounted.
   hookCorrectionBudget = builtins.readFile ./hooks/correction-budget.js;
 
   # UserPromptSubmit: the user's grant of one more correction round. A prompt
-  # whose FIRST non-empty line is exactly `apex: +1 tour` (case and spacing
-  # free) grants the live run of this project — the one with the newest
+  # whose FIRST non-empty line is exactly `apex: +1 tour` or `ttw: +1 tour`
+  # (case and spacing free) grants the live run of this project — the one with the newest
   # round among runs with a dir under the prompt's (absolute) cwd, or whose
   # round stamps from this same session all name one existing absolute
   # `…/.claude/output/apex/<run-id>` dir (an unreadable stamp: no) — one

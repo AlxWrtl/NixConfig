@@ -109,8 +109,9 @@
   # skips (it removes only links into its generations, then the dirs they
   # empty: eval-suite.json and steps/ go there). Left alone, the skill is
   # listed twice. Removed only when it is exactly that leftover: a real dir
-  # holding nothing but a regular SKILL.md whose frontmatter is `name: apex`
-  # or `name: ttw`, with skills/ttw/SKILL.md a regular file. Anything else is
+  # holding nothing but a regular SKILL.md whose frontmatter (`---` on line 1,
+  # closed by `---`) has exactly one `name:` line, `name: apex` or
+  # `name: ttw`, with skills/ttw/SKILL.md a regular file. Anything else is
   # the user's: warn, keep it. No bare `exit`, no `( … ) || true`: every
   # failure is caught in place so the rest of the activation runs.
   # Dry-run (HM sets DRY_RUN, tested for set-ness): skip, delete nothing.
@@ -132,11 +133,16 @@
         retireExtra=$(find "$retireOld" -mindepth 1 -maxdepth 1 ! -name SKILL.md -print)
         retireRc=$?
         set -e
-        retireName=$(sed -n '1{/^---$/!q;d};/^---$/q;p' "$retireOld/SKILL.md") || retireName=""
+        retireName=$(sed -n '1{/^---$/!q;d};/^---$/{s/.*/__CLOSED__/p;q};p' "$retireOld/SKILL.md") || retireName=""
+        retireNameCount=$(grep -c '^name:' <<<"$retireName") || true
         if [ "$retireRc" -ne 0 ]; then
           retireWhy="find failed (rc=$retireRc)"
         elif [ -n "$retireExtra" ]; then
           retireWhy="it holds more than SKILL.md"
+        elif [ "''${retireName##*$'\n'}" != __CLOSED__ ]; then
+          retireWhy="SKILL.md has no frontmatter opened on line 1 and closed by ---"
+        elif [ "$retireNameCount" != 1 ]; then
+          retireWhy="SKILL.md frontmatter has $retireNameCount name: lines, not exactly one"
         elif ! grep -Eq '^name: (apex|ttw)$' <<<"$retireName"; then
           retireWhy="SKILL.md frontmatter names neither apex nor ttw"
         elif ! rm -f "$retireOld/SKILL.md" || ! rmdir "$retireOld"; then

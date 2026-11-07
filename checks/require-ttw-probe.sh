@@ -434,7 +434,7 @@ M98_EXPECT="sub-continued-under-ttw sub-spawned-under-ttw-later-user-turn ttw-al
 M99_EXPECT="ttw-prefix-not-the-skill"
 # The cases that pass only on an `apex` Skill call. MEASURED 2026-11-07
 # (20 red) on the pre-rename hook (hookRequireApex), whose apex needle is
-# the line m100 rewrites; re-run --mutants once hookRequireTtw exists.
+# the line m100 rewrites; 100/100 TARGETED again on hookRequireTtw.
 M100_EXPECT="apex-already-ran apex-already-ran-script bash-mkdir-cd-new-dir-apex codex-apex compact-summary-after-apex huge-command-apex queued-human-flag-notification-mode queued-human-then-apex queued-humanturn-string queued-meta-human queued-meta-top queued-peer-handback queued-task-notification sub-continued-under-apex sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-before-apex sub-spawned-under-apex-later-user-turn write-existing-dir-apex write-new-dir-in-repo-apex"
 
 mutant_expect() { # mutant_expect <mN>
@@ -715,7 +715,7 @@ fi
 # The sandbox's $TMPDIR, which the hook's own $TMPDIR is not.
 UIDN="$(id -u)"
 CLTMP="/tmp/claude-$UIDN"
-mkdir -p "$CLTMP" && SBX=$(mktemp -d "$CLTMP/require-apex-probe-sbx.XXXXXX") || {
+mkdir -p "$CLTMP" && SBX=$(mktemp -d "$CLTMP/require-ttw-probe-sbx.XXXXXX") || {
   echo "probe: cannot create a fixture under $CLTMP" >&2
   exit 2
 }
@@ -1105,7 +1105,7 @@ grade() { # grade <label> <kind> <rc> <stdout> <stderr>
   fi
 }
 
-echo "=== require-apex probe ==="
+echo "=== require-ttw probe ==="
 echo "    hook under test: $SUT"
 echo
 

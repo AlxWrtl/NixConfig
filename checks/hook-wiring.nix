@@ -4398,7 +4398,7 @@ let
           cb_reset
           cb_stamp 64-z 2 "$CBOTHER" probe
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_granted 64-z 1 3 || return 1
-          grep -Fq -- "APEX-CORRECTION-ROUND: $CBOTHER;" "$d/$lbl.out" || { why="granted, but the context does not name the marker $CBOTHER"; return 1; } ;;
+          grep -Fq -- "TTW-CORRECTION-ROUND: $CBOTHER;" "$d/$lbl.out" || { why="granted, but the context does not name the marker $CBOTHER"; return 1; } ;;
         cg-cross-repo-other-session)
           cb_reset
           cb_stamp 64-z 2 "$CBOTHER" other

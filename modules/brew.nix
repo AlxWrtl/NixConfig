@@ -55,16 +55,11 @@ _:
       "openlogi"
       "raycast"
       "readdle-spark"
-      "microsoft-teams"
       "vorssaint" # keep-awake, closed-lid mode
       "whatsapp"
       "jellyfin"
 
       # No auto-updater — greedy keeps them current
-      {
-        name = "android-platform-tools";
-        greedy = true;
-      }
       {
         name = "appcleaner";
         greedy = true;
@@ -120,9 +115,6 @@ _:
       # Elle part à la corbeille, et la remettre exige `sudo` — le bundle est
       # root:wheel. Si mas échoue sur un timeout App Store, attendre ou traiter
       # `upgrade`, jamais retirer l'entrée.
-      "Microsoft Excel" = 462058435;
-      "Microsoft PowerPoint" = 462062816;
-      "Microsoft Word" = 462054704;
       "Numbers" = 361304891;
       "Pages" = 361309726;
       "Trello" = 1278508951;

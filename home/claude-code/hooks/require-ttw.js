@@ -768,12 +768,12 @@ process.stdin.on("end", () => {
       + "edit, heredoc, cp/mv/tee, or a python/node/ruby/perl script that calls a write "
       + "API — inline code, a heredoc, or a script outside the repo that names this repo; "
       + "or `codex exec` without an explicit, unwidened `-s read-only`) "
-      + "inside a repo, and APEX has not run for THIS request. "
+      + "inside a repo, and TTW has not run for THIS request. "
       + "The gate matches shapes, not proven writes — a heredoc trips it even with no "
       + "redirect, so prefer the Write tool. "
       + "Invoke the ttw skill first — nothing to type: the Mode Gate picks the depth on "
       + "its own. "
-      + "Fires once per task; every edit after APEX starts passes until your next message.";
+      + "Fires once per task; every edit after TTW starts passes until your next message.";
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",

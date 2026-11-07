@@ -7,7 +7,7 @@ const path = require("path");
 const MAX_ROUNDS = 2;
 const BUDGET_MS = 3000;
 const MAX_INPUT = 4 * 1024 * 1024;
-const TOKEN = /^\s*apex\s*:\s*\+1\s+tour\s*$/i;
+const TOKEN = /^\s*(?:apex|ttw)\s*:\s*\+1\s+tour\s*$/i;
 const ROUND = /^(.+)\.round([1-9][0-9]*)$/;
 const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
@@ -158,7 +158,7 @@ function main() {
     if (target === null || last > target.last) { target = { id, rounds: r.rounds.length, grants: r.grants, last, where }; tie = false; }
   }
   if (target === null || tie || target.rounds < MAX_ROUNDS + target.grants) {
-    say("correction-grant: `apex: +1 tour` read, but this project has no latest correction run whose budget is spent; nothing was granted.");
+    say("correction-grant: `ttw: +1 tour` read, but this project has no latest correction run whose budget is spent; nothing was granted.");
     return;
   }
 
@@ -173,7 +173,7 @@ function main() {
       if (code === "EEXIST") continue;
       break;
     }
-    say("correction-grant: the user granted run " + target.id + " one more correction round (cap now " + (MAX_ROUNDS + target.grants + 1) + "). Spawn it on model: \"opus\" with APEX-CORRECTION-ROUND: " + (target.where === null ? target.id : target.where) + "; never run it inline.");
+    say("correction-grant: the user granted run " + target.id + " one more correction round (cap now " + (MAX_ROUNDS + target.grants + 1) + "). Spawn it on model: \"opus\" with TTW-CORRECTION-ROUND: " + (target.where === null ? target.id : target.where) + "; never run it inline.");
     return;
   }
   say("correction-grant: could not record the grant for run " + target.id + " (" + code + "); nothing was granted.");

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Positive control for `hookRequireApex` — the PreToolUse hook that denies a
+# Positive control for `hookRequireTtw` — the PreToolUse hook that denies a
 # file-writing command until APEX has run for the current request.
 #
 # WHAT IT GRADES. The Bash door of that hook, and above all its INTERPRETER
@@ -165,21 +165,23 @@
 #   m97 the codex door's repo check starts in its missing dir (no walk up).
 #   m98 the `ttw` needle never matches (only the old `apex` name opens).
 #   m99 the `ttw` needle loses its closing quote (`"skill":"ttwx"` opens).
+#   m100 the `apex` needle never matches (only the new `ttw` name opens): a
+#        session still on the pre-rename skill text is denied after it ran.
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
-#   bash checks/require-apex-probe.sh --mutants        # all of them, graded
-#   bash checks/require-apex-probe.sh --mutant m4      # one, raw red output
-#   bash checks/require-apex-probe.sh old-hook.js      # e.g. HEAD's version
+#   bash checks/require-ttw-probe.sh --mutants        # all of them, graded
+#   bash checks/require-ttw-probe.sh --mutant m4      # one, raw red output
+#   bash checks/require-ttw-probe.sh old-hook.js      # e.g. HEAD's version
 #
 # Standalone, like checks/null-result-gate-probe.sh: NOT wired into
 # `nix flake check`, because it shells out to `nix eval` to lift the hook body
 # out of hooks.nix, and builds git repos and processes a sandboxed check build
 # does not provide.
 #
-# usage: require-apex-probe.sh [hook.js]
-#        require-apex-probe.sh --mutants
-#        require-apex-probe.sh --mutant m1..m99
+# usage: require-ttw-probe.sh [hook.js]
+#        require-ttw-probe.sh --mutants
+#        require-ttw-probe.sh --mutant m1..m100
 
 set -euo pipefail
 
@@ -193,7 +195,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97 m98 m99"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97 m98 m99 m100"
 
 MODE="run"
 ONE_MUTANT=""
@@ -224,7 +226,7 @@ abspath() { case "$1" in /*) printf '%s\n' "$1" ;; *) printf '%s\n' "$PWD/$1" ;;
 #
 # An empty $WORK must STOP the run: every path would resolve to the filesystem
 # root and the failures reported would all be the harness's own.
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/require-apex-probe.XXXXXX") || {
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/require-ttw-probe.XXXXXX") || {
   echo "probe: cannot create a work directory under ${TMPDIR:-/tmp}" >&2
   exit 2
 }
@@ -297,9 +299,9 @@ extract_hook() { # extract_hook <destination>
     exit 2
   }
   "$nix" eval --raw --impure --expr \
-    "(import \"$HOOKS_NIX\" { graphifyReindexPkg = \"/nix/store/x\"; vaultSnapshotPkg = \"/nix/store/y\"; alxVaultPath = \"/nonexistent/vault-stub\"; }).hookRequireApex" \
+    "(import \"$HOOKS_NIX\" { graphifyReindexPkg = \"/nix/store/x\"; vaultSnapshotPkg = \"/nix/store/y\"; alxVaultPath = \"/nonexistent/vault-stub\"; }).hookRequireTtw" \
     > "$dest" 2> "$WORK/extract.err" || {
-    echo "probe: extracting hookRequireApex from hooks.nix failed" >&2
+    echo "probe: extracting hookRequireTtw from hooks.nix failed (the apex -> ttw rename names the attribute hookRequireTtw)" >&2
     head -c 800 "$WORK/extract.err" >&2
     exit 2
   }
@@ -309,7 +311,7 @@ extract_hook() { # extract_hook <destination>
   }
 }
 
-ORIG="$WORK/require-apex.js"
+ORIG="$WORK/require-ttw.js"
 if [ -n "$SUT" ]; then
   SUT="$(abspath "$SUT")"
   [ -f "$SUT" ] && [ -r "$SUT" ] || {
@@ -407,7 +409,7 @@ M73_EXPECT="codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed
 M74_EXPECT="codex-subst-unclosed"
 M75_EXPECT="codex-double-dash-ro"
 M76_EXPECT="codex-c-key-leading-blank"
-M77_EXPECT="sub-continued-under-apex sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-under-apex-later-user-turn"
+M77_EXPECT="sub-continued-under-apex sub-continued-under-ttw sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-under-apex-later-user-turn sub-spawned-under-ttw-later-user-turn"
 M78_EXPECT="sub-agent-id-traversal"
 M79_EXPECT="sub-anchor-tool-result-only sub-tool-use-not-assistant"
 M80_EXPECT="sub-tool-use-not-assistant"
@@ -428,8 +430,12 @@ M94_EXPECT="queued-human-flag-notification-mode"
 M95_EXPECT="write-new-dir-in-repo"
 M96_EXPECT="write-new-dir-in-repo"
 M97_EXPECT="codex-cd-new-dir-in-repo-from-nogit codex-C-new-dir-in-repo-from-nogit"
-M98_EXPECT="ttw-already-ran"
+M98_EXPECT="sub-continued-under-ttw sub-spawned-under-ttw-later-user-turn ttw-already-ran"
 M99_EXPECT="ttw-prefix-not-the-skill"
+# The cases that pass only on an `apex` Skill call. MEASURED 2026-11-07
+# (20 red) on the pre-rename hook (hookRequireApex), whose apex needle is
+# the line m100 rewrites; 100/100 TARGETED again on hookRequireTtw.
+M100_EXPECT="apex-already-ran apex-already-ran-script bash-mkdir-cd-new-dir-apex codex-apex compact-summary-after-apex huge-command-apex queued-human-flag-notification-mode queued-human-then-apex queued-humanturn-string queued-meta-human queued-meta-top queued-peer-handback queued-task-notification sub-continued-under-apex sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-before-apex sub-spawned-under-apex-later-user-turn write-existing-dir-apex write-new-dir-in-repo-apex"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -572,6 +578,7 @@ build_mutant() { # build_mutant <mN> <destination>
     m97) from='              while (!isDir(p) && path.dirname(p) !== p) p = path.dirname(p);' to='' ;;
     m98) from='{\"skill\":\"ttw\""' to='{\"skill\":\"ttw-never\""' ;;
     m99) from='{\"skill\":\"ttw\""' to='{\"skill\":\"ttw"' ;;
+    m100) from='{\"skill\":\"apex\""' to='{\"skill\":\"apex-never\""' ;;
   esac
   if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
@@ -600,7 +607,7 @@ if [ "$MODE" != "run" ]; then
   [ -f "$ORIG" ] || extract_hook "$ORIG"
   MUT_FAIL=0
 
-  echo "=== require-apex mutants (built from the live hook, in $WORK) ==="
+  echo "=== require-ttw mutants (built from the live hook, in $WORK) ==="
   echo
 
   # Baseline first: grading a mutant against a suite that is not green to
@@ -708,7 +715,7 @@ fi
 # The sandbox's $TMPDIR, which the hook's own $TMPDIR is not.
 UIDN="$(id -u)"
 CLTMP="/tmp/claude-$UIDN"
-mkdir -p "$CLTMP" && SBX=$(mktemp -d "$CLTMP/require-apex-probe-sbx.XXXXXX") || {
+mkdir -p "$CLTMP" && SBX=$(mktemp -d "$CLTMP/require-ttw-probe-sbx.XXXXXX") || {
   echo "probe: cannot create a fixture under $CLTMP" >&2
   exit 2
 }
@@ -815,6 +822,8 @@ T_Q_META="$WORK/transcript-queued-meta.jsonl"
 U_TURN='{"type":"user","message":{"role":"user","content":"please edit the thing"}}'
 U_LATER='{"type":"user","message":{"role":"user","content":"and another request"}}'
 L_APEX='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"apex"}}]}}'
+# The same call under the skill's new name: subagent walks open on it too.
+L_TTW='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"ttw"}}]}}'
 spawn_line() { # spawn_line <toolUseId>
   printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"%s","name":"Agent","input":{"description":"d","prompt":"p","subagent_type":"Explore"}}]}}\n' "$1"
 }
@@ -892,6 +901,16 @@ meta_json toolu_elsewhere > "$SUBD/other/subagents/agent-subother.meta.json"
 { printf '%s\n' "$U_TURN" "$L_APEX" '{"type":"system","message":{"content":[{"type":"tool_use","id":"toolu_sub08"}]}}' "$U_LATER"; } | mk_parent sysline toolu_sub08 subsys
 # Spawned before APEX, APEX then answered the turn: the whole walk passes.
 { printf '%s\n' "$U_TURN"; spawn_line toolu_sub09; printf '%s\n' "$L_APEX"; } | mk_parent early toolu_sub09 subearly
+# The ttw twins of T_SUB and cont2: spawned, and continued, under the new name.
+T_SUB_TTW="$SUBD/parent-ttw.jsonl"
+mkdir -p "$SUBD/parent-ttw/subagents"
+{
+  printf '%s\n' "$U_TURN" "$L_TTW"
+  spawn_line toolu_sub11
+  printf '%s\n' "$U_LATER"
+} > "$T_SUB_TTW"
+meta_json toolu_sub11 > "$SUBD/parent-ttw/subagents/agent-subttw01.meta.json"
+{ printf '%s\n' "$U_TURN" "$L_TTW"; spawn_line toolu_sub12; printf '%s\n' "$U_LATER" "$L_TTW"; send_line subcontttw; printf '%s\n' "$U_LATER"; } | mk_parent contttw toolu_sub12 subcontttw
 # A FIFO where the meta file should be: read blocking, the hook would hang.
 mkfifo "$T_SUB_AG/agent-subfifo.meta.json"
 
@@ -1086,7 +1105,7 @@ grade() { # grade <label> <kind> <rc> <stdout> <stderr>
   fi
 }
 
-echo "=== require-apex probe ==="
+echo "=== require-ttw probe ==="
 echo "    hook under test: $SUT"
 echo
 
@@ -1219,6 +1238,7 @@ check codex-C-new-dir-in-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "mkdir -p $RE
 # The command is ctl-redirect's, a shape no mutant touches: these cases grade
 # the transcript walk alone.
 check_sub sub-spawned-under-apex-later-user-turn pass "$REPO" "$T_SUB" subok01 'echo x > src/a.ts'
+check_sub sub-spawned-under-ttw-later-user-turn pass "$REPO" "$T_SUB_TTW" subttw01 'echo x > src/a.ts'
 check_sub sub-spawned-without-apex deny "$REPO" "$T_SUBNO" subnoapex 'echo x > src/a.ts'
 check_sub sub-meta-missing deny "$REPO" "$T_SUB" submissing 'echo x > src/a.ts'
 check_sub sub-meta-not-json deny "$REPO" "$T_SUB" subnotjson 'echo x > src/a.ts'
@@ -1228,6 +1248,7 @@ check_sub sub-anchor-tool-result-only deny "$REPO" "$T_SUBTR" subtr 'echo x > sr
 check_sub sub-spawn-line-spaced pass "$REPO" "$T_SUBSP" subsp 'echo x > src/a.ts'
 check_sub sub-continued-after-user-turn deny "$REPO" "$SUBD/cont.jsonl" subcont 'echo x > src/a.ts'
 check_sub sub-continued-under-apex pass "$REPO" "$SUBD/cont2.jsonl" subcont2 'echo x > src/a.ts'
+check_sub sub-continued-under-ttw pass "$REPO" "$SUBD/contttw.jsonl" subcontttw 'echo x > src/a.ts'
 check_sub sub-sendmessage-unknown-name deny "$REPO" "$SUBD/named.jsonl" subname 'echo x > src/a.ts'
 check_sub sub-sendmessage-other-agent pass "$REPO" "$SUBD/other.jsonl" subsib 'echo x > src/a.ts'
 check_sub sub-tool-use-not-assistant deny "$REPO" "$SUBD/sysline.jsonl" subsys 'echo x > src/a.ts'

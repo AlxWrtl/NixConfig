@@ -16,8 +16,8 @@
     mkdir -p "$HOME/.claude/plugins"
     mkdir -p "$HOME/.claude/rules"
     mkdir -p "$HOME/.claude/scripts"
-    mkdir -p "$HOME/.claude/skills/apex"
-    mkdir -p "$HOME/.claude/skills/apex/steps"
+    mkdir -p "$HOME/.claude/skills/ttw"
+    mkdir -p "$HOME/.claude/skills/ttw/steps"
     mkdir -p "$HOME/.claude/skills/debug"
     mkdir -p "$HOME/.claude/skills/nix-darwin"
     mkdir -p "$HOME/.claude/skills/claude-code-meta"
@@ -102,6 +102,59 @@
       mv "$f.tmp" "$f"
       chmod 644 "$f"
     done
+  '';
+
+  # Retire the pre-rename skill dir ~/.claude/skills/apex (apex -> ttw).
+  # Desymlink made its SKILL.md a regular file, which home-manager's cleanup
+  # skips (it removes only links into its generations, then the dirs they
+  # empty: eval-suite.json and steps/ go there). Left alone, the skill is
+  # listed twice. Removed only when it is exactly that leftover: a real dir
+  # holding nothing but a regular SKILL.md whose frontmatter (`---` on line 1,
+  # closed by `---`) has exactly one `name:` line, `name: apex` or
+  # `name: ttw`, with skills/ttw/SKILL.md a regular file. Anything else is
+  # the user's: warn, keep it. No bare `exit`, no `( … ) || true`: every
+  # failure is caught in place so the rest of the activation runs.
+  # Dry-run (HM sets DRY_RUN, tested for set-ness): skip, delete nothing.
+  claudeCodeRetireApexSkill = lib.hm.dag.entryAfter [ "claudeCodeDesymlinkSkills" ] ''
+    if [[ -v DRY_RUN ]]; then
+      echo "dry-run: skip claudeCodeRetireApexSkill"
+    elif [ -e "$HOME/.claude/skills/apex" ] || [ -L "$HOME/.claude/skills/apex" ]; then
+      retireOld="$HOME/.claude/skills/apex"
+      retireNew="$HOME/.claude/skills/ttw/SKILL.md"
+      retireWhy=""
+      if [ -L "$retireOld" ] || [ ! -d "$retireOld" ]; then
+        retireWhy="not a real directory"
+      elif [ -L "$retireOld/SKILL.md" ] || [ ! -f "$retireOld/SKILL.md" ]; then
+        retireWhy="SKILL.md is not a regular file"
+      elif [ -L "$retireNew" ] || [ ! -f "$retireNew" ]; then
+        retireWhy="$retireNew is not a regular file"
+      else
+        set +e
+        retireExtra=$(find "$retireOld" -mindepth 1 -maxdepth 1 ! -name SKILL.md -print)
+        retireRc=$?
+        set -e
+        retireName=$(sed -n '1{/^---$/!q;d};/^---$/{s/.*/__CLOSED__/p;q};p' "$retireOld/SKILL.md") || retireName=""
+        retireNameCount=$(grep -c '^name:' <<<"$retireName") || true
+        if [ "$retireRc" -ne 0 ]; then
+          retireWhy="find failed (rc=$retireRc)"
+        elif [ -n "$retireExtra" ]; then
+          retireWhy="it holds more than SKILL.md"
+        elif [ "''${retireName##*$'\n'}" != __CLOSED__ ]; then
+          retireWhy="SKILL.md has no frontmatter opened on line 1 and closed by ---"
+        elif [ "$retireNameCount" != 1 ]; then
+          retireWhy="SKILL.md frontmatter has $retireNameCount name: lines, not exactly one"
+        elif ! grep -Eq '^name: (apex|ttw)$' <<<"$retireName"; then
+          retireWhy="SKILL.md frontmatter names neither apex nor ttw"
+        elif ! rm -f "$retireOld/SKILL.md" || ! rmdir "$retireOld"; then
+          retireWhy="rm/rmdir failed"
+        else
+          echo "claudeCodeRetireApexSkill: removed $retireOld (superseded by skills/ttw)"
+        fi
+      fi
+      if [ -n "$retireWhy" ]; then
+        echo "⚠ claudeCodeRetireApexSkill: kept $retireOld — $retireWhy; check it and remove it by hand" >&2
+      fi
+    fi
   '';
 
   claudeCodePerms = lib.hm.dag.entryAfter [ "claudeCodeDesymlinkSkills" ] ''

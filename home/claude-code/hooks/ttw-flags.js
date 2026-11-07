@@ -55,7 +55,7 @@ process.stdin.on("end", () => {
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
-        additionalContext: "APEX start: context=" + (n === null ? "unknown" : n)
+        additionalContext: "TTW start: context=" + (n === null ? "unknown" : n)
           + " tokens; transcript=" + tp
           + ". Tier is decided on the diff (SKILL.md); apex-tier re-checks it."
       }

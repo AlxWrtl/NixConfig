@@ -70,7 +70,7 @@
 #   bash checks/block-main-bash-probe.sh --mutant m2      # one, raw red output
 #   bash checks/block-main-bash-probe.sh old-hook.js      # e.g. HEAD's version
 #
-# Standalone, like checks/require-apex-probe.sh: NOT wired into
+# Standalone, like checks/require-ttw-probe.sh: NOT wired into
 # `nix flake check`, because it shells out to `nix eval` to lift the hook body
 # out of hooks.nix, and builds git repos a sandboxed check build does not
 # provide.

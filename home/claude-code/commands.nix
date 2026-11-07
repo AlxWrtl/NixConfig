@@ -61,10 +61,10 @@
 
     Analyze request and route to best workflow/agent:
 
-    **APEX** (create|add|implement|build|new|feature):
+    **TTW** (create|add|implement|build|new|feature):
     - Route: `/ttw -a "$ARGUMENTS"`
     - Reason: "Detected feature implementation"
-    - Only `-a` is passed: apex's mode gate already resolves `-b -s -t -pr`
+    - Only `-a` is passed: ttw's mode gate already resolves `-b -s -t -pr`
       by default, and `-a` is never auto-enabled — so it is the one flag
       this route still has to state.
 
@@ -81,7 +81,7 @@
     ## Steps
 
     1) Parse $ARGUMENTS for keywords
-    2) Match decision matrix (priority: DEBUG > APEX > AGENT)
+    2) Match decision matrix (priority: DEBUG > TTW > AGENT)
     3) Output: "Routed to [workflow] because [reason]"
     4) Execute with optimal flags
 
@@ -101,12 +101,12 @@
   '';
 
   # -------------------------
-  # Trello → APEX → double output trace (Trello comment/move + Obsidian note)
+  # Trello → TTW → double output trace (Trello comment/move + Obsidian note)
   # -------------------------
   cmdCard = ''
     ---
     tools: Bash, Read, Write, Edit, Grep, Glob, Skill, Task, AskUserQuestion
-    description: "Run a Trello card through APEX, then write the result back to Trello and Obsidian."
+    description: "Run a Trello card through TTW, then write the result back to Trello and Obsidian."
     argument-hint: "<id|url|titre> [flags ttw]"
     ---
 
@@ -179,7 +179,7 @@
     the 404 of a form-1 candidate id, which falls back to the title search of
     step 1 form 3; if that search also fails, STOP.
 
-    ## 3. APEX brief
+    ## 3. TTW brief
 
     Invoke the `ttw` skill with a brief built from the card:
 
@@ -190,7 +190,7 @@
     - **Context** = the last 10 comments (author + date + text).
     - **Reference** = card id, shortUrl, board and list names.
     - **Flags**: the flags typed after `<ref>` in $ARGUMENTS are a FLOOR (forced
-      ON). Every other flag is left to the APEX Mode Gate — impose no flag set,
+      ON). Every other flag is left to the TTW Mode Gate — impose no flag set,
       do not pre-decide the mode.
     - **`-o`, `-n` and `-pr` are constitutive of `/card`**: always add them to the
       floor, whatever the mode. `-o` and `-n` close the vault continuity loop (load

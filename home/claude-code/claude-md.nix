@@ -32,7 +32,7 @@ let
       name = "Model Allocation";
       body = ''
         - Subagents: JAMAIS inherit — `model` explicite à chaque spawn. Détail de
-          l'allocation: apex `steps/ORCHESTRATION.md`.
+          l'allocation: ttw `steps/ORCHESTRATION.md`.
       '';
     }
     {
@@ -81,7 +81,7 @@ let
       body = ''
         - ≥2 tâches indépendantes à fichiers dans un message, ou une nouvelle pendant qu'une autre de cette conversation tourne
           → chacune : `claude-dispatch <slug> '<brief autonome, 1 ligne>'` (pas "…" : $VAR, ''${…} s'expansent), seul, racine
-          du projet, modèle par défaut ; son APEX y tourne. Tâche unique : ici. 1er prompt `[claude-dispatch]` : tout faire, jamais dispatcher.
+          du projet, modèle par défaut ; son TTW y tourne. Tâche unique : ici. 1er prompt `[claude-dispatch]` : tout faire, jamais dispatcher.
         - Review routine qualité → /code-review natif (subagent background, hors
           contexte). Agent code-reviewer = spec compliance + sécu pre-merge.
       '';
@@ -90,7 +90,7 @@ let
       # Lu par l'autocompaction : https://code.claude.com/docs/en/costs
       name = "Compact instructions";
       body = ''
-        - Keep first: active APEX run (id, tier, step, `.claude/output/apex/<id>/`),
+        - Keep first: active TTW run (id, tier, step, `.claude/output/apex/<id>/`),
           decisions + their why, files touched + gate state, explicit user asks.
         - Drop raw tool output already summarized.
       '';

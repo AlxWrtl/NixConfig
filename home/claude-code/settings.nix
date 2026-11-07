@@ -617,8 +617,8 @@ in
       # `auto` délègue chaque décision de permission à un classifieur de sûreté
       # au lieu de demander à l'utilisateur — il remplace un mode choisi
       # délibérément (`acceptEdits`), donc la frontière n'est plus la même.
-      # Les garde-fous du repo ne disparaissent PAS avec lui : le gate APEX sur
-      # Edit/Write (require-apex.js) et les hooks de branche (protect-main.js,
+      # Les garde-fous du repo ne disparaissent PAS avec lui : le gate TTW sur
+      # Edit/Write (require-ttw.js) et les hooks de branche (protect-main.js,
       # block-main-bash.js) sont de l'application, pas de la suggestion, et le
       # mode de permission ne les touche pas.
       defaultMode = "auto";
@@ -853,13 +853,13 @@ in
         }
         {
           # Reports the context size (tokens, from the transcript tail) when
-          # APEX starts. Context only: never rewrites the flags, never decides
+          # TTW starts. Context only: never rewrites the flags, never decides
           # a permission. The tier is decided on the diff by `apex-tier`.
           matcher = "Skill";
           hooks = [
             {
               type = "command";
-              command = "${node} ~/.claude/hooks/apex-flags.js";
+              command = "${node} ~/.claude/hooks/ttw-flags.js";
               timeout = 5;
             }
           ];
@@ -874,10 +874,10 @@ in
           hooks = [
             {
               type = "command";
-              # Enforces the APEX routing rule that apex-reminder only suggests.
+              # Enforces the TTW routing rule that ttw-reminder only suggests.
               # Fires at most once per TASK — once per real user turn, not once
               # per session; fail-open on any error.
-              command = "${node} ~/.claude/hooks/require-apex.js";
+              command = "${node} ~/.claude/hooks/require-ttw.js";
               timeout = 5;
             }
           ];
@@ -952,9 +952,10 @@ in
           hooks = [
             {
               type = "command";
-              # APEX correction-round budget: denies the 3rd marked round of a
-              # run, spawned or re-briefed by SendMessage, and a CronCreate or
-              # ScheduleWakeup prompt carrying the `apex: +1 tour` grant line
+              # APEX/TTW correction-round budget: denies the 3rd marked round
+              # (APEX- or TTW-CORRECTION-ROUND) of a run, spawned or re-briefed
+              # by SendMessage, and a CronCreate or ScheduleWakeup prompt
+              # carrying the `apex: +1 tour` or `ttw: +1 tour` grant line
               # (it would come back as a user turn). NOT async — a deny must
               # land before the spawn.
               command = "${node} ~/.claude/hooks/correction-budget.js";
@@ -983,7 +984,7 @@ in
               type = "command";
               # Injects the React/RR7 docs reminder on the first .tsx/.jsx write
               # of a session. Emits additionalContext only — never a permission
-              # decision — so require-apex and protect-main still run. NOT async:
+              # decision — so require-ttw and protect-main still run. NOT async:
               # additionalContext must reach the model before the tool call.
               command = "${node} ~/.claude/hooks/react-docs-gate.js";
               timeout = 5;
@@ -1126,13 +1127,13 @@ in
           hooks = [
             {
               type = "command";
-              command = "bash ~/.claude/hooks/apex-reminder.sh";
+              command = "bash ~/.claude/hooks/ttw-reminder.sh";
               timeout = 3;
             }
             {
               type = "command";
-              # Correction-round grant: a prompt line `apex: +1 tour` gives
-              # the spent run one more round. NOT async — the grant must be
+              # Correction-round grant: a prompt line `apex: +1 tour` or
+              # `ttw: +1 tour` gives the spent run one more round. NOT async — the grant must be
               # on disk before the coordinator re-spawns.
               command = "${node} ~/.claude/hooks/correction-grant.js";
               timeout = 5;

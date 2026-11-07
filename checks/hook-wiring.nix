@@ -137,6 +137,12 @@
 #      00-context.md stay silent. One canary per branch, plus the
 #      last-Tier-line rule through `--self-test`; D8 asserts at eval that
 #      the probe's Bash group puts its `if` on the handler.
+#      The ttw-phase1 run (apex -> ttw) adds the TTW names beside the APEX
+#      ones: a TTW-CORRECTION-ROUND line counted, an APEX and a TTW line on
+#      two runs a conflict, on one run one round; `ttw: +1 tour` granted
+#      only on a whole first line and never scheduled. One canary per name
+#      on the marker and on the token. A6 holds each pre-rename hook file
+#      byte-identical to its new name.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -255,7 +261,17 @@ let
   # Hooks installed on purpose and registered nowhere. Each line is a standing
   # claim that the dead text is intentional; delete the hook or register it and
   # this list must shrink, which is why A4 and A5 below fail on a stale entry.
-  knownUnwired = [ ];
+  # The pre-rename names of the TTW hooks (phase 1 of apex -> ttw): installed
+  # byte-identical to their new name and registered nowhere, so a live
+  # settings.json written before the switch, or a session that snapshotted it,
+  # still finds a file at the path it names instead of failing open on a
+  # missing one. A6 below holds each to its new body. Drop them in phase 4.
+  hookAliases = {
+    "require-apex.js" = "require-ttw.js";
+    "apex-flags.js" = "ttw-flags.js";
+    "apex-reminder.sh" = "ttw-reminder.sh";
+  };
+  knownUnwired = builtins.attrNames hookAliases;
 
   deadHooks = builtins.filter (
     n: !(builtins.elem n wiredNames) && !(builtins.elem n knownUnwired)
@@ -263,6 +279,26 @@ let
   danglingHooks = builtins.filter (n: !(builtins.elem n installed)) wiredNames;
   ghostExemptions = builtins.filter (n: !(builtins.elem n installed)) knownUnwired;
   resolvedExemptions = builtins.filter (n: builtins.elem n wiredNames) knownUnwired;
+
+  # A6: an alias is the same file under its old name. Both installed, the new
+  # one wired (A1 already demands it once the alias is exempt), the bodies
+  # equal byte for byte — a drifted alias is a second, unguarded hook.
+  aliasDrift = builtins.concatMap (
+    old:
+    let
+      new = hookAliases.${old};
+    in
+    if !(builtins.elem new installed) then
+      [ "${new} (new name of ${old}) is not installed" ]
+    else if !(builtins.elem old installed) then
+      [ "${old} (alias of ${new}) is not installed" ]
+    else if !(builtins.elem new wiredNames) then
+      [ "${new} is installed but registered nowhere" ]
+    else if bodies.${old} != bodies.${new} then
+      [ "${old} differs from ${new}" ]
+    else
+      [ ]
+  ) (builtins.attrNames hookAliases);
 
   # --- B and C: textual scan of the hook bodies ----------------------------
   #
@@ -505,7 +541,13 @@ let
     };
     A-cg-token = {
       hook = "correction-grant.js";
-      text = "const TOKEN = /^\\s*apex\\s*:\\s*\\+1\\s+tour\\s*$/i;";
+      text = "const TOKEN = /^\\s*(?:apex|ttw)\\s*:\\s*\\+1\\s+tour\\s*$/i;";
+    };
+    # Both workflow names mark a correction round while sessions on either
+    # skill text run (apex -> ttw, phases 1-3).
+    A-cb-marker-re = {
+      hook = "correction-budget.js";
+      text = "const MARKER = /^[\\s>*`-]*(?:APEX|TTW)-CORRECTION-ROUND:\\s*([^\\s`]*)[\\s`]*$/;";
     };
     A-cg-exhausted = {
       hook = "correction-grant.js";
@@ -1319,7 +1361,58 @@ let
       swaps = [
         {
           anchor = "A-cg-token";
-          to = "const TOKEN = /apex\\s*:\\s*\\+1\\s+tour/i;";
+          to = "const TOKEN = /(?:apex|ttw)\\s*:\\s*\\+1\\s+tour/i;";
+        }
+      ];
+    }
+    # apex -> ttw: the TTW grant line unread, a session on the new skill text
+    # is told to type a token that grants nothing.
+    {
+      id = "M-cg-ttw-token";
+      hook = "correction-grant.js";
+      kills = "cg-ttw-grant";
+      swaps = [
+        {
+          anchor = "A-cg-token";
+          to = "const TOKEN = /^\\s*apex\\s*:\\s*\\+1\\s+tour\\s*$/i;";
+        }
+      ];
+    }
+    # The old grant line dropped while sessions on the old skill text run.
+    {
+      id = "M-cg-apex-token";
+      hook = "correction-grant.js";
+      kills = "cg-token-grants";
+      swaps = [
+        {
+          anchor = "A-cg-token";
+          to = "const TOKEN = /^\\s*ttw\\s*:\\s*\\+1\\s+tour\\s*$/i;";
+        }
+      ];
+    }
+    # The TTW marker unread: a TTW-marked round is never counted, the cap is
+    # bypassed by the very line the new skill text emits.
+    {
+      id = "M-cb-ttw-marker";
+      hook = "correction-budget.js";
+      kills = "cb-ttw-marker-counted";
+      swaps = [
+        {
+          anchor = "A-cb-marker-re";
+          to = "const MARKER = /^[\\s>*`-]*APEX-CORRECTION-ROUND:\\s*([^\\s`]*)[\\s`]*$/;";
+        }
+      ];
+    }
+    # The APEX marker unread: a session still on the old skill text has its
+    # marked round refused as unmarked.
+    {
+      id = "M-cb-apex-marker";
+      hook = "correction-budget.js";
+      kills = "cb-round3-deny";
+      swaps = [
+        {
+          anchor = "A-cb-marker-re";
+          to = "const MARKER = /^[\\s>*`-]*TTW-CORRECTION-ROUND:\\s*([^\\s`]*)[\\s`]*$/;";
         }
       ];
     }
@@ -2881,6 +2974,10 @@ let
     "cb-abs-run-cap-deny"
     "cb-abs-run-bad-deny"
     "cb-abs-run-unnormalized-deny"
+    "cb-ttw-marker-counted"
+    "cb-mixed-conflict"
+    "cb-mixed-same"
+    "cb-sched-ttw-token"
     "cg-token-grants"
     "cg-no-token"
     "cg-inline-token-ignored"
@@ -2900,6 +2997,8 @@ let
     "cg-cross-repo-grants"
     "cg-cross-repo-other-session"
     "cg-cross-repo-bad-dir"
+    "cg-ttw-grant"
+    "cg-ttw-inline-ignored"
     "rm-explore-sonnet-deny"
     "rm-navigator-opus-deny"
     "rm-navigator-nomodel-deny"
@@ -3308,6 +3407,9 @@ let
     # $1 brief, $2 marker: a run-id, none, or absent for no marker line.
     # $3 model: opus when unset, absent from the input when empty.
     cb_in() { ${jq} -cn --arg p "$1" --arg m "''${2-}" --arg mo "''${3-opus}" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"Agent",cwd:$c,session_id:"probe",tool_input:({description:"probe",subagent_type:"general-purpose",prompt:(if $m == "" then $p else $p + "\nAPEX-CORRECTION-ROUND: " + $m end)} + (if $mo == "" then {} else {model:$mo} end))}'; }
+    # $1 the whole brief, marker lines included, on opus: for the TTW and
+    # mixed-marker cases, which cb_in's one APEX line cannot spell.
+    cb_raw() { ${jq} -cn --arg p "$1" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"Agent",cwd:$c,session_id:"probe",tool_input:{description:"probe",subagent_type:"general-purpose",prompt:$p,model:"opus"}}'; }
     # Same brief as a SendMessage re-brief to a live agent ($2 required).
     cb_msg() { ${jq} -cn --arg p "$1" --arg m "$2" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"SendMessage",cwd:$c,session_id:"probe",tool_input:{to:"implementer",summary:"probe",message:($p + "\nAPEX-CORRECTION-ROUND: " + $m)}}'; }
     # $1 body, $2 run-id, $3 round number: one marked round, due an allow.
@@ -4083,7 +4185,7 @@ let
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_msg "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2)" ;;
         cb-nomarker-deny)
           cb_reset
-          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md.")"; is_deny "has no APEX-CORRECTION-ROUND line" ;;
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md.")"; is_deny "has no TTW-CORRECTION-ROUND line" ;;
         # A new run is a new counter: 62-x spent, 63-y still allowed.
         cb-other-run-allow)
           cb_reset
@@ -4171,6 +4273,37 @@ let
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$CBOTHER/")"; is_deny "nor an absolute <repo>/.claude/output/apex/<run-id> path" || return 1
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother//.claude/output/apex/64-z")"; is_deny "nor an absolute <repo>/.claude/output/apex/<run-id> path" || return 1
           [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
+        # apex -> ttw: a TTW-CORRECTION-ROUND line counts like the APEX one.
+        # The brief names neither 06-resolve.md nor a correction round on
+        # purpose: with the TTW line unread it is then an unmarked brief that
+        # passes, and the third round's missed deny is the kill, not a
+        # no-marker deny worded otherwise.
+        cb-ttw-marker-counted)
+          cb_reset
+          for i in 1 2; do
+            run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes.\nTTW-CORRECTION-ROUND: 62-x')")"
+            is_allow || { why="TTW round $i on 62-x: $why"; return 1; }
+          done
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes.\nTTW-CORRECTION-ROUND: 62-x')")"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" || return 1
+          [ -e "$CBSTATE/62-x.round2" ] && [ ! -e "$CBSTATE/62-x.round3" ] \
+            || { why="TTW rounds not counted as 62-x.round1..2"; return 1; } ;;
+        # One APEX and one TTW line naming two runs: a conflict, nothing
+        # counted — the two names are one marker, never two budgets.
+        cb-mixed-conflict)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes in 06-resolve.md.\nAPEX-CORRECTION-ROUND: 62-x\nTTW-CORRECTION-ROUND: 63-y')")"; is_deny "lines (62-x, 63-y); keep exactly one" || return 1
+          [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
+        # Both names on the same run: one marker, one round.
+        cb-mixed-same)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes in 06-resolve.md.\nTTW-CORRECTION-ROUND: 62-x\nAPEX-CORRECTION-ROUND: 62-x')")"; is_allow || return 1
+          [ -e "$CBSTATE/62-x.round1" ] && [ ! -e "$CBSTATE/62-x.round2" ] \
+            || { why="allowed, but not counted as exactly one round (62-x.round1 only)"; return 1; } ;;
+        # The TTW grant line is the user's too: never scheduled.
+        cb-sched-ttw-token)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched CronCreate "$(printf 'check CI\nttw: +1 tour')")"; is_deny "BLOCKED: a scheduled prompt may not carry the correction-grant token" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched ScheduleWakeup " TTW : +1 Tour ")"; is_deny "only the user types it" ;;
         # correction-grant: only the user's token, as the first non-empty
         # line, only for the project's live run once spent.
         cg-token-grants)
@@ -4265,7 +4398,7 @@ let
           cb_reset
           cb_stamp 64-z 2 "$CBOTHER" probe
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_granted 64-z 1 3 || return 1
-          grep -Fq -- "APEX-CORRECTION-ROUND: $CBOTHER;" "$d/$lbl.out" || { why="granted, but the context does not name the marker $CBOTHER"; return 1; } ;;
+          grep -Fq -- "TTW-CORRECTION-ROUND: $CBOTHER;" "$d/$lbl.out" || { why="granted, but the context does not name the marker $CBOTHER"; return 1; } ;;
         cg-cross-repo-other-session)
           cb_reset
           cb_stamp 64-z 2 "$CBOTHER" other
@@ -4274,6 +4407,16 @@ let
           cb_reset
           cb_stamp 64-z 2 "$root/cbother/notapex/64-z" probe
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "apex: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
+        # apex -> ttw: the TTW grant line grants like the APEX one, and is
+        # held to the same whole-line rule.
+        cg-ttw-grant)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "$(printf '\n  \nttw: +1 tour\nthanks')")"; is_granted 62-x 1 3 ;;
+        cg-ttw-inline-ignored)
+          cb_reset
+          cb_spend 62-x 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in 'The hook says: type `ttw: +1 tour` alone on a line.')"; is_not_granted 0 "" ;;
         # Run 66: research agents on haiku, the model named explicitly.
         rm-explore-sonnet-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Explore sonnet)"; is_deny 'model "sonnet"' ;;
@@ -5210,6 +5353,11 @@ let
       name = "A4 exemptions are still needed";
       ok = resolvedExemptions == [ ];
       msg = "knownUnwired still exempts hook(s) that ARE now registered: ${show resolvedExemptions}. The wiring was fixed and the exemption was not; remove the entry from knownUnwired in this file — one line, and the gate goes back to guarding the real set";
+    }
+    {
+      name = "A6 aliases: each pre-rename hook name is installed byte-identical to its wired new name";
+      ok = aliasDrift == [ ];
+      msg = "hook alias drift: ${show aliasDrift}. home/claude-code.nix must install require-ttw.js, ttw-flags.js and ttw-reminder.sh (wired in settings.nix) AND the old names require-apex.js, apex-flags.js, apex-reminder.sh from the same hooks.nix attribute, unwired. A live settings.json or a running session still names the old path; a missing or diverging file there is a guard that fails open or runs stale";
     }
     {
       name = "B0 detector: at least one additionalContext site is visible";

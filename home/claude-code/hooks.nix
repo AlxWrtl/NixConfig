@@ -37,11 +37,11 @@ in
     builtins.toJSON alxVaultPath
   );
 
-  # PreToolUse on Agent and SendMessage: a hard cap on APEX correction rounds
+  # PreToolUse on Agent and SendMessage: a hard cap on APEX/TTW correction rounds
   # (run 62). A correction round goes through either channel, a fresh spawn
   # or a re-brief sent to a live agent, and both are counted. Its brief
-  # carries `APEX-CORRECTION-ROUND: <run-id>` or, for a run outside the
-  # session's repo, its absolute `…/.claude/output/apex/<run-id>` path (an
+  # carries `APEX-CORRECTION-ROUND: <run-id>` (or `TTW-CORRECTION-ROUND:`)
+  # or, for a run outside the session's repo, its absolute `…/.claude/output/apex/<run-id>` path (an
   # existing dir, no `..`; never a stub run dir created in the session's
   # repo), counted under the run-id and stamped in the slot as `dir`; each
   # round claims the first
@@ -60,13 +60,14 @@ in
   # before any slot is claimed; SendMessage carries no model. The cap is
   # MAX_ROUNDS plus one per <run-id>.grant<n> file correction-grant.js wrote.
   # Also on CronCreate/ScheduleWakeup: a scheduled prompt comes back as a user
-  # turn, so one with an `apex: +1 tour` line is denied (same TOKEN line as
-  # correction-grant.js); any other scheduler call passes, uncounted.
+  # turn, so one with an `apex: +1 tour` or `ttw: +1 tour` line is denied
+  # (same TOKEN line as correction-grant.js); any other scheduler call
+  # passes, uncounted.
   hookCorrectionBudget = builtins.readFile ./hooks/correction-budget.js;
 
   # UserPromptSubmit: the user's grant of one more correction round. A prompt
-  # whose FIRST non-empty line is exactly `apex: +1 tour` (case and spacing
-  # free) grants the live run of this project — the one with the newest
+  # whose FIRST non-empty line is exactly `apex: +1 tour` or `ttw: +1 tour`
+  # (case and spacing free) grants the live run of this project — the one with the newest
   # round among runs with a dir under the prompt's (absolute) cwd, or whose
   # round stamps from this same session all name one existing absolute
   # `…/.claude/output/apex/<run-id>` dir (an unreadable stamp: no) — one
@@ -240,7 +241,7 @@ in
   # FAIL-OPEN on any error, unlike protect-main and block-main-bash. This is a
   # workflow hook, not a safety one: a missed APEX costs little, a session
   # where no edit can land costs a lot.
-  hookRequireApex = builtins.readFile ./hooks/require-apex.js;
+  hookRequireTtw = builtins.readFile ./hooks/require-ttw.js;
 
   # Turns the React Docs Gate from advice into a delivered reminder.
   #
@@ -250,7 +251,7 @@ in
   # itself.
   #
   # Emits `additionalContext` ONLY, with no permissionDecision. Returning
-  # "allow" here would bypass every downstream check — require-apex,
+  # "allow" here would bypass every downstream check — require-ttw,
   # protect-main, block-main-bash — on any .tsx edit. Staying silent on the
   # decision keeps the normal permission flow intact.
   #
@@ -302,7 +303,7 @@ in
   # (apex-tier.nix), per the tier table in SKILL.md.
   #
   # FAIL-OPEN: any error exits 0 (no output, or context=unknown).
-  hookApexFlags = builtins.readFile ./hooks/apex-flags.js;
+  hookTtwFlags = builtins.readFile ./hooks/ttw-flags.js;
 
   hookFormatTypescript = builtins.readFile ./hooks/format-typescript.js;
 
@@ -390,13 +391,13 @@ in
   # that actually hurts (the rule silently not firing).
   # NO TABLE HERE: it used to carry a hand-maintained copy of the mode table,
   # which drifted twice. It now only points at the single tier table in
-  # SKILL.md (skillApex in skills.nix), so there is nothing to keep in sync.
+  # SKILL.md (skillTtw in skills.nix), so there is nothing to keep in sync.
   # File kept ≤ 200 bytes: this line is paid on every prompt.
-  hookApexReminder = builtins.readFile ./hooks/apex-reminder.sh;
+  hookTtwReminder = builtins.readFile ./hooks/ttw-reminder.sh;
 
   # UserPromptSubmit: a pasted Instagram post/reel/tv link → one context line
   # asking for the `watch` skill (the user's standing wish, 2026-10-22).
-  # Keyword matching is right here, unlike apex-reminder (above): a URL is not
+  # Keyword matching is right here, unlike ttw-reminder (above): a URL is not
   # an ambiguous case, and a miss costs one manual `/watch`, not a silently
   # skipped rule. Wrapped harness turns and any agent_id are ignored;
   # fail-open, never exit 2 (it would block the prompt).

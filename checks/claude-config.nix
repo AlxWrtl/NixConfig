@@ -617,9 +617,9 @@ let
 
   emptyHookGroups = builtins.filter (g: (g.hooks or null) == [ ]) preToolUse;
 
-  # Flags READ from the tier table in SKILL.md (skillApex), never restated here — same
+  # Flags READ from the tier table in SKILL.md (skillTtw), never restated here — same
   # extraction as apex-consistency's rowFlags. null = table reformatted.
-  diagnosisRow = builtins.match ".*\\| Diagnosis \\| `([^`]*)` \\|.*" (skills.skillApex or "");
+  diagnosisRow = builtins.match ".*\\| Diagnosis \\| `([^`]*)` \\|.*" skills.skillTtw;
   diagnosisFlags = if diagnosisRow == null then null else builtins.head diagnosisRow;
   readme = builtins.readFile ../README.md;
 
@@ -1036,9 +1036,9 @@ let
     {
       name = "A17 apex: no unconditional approval wait in step-02, step-02c, step-09";
       ok =
-        !(hasInfix "wait for the answer" skills.apexStep09Finish)
-        && !(hasInfix "always — and wait for the answer" skills.apexStep02cVerify)
-        && !(hasInfix "Always, no opt-out" skills.apexStep02Plan);
+        !(hasInfix "wait for the answer" skills.ttwStep09Finish)
+        && !(hasInfix "always — and wait for the answer" skills.ttwStep02cVerify)
+        && !(hasInfix "Always, no opt-out" skills.ttwStep02Plan);
       msg = "an unconditional wait is back in step-09 (\"wait for the answer\"), step-02c (\"always — and wait for the answer\") or step-02 (\"Always, no opt-out\") — every run then stalls on a user round trip the `-pr` default already authorized; only high-stakes or `-q` may wait";
     }
     {
@@ -1048,7 +1048,7 @@ let
         && builtins.elem "-pr" (pkgs.lib.splitString " " diagnosisFlags)
         && hasInfix ("| Diagnosis | `" + diagnosisFlags + "` |") readme;
       msg =
-        "tier-table diagnosis flags read from skillApex: "
+        "tier-table diagnosis flags read from skillTtw: "
         + (if diagnosisFlags == null then "<row not found — table reformatted?>" else "`${diagnosisFlags}`")
         + " — either `-pr` is missing (a diagnosis fix then stops on its branch and needs a manual ship) or README.md no longer carries `| Diagnosis | `<same flags>` |`, so the documented flags drift from the ones the skill applies";
     }

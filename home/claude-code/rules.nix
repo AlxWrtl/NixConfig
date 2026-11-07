@@ -17,8 +17,8 @@
 
     ## Docs Gate
     - Before writing nix that sets an option, calls a `lib`/`builtins`
-      function or bumps a flake input: source it first, per the Docs line in APEX step-02-plan.md
-      (`~/.claude/skills/apex/steps/`). Load the nix-darwin skill.
+      function or bumps a flake input: source it first, per the Docs line in TTW step-02-plan.md
+      (`~/.claude/skills/ttw/steps/`). Load the nix-darwin skill.
     - Nix options, first rung: `nix-options show <opt>` (nix-darwin +
       home-manager at their flake.lock rev; `nix-options search <regex>`
       when the name is uncertain).
@@ -43,7 +43,7 @@
 
     ## Docs before writing
     - Any library API call, option, signature or version detail → source it
-      BEFORE writing, per the Docs line in APEX step-02-plan.md: lockfile version
+      BEFORE writing, per the Docs line in TTW step-02-plan.md: lockfile version
       first, then `libdocs <name> "<question>"`. `libdocs --list` shows the pinned names.
     - Ids are pinned per MAJOR version because doc search ranks the OLD major
       higher: Tailwind v3 outweighs v4, Zod v3 outweighs v4 by 4.5x. Never
@@ -69,7 +69,7 @@
 
     ## Docs Gate — before writing, not after
     - Any React/RR API, signature or version detail → source it BEFORE
-      writing, per the Docs line in APEX step-02-plan.md. Never guess a signature.
+      writing, per the Docs line in TTW step-02-plan.md. Never guess a signature.
       `libdocs react "<question>"` · `libdocs rr "<question>"` · `libdocs --list`
     - Version trap: ranking doc hits by score or corpus size puts React Router
       v5 ABOVE v7. Use the pinned names (`react`, `rr`), never a raw search hit.

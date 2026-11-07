@@ -33,16 +33,16 @@ let
 in
 {
   # =========================================================================
-  # APEX Workflow — Orchestrator + 15 step files + 5 reference steps
+  # TTW Workflow — Orchestrator + 15 step files + 5 reference steps
   # Progressive disclosure: each step is loaded conditionally by flag/task, not
   # read linearly. Splitting keeps the context window lean (a public good), it is
   # NOT about "recency". Effort is set per-step, not globally.
   # =========================================================================
 
-  skillApex = ''
+  skillTtw = ''
     ---
     name: ttw
-    description: "Universal task workflow (TTW, ex-APEX) — EVERY task that modifies files routes through APEX, in any project, any size or type: feature, fix, bug, refactor, config, docs. A tier gate sizes the run from the diff: Direct (inline), Diagnosis, Standard, High-stakes. Not for pure questions or research with zero file modification."
+    description: "Universal task workflow (TTW, ex-APEX) — EVERY task that modifies files routes through TTW, in any project, any size or type: feature, fix, bug, refactor, config, docs. A tier gate sizes the run from the diff: Direct (inline), Diagnosis, Standard, High-stakes. Not for pure questions or research with zero file modification."
     ---
 
     # TTW (ex-APEX): tiered implementation workflow
@@ -154,14 +154,14 @@ in
       the summaries under `.claude/output/apex/` let a run resume by hand.
 
     ${handoffs [
-      "Diagnosis stays INSIDE apex — execute phase spawns the debugger agent (model: opus)."
-      "If scope is unclear → run /discuss first, then return to apex."
+      "Diagnosis stays INSIDE ttw — execute phase spawns the debugger agent (model: opus)."
+      "If scope is unclear → run /discuss first, then return to ttw."
       "High-stakes verify (external detector, Fable fallback, `-p` premises) → steps/HIGH-STAKES.md."
     ]}
   '';
 
   # --- Step 00: Init ---
-  apexStep00Init = ''
+  ttwStep00Init = ''
     # Step 00: Initialize (Standard / Diagnosis / High-stakes)
     <!-- effort: medium -->
 
@@ -212,7 +212,7 @@ in
 
     Display a compact summary:
     ```
-    APEX initialized
+    TTW initialized
     Task: {description}
     Tier: {tier}
     Flags: {active flags}
@@ -239,7 +239,7 @@ in
   '';
 
   # --- Step 00b: Save ---
-  apexStep00bSave = ''
+  ttwStep00bSave = ''
     # Step 00b: Save Mode Setup
 
     Create output directory for this task:
@@ -291,7 +291,7 @@ in
 
     `## Tokens` — one row per spawned agent, `tokens` copied from its
     task-notification `<usage><subagent_tokens>`. `coordinator context`:
-    `{start}` from the apex-flags hook line `APEX start: context=N`, `{end}`
+    `{start}` from the ttw-flags hook line `TTW start: context=N`, `{end}`
     read at end of run. Any value absent → write `unknown`, never a guess.
     These are context sizes, not billed tokens: never present them as cost.
 
@@ -299,7 +299,7 @@ in
   '';
 
   # --- Step 01: Analyze ---
-  apexStep01Analyze = ''
+  ttwStep01Analyze = ''
     # Step 01: Analyze
     <!-- effort: high -->
 
@@ -426,11 +426,11 @@ in
   '';
 
   # --- Step 01b: Obsidian Context Load ---
-  apexStep01bObsidianContext = ''
+  ttwStep01bObsidianContext = ''
     # Step 01b: Obsidian Context Load
 
     YOU ARE A CONTEXT GATHERER, not a planner. Do NOT plan or implement yet.
-    Your job is to load project knowledge from the Obsidian vault so APEX stays aligned
+    Your job is to load project knowledge from the Obsidian vault so TTW stays aligned
     with what the user already knows/decided about this project.
 
     ## Vault
@@ -628,7 +628,7 @@ in
   '';
 
   # --- Step 02: Plan ---
-  apexStep02Plan = ''
+  ttwStep02Plan = ''
     # Step 02: Plan
 
     YOU ARE A PLANNER, not an implementer. Do NOT write any code yet.
@@ -829,7 +829,7 @@ in
   '';
 
   # --- Step 02c: Verify Plan ---
-  apexStep02cVerify = ''
+  ttwStep02cVerify = ''
     # Step 02c: Verify Plan
 
     YOU ARE A RESEARCHER, not an implementer. Do NOT write any code yet.
@@ -902,7 +902,7 @@ in
   '';
 
   # --- Step 02b: Tasks ---
-  apexStep02bTasks = ''
+  ttwStep02bTasks = ''
     # Step 02b: Task Decomposition
 
     Break the plan into individual task files with a dependency graph.
@@ -972,7 +972,7 @@ in
   '';
 
   # --- Step 03: Execute ---
-  apexStep03Execute = ''
+  ttwStep03Execute = ''
     # Step 03: Execute
     <!-- effort: low — mechanical; the thinking happened in 01/02 -->
 
@@ -1034,7 +1034,7 @@ in
   '';
 
   # --- Step 04: Validate ---
-  apexStep04Validate = ''
+  ttwStep04Validate = ''
     # Step 04: Validate
 
     YOU ARE A VALIDATOR, not an implementer. Do NOT add new features.
@@ -1147,7 +1147,7 @@ in
   '';
 
   # --- Step 05: Examine ---
-  apexStep05Examine = ''
+  ttwStep05Examine = ''
     # Step 05: Examine
 
     YOU ARE A SKEPTICAL REVIEWER, not a defender of this code.
@@ -1221,7 +1221,7 @@ in
   '';
 
   # --- Step 06: Resolve ---
-  apexStep06Resolve = ''
+  ttwStep06Resolve = ''
     # Step 06: Resolve
 
     YOU ARE A RESOLVER. Fix the findings from the examination step.
@@ -1248,7 +1248,7 @@ in
   '';
 
   # --- Step 07: Tests ---
-  apexStep07Tests = ''
+  ttwStep07Tests = ''
     # Step 07: Tests
 
     YOU ARE A TEST ENGINEER, not an implementer.
@@ -1297,7 +1297,7 @@ in
   '';
 
   # --- Step 08: Run Tests ---
-  apexStep08RunTests = ''
+  ttwStep08RunTests = ''
     # Step 08: Run Tests
 
     ## Test Loop
@@ -1327,7 +1327,7 @@ in
   '';
 
   # --- Step 09: Finish ---
-  apexStep09Finish = ''
+  ttwStep09Finish = ''
     # Step 09: Finish
 
     ## Ship
@@ -1360,7 +1360,7 @@ in
 
     Present final summary:
     ```
-    APEX Complete
+    TTW Complete
     Branch: {branch}
     Commit: {hash}
     PR: {url}
@@ -1377,7 +1377,7 @@ in
   '';
 
   # --- Step 09b: Obsidian Session Note ---
-  apexStep09bObsidianNote = ''
+  ttwStep09bObsidianNote = ''
     # Step 09b: Obsidian Session Note
 
     YOU ARE A SCRIBE. Create a session note in the Obsidian vault capturing what was done,
@@ -1432,7 +1432,7 @@ in
     project: "[[02-Projets/{project}/{project}|{project}]]"
     tags:
       - session
-      - apex
+      - ttw
       - {project-slug}   # kebab-case, lowercase, ASCII only — safe for YAML
     aliases:
       - "{YYYY-MM-DD} {Short subject}"
@@ -1519,7 +1519,7 @@ in
     - If the spawn itself errors (binary missing, sandbox): report ONE warning
       line in the Output and finish normally — the next session's step-01b
       staleness probe catches up. NEVER retry, NEVER block this terminal step.
-    - This is the only graph write path in APEX. It writes to `~/GraphVault`
+    - This is the only graph write path in TTW. It writes to `~/GraphVault`
       only, never into the vault.
 
     ## If save mode (-s):
@@ -1547,7 +1547,7 @@ in
   skillFeatureWorkflow = ''
     ---
     name: feature-workflow
-    description: "Feature development methodology — the discuss → plan → verify cycle, with the depth chosen by feature size. Use when a request is to design, scope, decompose or plan a feature before any code is written, when acceptance criteria or a decomposition plan are asked for, when the user runs /discuss or /verify-feature, when a code review needs the criteria the feature was agreed on, or when the files in play sit under .claude/output/feature/ or are named CONTEXT-*. Not for a one-file edit or a bug fix, which route to apex and debug instead."
+    description: "Feature development methodology — the discuss → plan → verify cycle, with the depth chosen by feature size. Use when a request is to design, scope, decompose or plan a feature before any code is written, when acceptance criteria or a decomposition plan are asked for, when the user runs /discuss or /verify-feature, when a code review needs the criteria the feature was agreed on, or when the files in play sit under .claude/output/feature/ or are named CONTEXT-*. Not for a one-file edit or a bug fix, which route to ttw and debug instead."
     paths: ["**/.claude/output/feature/**", "**/.claude/output/CONTEXT-*"]
     effort: high
     ---
@@ -1558,7 +1558,7 @@ in
 
     | Complexity | Files | Approach | Command |
     |-----------|-------|----------|---------|
-    | S (small) | < 5 | APEX, minimum depth | /ttw |
+    | S (small) | < 5 | TTW, minimum depth | /ttw |
     | M (medium) | 5-15 | Discuss → plan → execute | /discuss → /ttw |
     | L (large) | 15+ | Full chain (5 phases) | feature-chain.sh or /ttw -k |
     | XL (epic) | 30+ | Split into L milestones | Chain per milestone |
@@ -1613,7 +1613,7 @@ in
       notFor = "Quick fixes (<20 lines), pure debugging, single-file edits, or anything classified S complexity";
     }}
     ${handoffs [
-      "If task is S complexity → /ttw at minimum depth; APEX still owns it, specialist agents execute inside it, never instead of it"
+      "If task is S complexity → /ttw at minimum depth; TTW still owns it, specialist agents execute inside it, never instead of it"
       "After DISCUSS phase → hand off to the Plan agent (or /ttw step 02) for PLAN creation"
       "After PLAN phase → hand off to code-reviewer for two-pass REVIEW before EXECUTE"
       "After EXECUTE phase → hand off to code-reviewer for VERIFY (6-layer check)"
@@ -1622,15 +1622,15 @@ in
   '';
 
   # --- Eval suite: scored by `uvx schliff` (triggers/quality/edges) ---
-  apexEvalSuite = ''
+  ttwEvalSuite = ''
     {
       "triggers": [
-        {"prompt": "implement this using apex methodology", "should_trigger": true},
-        {"prompt": "use the apex framework for this feature", "should_trigger": true},
-        {"prompt": "/apex add authentication to the app", "should_trigger": true},
-        {"prompt": "run apex with -q to clarify before planning the payment module", "should_trigger": true},
-        {"prompt": "apex -k -v for the new dashboard feature", "should_trigger": true},
-        {"prompt": "apex -x -t -pr build the export endpoint", "should_trigger": true},
+        {"prompt": "implement this using ttw methodology", "should_trigger": true},
+        {"prompt": "use the ttw framework for this feature", "should_trigger": true},
+        {"prompt": "/ttw add authentication to the app", "should_trigger": true},
+        {"prompt": "run ttw with -q to clarify before planning the payment module", "should_trigger": true},
+        {"prompt": "ttw -k -v for the new dashboard feature", "should_trigger": true},
+        {"prompt": "ttw -x -t -pr build the export endpoint", "should_trigger": true},
         {"prompt": "fix this bug in the login form", "should_trigger": true},
         {"prompt": "rename a single variable in utils.ts", "should_trigger": true},
         {"prompt": "what does this function do?", "should_trigger": false},
@@ -1641,7 +1641,7 @@ in
       "test_cases": [
         {
           "name": "step-00-initialize",
-          "prompt": "Start apex for adding a new user settings page. We are at step 00.",
+          "prompt": "Start ttw for adding a new user settings page. We are at step 00.",
           "assertions": [
             {"type": "contains", "value": "git status", "description": "Step 00 must check git status before starting"},
             {"type": "contains", "value": "Flags", "description": "Step 00 must parse and record active flags"},
@@ -1652,7 +1652,7 @@ in
         },
         {
           "name": "mode-gate-diagnosis",
-          "prompt": "apex the login button is broken and throws an error on click",
+          "prompt": "ttw the login button is broken and throws an error on click",
           "assertions": [
             {"type": "pattern", "value": "[Gg]ate|[Dd]iagnos", "description": "Mode Gate must pick the diagnosis mode"},
             {"type": "pattern", "value": "[Rr]eproduc", "description": "Diagnosis analyze reproduces the error before planning a fix"},
@@ -1662,7 +1662,7 @@ in
         },
         {
           "name": "step-01-conflict-analysis",
-          "prompt": "apex analyze adding a direct DB call in the controller for a new report feature. We are at step 01.",
+          "prompt": "ttw analyze adding a direct DB call in the controller for a new report feature. We are at step 01.",
           "assertions": [
             {"type": "pattern", "value": "[Cc]onflict|[Cc]onstraint", "description": "Step 01 must produce the Conflicts & Constraints section"},
             {"type": "pattern", "value": "[Dd]iverg|[Pp]attern", "description": "Must flag where the task diverges from existing patterns"},
@@ -1672,7 +1672,7 @@ in
         },
         {
           "name": "full-execution-flow",
-          "prompt": "Execute all apex steps for adding email notifications. Run every step.",
+          "prompt": "Execute all ttw steps for adding email notifications. Run every step.",
           "assertions": [
             {"type": "contains", "value": "00", "description": "Must execute step 00 Initialize"},
             {"type": "contains", "value": "01", "description": "Must execute step 01 Analyze"},
@@ -1682,8 +1682,8 @@ in
           ]
         },
         {
-          "name": "apex-clarify-flag",
-          "prompt": "apex -q implement the CSV export feature",
+          "name": "ttw-clarify-flag",
+          "prompt": "ttw -q implement the CSV export feature",
           "assertions": [
             {"type": "pattern", "value": "[Cc]larif|[Aa]mbigu|AskUserQuestion", "description": "Must acknowledge -q turns ambiguities into questions"},
             {"type": "pattern", "value": "[Ss]tep\\s*0[0-9]", "description": "Must reference step numbers during execution"},
@@ -1692,8 +1692,8 @@ in
           ]
         },
         {
-          "name": "apex-examine-flag",
-          "prompt": "apex -x build a token refresh endpoint then review it for security issues",
+          "name": "ttw-examine-flag",
+          "prompt": "ttw -x build a token refresh endpoint then review it for security issues",
           "assertions": [
             {"type": "contains", "value": "05", "description": "Examine flag (-x) routes to step 05, not 06"},
             {"type": "pattern", "value": "[Ee]xamine|[Ss]ecurity|[Ll]ogic|[Cc]lean", "description": "Must run the three adversarial review focuses in step 05"},
@@ -1702,7 +1702,7 @@ in
         },
         {
           "name": "plan-premises-sourced",
-          "prompt": "apex add a retry helper around the existing fetch wrapper. We are at step 02.",
+          "prompt": "ttw add a retry helper around the existing fetch wrapper. We are at step 02.",
           "assertions": [
             {"type": "pattern", "value": "file:line", "description": "A claim about the codebase carries its file:line, never recollection"},
             {"type": "pattern", "value": "[Pp]remise", "description": "The plan states its premises before any task"},
@@ -1711,7 +1711,7 @@ in
         },
         {
           "name": "wave-file-disjoint",
-          "prompt": "apex -k build the export feature: types, endpoint, UI form and route wiring",
+          "prompt": "ttw -k build the export feature: types, endpoint, UI form and route wiring",
           "assertions": [
             {"type": "pattern", "value": "[Ww]ave", "description": "-k must group tasks into waves"},
             {"type": "pattern", "value": "Files:", "description": "Each task must carry its Files: list"},
@@ -1721,7 +1721,7 @@ in
         },
         {
           "name": "per-step-effort",
-          "prompt": "Which apex steps use high reasoning effort and which use low?",
+          "prompt": "Which ttw steps use high reasoning effort and which use low?",
           "assertions": [
             {"type": "pattern", "value": "[Hh]igh.*0?1|[Aa]nalyze.*high", "description": "Analysis/plan/examine steps must use high effort"},
             {"type": "pattern", "value": "[Ll]ow.*03|[Mm]echanical", "description": "Mechanical steps (execute/branch/finish) must use low effort"},
@@ -1733,8 +1733,8 @@ in
         {
           "name": "minimal-task-direct",
           "category": "minimal",
-          "prompt": "apex add a missing semicolon in index.ts",
-          "expected_behavior": "APEX runs at the Direct tier: inline edit, machine gate, then apex-tier re-checks the real diff; no implementer is spawned.",
+          "prompt": "ttw add a missing semicolon in index.ts",
+          "expected_behavior": "TTW runs at the Direct tier: inline edit, machine gate, then apex-tier re-checks the real diff; no implementer is spawned.",
           "assertions": [
             {"type": "pattern", "value": "Direct", "description": "The tier gate picks Direct for a one-line, non-sensitive diff"},
             {"type": "pattern", "value": "gate|apex-tier", "description": "Direct still runs the machine gate and the apex-tier real-diff re-check"},
@@ -1768,18 +1768,18 @@ in
         {
           "name": "diagnosis-task",
           "category": "mode",
-          "prompt": "apex why is the app crashing on startup?",
-          "expected_behavior": "The tier gate selects Diagnosis and runs the chain inside APEX; the debugger agent implements from the execute phase.",
+          "prompt": "ttw why is the app crashing on startup?",
+          "expected_behavior": "The tier gate selects Diagnosis and runs the chain inside TTW; the debugger agent implements from the execute phase.",
           "assertions": [
             {"type": "pattern", "value": "[Mm]ode [Gg]ate|[Tt]ier [Gg]ate", "description": "Must name the gate that selects the tier"},
-            {"type": "pattern", "value": "debugger agent|execute phase", "description": "The chain runs inside APEX, implemented by the debugger agent"},
-            {"type": "excludes", "value": "instead of apex", "description": "Nothing runs in place of the chain"}
+            {"type": "pattern", "value": "debugger agent|execute phase", "description": "The chain runs inside TTW, implemented by the debugger agent"},
+            {"type": "excludes", "value": "instead of ttw", "description": "Nothing runs in place of the chain"}
           ]
         },
         {
           "name": "missing-conventions",
           "category": "missing",
-          "prompt": "apex implement OAuth but this project has no documented conventions",
+          "prompt": "ttw implement OAuth but this project has no documented conventions",
           "expected_behavior": "Analyze step documents the absence of conventions as a risk in Conflicts & Constraints and proceeds with explicit assumptions.",
           "assertions": [
             {"type": "pattern", "value": "[Cc]onvention|[Aa]ssumption|[Rr]isk", "description": "Must document missing conventions as a constraint/risk"},
@@ -1789,7 +1789,7 @@ in
         {
           "name": "task-conflicts-with-pattern",
           "category": "invalid",
-          "prompt": "apex add a feature that bypasses the existing repository layer and queries the DB directly",
+          "prompt": "ttw add a feature that bypasses the existing repository layer and queries the DB directly",
           "expected_behavior": "Step 01 Conflicts & Constraints flags the divergence from the repository pattern and surfaces it as a decision before planning.",
           "assertions": [
             {"type": "pattern", "value": "[Cc]onflict|[Dd]iverg|[Pp]attern", "description": "Must flag the divergence from the established pattern"},
@@ -1799,18 +1799,18 @@ in
         {
           "name": "huge-codebase",
           "category": "scale",
-          "prompt": "apex refactor the entire monorepo — 500+ files across 12 services",
-          "expected_behavior": "APEX runs; the tier gate picks the depth. No pre-APEX triage exists — the plan's Tasks section carries the breakdown, and -k groups it into file-disjoint waves.",
+          "prompt": "ttw refactor the entire monorepo — 500+ files across 12 services",
+          "expected_behavior": "TTW runs; the tier gate picks the depth. No pre-TTW triage exists — the plan's Tasks section carries the breakdown, and -k groups it into file-disjoint waves.",
           "assertions": [
             {"type": "pattern", "value": "[Mm]ode [Gg]ate|[Tt]ier [Gg]ate|[Hh]igh-stakes|Standard", "description": "Depth is chosen by the tier gate, not by declining the task"},
-            {"type": "pattern", "value": "[Ww]ave|[Tt]ask|-k", "description": "The breakdown lives in the plan's tasks, not in a pre-APEX step"},
-            {"type": "excludes", "value": "before running apex", "description": "Nothing runs before APEX — the gate picks depth, never whether"}
+            {"type": "pattern", "value": "[Ww]ave|[Tt]ask|-k", "description": "The breakdown lives in the plan's tasks, not in a pre-TTW step"},
+            {"type": "excludes", "value": "before running ttw", "description": "Nothing runs before TTW — the gate picks depth, never whether"}
           ]
         },
         {
           "name": "skip-planning-request",
           "category": "invalid",
-          "prompt": "apex skip analyze and plan, go straight to execute",
+          "prompt": "ttw skip analyze and plan, go straight to execute",
           "expected_behavior": "Warns that executing without analysis/planning risks untested, convention-violating code and recommends the linear spine.",
           "assertions": [
             {"type": "pattern", "value": "[Ww]arn|[Rr]isk|[Ss]kip|[Ss]equen|[Ss]pine", "description": "Must warn about skipping analysis/planning"}
@@ -1819,7 +1819,7 @@ in
         {
           "name": "baseline-already-red",
           "category": "missing",
-          "prompt": "apex add a health endpoint, but the test suite is already failing before I start",
+          "prompt": "ttw add a health endpoint, but the test suite is already failing before I start",
           "expected_behavior": "step-00 records the red baseline and names the failing check; the run proceeds, and at validate only that named failure may be attributed to the baseline.",
           "assertions": [
             {"type": "pattern", "value": "[Bb]aseline", "description": "Must record a baseline at init"},
@@ -1830,7 +1830,7 @@ in
         {
           "name": "no-test-framework",
           "category": "missing",
-          "prompt": "apex -t implement a feature but there is no test framework configured",
+          "prompt": "ttw -t implement a feature but there is no test framework configured",
           "expected_behavior": "Warns about the missing framework and recommends setup or manual verification fallback.",
           "assertions": [
             {"type": "pattern", "value": "[Nn]o test|[Mm]anual|[Ss]etup|[Ff]ramework|[Ww]arn", "description": "Must warn about missing test framework and propose alternatives"}
@@ -1839,7 +1839,7 @@ in
         {
           "name": "malformed-flag",
           "category": "malformed",
-          "prompt": "apex --unknownflag implement the feature",
+          "prompt": "ttw --unknownflag implement the feature",
           "expected_behavior": "Rejects the unknown flag and lists the valid flags.",
           "assertions": [
             {"type": "pattern", "value": "[Uu]nknown|[Ii]nvalid|[Ff]lag|[Uu]sage", "description": "Must reject the unknown flag"},
@@ -1852,8 +1852,8 @@ in
 
   # --- Routing: single source of truth for step transitions (R7) ---
   # Every step's "Next Step" defers here instead of duplicating if/else chains.
-  apexRouting = ''
-    # APEX Routing Table — single source of truth
+  ttwRouting = ''
+    # TTW Routing Table — single source of truth
 
     Every step's "Next Step" section says "consult ROUTING.md". Do NOT duplicate
     transition logic inside step files. This table is the only place that decides
@@ -1904,8 +1904,8 @@ in
 
   # --- Orchestration: fresh-context-per-phase (subagent isolation) ---
   # The coordinator is the only spawner (subagents cannot nest, depth=1).
-  apexOrchestration = ''
-    # APEX Orchestration — fresh context per phase
+  ttwOrchestration = ''
+    # TTW Orchestration — fresh context per phase
 
     Goal: each phase (analyze, plan, execute, validate) runs in an ISOLATED
     subagent with a clean context, so the workflow never loses or pollutes
@@ -2039,16 +2039,16 @@ in
     6. Loop until every acceptance criterion is green —
        an AC reported non prouvé is not green. Max 2 correction rounds,
        enforced by the correction-budget hook (PreToolUse on Agent): every
-       correction brief carries the line `APEX-CORRECTION-ROUND: <run-id>`
+       correction brief carries the line `TTW-CORRECTION-ROUND: <run-id>`
        (<run-id> = this run's `.claude/output/apex/` dir name) or, for a run
        outside the session's repo, its absolute `…/.claude/output/apex/<run-id>`
        path (no spaces); never create a stub run dir in the session's repo. Any other brief
        naming 06-resolve.md or a correction round carries
-       `APEX-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
+       `TTW-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
        both counted, and counts once the spawn/send is attempted, even if later
        denied. A SendMessage correction goes only to an agent that was spawned on `model: opus`; otherwise spawn a new opus agent.
        Denied (budget spent) → STOP: deliver with
-       the residuals list verbatim and the failing output, or ask the user to type `apex: +1 tour` alone on a line — the correction-grant hook (UserPromptSubmit) reads the raw prompt and grants that run one more round per prompt; a plain "continue" grants nothing. Without a grant, never run the round inline: the coordinator never grades its own work.
+       the residuals list verbatim and the failing output, or ask the user to type `ttw: +1 tour` alone on a line — the correction-grant hook (UserPromptSubmit) reads the raw prompt and grants that run one more round per prompt; a plain "continue" grants nothing. Without a grant, never run the round inline: the coordinator never grades its own work.
        Never weaken a check to make it pass, never declare success on partial
        green.
 
@@ -2156,8 +2156,8 @@ in
 
   # --- High-stakes additions (steps/HIGH-STAKES.md) ---
   # Moved out of ORCHESTRATION.md: only the High-stakes tier reads them.
-  apexHighStakes = ''
-    # APEX High-stakes — what the top tier adds to Standard
+  ttwHighStakes = ''
+    # TTW High-stakes — what the top tier adds to Standard
 
     Read on top of ORCHESTRATION.md when the tier is High-stakes, or when
     one of the flags below is typed in another tier.
@@ -2287,7 +2287,7 @@ in
       the first edit, and record the result. Without it, a red check at the
       end cannot be told apart from a red check that was already there.
 
-    ## Pressure-test — when the diff changes APEX's own rules
+    ## Pressure-test — when the diff changes TTW's own rules
 
     `apex-consistency` asserts a clause is PRESENT. Presence is not effect. On
     2026-09-05 three rules shipped in one session that read well and did
@@ -2344,8 +2344,8 @@ in
   '';
 
   # --- Direct tier: the one inline tier (steps/DIRECT.md) ---
-  apexDirect = ''
-    # APEX Direct — the one inline tier
+  ttwDirect = ''
+    # TTW Direct — the one inline tier
     <!-- effort: low -->
 
     Direct is for a diff of ≤ 4 files and ≤ 30 changed lines that touches no
@@ -2426,7 +2426,7 @@ in
          then go to step-02-plan with the Standard or High-stakes default
          flags. High-stakes also reads `steps/HIGH-STAKES.md`.
        - Direct never runs a correction round inline. The first implementer
-         brief after an escalation runs on `model: opus` and carries `APEX-CORRECTION-ROUND: {run-id}`
+         brief after an escalation runs on `model: opus` and carries `TTW-CORRECTION-ROUND: {run-id}`
          ({run-id} = this run's `.claude/output/apex/` dir name), so the
          correction budget counts it.
     8. **Self-check.** Read `git diff` of the touched files and check each AC
@@ -2448,8 +2448,8 @@ in
   '';
 
   # --- Commands: privileged/sandbox classification, stated once (steps/COMMANDS.md) ---
-  apexCommands = ''
-    # APEX Commands — classify, then run, escalate or delegate
+  ttwCommands = ''
+    # TTW Commands — classify, then run, escalate or delegate
 
     The ONE place that says how a command is run. Every tier reads it; no step
     file restates it. Before running ANY command (coordinator or phase agent),
@@ -2790,7 +2790,7 @@ in
     - Ensuite le titre `# YYYY-MM-DD - Sujet court`
     - Contenu : ce qui a ete fait, decisions prises, prochaines etapes
 
-    > Note : les runs APEX avec le flag `-n` ecrivent ces notes automatiquement via step-09b-obsidian-note.md — voir ce fichier pour le template complet (format 2026 Properties UI).
+    > Note : les runs TTW avec le flag `-n` ecrivent ces notes automatiquement via step-09b-obsidian-note.md — voir ce fichier pour le template complet (format 2026 Properties UI).
 
     ### Wikilinks
     - Toujours utiliser le chemin complet : `[[02-Projets/Preliz/Preliz]]`

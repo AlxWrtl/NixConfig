@@ -15,9 +15,9 @@
 # wrapper. The fixture repos have a diff whose contents the harness controls.
 #
 # WHY --out LIVES INSIDE THE FIXTURE. The wrapper confines --out to under the
-# reviewed repository's own `.claude/output/`, because `Bash(apex-verify-external
+# reviewed repository's own `.claude/output/`, because `Bash(ttw-verify-external
 # *)` is auto-approved and an unconstrained --out would be a write-JSON-anywhere
-# primitive. Envelopes therefore go to $FIXTURE/.claude/output/apex/, and both
+# primitive. Envelopes therefore go to $FIXTURE/.claude/output/ttw/, and both
 # fixtures carry `.claude/` in .git/info/exclude so those envelopes do not
 # become untracked files that contaminate the very diff under review. It must be
 # info/exclude and not a .gitignore, because a .gitignore is itself a file in
@@ -40,7 +40,7 @@ BASH_BIN="$(command -v bash)"
 # The work dir must exist or the run must STOP. The fuzz harness this copies
 # once let a failed `mktemp -d` through: $WORK was empty, every path resolved to
 # the filesystem root, and it reported 44 failures that were all its own.
-WORK=$(mktemp -d "${TMPDIR:-/tmp}/apex-verify-probe.XXXXXX") || {
+WORK=$(mktemp -d "${TMPDIR:-/tmp}/ttw-verify-probe.XXXXXX") || {
   echo "probe: cannot create a work directory under ${TMPDIR:-/tmp}" >&2
   exit 2
 }
@@ -576,7 +576,7 @@ is_informational() { [[ "$INFORMATIONAL" == *" $1 "* ]]; }
 
 # The envelope always lives under the reviewed repository's own output root,
 # because the wrapper rejects anything else with exit 2.
-case_out_for() { printf '%s/.claude/output/apex/%s.json\n' "$1" "$2"; }
+case_out_for() { printf '%s/.claude/output/ttw/%s.json\n' "$1" "$2"; }
 
 run_wrapper() { # run_wrapper <label> <mode> <version> <repo> <use-stub 1|0> -- <args...>
   local label="$1" mode="$2" version="$3" repo="$4" usestub="$5"
@@ -598,7 +598,7 @@ run_wrapper() { # run_wrapper <label> <mode> <version> <repo> <use-stub 1|0> -- 
   set +e
   CASE_STDOUT="$(
     cd "$repo" &&
-    env -u APEX_CODEX_MODEL \
+    env -u TTW_CODEX_MODEL \
       PATH="$pathspec" \
       BASH_ENV="$FAULT_BASH_ENV" \
       GIT_FAULT_MODE="${CASE_GIT_FAULT_MODE:-}" \
@@ -664,7 +664,7 @@ assert_case() {
 
 echo "=== ttw-verify-external probe (stub codex; the real binary is unreachable) ==="
 
-DIRTY_OUT="$FIX_DIRTY/.claude/output/apex"
+DIRTY_OUT="$FIX_DIRTY/.claude/output/ttw"
 
 if sed -n '/runtimeInputs = \[/,/^[[:space:]]*\];/p' "$REPO_ROOT/home/claude-code/ttw-verify-external.nix" \
   | grep -qE '^[[:space:]]+pkgs\.findutils[[:space:]]*$'; then
@@ -691,7 +691,7 @@ if [ -n "$usage_why" ]; then fail_case usage "$usage_why"; else ok_case usage "e
 
 # --- --out is confined to the reviewed repo's output tree ---------------------
 #
-# `Bash(apex-verify-external *)` is auto-approved, so an --out that escapes is
+# `Bash(ttw-verify-external *)` is auto-approved, so an --out that escapes is
 # the difference between a verification tool and a write-JSON-anywhere
 # primitive. Both an absolute escape and a `..` traversal must be refused, and
 # refused BEFORE anything is written anywhere.
@@ -705,7 +705,7 @@ run_wrapper out-escape pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master
 [ -z "$escape_why" ] && [ "$CASE_CALLS" != "0" ] && escape_why="absolute escape still called codex $CASE_CALLS time(s)"
 if [ -z "$escape_why" ]; then
   run_wrapper out-escape pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master \
-    --out "$FIX_DIRTY/.claude/output/apex/../../../traversal.json"
+    --out "$FIX_DIRTY/.claude/output/ttw/../../../traversal.json"
   [ "$CASE_STATUS" = 2 ] || escape_why="traversal: expected exit 2, got $CASE_STATUS"
   [ -z "$escape_why" ] && [ -e "$FIX_DIRTY/traversal.json" ] && escape_why="traversal wrote an envelope at $FIX_DIRTY/traversal.json"
   [ -z "$escape_why" ] && [ "$CASE_CALLS" != "0" ] && escape_why="traversal still called codex $CASE_CALLS time(s)"
@@ -1221,10 +1221,10 @@ esac
 # If .git/info/exclude stopped hiding .claude/, every envelope written above
 # would become an untracked file and be fed back into the next review.
 # `grep` sur le FICHIER, pas sur son nom. La forme précédente pipait la VARIABLE
-# — un chemin sous $WORK — dans grep, donc le motif `.claude/output/apex` ne
+# — un chemin sous $WORK — dans grep, donc le motif `.claude/output/ttw` ne
 # pouvait jamais matcher et la branche verte gagnait toujours. Assertion verte
 # par construction, AC6 non prouvée.
-if grep -q '\.claude/output/apex' "$UNTRACKED_BRIEF"; then
+if grep -q '\.claude/output/ttw' "$UNTRACKED_BRIEF"; then
   fail_case envelope-isolation "the harness's own envelopes appear in the reviewed diff"
 else
   ok_case envelope-isolation "envelopes excluded from the reviewed diff"

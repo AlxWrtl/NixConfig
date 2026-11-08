@@ -127,7 +127,7 @@ let
   # `force` is COMPUTED, not stored: see the header of skills-manifest.nix.
   # It must stay true for every SKILL.md: claudeCodeDesymlinkSkills replaces
   # only `*/SKILL.md` with real copies, so home-manager has to be allowed to
-  # clobber them. apex/eval-suite.json is NOT desymlinked; its `force` is not
+  # clobber them. ttw/eval-suite.json is NOT desymlinked; its `force` is not
   # required, kept as-is and harmless. A file under steps/ never carries it.
   skillFiles = builtins.listToAttrs (
     builtins.concatMap (
@@ -317,17 +317,6 @@ let
       text = hookTtwFlags;
       executable = true;
     };
-    # Pre-rename names (apex -> ttw), same text, wired nowhere: a live
-    # settings.json or a running session that still names them keeps a
-    # current hook until phase 4 drops them.
-    "${claudeDir}/hooks/require-apex.js" = {
-      text = hookRequireTtw;
-      executable = true;
-    };
-    "${claudeDir}/hooks/apex-flags.js" = {
-      text = hookTtwFlags;
-      executable = true;
-    };
     "${claudeDir}/hooks/format-typescript.js" = {
       text = hookFormatTypescript;
       executable = true;
@@ -352,10 +341,6 @@ let
       text = hookTtwReminder;
       executable = true;
     };
-    "${claudeDir}/hooks/apex-reminder.sh" = {
-      text = hookTtwReminder;
-      executable = true;
-    };
     "${claudeDir}/hooks/subagent-stop.js" = {
       text = hookSubagentStop;
       executable = true;
@@ -377,11 +362,6 @@ let
       executable = true;
     };
     "${claudeDir}/hooks/ttw-pr-record.js" = {
-      text = hookTtwPrRecord;
-      executable = true;
-    };
-    # Pre-rename name, same text, wired nowhere (phase 2; dropped in phase 4).
-    "${claudeDir}/hooks/apex-pr-record.js" = {
       text = hookTtwPrRecord;
       executable = true;
     };
@@ -441,11 +421,6 @@ let
       text = hookTtwAcsProof;
       executable = true;
     };
-    # Pre-rename name, same text, wired nowhere (phase 2; dropped in phase 4).
-    "${claudeDir}/hooks/apex-metrics-probe.py" = {
-      text = hookTtwAcsProof;
-      executable = true;
-    };
   };
 in
 {
@@ -467,7 +442,7 @@ in
 
     # `libdocs` + `nix-options` + `trello` + `preprod-curl` + `jev-locate` +
     # `graphify-reindex` + `claude-dispatch` + `agent-pane` on PATH — usable by
-    # Claude, by APEX and its subagents, and by the user in a plain terminal.
+    # Claude, by TTW and its subagents, and by the user in a plain terminal.
     # `abduco` too, from the same pkgs as the claude-dispatch wrapper and
     # agent-pane (same default socket dir), so `abduco -a <name>` attaches to
     # a dispatched session, and `agent-pane` run in the top pane shows the

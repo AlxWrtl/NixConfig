@@ -20,7 +20,7 @@
 # `force` IS NOT DATA HERE — IT IS A RULE, DERIVED FROM THE FILE NAME.
 # Measured on the state this manifest replaces: 15 of the 33 entries carried
 # `force = true`, and they are exactly the 14 `SKILL.md` plus
-# `apex/eval-suite.json`; no file under `steps/` carried it. The flag exists
+# `ttw/eval-suite.json`; no file under `steps/` carried it. The flag exists
 # because the desymlink activation script replaces every `*/SKILL.md` with a
 # real copy, so home-manager must be allowed to clobber them. It does NOT
 # touch ttw/eval-suite.json: that `force` is not required by desymlink, kept

@@ -1,4 +1,4 @@
-# APEX: synthetic ext-error
+# TTW: synthetic ext-error
 Tier: Standard
 Branch: feat/ext-error
 

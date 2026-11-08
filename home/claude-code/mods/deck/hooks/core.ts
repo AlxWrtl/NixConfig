@@ -146,7 +146,7 @@ export const parseConfig = (o: Readonly<Record<string, unknown>>): Config => {
 // ---------------------------------------------------------------- palette
 
 export type Palette = 'theme' | 'pastel'
-export type Colors = Record<'main' | 'agent' | 'ok' | 'arch' | 'apex' | 'amber' | 'warn' | 'dim' | 'faint' | 'text', string>
+export type Colors = Record<'main' | 'agent' | 'ok' | 'arch' | 'ttw' | 'amber' | 'warn' | 'dim' | 'faint' | 'text', string>
 
 /**
  * `theme` names the person's own theme colours (they follow light, dark and colour-blind themes);
@@ -158,7 +158,7 @@ export const PALETTES: Record<Palette, Colors> = {
     agent: 'suggestion',
     ok: 'success',
     arch: 'merged',
-    apex: 'planMode',
+    ttw: 'planMode',
     amber: 'warning',
     warn: 'error',
     dim: 'inactive',
@@ -170,7 +170,7 @@ export const PALETTES: Record<Palette, Colors> = {
     agent: '#93c5fd',
     ok: '#86efac',
     arch: '#c4b5fd',
-    apex: '#fdba74',
+    ttw: '#fdba74',
     amber: '#fcd34d',
     warn: '#fca5a5',
     dim: '#9ca3af',

@@ -1,4 +1,4 @@
-# APEX: synthetic live-edge
+# TTW: synthetic live-edge
 Tier: Standard
 Branch: feat/live-edge
 

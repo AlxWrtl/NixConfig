@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Positive control for `hookRequireTtw` — the PreToolUse hook that denies a
-# file-writing command until APEX has run for the current request.
+# file-writing command until TTW has run for the current request.
 #
 # WHAT IT GRADES. The Bash door of that hook, and above all its INTERPRETER
 # rules: inline `python3 -c` / `node -e` / `ruby -e` code that calls a write
@@ -22,8 +22,8 @@
 #
 # THE REAL CONDITIONS, BUILT IN $WORK. The hook reads the cwd's git repo and a
 # transcript, so the probe makes both: a throwaway `git init` repo, a
-# transcript whose last event is a real user turn (no APEX yet) and one where
-# an APEX Skill call follows it. A `git` shim on PATH logs every git call, so
+# transcript whose last event is a real user turn (no TTW yet) and one where
+# a TTW Skill call follows it. A `git` shim on PATH logs every git call, so
 # `no-shape-spawns-no-git` can prove a plain `ls -la` costs no subprocess.
 # $HOME is a fixture directory too, so `~/edit.py` is a file this probe owns.
 # One fixture lives under /tmp/claude-<uid>, the $TMPDIR a sandboxed Bash call
@@ -163,10 +163,8 @@
 #   m95 a Write's repo check starts in its missing parent dir (no walk up).
 #   m96 the walk up climbs one level only (two missing levels pass).
 #   m97 the codex door's repo check starts in its missing dir (no walk up).
-#   m98 the `ttw` needle never matches (only the old `apex` name opens).
+#   m98 the `ttw` needle never matches (no Skill call opens the gate).
 #   m99 the `ttw` needle loses its closing quote (`"skill":"ttwx"` opens).
-#   m100 the `apex` needle never matches (only the new `ttw` name opens): a
-#        session still on the pre-rename skill text is denied after it ran.
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
@@ -181,7 +179,7 @@
 #
 # usage: require-ttw-probe.sh [hook.js]
 #        require-ttw-probe.sh --mutants
-#        require-ttw-probe.sh --mutant m1..m100
+#        require-ttw-probe.sh --mutant m1..m99
 
 set -euo pipefail
 
@@ -195,7 +193,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97 m98 m99 m100"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97 m98 m99"
 
 MODE="run"
 ONE_MUTANT=""
@@ -301,7 +299,7 @@ extract_hook() { # extract_hook <destination>
   "$nix" eval --raw --impure --expr \
     "(import \"$HOOKS_NIX\" { graphifyReindexPkg = \"/nix/store/x\"; vaultSnapshotPkg = \"/nix/store/y\"; alxVaultPath = \"/nonexistent/vault-stub\"; }).hookRequireTtw" \
     > "$dest" 2> "$WORK/extract.err" || {
-    echo "probe: extracting hookRequireTtw from hooks.nix failed (the apex -> ttw rename names the attribute hookRequireTtw)" >&2
+    echo "probe: extracting hookRequireTtw from hooks.nix failed" >&2
     head -c 800 "$WORK/extract.err" >&2
     exit 2
   }
@@ -409,18 +407,18 @@ M73_EXPECT="codex-subst-nested codex-subst-parens-in-prompt codex-subst-unclosed
 M74_EXPECT="codex-subst-unclosed"
 M75_EXPECT="codex-double-dash-ro"
 M76_EXPECT="codex-c-key-leading-blank"
-M77_EXPECT="sub-continued-under-apex sub-continued-under-ttw sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-under-apex-later-user-turn sub-spawned-under-ttw-later-user-turn"
+M77_EXPECT="sub-continued-under-ttw sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-under-ttw-later-user-turn"
 M78_EXPECT="sub-agent-id-traversal"
 M79_EXPECT="sub-anchor-tool-result-only sub-tool-use-not-assistant"
 M80_EXPECT="sub-tool-use-not-assistant"
 M81_EXPECT="sub-continued-after-user-turn sub-sendmessage-unknown-name"
 M82_EXPECT="sub-sendmessage-unknown-name"
 M83_EXPECT="sub-meta-fifo"
-M84_EXPECT="compact-summary-after-apex"
+M84_EXPECT="compact-summary-after-ttw"
 M85_EXPECT="compact-flag-number compact-flag-string"
 M86_EXPECT="compact-summary-after-user-turn compact-summary-at-file-top"
 M87_EXPECT="compact-flag-number compact-flag-string compact-text-without-flag"
-M88_EXPECT="queued-human-after-apex queued-human-old-shape queued-humanturn-only"
+M88_EXPECT="queued-human-after-ttw queued-human-old-shape queued-humanturn-only"
 M89_EXPECT="queued-humanturn-only"
 M90_EXPECT="queued-human-old-shape"
 M91_EXPECT="queued-meta-human"
@@ -430,12 +428,9 @@ M94_EXPECT="queued-human-flag-notification-mode"
 M95_EXPECT="write-new-dir-in-repo"
 M96_EXPECT="write-new-dir-in-repo"
 M97_EXPECT="codex-cd-new-dir-in-repo-from-nogit codex-C-new-dir-in-repo-from-nogit"
-M98_EXPECT="sub-continued-under-ttw sub-spawned-under-ttw-later-user-turn ttw-already-ran"
+# Every case that passes only on a Skill call: MEASURED 2026-11-08 (20 red).
+M98_EXPECT="bash-mkdir-cd-new-dir-ttw codex-ttw compact-summary-after-ttw huge-command-ttw queued-human-flag-notification-mode queued-human-then-ttw queued-humanturn-string queued-meta-human queued-meta-top queued-peer-handback queued-task-notification sub-continued-under-ttw sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-before-ttw sub-spawned-under-ttw-later-user-turn ttw-already-ran ttw-already-ran-script write-existing-dir-ttw write-new-dir-in-repo-ttw"
 M99_EXPECT="ttw-prefix-not-the-skill"
-# The cases that pass only on an `apex` Skill call. MEASURED 2026-11-07
-# (20 red) on the pre-rename hook (hookRequireApex), whose apex needle is
-# the line m100 rewrites; 100/100 TARGETED again on hookRequireTtw.
-M100_EXPECT="apex-already-ran apex-already-ran-script bash-mkdir-cd-new-dir-apex codex-apex compact-summary-after-apex huge-command-apex queued-human-flag-notification-mode queued-human-then-apex queued-humanturn-string queued-meta-human queued-meta-top queued-peer-handback queued-task-notification sub-continued-under-apex sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-before-apex sub-spawned-under-apex-later-user-turn write-existing-dir-apex write-new-dir-in-repo-apex"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -578,7 +573,6 @@ build_mutant() { # build_mutant <mN> <destination>
     m97) from='              while (!isDir(p) && path.dirname(p) !== p) p = path.dirname(p);' to='' ;;
     m98) from='{\"skill\":\"ttw\""' to='{\"skill\":\"ttw-never\""' ;;
     m99) from='{\"skill\":\"ttw\""' to='{\"skill\":\"ttw"' ;;
-    m100) from='{\"skill\":\"apex\""' to='{\"skill\":\"apex-never\""' ;;
   esac
   if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
@@ -729,23 +723,18 @@ exec "$GIT" "\$@"
 SHIM
 chmod +x "$BIN/git"
 
-T_NOAPEX="$WORK/transcript-noapex.jsonl"
-T_APEX="$WORK/transcript-apex.jsonl"
-printf '%s\n' '{"type":"user","message":{"role":"user","content":"please edit the thing"}}' > "$T_NOAPEX"
-{
-  cat "$T_NOAPEX"
-  printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"apex"}}]}}'
-} > "$T_APEX"
-# The skill's visible name is `ttw` (its directory stays `apex`): either name
-# in the Skill call opens the gate. `ttwx` is another skill, never the gate's.
+T_NOTTW="$WORK/transcript-nottw.jsonl"
+printf '%s\n' '{"type":"user","message":{"role":"user","content":"please edit the thing"}}' > "$T_NOTTW"
+# The gate opens on the `ttw` Skill call only. `ttwx` is another skill,
+# never the gate's.
 T_TTW="$WORK/transcript-ttw.jsonl"
 T_TTWX="$WORK/transcript-ttwx.jsonl"
 {
-  cat "$T_NOAPEX"
+  cat "$T_NOTTW"
   printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"ttw"}}]}}'
 } > "$T_TTW"
 {
-  cat "$T_NOAPEX"
+  cat "$T_NOTTW"
   printf '%s\n' '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"ttwx"}}]}}'
 } > "$T_TTWX"
 
@@ -761,16 +750,16 @@ compact_line() { # compact_line <isCompactSummary JSON value, or "" to omit the 
     printf '{"type":"user","userType":"external","message":{"role":"user","content":"%s"}}\n' "$C_TEXT"
   fi
 }
-T_CMP_APEX="$WORK/transcript-compact-apex.jsonl"
+T_CMP_TTW="$WORK/transcript-compact-ttw.jsonl"
 T_CMP_USER="$WORK/transcript-compact-user.jsonl"
 T_CMP_TEXT="$WORK/transcript-compact-text.jsonl"
 T_CMP_STR="$WORK/transcript-compact-string.jsonl"
 T_CMP_NUM="$WORK/transcript-compact-number.jsonl"
-{ cat "$T_APEX"; compact_line true; } > "$T_CMP_APEX"
-{ cat "$T_NOAPEX"; compact_line true; } > "$T_CMP_USER"
-{ cat "$T_APEX"; compact_line ""; } > "$T_CMP_TEXT"
-{ cat "$T_APEX"; compact_line '"true"'; } > "$T_CMP_STR"
-{ cat "$T_APEX"; compact_line 1; } > "$T_CMP_NUM"
+{ cat "$T_TTW"; compact_line true; } > "$T_CMP_TTW"
+{ cat "$T_NOTTW"; compact_line true; } > "$T_CMP_USER"
+{ cat "$T_TTW"; compact_line ""; } > "$T_CMP_TEXT"
+{ cat "$T_TTW"; compact_line '"true"'; } > "$T_CMP_STR"
+{ cat "$T_TTW"; compact_line 1; } > "$T_CMP_NUM"
 # A file that STARTS at the compaction: nothing above the summary, deny.
 T_CMP_TOP="$WORK/transcript-compact-top.jsonl"
 compact_line true > "$T_CMP_TOP"
@@ -791,11 +780,11 @@ T_Q_TASK="$WORK/transcript-queued-task.jsonl"
 T_Q_PEER="$WORK/transcript-queued-peer.jsonl"
 T_Q_STR="$WORK/transcript-queued-string.jsonl"
 T_Q_FIRST="$WORK/transcript-queued-first.jsonl"
-{ cat "$T_APEX"; printf '%s\n' "$Q_HUMAN"; } > "$T_Q_HUMAN"
-{ cat "$T_APEX"; printf '%s\n' "$Q_HUMAN_OLD"; } > "$T_Q_OLD"
-{ cat "$T_APEX"; printf '%s\n' "$Q_TASK"; } > "$T_Q_TASK"
-{ cat "$T_APEX"; printf '%s\n' "$Q_PEER"; } > "$T_Q_PEER"
-{ cat "$T_APEX"; printf '%s\n' "$Q_STR"; } > "$T_Q_STR"
+{ cat "$T_TTW"; printf '%s\n' "$Q_HUMAN"; } > "$T_Q_HUMAN"
+{ cat "$T_TTW"; printf '%s\n' "$Q_HUMAN_OLD"; } > "$T_Q_OLD"
+{ cat "$T_TTW"; printf '%s\n' "$Q_TASK"; } > "$T_Q_TASK"
+{ cat "$T_TTW"; printf '%s\n' "$Q_PEER"; } > "$T_Q_PEER"
+{ cat "$T_TTW"; printf '%s\n' "$Q_STR"; } > "$T_Q_STR"
 # humanTurn alone, no origin: still human. isMeta on a human-looking line: harness text, skipped.
 Q_TURN_ONLY='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","humanTurn":true,"prompt":"p"}}'
 Q_META='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"prompt","humanTurn":true,"origin":{"kind":"human"},"isMeta":true,"prompt":"p"}}'
@@ -804,14 +793,14 @@ Q_META_TOP='{"type":"attachment","isMeta":true,"attachment":{"type":"queued_comm
 Q_NOTIF_HUMAN='{"type":"attachment","attachment":{"type":"queued_command","commandMode":"task-notification","humanTurn":true,"origin":{"kind":"human"},"prompt":"<task-notification>x</task-notification>"}}'
 T_Q_META_TOP="$WORK/transcript-queued-meta-top.jsonl"
 T_Q_NOTIF_HUMAN="$WORK/transcript-queued-notif-human.jsonl"
-{ cat "$T_APEX"; printf '%s\n' "$Q_META_TOP"; } > "$T_Q_META_TOP"
-{ cat "$T_APEX"; printf '%s\n' "$Q_NOTIF_HUMAN"; } > "$T_Q_NOTIF_HUMAN"
+{ cat "$T_TTW"; printf '%s\n' "$Q_META_TOP"; } > "$T_Q_META_TOP"
+{ cat "$T_TTW"; printf '%s\n' "$Q_NOTIF_HUMAN"; } > "$T_Q_NOTIF_HUMAN"
 T_Q_TURN_ONLY="$WORK/transcript-queued-turn-only.jsonl"
 T_Q_META="$WORK/transcript-queued-meta.jsonl"
-{ cat "$T_APEX"; printf '%s\n' "$Q_TURN_ONLY"; } > "$T_Q_TURN_ONLY"
-{ cat "$T_APEX"; printf '%s\n' "$Q_META"; } > "$T_Q_META"
-# The queued prompt came first, then APEX answered it -> pass.
-{ cat "$T_APEX"; printf '%s\n' "$Q_HUMAN"; tail -n 1 "$T_APEX"; } > "$T_Q_FIRST"
+{ cat "$T_TTW"; printf '%s\n' "$Q_TURN_ONLY"; } > "$T_Q_TURN_ONLY"
+{ cat "$T_TTW"; printf '%s\n' "$Q_META"; } > "$T_Q_META"
+# The queued prompt came first, then TTW answered it -> pass.
+{ cat "$T_TTW"; printf '%s\n' "$Q_HUMAN"; tail -n 1 "$T_TTW"; } > "$T_Q_FIRST"
 
 # Subagent fixtures. A hook fired inside a subagent carries `agent_id`, while
 # `transcript_path` is the PARENT's: a user turn typed after the spawn must not
@@ -821,8 +810,6 @@ T_Q_META="$WORK/transcript-queued-meta.jsonl"
 # the anchor WOULD pass on, so each one denies only if the fallback is taken.
 U_TURN='{"type":"user","message":{"role":"user","content":"please edit the thing"}}'
 U_LATER='{"type":"user","message":{"role":"user","content":"and another request"}}'
-L_APEX='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"apex"}}]}}'
-# The same call under the skill's new name: subagent walks open on it too.
 L_TTW='{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","name":"Skill","input":{"skill":"ttw"}}]}}'
 spawn_line() { # spawn_line <toolUseId>
   printf '{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"%s","name":"Agent","input":{"description":"d","prompt":"p","subagent_type":"Explore"}}]}}\n' "$1"
@@ -832,12 +819,12 @@ meta_json() { # meta_json <toolUseId>
 }
 SUBD="$WORK/sub"
 mkdir -p "$SUBD"
-# T_SUB: user turn, APEX, spawn toolu_sub01, a real user turn after it.
+# T_SUB: user turn, TTW, spawn toolu_sub01, a real user turn after it.
 T_SUB="$SUBD/parent.jsonl"
 T_SUB_AG="$SUBD/parent/subagents"
 mkdir -p "$T_SUB_AG"
 {
-  printf '%s\n' "$U_TURN" "$L_APEX"
+  printf '%s\n' "$U_TURN" "$L_TTW"
   spawn_line toolu_sub01
   printf '%s\n' "$U_LATER"
 } > "$T_SUB"
@@ -849,21 +836,21 @@ meta_json toolu_absent00 > "$T_SUB_AG/agent-subabsent.meta.json"
 # which anchors on toolu_sub01. Only the agent_id shape check refuses it.
 mkdir -p "$T_SUB_AG/agent-.."
 meta_json toolu_sub01 > "$T_SUB_AG/planted.meta.json"
-# T_SUBNO: the spawn came AFTER a user turn that APEX never answered.
-T_SUBNO="$SUBD/noapex.jsonl"
-mkdir -p "$SUBD/noapex/subagents"
+# T_SUBNO: the spawn came AFTER a user turn that TTW never answered.
+T_SUBNO="$SUBD/nottw.jsonl"
+mkdir -p "$SUBD/nottw/subagents"
 {
-  printf '%s\n' "$U_TURN" "$L_APEX" "$U_LATER"
+  printf '%s\n' "$U_TURN" "$L_TTW" "$U_LATER"
   spawn_line toolu_sub02
   printf '%s\n' "$U_LATER"
 } > "$T_SUBNO"
-meta_json toolu_sub02 > "$SUBD/noapex/subagents/agent-subnoapex.meta.json"
+meta_json toolu_sub02 > "$SUBD/nottw/subagents/agent-subnottw.meta.json"
 # T_SUBTR: only a tool_result names toolu_sub03, no assistant tool_use does.
-# Anchored on that line, the walk would skip it and reach APEX.
+# Anchored on that line, the walk would skip it and reach TTW.
 T_SUBTR="$SUBD/toolresult.jsonl"
 mkdir -p "$SUBD/toolresult/subagents"
 {
-  printf '%s\n' "$U_TURN" "$L_APEX"
+  printf '%s\n' "$U_TURN" "$L_TTW"
   printf '%s\n' '{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_sub03","content":"done"}]}}'
   printf '%s\n' "$U_LATER"
 } > "$T_SUBTR"
@@ -873,7 +860,7 @@ meta_json toolu_sub03 > "$SUBD/toolresult/subagents/agent-subtr.meta.json"
 T_SUBSP="$SUBD/spaced.jsonl"
 mkdir -p "$SUBD/spaced/subagents"
 {
-  printf '%s\n' "$U_TURN" "$L_APEX"
+  printf '%s\n' "$U_TURN" "$L_TTW"
   printf '%s\n' '{"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": "toolu_sub04", "name": "Agent", "input": {}}]}}'
   printf '%s\n' "$U_LATER"
 } > "$T_SUBSP"
@@ -888,29 +875,19 @@ mk_parent() { # mk_parent <name> <toolUseId> <agent_id> — dir + meta; transcri
   cat > "$SUBD/$1.jsonl"
   meta_json "$2" > "$SUBD/$1/subagents/agent-$3.meta.json"
 }
-# Continued after a user turn APEX never answered -> deny.
-{ printf '%s\n' "$U_TURN" "$L_APEX"; spawn_line toolu_sub05; printf '%s\n' "$U_LATER"; send_line subcont; } | mk_parent cont toolu_sub05 subcont
-# Continued after APEX answered that turn -> pass.
-{ printf '%s\n' "$U_TURN" "$L_APEX"; spawn_line toolu_sub06; printf '%s\n' "$U_LATER" "$L_APEX"; send_line subcont2; printf '%s\n' "$U_LATER"; } | mk_parent cont2 toolu_sub06 subcont2
+# Continued after a user turn TTW never answered -> deny.
+{ printf '%s\n' "$U_TURN" "$L_TTW"; spawn_line toolu_sub05; printf '%s\n' "$U_LATER"; send_line subcont; } | mk_parent cont toolu_sub05 subcont
+# Continued after TTW answered that turn -> pass.
+{ printf '%s\n' "$U_TURN" "$L_TTW"; spawn_line toolu_sub06; printf '%s\n' "$U_LATER" "$L_TTW"; send_line subcont2; printf '%s\n' "$U_LATER"; } | mk_parent cont2 toolu_sub06 subcont2
 # A SendMessage to a name no meta file knows may be this agent -> deny.
-{ printf '%s\n' "$U_TURN" "$L_APEX"; spawn_line toolu_sub07; printf '%s\n' "$U_LATER"; send_line reviewer; printf '%s\n' "$U_LATER"; } | mk_parent named toolu_sub07 subname
+{ printf '%s\n' "$U_TURN" "$L_TTW"; spawn_line toolu_sub07; printf '%s\n' "$U_LATER"; send_line reviewer; printf '%s\n' "$U_LATER"; } | mk_parent named toolu_sub07 subname
 # A SendMessage to ANOTHER known subagent leaves this one's anchor -> pass.
-{ printf '%s\n' "$U_TURN" "$L_APEX"; spawn_line toolu_sub10; printf '%s\n' "$U_LATER"; send_line subother; printf '%s\n' "$U_LATER"; } | mk_parent other toolu_sub10 subsib
+{ printf '%s\n' "$U_TURN" "$L_TTW"; spawn_line toolu_sub10; printf '%s\n' "$U_LATER"; send_line subother; printf '%s\n' "$U_LATER"; } | mk_parent other toolu_sub10 subsib
 meta_json toolu_elsewhere > "$SUBD/other/subagents/agent-subother.meta.json"
 # A non-assistant line holding a tool_use block with the id is no spawn.
-{ printf '%s\n' "$U_TURN" "$L_APEX" '{"type":"system","message":{"content":[{"type":"tool_use","id":"toolu_sub08"}]}}' "$U_LATER"; } | mk_parent sysline toolu_sub08 subsys
-# Spawned before APEX, APEX then answered the turn: the whole walk passes.
-{ printf '%s\n' "$U_TURN"; spawn_line toolu_sub09; printf '%s\n' "$L_APEX"; } | mk_parent early toolu_sub09 subearly
-# The ttw twins of T_SUB and cont2: spawned, and continued, under the new name.
-T_SUB_TTW="$SUBD/parent-ttw.jsonl"
-mkdir -p "$SUBD/parent-ttw/subagents"
-{
-  printf '%s\n' "$U_TURN" "$L_TTW"
-  spawn_line toolu_sub11
-  printf '%s\n' "$U_LATER"
-} > "$T_SUB_TTW"
-meta_json toolu_sub11 > "$SUBD/parent-ttw/subagents/agent-subttw01.meta.json"
-{ printf '%s\n' "$U_TURN" "$L_TTW"; spawn_line toolu_sub12; printf '%s\n' "$U_LATER" "$L_TTW"; send_line subcontttw; printf '%s\n' "$U_LATER"; } | mk_parent contttw toolu_sub12 subcontttw
+{ printf '%s\n' "$U_TURN" "$L_TTW" '{"type":"system","message":{"content":[{"type":"tool_use","id":"toolu_sub08"}]}}' "$U_LATER"; } | mk_parent sysline toolu_sub08 subsys
+# Spawned before TTW, TTW then answered the turn: the whole walk passes.
+{ printf '%s\n' "$U_TURN"; spawn_line toolu_sub09; printf '%s\n' "$L_TTW"; } | mk_parent early toolu_sub09 subearly
 # A FIFO where the meta file should be: read blocking, the hook would hang.
 mkfifo "$T_SUB_AG/agent-subfifo.meta.json"
 
@@ -1117,95 +1094,94 @@ ML_MSG="$(printf "git commit -m 'subject\npython3 %s/edit.py was run by hand'" "
 CMT_APOS="$(printf "# don't touch\npython3 %s/edit.py 'x'" "$EXT")"
 
 # --- MUST DENY: the shell door (control) -------------------------------------
-check ctl-redirect deny "$REPO" "$T_NOAPEX" 'echo x > src/a.ts'
-check perl-0pi-in-place deny "$REPO" "$T_NOAPEX" "perl -0pi -e 's/a\\nb/c/s' src/x.ts"
+check ctl-redirect deny "$REPO" "$T_NOTTW" 'echo x > src/a.ts'
+check perl-0pi-in-place deny "$REPO" "$T_NOTTW" "perl -0pi -e 's/a\\nb/c/s' src/x.ts"
 # --- MUST DENY: interpreter inline code and heredoc --------------------------
-check heredoc-quoted-hash-body deny "$REPO" "$T_NOAPEX" "$HD_HASH"
-check python-c-writes-package-json deny "$REPO" "$T_NOAPEX" "python3 -c \"import json; open('package.json', 'w').write(json.dumps({}))\""
-check node-e-writefilesync deny "$REPO" "$T_NOAPEX" "node -e \"require('fs').writeFileSync('package.json', '{}')\""
-check ruby-e-file-write deny "$REPO" "$T_NOAPEX" "ruby -e \"File.write('a.rb', 'x')\""
-check cd-temp-after-inline-write deny "$REPO" "$T_NOAPEX" "python3 -c \"open('x', 'w').write('1')\" && cd $TMPD"
+check heredoc-quoted-hash-body deny "$REPO" "$T_NOTTW" "$HD_HASH"
+check python-c-writes-package-json deny "$REPO" "$T_NOTTW" "python3 -c \"import json; open('package.json', 'w').write(json.dumps({}))\""
+check node-e-writefilesync deny "$REPO" "$T_NOTTW" "node -e \"require('fs').writeFileSync('package.json', '{}')\""
+check ruby-e-file-write deny "$REPO" "$T_NOTTW" "ruby -e \"File.write('a.rb', 'x')\""
+check cd-temp-after-inline-write deny "$REPO" "$T_NOTTW" "python3 -c \"open('x', 'w').write('1')\" && cd $TMPD"
 # --- MUST DENY: an out-of-repo script that writes and names this repo --------
-check script-out-of-repo-plain deny "$REPO" "$T_NOAPEX" "python3 $EXT/edit.py"
-check script-out-of-repo-quoted deny "$REPO" "$T_NOAPEX" "python3 \"$EXT/edit.py\" --dry-run=no"
-check script-single-quoted deny "$REPO" "$T_NOAPEX" "python3 '$EXT/edit.py'"
-check script-npx-tsx deny "$REPO" "$T_NOAPEX" "npx tsx $EXT/edit.ts"
-check script-tmpdir-var deny "$REPO" "$T_NOAPEX" 'python3 "$TMPDIR/edit.py"'
-check script-tmpdir-split deny "$REPO" "$T_NOAPEX" "python3 \"\$TMPDIR/$SBX_REL/edit.py\""
-check script-same-command-var deny "$REPO" "$T_NOAPEX" "SC=$EXT; python3 \"\$SC/edit.py\""
-check script-newline-var deny "$REPO" "$T_NOAPEX" "$NL_VAR"
-check script-dollar-brace-var deny "$REPO" "$T_NOAPEX" "SC=\"$EXT\" && python3 \${SC}/edit.py"
-check script-tilde-unquoted deny "$REPO" "$T_NOAPEX" 'python3 ~/edit.py'
-check multi-script-second-writes deny "$REPO" "$T_NOAPEX" "python3 $EXT/noname.py; python3 $EXT/edit.py"
+check script-out-of-repo-plain deny "$REPO" "$T_NOTTW" "python3 $EXT/edit.py"
+check script-out-of-repo-quoted deny "$REPO" "$T_NOTTW" "python3 \"$EXT/edit.py\" --dry-run=no"
+check script-single-quoted deny "$REPO" "$T_NOTTW" "python3 '$EXT/edit.py'"
+check script-npx-tsx deny "$REPO" "$T_NOTTW" "npx tsx $EXT/edit.ts"
+check script-tmpdir-var deny "$REPO" "$T_NOTTW" 'python3 "$TMPDIR/edit.py"'
+check script-tmpdir-split deny "$REPO" "$T_NOTTW" "python3 \"\$TMPDIR/$SBX_REL/edit.py\""
+check script-same-command-var deny "$REPO" "$T_NOTTW" "SC=$EXT; python3 \"\$SC/edit.py\""
+check script-newline-var deny "$REPO" "$T_NOTTW" "$NL_VAR"
+check script-dollar-brace-var deny "$REPO" "$T_NOTTW" "SC=\"$EXT\" && python3 \${SC}/edit.py"
+check script-tilde-unquoted deny "$REPO" "$T_NOTTW" 'python3 ~/edit.py'
+check multi-script-second-writes deny "$REPO" "$T_NOTTW" "python3 $EXT/noname.py; python3 $EXT/edit.py"
 # The comment's apostrophe must not pair with the quote after the script.
-check comment-apostrophe-then-script deny "$REPO" "$T_NOAPEX" "$CMT_APOS"
+check comment-apostrophe-then-script deny "$REPO" "$T_NOTTW" "$CMT_APOS"
 # A name the command never sets, read from the environment the Bash call
 # inherits; a `cd` moves where a relative script path is read from.
-check script-env-home deny "$REPO" "$T_NOAPEX" 'python3 "$HOME/edit.py"'
-check script-cd-relative deny "$REPO" "$T_NOAPEX" "cd $EXT && python3 edit.py"
-check script-cd-chain deny "$REPO" "$T_NOAPEX" "cd $WORK && cd ext && python3 edit.py"
+check script-env-home deny "$REPO" "$T_NOTTW" 'python3 "$HOME/edit.py"'
+check script-cd-relative deny "$REPO" "$T_NOTTW" "cd $EXT && python3 edit.py"
+check script-cd-chain deny "$REPO" "$T_NOTTW" "cd $WORK && cd ext && python3 edit.py"
 # A flag with a separate argument, and a quoted head with a bare tail.
-check python-W-ignore-c-write deny "$REPO" "$T_NOAPEX" "python3 -W ignore -c \"open('package.json', 'w').write('{}')\""
-check script-W-ignore deny "$REPO" "$T_NOAPEX" "python3 -W ignore $EXT/edit.py"
-check node-r-then-e-write deny "$REPO" "$T_NOAPEX" "node -r esm -e \"require('fs').writeFileSync('a', '')\""
-check script-quoted-var-bare-tail deny "$REPO" "$T_NOAPEX" 'python3 "$TMPDIR"/edit.py'
+check python-W-ignore-c-write deny "$REPO" "$T_NOTTW" "python3 -W ignore -c \"open('package.json', 'w').write('{}')\""
+check script-W-ignore deny "$REPO" "$T_NOTTW" "python3 -W ignore $EXT/edit.py"
+check node-r-then-e-write deny "$REPO" "$T_NOTTW" "node -r esm -e \"require('fs').writeFileSync('a', '')\""
+check script-quoted-var-bare-tail deny "$REPO" "$T_NOTTW" 'python3 "$TMPDIR"/edit.py'
 # `$PWD` is where the `cd`s leave the shell: read from the environment (or the
 # cwd), `$PWD/edit.py` would name the repo, where there is no edit.py.
-check script-cd-pwd deny "$REPO" "$T_NOAPEX" "cd $EXT && python3 \"\$PWD/edit.py\""
+check script-cd-pwd deny "$REPO" "$T_NOTTW" "cd $EXT && python3 \"\$PWD/edit.py\""
 # The hook itself without a $TMPDIR: the sandbox candidates still resolve.
 TMPDIR_MODE=unset
-check script-tmpdir-unset deny "$REPO" "$T_NOAPEX" "python3 \"\$TMPDIR/$SBX_REL/edit.py\""
+check script-tmpdir-unset deny "$REPO" "$T_NOTTW" "python3 \"\$TMPDIR/$SBX_REL/edit.py\""
 TMPDIR_MODE=empty
-check script-tmpdir-empty deny "$REPO" "$T_NOAPEX" "python3 \"\$TMPDIR/$SBX_REL/edit.py\""
+check script-tmpdir-empty deny "$REPO" "$T_NOTTW" "python3 \"\$TMPDIR/$SBX_REL/edit.py\""
 TMPDIR_MODE=set
-check python-c-open-space deny "$REPO" "$T_NOAPEX" "python3 -c \"open ('a', 'w').write('1')\""
-check node-e-rmdirsync deny "$REPO" "$T_NOAPEX" "node -e \"require('fs').rmdirSync('build')\""
+check python-c-open-space deny "$REPO" "$T_NOTTW" "python3 -c \"open ('a', 'w').write('1')\""
+check node-e-rmdirsync deny "$REPO" "$T_NOTTW" "node -e \"require('fs').rmdirSync('build')\""
 # --- MUST PASS: read-only and module calls -----------------------------------
-check python-m-json-tool pass "$REPO" "$T_NOAPEX" 'python3 -m json.tool package.json'
-check node-version pass "$REPO" "$T_NOAPEX" 'node --version'
-check python-c-json-load-read pass "$REPO" "$T_NOAPEX" "python3 -c \"import json; print(json.load(open('package.json')))\""
-check inline-df-rename-read-only pass "$REPO" "$T_NOAPEX" "python3 -c \"import pandas as pd; print(pd.read_csv('a.csv').rename(columns={'a': 'b'}))\""
-check ruby-file-open-read pass "$REPO" "$T_NOAPEX" "ruby -e \"puts File.open('app.rb').read\""
-check cd-temp-then-inline-write pass "$REPO" "$T_NOAPEX" "cd $TMPD && python3 -c \"open('x', 'w').write('1')\""
-check cd-quoted-temp-then-inline-write pass "$REPO" "$T_NOAPEX" "cd \"\$TMPDIR\" && python3 -c \"open('x', 'w').write('1')\""
-check cd-temp-or-exit-then-inline-write pass "$REPO" "$T_NOAPEX" "cd \"\$TMPDIR\" || exit 1; python3 -c \"open('x','w')\""
-check inline-fstring-temp-write pass "$REPO" "$T_NOAPEX" "python3 -c \"open(f'\$TMPDIR/x','w').write('1')\""
-check git-commit-heredoc-hash-body pass "$REPO" "$T_NOAPEX" "$GIT_HD"
-check heredoc-after-newline-not-interp pass "$REPO" "$T_NOAPEX" "$NL_HD"
-check multiline-quoted-commit-msg pass "$REPO" "$T_NOAPEX" "$ML_MSG"
-check no-shape-spawns-no-git pass-nogit "$REPO" "$T_NOAPEX" 'ls -la'
+check python-m-json-tool pass "$REPO" "$T_NOTTW" 'python3 -m json.tool package.json'
+check node-version pass "$REPO" "$T_NOTTW" 'node --version'
+check python-c-json-load-read pass "$REPO" "$T_NOTTW" "python3 -c \"import json; print(json.load(open('package.json')))\""
+check inline-df-rename-read-only pass "$REPO" "$T_NOTTW" "python3 -c \"import pandas as pd; print(pd.read_csv('a.csv').rename(columns={'a': 'b'}))\""
+check ruby-file-open-read pass "$REPO" "$T_NOTTW" "ruby -e \"puts File.open('app.rb').read\""
+check cd-temp-then-inline-write pass "$REPO" "$T_NOTTW" "cd $TMPD && python3 -c \"open('x', 'w').write('1')\""
+check cd-quoted-temp-then-inline-write pass "$REPO" "$T_NOTTW" "cd \"\$TMPDIR\" && python3 -c \"open('x', 'w').write('1')\""
+check cd-temp-or-exit-then-inline-write pass "$REPO" "$T_NOTTW" "cd \"\$TMPDIR\" || exit 1; python3 -c \"open('x','w')\""
+check inline-fstring-temp-write pass "$REPO" "$T_NOTTW" "python3 -c \"open(f'\$TMPDIR/x','w').write('1')\""
+check git-commit-heredoc-hash-body pass "$REPO" "$T_NOTTW" "$GIT_HD"
+check heredoc-after-newline-not-interp pass "$REPO" "$T_NOTTW" "$NL_HD"
+check multiline-quoted-commit-msg pass "$REPO" "$T_NOTTW" "$ML_MSG"
+check no-shape-spawns-no-git pass-nogit "$REPO" "$T_NOTTW" 'ls -la'
 # --- MUST PASS: scripts the rule must leave alone ----------------------------
-check script-in-repo pass "$REPO" "$T_NOAPEX" 'python3 tools/edit.py'
-check script-in-repo-via-symlink pass "$REPO" "$T_NOAPEX" "python3 $WORK/repolink/tools/edit.py"
-check script-out-of-repo-no-repo-path pass "$REPO" "$T_NOAPEX" "python3 $EXT/noname.py"
-check script-out-of-repo-no-write-api pass "$REPO" "$T_NOAPEX" "python3 $EXT/nowrite.py"
-check script-names-sibling-prefix pass "$REPO" "$T_NOAPEX" "python3 $EXT/sibling.py"
-check cd-relative-noname pass "$REPO" "$T_NOAPEX" "cd $EXT && python3 noname.py"
-check cd-subdir-in-repo pass "$REPO" "$T_NOAPEX" 'cd tools && python3 edit.py'
+check script-in-repo pass "$REPO" "$T_NOTTW" 'python3 tools/edit.py'
+check script-in-repo-via-symlink pass "$REPO" "$T_NOTTW" "python3 $WORK/repolink/tools/edit.py"
+check script-out-of-repo-no-repo-path pass "$REPO" "$T_NOTTW" "python3 $EXT/noname.py"
+check script-out-of-repo-no-write-api pass "$REPO" "$T_NOTTW" "python3 $EXT/nowrite.py"
+check script-names-sibling-prefix pass "$REPO" "$T_NOTTW" "python3 $EXT/sibling.py"
+check cd-relative-noname pass "$REPO" "$T_NOTTW" "cd $EXT && python3 noname.py"
+check cd-subdir-in-repo pass "$REPO" "$T_NOTTW" 'cd tools && python3 edit.py'
 # `-m` ends the flag run: the path after it is the module's argument.
-check python-m-script-arg pass "$REPO" "$T_NOAPEX" "python3 -m pytest $EXT/edit.py"
-check cp-helper-not-a-write pass "$REPO" "$T_NOAPEX" "python3 $EXT/cphelper.py"
-check script-over-256k pass "$REPO" "$T_NOAPEX" "python3 $EXT/big.py"
-check script-missing pass "$REPO" "$T_NOAPEX" "python3 $EXT/missing.py"
-check script-fifo-nonblocking pass-fast "$REPO" "$T_NOAPEX" "python3 $EXT/fifo.py"
-check script-tilde-quoted-not-expanded pass "$REPO" "$T_NOAPEX" 'python3 "~/edit.py"'
-check unresolved-var-known-gap pass "$REPO" "$T_NOAPEX" 'python3 "$OTHER/edit.py"'
+check python-m-script-arg pass "$REPO" "$T_NOTTW" "python3 -m pytest $EXT/edit.py"
+check cp-helper-not-a-write pass "$REPO" "$T_NOTTW" "python3 $EXT/cphelper.py"
+check script-over-256k pass "$REPO" "$T_NOTTW" "python3 $EXT/big.py"
+check script-missing pass "$REPO" "$T_NOTTW" "python3 $EXT/missing.py"
+check script-fifo-nonblocking pass-fast "$REPO" "$T_NOTTW" "python3 $EXT/fifo.py"
+check script-tilde-quoted-not-expanded pass "$REPO" "$T_NOTTW" 'python3 "~/edit.py"'
+check unresolved-var-known-gap pass "$REPO" "$T_NOTTW" 'python3 "$OTHER/edit.py"'
 # Resolved lexically, `$OTHER/../../ext` IS the ext dir: only the `$` guard
 # stops an unexpanded name from being read as a directory.
-check dollar-guard-dotdot pass "$REPO" "$T_NOAPEX" 'python3 "$OTHER/../../ext/edit.py"'
+check dollar-guard-dotdot pass "$REPO" "$T_NOTTW" 'python3 "$OTHER/../../ext/edit.py"'
 # Over 4096 chars a value is dropped, so `$A` stays unresolved — though this
 # one, `/.` x2500 after the ext dir, would normalise to a real script.
-check assign-over-4096-dropped pass "$REPO" "$T_NOAPEX" "$LONG_VAL"
+check assign-over-4096-dropped pass "$REPO" "$T_NOTTW" "$LONG_VAL"
 # The same, set on a name the environment also has: the shell sees the long
 # value, so the hook must not fall back to its own $HOME (where edit.py is).
-check assign-over-4096-env-unresolved pass "$REPO" "$T_NOAPEX" "$LONG_HOME"
+check assign-over-4096-env-unresolved pass "$REPO" "$T_NOTTW" "$LONG_HOME"
 # --- MUST PASS: the gate's own exits -----------------------------------------
-check apex-already-ran pass "$REPO" "$T_APEX" "python3 -c \"open('package.json', 'w').write('{}')\""
-check apex-already-ran-script pass "$REPO" "$T_APEX" "python3 $EXT/edit.py"
 check ttw-already-ran pass "$REPO" "$T_TTW" "python3 -c \"open('package.json', 'w').write('{}')\""
+check ttw-already-ran-script pass "$REPO" "$T_TTW" "python3 $EXT/edit.py"
 check ttw-prefix-not-the-skill deny "$REPO" "$T_TTWX" "python3 -c \"open('package.json', 'w').write('{}')\""
-check outside-git-inline pass "$NOGIT" "$T_NOAPEX" "python3 -c \"open('package.json', 'w').write('{}')\""
-check outside-git-script pass "$NOGIT" "$T_NOAPEX" "python3 $EXT/edit.py"
+check outside-git-inline pass "$NOGIT" "$T_NOTTW" "python3 -c \"open('package.json', 'w').write('{}')\""
+check outside-git-script pass "$NOGIT" "$T_NOTTW" "python3 $EXT/edit.py"
 # --- a write into a directory that does not exist yet -----------------------
 # The hook never runs the command and never creates a directory: every new-*
 # dir below is absent when it is graded (asserted here, a case that lied about
@@ -1217,29 +1193,28 @@ for d in "$REPO/new-a" "$REPO/new-c" "$NOGIT/new-b"; do
     exit 2
   }
 done
-# Control: the same Write into a directory that exists denies, APEX passes.
-check_write write-existing-dir-in-repo deny "$REPO" "$T_NOAPEX" "$REPO/tools/new.txt"
-check_write write-existing-dir-apex pass "$REPO" "$T_APEX" "$REPO/tools/new.txt"
-check_write write-new-dir-in-repo deny "$REPO" "$T_NOAPEX" "$REPO/new-a/sub/file.txt"
-check_write write-new-dir-in-repo-apex pass "$REPO" "$T_APEX" "$REPO/new-a/sub/file.txt"
+# Control: the same Write into a directory that exists denies, TTW passes.
+check_write write-existing-dir-in-repo deny "$REPO" "$T_NOTTW" "$REPO/tools/new.txt"
+check_write write-existing-dir-ttw pass "$REPO" "$T_TTW" "$REPO/tools/new.txt"
+check_write write-new-dir-in-repo deny "$REPO" "$T_NOTTW" "$REPO/new-a/sub/file.txt"
+check_write write-new-dir-in-repo-ttw pass "$REPO" "$T_TTW" "$REPO/new-a/sub/file.txt"
 # Outside any repo a missing directory stays a pass.
-check_write write-new-dir-outside-repo pass "$NOGIT" "$T_NOAPEX" "$NOGIT/new-b/file.txt"
+check_write write-new-dir-outside-repo pass "$NOGIT" "$T_NOTTW" "$NOGIT/new-b/file.txt"
 # The Bash door: `mkdir -p` has not run when the hook looks, so `cd` and the
 # redirect name a directory that is not there yet. Control rows: the cwd is
 # the repo, so they deny without the fix too; the codex rows below need it.
-check bash-mkdir-cd-new-dir-in-repo deny "$REPO" "$T_NOAPEX" "mkdir -p $REPO/new-c && cd $REPO/new-c && echo x > f"
-check bash-mkdir-cd-new-dir-apex pass "$REPO" "$T_APEX" "mkdir -p $REPO/new-c && cd $REPO/new-c && echo x > f"
-check bash-mkdir-cd-new-dir-outside-repo pass "$NOGIT" "$T_NOAPEX" "mkdir -p $NOGIT/new-b && cd $NOGIT/new-b && echo x > f"
+check bash-mkdir-cd-new-dir-in-repo deny "$REPO" "$T_NOTTW" "mkdir -p $REPO/new-c && cd $REPO/new-c && echo x > f"
+check bash-mkdir-cd-new-dir-ttw pass "$REPO" "$T_TTW" "mkdir -p $REPO/new-c && cd $REPO/new-c && echo x > f"
+check bash-mkdir-cd-new-dir-outside-repo pass "$NOGIT" "$T_NOTTW" "mkdir -p $NOGIT/new-b && cd $NOGIT/new-b && echo x > f"
 # The codex door judges a dir that `mkdir -p` creates in the same command by
 # the repo that will contain it, from a non-repo cwd too.
-check codex-cd-new-dir-in-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "mkdir -p $REPO/nc && cd $REPO/nc && codex exec --full-auto 'fix'"
-check codex-C-new-dir-in-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "mkdir -p $REPO/nc && codex exec -C $REPO/nc -s workspace-write 'fix'"
+check codex-cd-new-dir-in-repo-from-nogit deny "$NOGIT" "$T_NOTTW" "mkdir -p $REPO/nc && cd $REPO/nc && codex exec --full-auto 'fix'"
+check codex-C-new-dir-in-repo-from-nogit deny "$NOGIT" "$T_NOTTW" "mkdir -p $REPO/nc && codex exec -C $REPO/nc -s workspace-write 'fix'"
 # --- subagents: the walk starts at the spawn, else falls back to the end -----
 # The command is ctl-redirect's, a shape no mutant touches: these cases grade
 # the transcript walk alone.
-check_sub sub-spawned-under-apex-later-user-turn pass "$REPO" "$T_SUB" subok01 'echo x > src/a.ts'
-check_sub sub-spawned-under-ttw-later-user-turn pass "$REPO" "$T_SUB_TTW" subttw01 'echo x > src/a.ts'
-check_sub sub-spawned-without-apex deny "$REPO" "$T_SUBNO" subnoapex 'echo x > src/a.ts'
+check_sub sub-spawned-under-ttw-later-user-turn pass "$REPO" "$T_SUB" subok01 'echo x > src/a.ts'
+check_sub sub-spawned-without-ttw deny "$REPO" "$T_SUBNO" subnottw 'echo x > src/a.ts'
 check_sub sub-meta-missing deny "$REPO" "$T_SUB" submissing 'echo x > src/a.ts'
 check_sub sub-meta-not-json deny "$REPO" "$T_SUB" subnotjson 'echo x > src/a.ts'
 check_sub sub-tooluseid-absent deny "$REPO" "$T_SUB" subabsent 'echo x > src/a.ts'
@@ -1247,118 +1222,117 @@ check_sub sub-agent-id-traversal deny "$REPO" "$T_SUB" '../../planted' 'echo x >
 check_sub sub-anchor-tool-result-only deny "$REPO" "$T_SUBTR" subtr 'echo x > src/a.ts'
 check_sub sub-spawn-line-spaced pass "$REPO" "$T_SUBSP" subsp 'echo x > src/a.ts'
 check_sub sub-continued-after-user-turn deny "$REPO" "$SUBD/cont.jsonl" subcont 'echo x > src/a.ts'
-check_sub sub-continued-under-apex pass "$REPO" "$SUBD/cont2.jsonl" subcont2 'echo x > src/a.ts'
-check_sub sub-continued-under-ttw pass "$REPO" "$SUBD/contttw.jsonl" subcontttw 'echo x > src/a.ts'
+check_sub sub-continued-under-ttw pass "$REPO" "$SUBD/cont2.jsonl" subcont2 'echo x > src/a.ts'
 check_sub sub-sendmessage-unknown-name deny "$REPO" "$SUBD/named.jsonl" subname 'echo x > src/a.ts'
 check_sub sub-sendmessage-other-agent pass "$REPO" "$SUBD/other.jsonl" subsib 'echo x > src/a.ts'
 check_sub sub-tool-use-not-assistant deny "$REPO" "$SUBD/sysline.jsonl" subsys 'echo x > src/a.ts'
-check_sub sub-spawned-before-apex pass "$REPO" "$SUBD/early.jsonl" subearly 'echo x > src/a.ts'
+check_sub sub-spawned-before-ttw pass "$REPO" "$SUBD/early.jsonl" subearly 'echo x > src/a.ts'
 check_sub sub-meta-fifo deny "$REPO" "$T_SUB" subfifo 'echo x > src/a.ts'
 check sub-no-agent-id deny "$REPO" "$T_SUB" 'echo x > src/a.ts'
 # --- compaction summary: skipped by the walk, flag decides, not the text ----
 # ctl-redirect's command again: these cases grade the transcript walk alone.
-check compact-summary-after-apex pass "$REPO" "$T_CMP_APEX" 'echo x > src/a.ts'
+check compact-summary-after-ttw pass "$REPO" "$T_CMP_TTW" 'echo x > src/a.ts'
 check compact-summary-after-user-turn deny "$REPO" "$T_CMP_USER" 'echo x > src/a.ts'
 check compact-text-without-flag deny "$REPO" "$T_CMP_TEXT" 'echo x > src/a.ts'
 check compact-flag-string deny "$REPO" "$T_CMP_STR" 'echo x > src/a.ts'
 check compact-flag-number deny "$REPO" "$T_CMP_NUM" 'echo x > src/a.ts'
 check compact-summary-at-file-top deny "$REPO" "$T_CMP_TOP" 'echo x > src/a.ts'
 # --- queued prompt: a human prompt typed mid-turn is a user turn ------------
-check queued-human-after-apex deny "$REPO" "$T_Q_HUMAN" 'echo x > src/a.ts'
+check queued-human-after-ttw deny "$REPO" "$T_Q_HUMAN" 'echo x > src/a.ts'
 check queued-human-old-shape deny "$REPO" "$T_Q_OLD" 'echo x > src/a.ts'
 check queued-task-notification pass "$REPO" "$T_Q_TASK" 'echo x > src/a.ts'
 check queued-peer-handback pass "$REPO" "$T_Q_PEER" 'echo x > src/a.ts'
 check queued-humanturn-string pass "$REPO" "$T_Q_STR" 'echo x > src/a.ts'
-check queued-human-then-apex pass "$REPO" "$T_Q_FIRST" 'echo x > src/a.ts'
+check queued-human-then-ttw pass "$REPO" "$T_Q_FIRST" 'echo x > src/a.ts'
 check queued-humanturn-only deny "$REPO" "$T_Q_TURN_ONLY" 'echo x > src/a.ts'
 check queued-meta-human pass "$REPO" "$T_Q_META" 'echo x > src/a.ts'
 check queued-meta-top pass "$REPO" "$T_Q_META_TOP" 'echo x > src/a.ts'
 check queued-human-flag-notification-mode pass "$REPO" "$T_Q_NOTIF_HUMAN" 'echo x > src/a.ts'
 # --- codex exec: denied unless an explicit, unwidened `-s read-only` --------
-check codex-exec-default deny "$REPO" "$T_NOAPEX" 'codex exec "fix it"'
-check codex-e-alias deny "$REPO" "$T_NOAPEX" 'codex e -m m "x"'
-check codex-after-separator deny "$REPO" "$T_NOAPEX" 'cd . && timeout 60 codex exec --json "x"'
-check codex-workspace-write deny "$REPO" "$T_NOAPEX" 'codex exec -s workspace-write "x"'
-check codex-read-only-in-prompt deny "$REPO" "$T_NOAPEX" 'codex exec "use -s read-only here"'
-check codex-ro-config-sandbox deny "$REPO" "$T_NOAPEX" 'codex exec -s read-only -c sandbox_mode=danger-full-access "x"'
-check codex-ro-profile deny "$REPO" "$T_NOAPEX" 'codex exec --sandbox read-only -p fast "x"'
-check codex-ro-bypass deny "$REPO" "$T_NOAPEX" 'codex exec -s read-only --dangerously-bypass-approvals-and-sandbox "x"'
-check codex-resume-default deny "$REPO" "$T_NOAPEX" 'codex exec resume --last "go"'
-check codex-C-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "codex exec -C $REPO \"x\""
-check codex-ro-short pass "$REPO" "$T_NOAPEX" 'codex exec -s read-only "x"'
-check codex-ro-eq-effort pass "$REPO" "$T_NOAPEX" 'codex exec --sandbox=read-only -c model_reasoning_effort=low "x"'
-check codex-exec-help pass "$REPO" "$T_NOAPEX" 'codex exec --help'
-check codex-grep-mention pass "$REPO" "$T_NOAPEX" 'grep -n "codex exec" README.md'
-check codex-apex pass "$REPO" "$T_APEX" 'codex exec "fix it"'
-check codex-nogit pass "$NOGIT" "$T_NOAPEX" 'codex exec "fix it"'
+check codex-exec-default deny "$REPO" "$T_NOTTW" 'codex exec "fix it"'
+check codex-e-alias deny "$REPO" "$T_NOTTW" 'codex e -m m "x"'
+check codex-after-separator deny "$REPO" "$T_NOTTW" 'cd . && timeout 60 codex exec --json "x"'
+check codex-workspace-write deny "$REPO" "$T_NOTTW" 'codex exec -s workspace-write "x"'
+check codex-read-only-in-prompt deny "$REPO" "$T_NOTTW" 'codex exec "use -s read-only here"'
+check codex-ro-config-sandbox deny "$REPO" "$T_NOTTW" 'codex exec -s read-only -c sandbox_mode=danger-full-access "x"'
+check codex-ro-profile deny "$REPO" "$T_NOTTW" 'codex exec --sandbox read-only -p fast "x"'
+check codex-ro-bypass deny "$REPO" "$T_NOTTW" 'codex exec -s read-only --dangerously-bypass-approvals-and-sandbox "x"'
+check codex-resume-default deny "$REPO" "$T_NOTTW" 'codex exec resume --last "go"'
+check codex-C-repo-from-nogit deny "$NOGIT" "$T_NOTTW" "codex exec -C $REPO \"x\""
+check codex-ro-short pass "$REPO" "$T_NOTTW" 'codex exec -s read-only "x"'
+check codex-ro-eq-effort pass "$REPO" "$T_NOTTW" 'codex exec --sandbox=read-only -c model_reasoning_effort=low "x"'
+check codex-exec-help pass "$REPO" "$T_NOTTW" 'codex exec --help'
+check codex-grep-mention pass "$REPO" "$T_NOTTW" 'grep -n "codex exec" README.md'
+check codex-ttw pass "$REPO" "$T_TTW" 'codex exec "fix it"'
+check codex-nogit pass "$NOGIT" "$T_NOTTW" 'codex exec "fix it"'
 # Graded where codex runs: the `cd`s before it, then `-C`.
-check codex-cd-temp-pass pass "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec \"x\""
-check codex-cd-temp-timeout-pass pass "$REPO" "$T_NOAPEX" "cd $TMPD && timeout 240 codex exec --skip-git-repo-check -m m -c model_reasoning_effort=low 'x'"
-check codex-cd-temp-danger deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -s danger-full-access \"x\""
-check codex-cd-temp-C-repo deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -C $REPO \"x\""
-check codex-cd-temp-config-danger deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -c sandbox_mode=danger-full-access \"x\""
-check codex-cd-temp-profile-danger deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -p yolo \"x\""
-check codex-cd-repo-subdir deny "$NOGIT" "$T_NOAPEX" "cd $REPO/tools && codex exec \"x\""
+check codex-cd-temp-pass pass "$REPO" "$T_NOTTW" "cd $TMPD && codex exec \"x\""
+check codex-cd-temp-timeout-pass pass "$REPO" "$T_NOTTW" "cd $TMPD && timeout 240 codex exec --skip-git-repo-check -m m -c model_reasoning_effort=low 'x'"
+check codex-cd-temp-danger deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec -s danger-full-access \"x\""
+check codex-cd-temp-C-repo deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec -C $REPO \"x\""
+check codex-cd-temp-config-danger deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec -c sandbox_mode=danger-full-access \"x\""
+check codex-cd-temp-profile-danger deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec -p yolo \"x\""
+check codex-cd-repo-subdir deny "$NOGIT" "$T_NOTTW" "cd $REPO/tools && codex exec \"x\""
 # The exemption is a whitelist: each case below breaks one condition.
-check codex-C-nonrepo-from-repo deny "$REPO" "$T_NOAPEX" "codex exec -C $NOGIT \"x\""
-check codex-cd-temp-C-nonrepo deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -C $NOGIT \"x\""
-check codex-subshell-cd deny "$REPO" "$T_NOAPEX" "(cd $TMPD && ls); codex exec \"x\""
-check codex-dollar-cd deny "$REPO" "$T_NOAPEX" "x=\$(cd $TMPD && pwd) && codex exec \"x\""
-check codex-cd-missing-dir deny "$REPO" "$T_NOAPEX" "cd $TMPD/missing && codex exec \"x\""
-check codex-cd-dash deny "$REPO" "$T_NOAPEX" "cd $TMPD && cd - && codex exec \"x\""
-check codex-cd-nontemp deny "$REPO" "$T_NOAPEX" 'cd /usr && codex exec "x"'
-check codex-cd-temp-gitrepo deny "$REPO" "$T_NOAPEX" "cd $TMPD/grepo && codex exec \"x\""
-check codex-unread-cd deny "$REPO" "$T_NOAPEX" "cd $TMPD && if true; then cd $REPO; fi; codex exec \"x\""
-check codex-add-dir deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec --add-dir $REPO \"x\""
-check codex-yolo-temp deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec --yolo \"x\""
-check codex-quoted-danger-temp deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -s \"danger-full-access\" \"x\""
+check codex-C-nonrepo-from-repo deny "$REPO" "$T_NOTTW" "codex exec -C $NOGIT \"x\""
+check codex-cd-temp-C-nonrepo deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec -C $NOGIT \"x\""
+check codex-subshell-cd deny "$REPO" "$T_NOTTW" "(cd $TMPD && ls); codex exec \"x\""
+check codex-dollar-cd deny "$REPO" "$T_NOTTW" "x=\$(cd $TMPD && pwd) && codex exec \"x\""
+check codex-cd-missing-dir deny "$REPO" "$T_NOTTW" "cd $TMPD/missing && codex exec \"x\""
+check codex-cd-dash deny "$REPO" "$T_NOTTW" "cd $TMPD && cd - && codex exec \"x\""
+check codex-cd-nontemp deny "$REPO" "$T_NOTTW" 'cd /usr && codex exec "x"'
+check codex-cd-temp-gitrepo deny "$REPO" "$T_NOTTW" "cd $TMPD/grepo && codex exec \"x\""
+check codex-unread-cd deny "$REPO" "$T_NOTTW" "cd $TMPD && if true; then cd $REPO; fi; codex exec \"x\""
+check codex-add-dir deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec --add-dir $REPO \"x\""
+check codex-yolo-temp deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec --yolo \"x\""
+check codex-quoted-danger-temp deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec -s \"danger-full-access\" \"x\""
 # Option values read from the raw command: quoted, attached, after `\`+newline.
-check codex-C-quoted-pwd-then-c deny "$REPO" "$T_NOAPEX" 'codex exec --sandbox workspace-write -C "$(pwd)" -c x=1 "fix"'
-check codex-C-quoted-repo-from-nogit deny "$NOGIT" "$T_NOAPEX" "codex exec -C \"$REPO\" \"x\""
-check codex-attached-C deny "$NOGIT" "$T_NOAPEX" "codex exec -C$REPO \"x\""
-check codex-backslash-newline deny "$REPO" "$T_NOAPEX" "codex \\${NL}exec \"x\""
-check codex-ro-then-bsnl-danger deny "$REPO" "$T_NOAPEX" "codex exec -s read-only \\${NL}--dangerously-bypass-approvals-and-sandbox \"x\""
-check codex-ro-then-ww deny "$REPO" "$T_NOAPEX" 'codex exec -s read-only -s workspace-write "x"'
-check codex-subst-in-dquotes deny "$REPO" "$T_NOAPEX" 'out="$(codex exec "fix")"'
+check codex-C-quoted-pwd-then-c deny "$REPO" "$T_NOTTW" 'codex exec --sandbox workspace-write -C "$(pwd)" -c x=1 "fix"'
+check codex-C-quoted-repo-from-nogit deny "$NOGIT" "$T_NOTTW" "codex exec -C \"$REPO\" \"x\""
+check codex-attached-C deny "$NOGIT" "$T_NOTTW" "codex exec -C$REPO \"x\""
+check codex-backslash-newline deny "$REPO" "$T_NOTTW" "codex \\${NL}exec \"x\""
+check codex-ro-then-bsnl-danger deny "$REPO" "$T_NOTTW" "codex exec -s read-only \\${NL}--dangerously-bypass-approvals-and-sandbox \"x\""
+check codex-ro-then-ww deny "$REPO" "$T_NOTTW" 'codex exec -s read-only -s workspace-write "x"'
+check codex-subst-in-dquotes deny "$REPO" "$T_NOTTW" 'out="$(codex exec "fix")"'
 # The span's end is found by paren depth, past nested quotes and `$(`.
-check codex-subst-nested deny "$REPO" "$T_NOAPEX" 'out="$(codex exec "$(cat p.txt)")"'
-check codex-subst-parens-in-prompt deny "$REPO" "$T_NOAPEX" 'out="$(codex exec "fix (this) now")"'
+check codex-subst-nested deny "$REPO" "$T_NOTTW" 'out="$(codex exec "$(cat p.txt)")"'
+check codex-subst-parens-in-prompt deny "$REPO" "$T_NOTTW" 'out="$(codex exec "fix (this) now")"'
 # Unclosed: the string is left visible (fail closed), not blanked.
-check codex-subst-unclosed deny "$REPO" "$T_NOAPEX" 'out="$(codex exec "x"'
-check codex-parens-mention-pass pass "$REPO" "$T_NOAPEX" 'git commit -m "mention codex exec (docs)"'
+check codex-subst-unclosed deny "$REPO" "$T_NOTTW" 'out="$(codex exec "x"'
+check codex-parens-mention-pass pass "$REPO" "$T_NOTTW" 'git commit -m "mention codex exec (docs)"'
 # A bare `--` ends the options: `-s read-only` after it is prompt text.
-check codex-double-dash-ro deny "$REPO" "$T_NOAPEX" 'codex exec -- -s read-only fix'
-check codex-c-key-leading-blank deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -c ' sandbox_mode=danger-full-access' \"x\""
+check codex-double-dash-ro deny "$REPO" "$T_NOTTW" 'codex exec -- -s read-only fix'
+check codex-c-key-leading-blank deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec -c ' sandbox_mode=danger-full-access' \"x\""
 # Only exec calls count toward the cap of 4; past it, graded at the cwd.
-check codex-five-calls deny "$REPO" "$T_NOAPEX" 'codex --version; codex --version; codex --version; codex --version; codex exec "x"'
-check codex-five-exec-calls deny "$REPO" "$T_NOAPEX" "cd $TMPD && codex exec -s read-only a; codex exec -s read-only b; codex exec -s read-only c; codex exec -s read-only d; codex exec \"x\""
-check codex-five-calls-temp pass "$REPO" "$T_NOAPEX" "codex --version; codex --version; codex --version; codex --version; cd $TMPD && codex exec \"x\""
-check codex-ro-quoted pass "$REPO" "$T_NOAPEX" 'codex exec -s "read-only" "x"'
-check codex-ro-attached pass "$REPO" "$T_NOAPEX" 'codex exec -sread-only "x"'
-check codex-ro-bsnl pass "$REPO" "$T_NOAPEX" "codex exec \\${NL}-s read-only \"x\""
+check codex-five-calls deny "$REPO" "$T_NOTTW" 'codex --version; codex --version; codex --version; codex --version; codex exec "x"'
+check codex-five-exec-calls deny "$REPO" "$T_NOTTW" "cd $TMPD && codex exec -s read-only a; codex exec -s read-only b; codex exec -s read-only c; codex exec -s read-only d; codex exec \"x\""
+check codex-five-calls-temp pass "$REPO" "$T_NOTTW" "codex --version; codex --version; codex --version; codex --version; cd $TMPD && codex exec \"x\""
+check codex-ro-quoted pass "$REPO" "$T_NOTTW" 'codex exec -s "read-only" "x"'
+check codex-ro-attached pass "$REPO" "$T_NOTTW" 'codex exec -sread-only "x"'
+check codex-ro-bsnl pass "$REPO" "$T_NOTTW" "codex exec \\${NL}-s read-only \"x\""
 # --- MUST PASS FAST: adversarial shapes --------------------------------------
-check bounded-64k-separators pass-fast "$REPO" "$T_NOAPEX" "$LONG"
-check flags-28-fast pass-fast "$REPO" "$T_NOAPEX" "$FLAGS28"
-check node-newlines-64k-fast pass-fast "$REPO" "$T_NOAPEX" "$NODE_NL"
-check dollar-paren-node-64k-fast pass-fast "$REPO" "$T_NOAPEX" "$DOLLAR_NODE"
-check assign-newlines-16k-fast pass-fast "$REPO" "$T_NOAPEX" "$ASSIGN_NL"
-check assign-doubling-fast pass-fast "$REPO" "$T_NOAPEX" "$DOUBLING"
-check fast-64k-word pass-fast "$REPO" "$T_NOAPEX" "$W64"
-check fast-64k-newlines pass-fast "$REPO" "$T_NOAPEX" "$NL64"
-check fast-64k-dollar-paren pass-fast "$REPO" "$T_NOAPEX" "$DP64"
-check fast-64k-claude-projects pass-fast "$REPO" "$T_NOAPEX" "$CP64"
-check fast-64k-sed pass-fast "$REPO" "$T_NOAPEX" "$SED64"
-check fast-cap-claude-projects pass-fast "$REPO" "$T_NOAPEX" "$CPCAP"
-check fast-64k-codex pass-fast "$REPO" "$T_NOAPEX" "$CODEX64"
-check fast-64k-codex-config pass-fast "$REPO" "$T_NOAPEX" "$CODEXCFG64"
-check fast-64k-cd-chain pass-fast "$REPO" "$T_NOAPEX" "$CDCHAIN"
-check fast-64k-codex-exec-calls pass-fast "$NOGIT" "$T_NOAPEX" "$CODEXEXEC64"
-check fast-expand-bomb pass-fast "$REPO" "$T_NOAPEX" "$EXPBOMB"
-check fast-64k-dq-subst pass-fast "$NOGIT" "$T_NOAPEX" "$DQSUBST64"
-# --- OVER 256 K: denied unread, unless APEX ran or the cwd is not a repo -----
-check huge-command-denied deny "$REPO" "$T_NOAPEX" "$HUGE_CMD"
-check huge-command-apex pass "$REPO" "$T_APEX" "$HUGE_CMD"
-check huge-command-nogit pass "$NOGIT" "$T_NOAPEX" "$HUGE_CMD"
+check bounded-64k-separators pass-fast "$REPO" "$T_NOTTW" "$LONG"
+check flags-28-fast pass-fast "$REPO" "$T_NOTTW" "$FLAGS28"
+check node-newlines-64k-fast pass-fast "$REPO" "$T_NOTTW" "$NODE_NL"
+check dollar-paren-node-64k-fast pass-fast "$REPO" "$T_NOTTW" "$DOLLAR_NODE"
+check assign-newlines-16k-fast pass-fast "$REPO" "$T_NOTTW" "$ASSIGN_NL"
+check assign-doubling-fast pass-fast "$REPO" "$T_NOTTW" "$DOUBLING"
+check fast-64k-word pass-fast "$REPO" "$T_NOTTW" "$W64"
+check fast-64k-newlines pass-fast "$REPO" "$T_NOTTW" "$NL64"
+check fast-64k-dollar-paren pass-fast "$REPO" "$T_NOTTW" "$DP64"
+check fast-64k-claude-projects pass-fast "$REPO" "$T_NOTTW" "$CP64"
+check fast-64k-sed pass-fast "$REPO" "$T_NOTTW" "$SED64"
+check fast-cap-claude-projects pass-fast "$REPO" "$T_NOTTW" "$CPCAP"
+check fast-64k-codex pass-fast "$REPO" "$T_NOTTW" "$CODEX64"
+check fast-64k-codex-config pass-fast "$REPO" "$T_NOTTW" "$CODEXCFG64"
+check fast-64k-cd-chain pass-fast "$REPO" "$T_NOTTW" "$CDCHAIN"
+check fast-64k-codex-exec-calls pass-fast "$NOGIT" "$T_NOTTW" "$CODEXEXEC64"
+check fast-expand-bomb pass-fast "$REPO" "$T_NOTTW" "$EXPBOMB"
+check fast-64k-dq-subst pass-fast "$NOGIT" "$T_NOTTW" "$DQSUBST64"
+# --- OVER 256 K: denied unread, unless TTW ran or the cwd is not a repo -----
+check huge-command-denied deny "$REPO" "$T_NOTTW" "$HUGE_CMD"
+check huge-command-ttw pass "$REPO" "$T_TTW" "$HUGE_CMD"
+check huge-command-nogit pass "$NOGIT" "$T_NOTTW" "$HUGE_CMD"
 
 # Malformed JSON: no payload builder, the raw bytes are the case.
 NCASES=$((NCASES + 1))

@@ -1,23 +1,23 @@
-# Structural consistency check for the APEX skill.
+# Structural consistency check for the TTW skill.
 #
 # Not a behavioural test. A behavioural runner was built and measured: four
 # runs of one identical eval case returned 4/4, 2/4, 3/4, 3/4 — the noise
 # floor exceeds any regression it could detect, because the assertions match
 # free-form model prose. This checks the one thing that IS deterministic:
-# whether APEX still refers only to parts of itself that exist, and whether
+# whether TTW still refers only to parts of itself that exist, and whether
 # the clauses it must never lose are still there.
 #
 # Runs in `nix flake check`, before any rebuild, from the nix sources.
 { pkgs }:
 
 let
-  # apex -> ttw (phase 1, plan D1/D4): every attribute this check reads goes by
-  # its new name. Looked up through `need`, so a missing one fails naming the
-  # attribute and the rename, not as a bare "attribute missing" trace.
+  # Every attribute this check reads goes by
+  # its TTW name. Looked up through `need`, so a missing one fails naming the
+  # attribute, not as a bare "attribute missing" trace.
   need =
     file: set: n:
     set.${n}
-      or (throw "ttw-consistency:${file} has no attribute '${n}' — the apex -> ttw rename (phase 1) names it so; this check reads the new name only.");
+      or (throw "ttw-consistency:${file} has no attribute '${n}' — this check reads the TTW names only.");
   skillsRaw = import ../home/claude-code/skills.nix;
   skills =
     skillsRaw
@@ -92,7 +92,7 @@ let
     "COMMANDS" = skills.ttwCommands;
   };
 
-  # Every text APEX ships, concatenated — used for reference resolution.
+  # Every text TTW ships, concatenated — used for reference resolution.
   corpus = skills.skillTtw + "\n" + builtins.concatStringsSep "\n" (builtins.attrValues steps);
 
   existing = builtins.attrNames steps;
@@ -273,7 +273,7 @@ let
       scope = skills.ttwStep04Validate;
     }
     {
-      # apex-consistency proves a clause is PRESENT. Three rules shipped in one
+      # This check proves a clause is PRESENT. Three rules shipped in one
       # day that were present and did nothing. Presence is not effect, and this
       # is the only clause in the skill that tests effect.
       name = "orchestration: a rule that governs future runs is pressure-tested";
@@ -305,7 +305,7 @@ let
     {
       # The predicate the eval-suite routing guard depends on. Reword it and
       # that guard goes quiet, letting the suite claim /debug again. Measured
-      # 2026-09-05: "INSIDE apex" -> "inside APEX" left the derivation
+      # 2026-09-05: a case-only change of the skill name left the derivation
       # byte-identical while the suite was free to drift.
       name = "handoffs: diagnosis is a mode, not an exit";
       needle = "Diagnosis stays INSIDE ttw";
@@ -467,7 +467,7 @@ let
       # The five needles above assert the RULES about the external pass. None
       # of them asserts that anything ever RUNS it: measured 2026-09-09,
       # deleting the invocation line from step-04 while keeping every rule
-      # sentence left both apex-consistency and readme-consistency green, and
+      # sentence left both this check and readme-consistency green, and
       # `-e` inert. Presence is not effect — so pin the command itself.
       name = "validate: the external pass is actually invoked";
       needle = "ttw-verify-external --base {trunk} --acs";
@@ -546,7 +546,7 @@ let
     {
       # The rule that separates a test that was RUN from one that was merely
       # observed passing. Scoped to the testing-patterns skill: this is where a
-      # test author reads it, and a copy of the heading surviving in APEX prose
+      # test author reads it, and a copy of the heading surviving in TTW prose
       # would keep a corpus-wide needle green while the skill that produces
       # tests stopped saying it. Limit, stated rather than implied: this pins
       # the section ANCHOR, so gutting the body under it while keeping the
@@ -711,7 +711,7 @@ let
       scope = skills.ttwStep04Validate;
     }
     {
-      # apex -> ttw phase 2: validate proves its ACs through the probe's
+      # validate proves its ACs through the probe's
       # installed new name.
       name = "validate: the AC proof runs the ttw metrics probe";
       needle = "python3 -I ~/.claude/hooks/ttw-metrics-probe.py --acs";
@@ -856,7 +856,7 @@ let
       scope = skills.ttwOrchestration;
     }
     {
-      # The path-scoped rules are read on opening a file, outside any APEX run:
+      # The path-scoped rules are read on opening a file, outside any TTW run:
       # each must point at the single source, not restate a gate of its own.
       name = "rules: ruleNix points to the step-02 Docs line";
       needle = "the Docs line in TTW step-02-plan.md";
@@ -873,8 +873,8 @@ let
       scope = rules.ruleReact;
     }
     {
-      # apex -> ttw: the skill installs under ~/.claude/skills/ttw/; a rule
-      # pointing at the old dir points at nothing once activation retires it.
+      # The skill installs under ~/.claude/skills/ttw/; a rule
+      # pointing at the old dir points at nothing: that dir no longer exists.
       name = "rules: ruleNix points at the installed ttw steps dir";
       needle = "`~/.claude/skills/ttw/steps/`";
       scope = rules.ruleNix;
@@ -952,7 +952,7 @@ let
   # hasInfix over the concatenated corpus cannot tell "in step-00" from "moved
   # into step-04" — and for a clause whose whole point is WHERE it runs, that
   # distinction IS the rule. Measured 2026-09-05: relocating the baseline
-  # clause from apexStep00Init into apexStep04Validate left the derivation
+  # clause from ttwStep00Init into ttwStep04Validate left the derivation
   # byte-identical, while the invariant guarding it is named "before the first
   # edit, not after".
   invariantScope = i: i.scope or corpus;
@@ -1039,7 +1039,7 @@ let
     )
   ) (builtins.attrNames staleTierSites);
 
-  # apex-flags.js is advisory since 2026-10-07: it reports context size and
+  # ttw-flags.js is advisory since 2026-10-07: it reports context size and
   # never rewrites the call, never decides a permission, never classifies the
   # brief by keyword. Each string below is the mechanism of one of those.
   hookFlagsRewrites = builtins.filter (s: pkgs.lib.hasInfix s hooks.hookTtwFlags) [
@@ -1056,15 +1056,14 @@ let
   # source the router refactor removed.
   initTableCopy = pkgs.lib.hasInfix "| Diagnosis |" skills.ttwStep00Init;
 
-  # apex -> ttw: the old names, guarded by absence. The needles above prove
-  # the TTW wording is present; they cannot see an APEX line left next to it.
-  # The hooks accept both names until phase 4, the text the model reads
-  # teaches only the new one. The rules are read outside any run and point
-  # at the installed dir, so they are held to the same.
-  # Phase 2 adds the binary and hook names (the packages and hooks.nix keep
-  # the apex-* alias until phase 4; the text teaches ttw-*), and the sites
-  # that name them: the eval suite, ttw-flags.js and the repo CLAUDE.md. The
-  # run folder `.claude/output/apex/` is not a stale name (phase 4).
+  # The pre-rename name, guarded by absence. The needles above prove the TTW
+  # wording is present; they cannot see an old-name line left next to it.
+  # One case-insensitive needle covers every form at once: the run folder,
+  # the `# …:` title, the correction marker and grant, the skill dir, the
+  # binary and hook names, the board pane, the Codex model variable. The
+  # rules are read outside any run and point at the installed dir, so they
+  # are held to the same, as are the eval suite, ttw-flags.js and the repo
+  # CLAUDE.md.
   staleNameSites = {
     inherit corpus;
     inherit (rules) ruleNix ruleTypescript ruleReact;
@@ -1072,27 +1071,17 @@ let
     inherit (hooks) hookTtwFlags;
     repoClaudeMd = builtins.readFile ../CLAUDE.md;
   };
-  staleNames = [
-    "APEX-CORRECTION-ROUND"
-    "apex: +1 tour"
-    "skills/apex"
-    "apex-tier"
-    "apex-verify-external"
-    "apex-metrics-probe"
-    "apex-health"
-    "apex-pr-record"
-  ];
-  staleNameHits = builtins.concatMap (
-    n: map (p: "${n}: '${p}'") (builtins.filter (p: pkgs.lib.hasInfix p staleNameSites.${n}) staleNames)
+  staleNameHits = builtins.filter (
+    n: pkgs.lib.hasInfix "apex" (pkgs.lib.toLower staleNameSites.${n})
   ) (builtins.attrNames staleNameSites);
 
   # ---------------------------------------------------------------------------
   # Manifest parity. skills-manifest.nix is what actually lands on disk under
   # ~/.claude/skills/ttw/; `steps` above is what this check reads. A step
   # present in one and not the other is either shipped unchecked or checked
-  # but never shipped. An `apex` entry beside it would install the same skill
+  # but never shipped. A pre-rename entry beside it would install the same skill
   # twice, under two dirs, with one of them unchecked.
-  apexManifest =
+  ttwManifest =
     let
       manifest = (import ../home/claude-code/skills-manifest.nix).manifest;
       entries = builtins.filter (e: e.name == "ttw") manifest;
@@ -1102,7 +1091,7 @@ let
       throw "ttw-consistency:expected exactly one 'ttw' entry and no 'apex' entry in skills-manifest.nix, found ${toString (builtins.length entries)} 'ttw' and ${toString (builtins.length stale)} 'apex'."
     else
       builtins.head entries;
-  manifestPaths = builtins.sort builtins.lessThan (map (f: f.path) apexManifest.files);
+  manifestPaths = builtins.sort builtins.lessThan (map (f: f.path) ttwManifest.files);
   expectedPaths = builtins.sort builtins.lessThan (
     [
       "SKILL.md"
@@ -1179,7 +1168,7 @@ let
   # it and scores 91/100, but schliff scores the SHAPE — how many triggers, how
   # many typed assertions — and cannot know that a case asserts behaviour the
   # skill stopped having. It happily graded a suite claiming diagnosis exits to
-  # /debug, months after diagnosis became a mode of APEX.
+  # /debug, months after diagnosis became a mode of TTW.
   #
   # fromJSON rather than string matching: it inspects the structure, and a
   # malformed suite becomes an eval error instead of a file nobody parses.
@@ -1279,19 +1268,19 @@ let
       + ". Fast was removed and Direct IS the inline tier (2026-10-07)."
     )
     ++ pkgs.lib.optional (hookFlagsRewrites != [ ]) (
-      "apex-flags.js is advisory, yet carries: "
+      "ttw-flags.js is advisory, yet carries: "
       + builtins.concatStringsSep ", " hookFlagsRewrites
       + ". Rewriting the call or keyword-classifying the brief is what forced a 28-line settings change to high-stakes."
     )
     ++ pkgs.lib.optional reminderDrift "hookTtwReminder lists modes ('Modes:') or no longer points at /ttw. The tier table lives in SKILL.md only; a copy in the reminder drifted twice."
     ++ pkgs.lib.optional (staleNameHits != [ ]) (
-      "pre-rename name(s) still taught: "
-      + builtins.concatStringsSep "; " staleNameHits
-      + ". The skill and the rules teach TTW-CORRECTION-ROUND, `ttw: +1 tour` and ~/.claude/skills/ttw/; the hooks accept the APEX spelling for sessions still running, the text must not teach it."
+      "the pre-rename name (any case) is back in: "
+      + builtins.concatStringsSep ", " staleNameHits
+      + ". Forms it covers: .claude/output/<old>/, the `# <OLD>:` run title, `(ex-<OLD>)`, the <OLD>-CORRECTION-ROUND marker, `<old>: +1 tour`, skills/<old>, <old>-tier / <old>-verify-external / <old>-health / <old>-metrics-probe / <old>-pr-record, <old>-pane, <OLD>_CODEX_MODEL. The text teaches TTW-CORRECTION-ROUND, `ttw: +1 tour`, ~/.claude/skills/ttw/ and .claude/output/ttw/; the hooks accept TTW only."
     )
     ++ pkgs.lib.optional initTableCopy "step-00-init carries a '| Diagnosis |' table row. The tier table lives in SKILL.md only."
     ++ pkgs.lib.optional manifestDrift (
-      "skills-manifest.nix apex paths ["
+      "skills-manifest.nix ttw paths ["
       + builtins.concatStringsSep ", " manifestPaths
       + "] differ from this check's steps + SKILL.md + eval-suite.json ["
       + builtins.concatStringsSep ", " expectedPaths

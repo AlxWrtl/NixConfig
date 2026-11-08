@@ -111,8 +111,7 @@ func TestParityFixtures(t *testing.T) {
 	mustDo(t, json.Unmarshal([]byte(out), &tree))
 	where := map[string]string{}
 	more := 0
-	// ttw rename, phase 3: the `# TTW:` run reads its title like an APEX one and its spent
-	// budget hints `ttw: +1 tour`.
+	// The `# TTW:` run reads its title and its spent budget hints `ttw: +1 tour`.
 	ttwSeen := false
 	for _, c := range tree.Columns {
 		for _, card := range c.Cards {

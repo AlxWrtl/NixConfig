@@ -24,7 +24,7 @@ const (
 )
 
 var (
-	footerText = strings.Join([]string{"/ttw <tâche>", "/ttw -x <tâche>", "apex: +1 tour", "/deck"}, "   ")
+	footerText = strings.Join([]string{"/ttw <tâche>", "/ttw -x <tâche>", "ttw: +1 tour", "/deck"}, "   ")
 	keysBoard  = "←→↑↓ naviguer · ⏎ ouvrir · esc fermer · a agents · q quitter"
 	cardBox    = lipgloss.RoundedBorder()
 )
@@ -277,7 +277,7 @@ func (m *Model) tabCells() ([]cell, [2][2]int) {
 }
 
 func (m *Model) drawHeader(g grid, W, y int) {
-	t := "APEX board"
+	t := "TTW board"
 	if m.repo != "" {
 		t += " · " + m.repo
 	}
@@ -593,7 +593,7 @@ func (m *Model) docLines(d *drawerState, w int) []mdLine {
 	case doc.Kind == "empty":
 		return note("Ce run n’a encore rien écrit.", w, P.faint)
 	case doc.Kind == "outside":
-		return append(note(outsideText, w, P.human), note(d.path+" pointe hors de .claude/output/apex : non lu.", w, P.faint)...)
+		return append(note(outsideText, w, P.human), note(d.path+" pointe hors de .claude/output/ttw : non lu.", w, P.faint)...)
 	case doc.Kind == "missing":
 		return note("Fichier disparu depuis la liste.", w, P.faint)
 	case doc.Kind == "binary":

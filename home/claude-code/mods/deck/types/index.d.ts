@@ -1,5 +1,5 @@
 // deck state contract: Flightdeck's panels (main, architect, agents, receipt,
-// log), the background agents panel and the APEX block (the live run, its live steps, alerts and background
+// log), the background agents panel and the TTW block (the live run, its live steps, alerts and background
 // shells). Self-contained (no import), as the plugin-authoring reference asks.
 
 export type DeckMoment = 'before a plan' | 'error repeats' | 'before done'
@@ -72,29 +72,29 @@ export type DeckView = { expanded: string | null; layout: DeckLayout | null }
 
 export type DeckRoster = { architectTypes: string[] }
 
-// ---------------------------------------------------------------- APEX
+// ---------------------------------------------------------------- TTW
 
-export type DeckApexStepKind = 'done' | 'pending' | 'running' | 'skipped' | 'failed' | 'other'
+export type DeckTtwStepKind = 'done' | 'pending' | 'running' | 'skipped' | 'failed' | 'other'
 
-export type DeckApexStep = { step: string; status: string; kind: DeckApexStepKind }
+export type DeckTtwStep = { step: string; status: string; kind: DeckTtwStepKind }
 
-/** A live APEX run, read from <cwd>/.claude/output/apex/<dir>/00-context.md. */
-export type DeckApexRun = {
+/** A live TTW run, read from <cwd>/.claude/output/ttw/<dir>/00-context.md. */
+export type DeckTtwRun = {
   title: string
   /** `Tier:` of the context file (first word), else its older `Mode:`. */
   tier?: string
   branch?: string
-  steps: DeckApexStep[]
+  steps: DeckTtwStep[]
   currentStep?: string
-  /** The run's directory under .claude/output/apex, set by the poll. */
+  /** The run's directory under .claude/output/ttw, set by the poll. */
   dir?: string
 }
 
-/** A live step of an APEX run, read from the run's tool calls. */
-export type DeckApexStepName = 'plan' | 'edit' | 'implement' | 'tests' | 'gate' | 'Codex' | 'review' | 'ship'
+/** A live step of a TTW run, read from the run's tool calls. */
+export type DeckTtwStepName = 'plan' | 'edit' | 'implement' | 'tests' | 'gate' | 'Codex' | 'review' | 'ship'
 
-export type DeckApexLiveStep = {
-  name: DeckApexStepName
+export type DeckTtwLiveStep = {
+  name: DeckTtwStepName
   status: 'seen'
   /** When it was last seen. */
   at: number
@@ -124,34 +124,34 @@ export type DeckApexLiveStep = {
 }
 
 /** The live steps of the run `runKey` (a session key, else the run dir); `current` was seen last. */
-export type DeckApexSteps = { runKey: string | null; steps: DeckApexLiveStep[]; current: DeckApexStepName | null }
+export type DeckTtwSteps = { runKey: string | null; steps: DeckTtwLiveStep[]; current: DeckTtwStepName | null }
 
 /** `killed` is its own word (stopped, drawn ■), not a failure. */
-export type DeckApexShellStatus = 'running' | 'completed' | 'failed' | 'killed'
+export type DeckTtwShellStatus = 'running' | 'completed' | 'failed' | 'killed'
 
 /** One background shell of this session (its backgroundTaskId). */
-export type DeckApexShell = {
+export type DeckTtwShell = {
   id: string
   label: string
   startedAt: number
   endedAt?: number
-  status: DeckApexShellStatus
+  status: DeckTtwShellStatus
   toolUseId?: string
   /** The subagent whose loop started it (absent on the main loop). */
   ownerAgentId?: string
 }
 
-/** The run's correction rounds used and granted (~/.claude/apex-correction-budget). */
-export type DeckApexBudget = { dir: string; rounds: number; grants: number }
+/** The run's correction rounds used and granted (~/.claude/ttw-correction-budget). */
+export type DeckTtwBudget = { dir: string; rounds: number; grants: number }
 
 /** What the user must act on, most urgent kind first. */
-export type DeckApexAlert =
+export type DeckTtwAlert =
   | { kind: 'step'; step: string }
   | { kind: 'verify'; verdict: 'FAIL' | 'BLOCKED' | 'ERROR'; findings: number }
   | { kind: 'budget'; rounds: number; cap: number }
 
-/** The session's last main-loop Skill(apex) call: a run without a folder (yet). */
-export type DeckApexSessionRun = {
+/** The session's last main-loop Skill(ttw) call: a run without a folder (yet). */
+export type DeckTtwSessionRun = {
   startedAt: number
   lastAt: number
   args: string
@@ -162,7 +162,7 @@ export type DeckApexSessionRun = {
 }
 
 /** The run's external verification file, as far as the block shows it. */
-export type DeckApexVerdict = { dir: string; verdict: string; findings: number; mtimeMs: number }
+export type DeckTtwVerdict = { dir: string; verdict: string; findings: number; mtimeMs: number }
 
 // ---------------------------------------------------------------- background agents
 
@@ -203,14 +203,14 @@ declare module 'claude-code' {
       receipt: DeckReceipt | null
       view: DeckView
       roster: DeckRoster
-      run: DeckApexRun | null
-      apexSteps: DeckApexSteps
-      verdict: DeckApexVerdict | null
-      budget: DeckApexBudget | null
-      shells: DeckApexShell[]
-      sessionRun: DeckApexSessionRun | null
+      run: DeckTtwRun | null
+      ttwSteps: DeckTtwSteps
+      verdict: DeckTtwVerdict | null
+      budget: DeckTtwBudget | null
+      shells: DeckTtwShell[]
+      sessionRun: DeckTtwSessionRun | null
       /** The step whose explanation box is open under the step row. */
-      openStep: DeckApexStepName | null
+      openStep: DeckTtwStepName | null
       /** Background sessions of the current project, polled while the pane is open. */
       background: DeckBgAgent[]
     }

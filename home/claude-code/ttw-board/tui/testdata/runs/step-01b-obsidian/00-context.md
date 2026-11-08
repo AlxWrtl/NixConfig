@@ -1,4 +1,4 @@
-# APEX: synthetic step-01b-obsidian
+# TTW: synthetic step-01b-obsidian
 Tier: Standard
 Branch: feat/step-01b-obsidian
 

@@ -1,6 +1,6 @@
 # graphify-reindex — incremental AlxVault knowledge-graph refresh, packaged as
 # a real binary on PATH (same rationale as libdocs: one stable command for the
-# APEX steps to fire in the background, a narrow `Bash(graphify-reindex)`
+# TTW steps to fire in the background, a narrow `Bash(graphify-reindex)`
 # permission grant instead of a blanket graphify/jq/find one, and shellcheck
 # at build time via writeShellApplication).
 #

@@ -1,5 +1,4 @@
-# ttw-board — the TTW run board (kanban of `.claude/output/ttw/<run-id>/`, else
-# the pre-rename `.claude/output/apex/<run-id>/`),
+# ttw-board — the TTW run board (kanban of `.claude/output/ttw/<run-id>/`),
 # packaged as a real binary on PATH.
 #
 # Serves a temp dir of links on 127.0.0.1 with ttw-board/serve.py (python's
@@ -91,10 +90,5 @@ let
 in
 {
   inherit tui;
-  # bin/apex-board: the pre-rename name, a relative link kept until phase 4.
-  ttwBoardPkg = pkgs.symlinkJoin {
-    name = "ttw-board";
-    paths = [ ttwBoard ];
-    postBuild = "ln -s ttw-board $out/bin/apex-board";
-  };
+  ttwBoardPkg = ttwBoard;
 }

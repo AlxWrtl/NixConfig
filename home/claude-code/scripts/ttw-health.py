@@ -1,4 +1,4 @@
-"""ttw-health: compare APEX runs BEFORE vs AFTER a date and flag a quality drift.
+"""ttw-health: compare TTW runs BEFORE vs AFTER a date and flag a quality drift.
 
 Read-only, zero network, zero model call. Sources: Claude Code transcripts,
 the correction-budget round/grant files, 00-context.md of each repo, git log.
@@ -21,9 +21,11 @@ DRIFT_MIN = 0.1
 FIX_WINDOW = datetime.timedelta(days=7)
 EXCLUDED_MARKERS = ("scratchpad", "-private-tmp-", "-var-folders-")
 CONTEXT_RE = re.compile(r"\.claude/output/(?:apex|ttw)/([^/]+)/00-context\.md$")
-# Both names during apex -> ttw: run dirs and correction-budget dirs.
-RUN_DIRS = ("apex", "ttw")
-BUDGET_DIRS = ("apex-correction-budget", "ttw-correction-budget")
+# Decision D3: past transcripts are not rewritten, so INSIDE a transcript the
+# pre-rename skill name and run path still count (CONTEXT_RE, the Skill tuple
+# in scan_session). On disk only the ttw run and correction-budget dirs exist.
+RUN_DIRS = ("ttw",)
+BUDGET_DIRS = ("ttw-correction-budget",)
 BUDGET_RE = re.compile(r"^(?P<run>.+)\.(?P<kind>round|grant)(?P<n>\d+)$")
 UTC = datetime.timezone.utc
 
@@ -106,8 +108,8 @@ def tool_uses(record):
 
 
 def scan_session(path, stats, with_subagents):
-    """Return (first apex call time, run count, usages by message id) or None if not APEX."""
-    first_apex = None
+    """Return (first TTW skill call time, run count, usages by message id) or None if no TTW run."""
+    first_run = None
     contexts = set()
     usages = {}
     for record in iter_json_lines(path, stats):
@@ -115,20 +117,20 @@ def scan_session(path, stats, with_subagents):
             data = use.get("input") if isinstance(use.get("input"), dict) else {}
             if use.get("name") == "Skill" and data.get("skill") in ("apex", "ttw"):
                 when = parse_ts(record.get("timestamp"))
-                if when is not None and (first_apex is None or when < first_apex):
-                    first_apex = when
+                if when is not None and (first_run is None or when < first_run):
+                    first_run = when
             if use.get("name") == "Write" and isinstance(data.get("file_path"), str):
                 if CONTEXT_RE.search(data["file_path"]):
                     contexts.add(data["file_path"])
         collect_usage(record, usages)
-    if first_apex is None:
+    if first_run is None:
         return None
     subagents = path.with_suffix("") / "subagents"
     if with_subagents and subagents.is_dir():
         for sub in sorted(subagents.glob("*.jsonl")):
             for record in iter_json_lines(sub, stats):
                 collect_usage(record, usages)
-    return first_apex, max(1, len(contexts)), usages
+    return first_run, max(1, len(contexts)), usages
 
 
 def collect_usage(record, usages):
@@ -167,9 +169,9 @@ def scan_sessions(claude_dir, periods, stats):
             if excluded:
                 stats["excluded"] += 1
                 continue
-            first_apex, runs, usages = result
+            first_run, runs, usages = result
             included.add(path.stem)
-            period = periods.of(first_apex)
+            period = periods.of(first_run)
             if period is None:
                 continue
             bucket = acc[period]
@@ -373,7 +375,7 @@ def build_report(args, periods):
     out.append(f"ttw-health — coupure {periods.since.isoformat()}, fenêtre {args.days} j")
     out.append(f"AVANT = [{periods.start.isoformat()}, {periods.since.isoformat()})")
     out.append(f"APRÈS = [{periods.since.isoformat()}, {periods.now.isoformat()})")
-    out.append(f"Sessions APEX : avant {b['sessions']} ({b['runs']} runs), après {a['sessions']} ({a['runs']} runs)")
+    out.append(f"Sessions TTW : avant {b['sessions']} ({b['runs']} runs), après {a['sessions']} ({a['runs']} runs)")
     out.append(f"Sessions exclues (bancs, dépôts jetables) : {stats['excluded']}")
     out.append(f"Lignes illisibles ignorées : {stats['malformed']}")
     out.append(f"Dépôts : {', '.join(str(r) for r in repos) if repos else 'aucun'}")
@@ -409,7 +411,7 @@ def build_report(args, periods):
 def main(argv):
     parser = argparse.ArgumentParser(
         prog="ttw-health",
-        description="Compare les runs APEX AVANT / APRÈS une date et signale une dérive de qualité (lecture seule, 0 appel modèle).",
+        description="Compare les runs TTW AVANT / APRÈS une date et signale une dérive de qualité (lecture seule, 0 appel modèle).",
     )
     parser.add_argument("--since", default=DEFAULT_SINCE, help=f"date de coupure YYYY-MM-DD ou ISO 8601, UTC (défaut {DEFAULT_SINCE})")
     parser.add_argument("--days", type=int, default=30, help="largeur de la fenêtre AVANT en jours (défaut 30)")

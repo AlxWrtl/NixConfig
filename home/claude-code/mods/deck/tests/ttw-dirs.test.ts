@@ -1,15 +1,13 @@
-// The ttw rename, phase 3, through the hooks only (no import of the run reader, whatever its
-// file is called): runs are read from BOTH `.claude/output/apex` and `.claude/output/ttw` (the
-// newest of the union wins), the correction budget from both `~/.claude/apex-correction-budget`
-// and `~/.claude/ttw-correction-budget` (rounds summed), a `# TTW:` title reads like `# APEX:`,
-// writes under `.claude/output/ttw/` are plan, and /apex-pane keeps opening the pane next to
-// /ttw-pane.
+// The run folders and the budget dir, through the hooks only (no import of the run reader,
+// whatever its file is called): runs are read from `.claude/output/ttw` alone, the correction
+// budget from `~/.claude/ttw-correction-budget` alone, a run only under `.claude/output/apex`
+// draws nothing, writes under `.claude/output/ttw/` are plan, and /ttw-pane opens the pane.
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
 const NOW = 1_000_000_000
-const HOUR = 60 * 60 * 1000
 
+// `ttw` is the run folder; `apex` is the pre-rename folder, which must stay unread.
 type Dir = 'apex' | 'ttw'
 
 const pane = (bodyColumns: number) => ({
@@ -32,8 +30,8 @@ const command = (name: string) =>
 
 const exact = (text: string): RegExp => new RegExp(`^${text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
 
-// A run's 00-context.md: heading word APEX or TTW, a Branch line unless `branch` is null.
-const context = (word: 'APEX' | 'TTW', title: string, branch: string | null) => `# ${word}: ${title}
+// A run's 00-context.md, a Branch line unless `branch` is null.
+const context = (title: string, branch: string | null) => `# TTW: ${title}
 Tier: Standard
 ${branch === null ? '' : `Branch: ${branch}\n`}
 ## Progress
@@ -46,12 +44,12 @@ ${branch === null ? '' : `Branch: ${branch}\n`}
 
 type Run = { dir: Dir; name: string; text: string; mtimeMs: number; verdict?: string }
 
-// Budget files per dir: `<run>.round<N>` / `<run>.grant<N>` names.
+// Budget files in the ttw dir: `<run>.round<N>` / `<run>.grant<N>` names.
 // `head`: the branch .git/HEAD names; unset, there is no HEAD.
-type World = { runs: Run[]; budget: Partial<Record<Dir, readonly string[]>>; opened: unknown[]; head?: string }
+type World = { runs: Run[]; budget: readonly string[]; opened: unknown[]; head?: string }
 
 const root = (dir: Dir) => `/work/.claude/output/${dir}`
-const budgetDir = (dir: Dir) => `/home/u/.claude/${dir}-correction-budget`
+const BUDGET_DIR = '/home/u/.claude/ttw-correction-budget'
 
 // /work, HOME /home/u, .git/HEAD only when `head` is set (unset, the branch is unknown: every
 // run is on it). A path the world does not hold throws, as a missing file does.
@@ -75,10 +73,9 @@ function world(on: On, w: World): void {
             ...(run.verdict === undefined ? [] : [{ name: 'external-verify.json', kind: 'file' as const, size: 1, mtimeMs: run.mtimeMs, isLink: false }]),
           ],
         }
-      const names = w.budget[dir]
-      if (e.path === budgetDir(dir) && names !== undefined)
-        return { value: names.map(name => ({ name, kind: 'file' as const, size: 0, mtimeMs: 0, isLink: false })) }
     }
+    if (e.path === BUDGET_DIR && w.budget.length > 0)
+      return { value: w.budget.map(name => ({ name, kind: 'file' as const, size: 0, mtimeMs: 0, isLink: false })) }
     throw new Error('ENOENT')
   })
   on('fs.stat', (_$, e) => {
@@ -107,17 +104,16 @@ function world(on: On, w: World): void {
   on('turn.complete', () => ({ text: '' }))
 }
 
-const fresh = (runs: Run[], budget: World['budget'] = {}): World => ({ runs, budget, opened: [] })
+const fresh = (runs: Run[], budget: readonly string[] = []): World => ({ runs, budget, opened: [] })
 
 const START = { cwd: '/work', surface: 'terminal', isInteractive: true } as const
 
-// The block's header: its first word is the run label (APEX today, maybe TTW after the rename);
-// only what follows it is asserted here.
-const header = (rest: string): RegExp => new RegExp(`^[A-Z]+ · ${rest.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
+// The block's header: `TTW · <rest>`.
+const header = (rest: string): RegExp => new RegExp(`^TTW · ${rest.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`)
 
-test('a live run under .claude/output/ttw alone draws the block; a `# TTW:` title reads as its title', async ($, on) => {
+test('a live run under .claude/output/ttw draws the block; a `# TTW:` title reads as its title', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  world(on, fresh([{ dir: 'ttw', name: 'ttw-run', text: context('TTW', 'renamed run', null), mtimeMs: NOW - 1000 }]))
+  world(on, fresh([{ dir: 'ttw', name: 'ttw-run', text: context('renamed run', null), mtimeMs: NOW - 1000 }]))
   await $.session.start(START)
   await $.command.run(command('deck'))
   await clock.settle()
@@ -127,37 +123,23 @@ test('a live run under .claude/output/ttw alone draws the block; a `# TTW:` titl
   await ui.unmount()
 })
 
-test('runs are the union of both dirs: the newest wins, from either side', async ($, on) => {
+test('a run only under .claude/output/apex draws nothing', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  const w = fresh([
-    { dir: 'apex', name: 'old-apex', text: context('APEX', 'apex side', 'feat/apex-side'), mtimeMs: NOW - HOUR },
-    { dir: 'ttw', name: 'new-ttw', text: context('TTW', 'ttw side', 'feat/ttw-side'), mtimeMs: NOW - 1000 },
-  ])
-  world(on, w)
+  world(on, fresh([{ dir: 'apex', name: 'old-run', text: context('old run', 'feat/old'), mtimeMs: NOW - 1000 }], ['old-run.round1', 'old-run.round2']))
   await $.session.start(START)
   await $.command.run(command('deck'))
   await clock.settle()
-  const ttwNewer = await $.ui.mount(pane(120))
-  expect(await ttwNewer.find({ type: 'Text', text: header('feat/ttw-side · Standard') })).toBeDefined()
-  expect(await ttwNewer.find({ type: 'Text', text: header('feat/apex-side · Standard') })).toBeUndefined()
-  await ttwNewer.unmount()
-
-  // The other way round: the apex run moves past the ttw one, the apex dir is still read.
-  w.runs = [
-    { dir: 'apex', name: 'old-apex', text: context('APEX', 'apex side', 'feat/apex-side'), mtimeMs: NOW + 4000 },
-    { dir: 'ttw', name: 'new-ttw', text: context('TTW', 'ttw side', 'feat/ttw-side'), mtimeMs: NOW - HOUR },
-  ]
-  await clock.advance(5000)
-  const apexNewer = await $.ui.mount(pane(120))
-  expect(await apexNewer.find({ type: 'Text', text: header('feat/apex-side · Standard') })).toBeDefined()
-  expect(await apexNewer.find({ type: 'Text', text: header('feat/ttw-side · Standard') })).toBeUndefined()
-  await apexNewer.unmount()
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.find({ text: /^TTW/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /old run|feat\/old/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: /correction budget spent/ })).toBeUndefined()
+  await ui.unmount()
 })
 
 test('a ttw run reads its external verify from its own folder', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const verdict = JSON.stringify({ verdict: 'FAIL', findings: [{ problem: 'a' }] })
-  world(on, fresh([{ dir: 'ttw', name: 'ttw-run', text: context('TTW', 'v', 'feat/v'), mtimeMs: NOW - 1000, verdict }]))
+  world(on, fresh([{ dir: 'ttw', name: 'ttw-run', text: context('v', 'feat/v'), mtimeMs: NOW - 1000, verdict }]))
   await $.session.start(START)
   await $.command.run(command('deck'))
   await clock.settle()
@@ -166,25 +148,9 @@ test('a ttw run reads its external verify from its own folder', async ($, on) =>
   await ui.unmount()
 })
 
-for (const [label, budget] of [
-  ['one round in each dir', { apex: ['my-run.round1'], ttw: ['my-run.round2'] }],
-  ['both rounds in the ttw dir only', { ttw: ['my-run.round1', 'my-run.round2'] }],
-] as const) {
-  test(`budget stamps are read from both dirs: ${label} → spent`, async ($, on) => {
-    const clock = mock.clock(on, { now: NOW })
-    world(on, fresh([{ dir: 'apex', name: 'my-run', text: context('APEX', 'b', 'feat/b'), mtimeMs: NOW - 1000 }], budget))
-    await $.session.start(START)
-    await $.command.run(command('deck'))
-    await clock.settle()
-    const ui = await $.ui.mount(pane(80))
-    expect((await ui.find({ type: 'Text', text: exact('∅ correction budget spent · 2/2 rounds') }))?.props.color).toBe('error')
-    await ui.unmount()
-  })
-}
-
-test('control: the same world draws an apex-only run, both rounds in the apex dir → spent', async ($, on) => {
+test('the budget is read from the ttw dir: both rounds → spent', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  world(on, fresh([{ dir: 'apex', name: 'my-run', text: context('APEX', 'b', 'feat/b'), mtimeMs: NOW - 1000 }], { apex: ['my-run.round1', 'my-run.round2'] }))
+  world(on, fresh([{ dir: 'ttw', name: 'my-run', text: context('b', 'feat/b'), mtimeMs: NOW - 1000 }], ['my-run.round1', 'my-run.round2']))
   await $.session.start(START)
   await $.command.run(command('deck'))
   await clock.settle()
@@ -194,9 +160,9 @@ test('control: the same world draws an apex-only run, both rounds in the apex di
   await ui.unmount()
 })
 
-test('control: one round in the apex dir alone is not spent', async ($, on) => {
+test('control: one round alone is not spent', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
-  world(on, fresh([{ dir: 'apex', name: 'my-run', text: context('APEX', 'b', 'feat/b'), mtimeMs: NOW - 1000 }], { apex: ['my-run.round1'] }))
+  world(on, fresh([{ dir: 'ttw', name: 'my-run', text: context('b', 'feat/b'), mtimeMs: NOW - 1000 }], ['my-run.round1']))
   await $.session.start(START)
   await $.command.run(command('deck'))
   await clock.settle()
@@ -205,33 +171,22 @@ test('control: one round in the apex dir alone is not spent', async ($, on) => {
   await ui.unmount()
 })
 
-// The hooks count each dir's files: the same name in both dirs is two rounds (or two grants),
-// never one.
-for (const [label, budget, spent] of [
-  ['round1 in each dir is two rounds', { apex: ['my-run.round1'], ttw: ['my-run.round1'] }, '2/2'],
-  [
-    'grant1 in each dir is two grants',
-    { apex: ['my-run.round1', 'my-run.round2', 'my-run.grant1'], ttw: ['my-run.round3', 'my-run.round4', 'my-run.grant1'] },
-    '4/4',
-  ],
-] as const) {
-  test(`same-name budget files in both dirs count per dir: ${label} → spent ${spent}`, async ($, on) => {
-    const clock = mock.clock(on, { now: NOW })
-    world(on, fresh([{ dir: 'apex', name: 'my-run', text: context('APEX', 'b', 'feat/b'), mtimeMs: NOW - 1000 }], budget))
-    await $.session.start(START)
-    await $.command.run(command('deck'))
-    await clock.settle()
-    const ui = await $.ui.mount(pane(80))
-    expect((await ui.find({ type: 'Text', text: exact(`∅ correction budget spent · ${spent} rounds`) }))?.props.color).toBe('error')
-    await ui.unmount()
-  })
-}
+test('a grant raises the cap: both rounds and one grant → 2/3, not spent', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  world(on, fresh([{ dir: 'ttw', name: 'my-run', text: context('b', 'feat/b'), mtimeMs: NOW - 1000 }], ['my-run.round1', 'my-run.round2', 'my-run.grant1']))
+  await $.session.start(START)
+  await $.command.run(command('deck'))
+  await clock.settle()
+  const ui = await $.ui.mount(pane(80))
+  expect(await ui.find({ type: 'Text', text: /correction budget spent/ })).toBeUndefined()
+  await ui.unmount()
+})
 
-test('the newest run is off-branch under ttw: the older on-branch apex run is shown, not a blank deck', async ($, on) => {
+test('only the newest run of the folder is read: off-branch it draws nothing, an older on-branch run is not a fallback', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w = fresh([
-    { dir: 'apex', name: 'on-apex', text: context('APEX', 'on branch', 'feat/on'), mtimeMs: NOW - 2000 },
-    { dir: 'ttw', name: 'off-ttw', text: context('TTW', 'off branch', 'feat/off'), mtimeMs: NOW - 1000 },
+    { dir: 'ttw', name: 'on-ttw', text: context('on branch', 'feat/on'), mtimeMs: NOW - 2000 },
+    { dir: 'ttw', name: 'off-ttw', text: context('off branch', 'feat/off'), mtimeMs: NOW - 1000 },
   ])
   w.head = 'feat/on'
   world(on, w)
@@ -239,13 +194,18 @@ test('the newest run is off-branch under ttw: the older on-branch apex run is sh
   await $.command.run(command('deck'))
   await clock.settle()
   const ui = await $.ui.mount(pane(120))
-  expect(await ui.find({ type: 'Text', text: header('feat/on · Standard') })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: header('feat/off · Standard') })).toBeUndefined()
+  expect(await ui.find({ text: /^TTW/ })).toBeUndefined()
   await ui.unmount()
+
+  // Control: on the newest run's branch the same world draws it.
+  w.head = 'feat/off'
+  await clock.advance(5000)
+  const on2 = await $.ui.mount(pane(120))
+  expect(await on2.find({ type: 'Text', text: header('feat/off · Standard') })).toBeDefined()
+  await on2.unmount()
 })
 
-for (const dir of ['apex', 'ttw'] as const) {
-test(`writes under .claude/output/${dir}/ are plan, not edit`, async ($, on) => {
+test('writes under .claude/output/ttw/ are plan, not edit', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh([]))
   on('tool.call', () => ({ result: { ok: true } }))
@@ -253,23 +213,20 @@ test(`writes under .claude/output/${dir}/ are plan, not edit`, async ($, on) => 
   await $.command.run(command('deck'))
   await clock.settle()
   await $.tool.call({ tool: 'Skill', skill: 'ttw', args: 'brief 1', tool_use_id: 'tu-skill-1' })
-  await $.tool.call({ tool: 'Write', file_path: `/work/.claude/output/${dir}/r/02-plan.md`, content: 'x' })
+  await $.tool.call({ tool: 'Write', file_path: '/work/.claude/output/ttw/r/02-plan.md', content: 'x' })
   await clock.advance(5000)
   const ui = await $.ui.mount(pane(120))
   expect(await ui.find({ type: 'Text', text: exact('◐ plan') })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: exact('○ edit') })).toBeDefined()
   await ui.unmount()
 })
-}
 
-for (const name of ['ttw-pane', 'apex-pane']) {
-  test(`/${name} opens the deck pane (the old name stays an alias)`, async ($, on) => {
-    const clock = mock.clock(on, { now: NOW })
-    const w = fresh([])
-    world(on, w)
-    const answer = await $.command.run(command(name))
-    expect(answer.text).toBe('Deck opened. Focus it with ctrl+x tab; 1-6 expand cards.')
-    expect(w.opened).toEqual([{ id: 'deck', title: 'Deck' }])
-    await clock.settle()
-  })
-}
+test('/ttw-pane opens the deck pane', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w = fresh([])
+  world(on, w)
+  const answer = await $.command.run(command('ttw-pane'))
+  expect(answer.text).toBe('Deck opened. Focus it with ctrl+x tab; 1-6 expand cards.')
+  expect(w.opened).toEqual([{ id: 'deck', title: 'Deck' }])
+  await clock.settle()
+})

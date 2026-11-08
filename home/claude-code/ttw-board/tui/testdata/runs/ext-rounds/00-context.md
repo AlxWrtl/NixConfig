@@ -1,4 +1,4 @@
-# APEX: synthetic ext-rounds
+# TTW: synthetic ext-rounds
 Tier: Standard
 Branch: feat/ext-rounds
 

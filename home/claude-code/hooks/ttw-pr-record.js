@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // PostToolUse on Bash: once a `gh pr merge` has merged, writes pr.md in the
-// APEX run(s) whose 00-context.md names the PR's head branch. The board puts a
+// TTW run(s) whose 00-context.md names the PR's head branch. The board puts a
 // run in Terminé as soon as pr.md exists, and three runs stayed stuck on the
 // coordinator forgetting that write (2026-10-21).
 //
@@ -136,10 +136,10 @@ function present(p) {
 }
 
 // Every run dir (not a symlink) with a readable 00-context.md, by id, under
-// .claude/output/apex then .claude/output/ttw (a missing one has none).
+// .claude/output/ttw (a missing one has none).
 function runsUnder(top) {
   const runs = [];
-  for (const out of ["apex", "ttw"]) {
+  for (const out of ["ttw"]) {
     const base = path.join(top, ".claude", "output", out);
     let ents;
     try { ents = fs.readdirSync(base, { withFileTypes: true }); } catch { continue; }
@@ -175,7 +175,7 @@ function main(input) {
     top = execFileSync("git", ["-c", "core.fsmonitor=false", "rev-parse", "--show-toplevel"], { cwd, encoding: "utf8", timeout: GIT_MS, killSignal: "SIGKILL", stdio: ["ignore", "pipe", "ignore"] }).trim();
   } catch { return; }
   if (!top) return;
-  // Runs first: a repo without APEX runs never waits on the network.
+  // Runs first: a repo without TTW runs never waits on the network.
   const runs = runsUnder(top);
   if (runs.length === 0) return;
 

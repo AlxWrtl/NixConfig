@@ -37,45 +37,43 @@ in
     builtins.toJSON alxVaultPath
   );
 
-  # PreToolUse on Agent and SendMessage: a hard cap on APEX/TTW correction rounds
+  # PreToolUse on Agent and SendMessage: a hard cap on TTW correction rounds
   # (run 62). A correction round goes through either channel, a fresh spawn
   # or a re-brief sent to a live agent, and both are counted. Its brief
-  # carries `APEX-CORRECTION-ROUND: <run-id>` (or `TTW-CORRECTION-ROUND:`)
-  # or, for a run outside the session's repo, its absolute `…/.claude/output/apex/<run-id>` path (an
-  # existing dir, no `..`; never a stub run dir created in the session's
-  # repo; `…/.claude/output/ttw/<run-id>` too, and a run-id resolves under
-  # either dir), counted under the run-id and stamped in the slot as `dir`; each
-  # round claims the first
-  # free slot ~/.claude/apex-correction-budget/<run-id>.round<n>, n in
-  # 1..MAX_ROUNDS (outside the Bash sandbox's writable paths), and the round
-  # finding none is denied. Rounds and grants already in
-  # ~/.claude/ttw-correction-budget count too: they take slots off the cap. A slot is created exclusively (O_EXCL), so
+  # carries `TTW-CORRECTION-ROUND: <run-id>` (a run-id resolves under the
+  # repo's `.claude/output/ttw`) or, for a run outside the session's repo,
+  # its absolute `…/.claude/output/ttw/<run-id>` path (an existing dir, no
+  # `..`; never a stub run dir created in the session's repo), counted
+  # under the run-id and stamped in the slot as `dir`; each round claims
+  # the first free slot ~/.claude/ttw-correction-budget/<run-id>.round<n>,
+  # n in 1..MAX_ROUNDS (outside the Bash sandbox's writable paths), and the
+  # round finding none is denied. A slot is created exclusively (O_EXCL), so
   # parallel marked spawns cannot both take the last one. A round counts
   # when the spawn/send is attempted (PreToolUse), even if a later hook or
   # the user then denies it. A brief naming 06-resolve.md or a correction
-  # round must carry the marker, with a run-id or `none`. Unmarked,
-  # unrelated or unreadable input is let through: it cannot be told apart
-  # from normal Agent use. Once a marker names a run, every failure denies:
-  # fail-open is the unbounded loop this hook exists to stop. Guardrail, not
-  # barrier: `none` is a visible claim.
+  # round (any separator, so a pre-rename marker line alone is denied, never
+  # let through uncounted) must carry the marker, with a run-id or `none`.
+  # Unmarked, unrelated or unreadable input is let through: it cannot be
+  # told apart from normal Agent use. Once a marker names a run, every
+  # failure denies: fail-open is the unbounded loop this hook exists to
+  # stop. Guardrail, not barrier: `none` is a visible claim.
   # A marked Agent brief must name model "opus" (absent denied), checked
   # before any slot is claimed; SendMessage carries no model. The cap is
   # MAX_ROUNDS plus one per <run-id>.grant<n> file correction-grant.js wrote.
   # Also on CronCreate/ScheduleWakeup: a scheduled prompt comes back as a user
-  # turn, so one with an `apex: +1 tour` or `ttw: +1 tour` line is denied
-  # (same TOKEN line as correction-grant.js); any other scheduler call
-  # passes, uncounted.
+  # turn, so one with a `ttw: +1 tour` line is denied (same TOKEN line as
+  # correction-grant.js); any other scheduler call passes, uncounted.
   hookCorrectionBudget = builtins.readFile ./hooks/correction-budget.js;
 
   # UserPromptSubmit: the user's grant of one more correction round. A prompt
-  # whose FIRST non-empty line is exactly `apex: +1 tour` or `ttw: +1 tour`
-  # (case and spacing free) grants the live run of this project — the one with the newest
+  # whose FIRST non-empty line is exactly `ttw: +1 tour` (case and spacing
+  # free) grants the live run of this project — the one with the newest
   # round among runs with a dir under the prompt's (absolute) cwd, or whose
   # round stamps from this same session all name one existing absolute
-  # `…/.claude/output/(apex|ttw)/<run-id>` dir (an unreadable stamp: no) — one
+  # `…/.claude/output/ttw/<run-id>` dir (an unreadable stamp: no) — one
   # round, only if its budget is spent (rounds >= MAX_ROUNDS + grants, both
-  # read from the apex and ttw budget dirs); one <run-id>.grant<n> per
-  # prompt (O_EXCL), written to the apex budget dir. Task notifications and agent
+  # read from ~/.claude/ttw-correction-budget); one <run-id>.grant<n> per
+  # prompt (O_EXCL), written to that dir. Task notifications and agent
   # hand-backs also fire this event, without agent_id: a prompt carrying a
   # harness wrapper marker (<task-notification, <agent-message, …) grants
   # nothing, nor does any agent_id key, a "continue", the token below the
@@ -121,22 +119,22 @@ in
   # Fail-open: a workflow hook, not a barrier.
   hookSandboxEscapeEvidence = builtins.readFile ./hooks/sandbox-escape-evidence.js;
 
-  # Turns the APEX routing rule from advice into enforcement. The
+  # Turns the TTW routing rule from advice into enforcement. The
   # UserPromptSubmit reminder is text: it is read and then skipped. Measured on
-  # 2026-08-08 — 6 file-modifying tasks in one session, APEX invoked on 2.
+  # 2026-08-08 — 6 file-modifying tasks in one session, TTW invoked on 2.
   #
   # Fires ONCE PER TASK (2026-08-16). It used to fire once per SESSION: the
-  # check was a substring scan of the whole transcript, so the first APEX run
+  # check was a substring scan of the whole transcript, so the first TTW run
   # cleared every later edit — a second request in the same conversation went
   # through with no workflow at all. The scan now walks BACKWARDS from the end
-  # and stops at the last real user turn, so only an APEX invoked since that
+  # and stops at the last real user turn, so only a TTW invoked since that
   # turn counts.
   #
   # "Real user turn" excludes tool_result blocks (138 of the 164 user-typed
   # lines in a measured 937-line transcript) and `! command` lines, which are
   # user input but not a new request.
   #
-  # Cost of the change: one deny -> apex -> retry round trip per modifying
+  # Cost of the change: one deny -> ttw -> retry round trip per modifying
   # task, instead of one per session. That is the point.
   #
   # INTERPRETER WRITES (2026-09-25). The Bash door read shell syntax only, so a
@@ -148,7 +146,7 @@ in
   # (cmd, cwd) pairs with deleted scripts served from their recovered text, 42
   # of them script runs, 0 on read-only or module calls (`-m`). The split of
   # those 66 into real edits and false positives has NOT been audited row by
-  # row; a false positive costs one stray apex call. `perl -0pi` counts as
+  # row; a false positive costs one stray ttw call. `perl -0pi` counts as
   # in-place (21 unique passes before).
   # CORRECTION: +29, +66 and 42 were measured on a DRAFT of this hook, which
   # read git's answer with `.toString().trim()`. The shipped hook reads it with
@@ -172,7 +170,7 @@ in
   #       tracking, separate-argument flags (SEP_ARG: -r -W -X -I, --import,
   #       --require, --loader, --experimental-loader, --env-file), quoted
   #       head + bare tail (`"$TMPDIR"/edit.py`).
-  #   (c) `codex exec`: denied without APEX when the session cwd, `-C <dir>`
+  #   (c) `codex exec`: denied without TTW when the session cwd, `-C <dir>`
   #       or the dir the `cd`s lead to is a repo, unless an explicit,
   #       unwidened `-s read-only`. One exemption, a whitelist that fails
   #       closed: every `cd` before the call top level and resolved, landing
@@ -242,7 +240,7 @@ in
   # against the interpreter.
   #
   # FAIL-OPEN on any error, unlike protect-main and block-main-bash. This is a
-  # workflow hook, not a safety one: a missed APEX costs little, a session
+  # workflow hook, not a safety one: a missed TTW costs little, a session
   # where no edit can land costs a lot.
   hookRequireTtw = builtins.readFile ./hooks/require-ttw.js;
 
@@ -295,7 +293,7 @@ in
   # stderr, exit 0, in every path including a parse failure.
   hookNullResultGate = builtins.readFile ./hooks/null-result-gate.js;
 
-  # PreToolUse on Skill: when APEX starts, injects the context size read from
+  # PreToolUse on Skill: when TTW starts, injects the context size read from
   # the transcript tail (input + cache read + cache creation tokens of the last
   # assistant usage). Context only — no updatedInput, no permissionDecision.
   #
@@ -343,7 +341,7 @@ in
     ];
 
   # SessionEnd: refresh the AlxVault knowledge graph. Reason for existing: the
-  # APEX step-09b text instruction only fires when the model remembers it —
+  # TTW step-09b text instruction only fires when the model remembers it —
   # measured 2026-08-24, session notes written at 23:09, reindex never launched.
   # A hook fires whether or not the model thinks of it.
   # SessionEnd hooks share a 1.5 s budget, raised to the declared `timeout`
@@ -406,7 +404,7 @@ in
   # fail-open, never exit 2 (it would block the prompt).
   hookInstagramWatch = builtins.readFile ./hooks/instagram-watch.js;
 
-  # PostToolUse on Write|Edit: lists the ACs of an APEX 02-acs.md that name no
+  # PostToolUse on Write|Edit: lists the ACs of a TTW 02-acs.md that name no
   # command and carry no `[lecture] — reason` / `[deferred to user]` marker.
   # The body IS checks/ttw-metrics-probe.py, run with --hook: one classifier for
   # the gate and the B2 metric, so the replay and the hook cannot drift.
@@ -429,7 +427,7 @@ in
 
   hookCircuitBreakerReset = builtins.readFile ./hooks/circuit-breaker-reset.js;
 
-  # After a `gh pr merge` that merged: pr.md in the APEX run of that branch.
+  # After a `gh pr merge` that merged: pr.md in the TTW run of that branch.
   hookTtwPrRecord = builtins.readFile ./hooks/ttw-pr-record.js;
 
   hookStopFailure = builtins.readFile ./hooks/stop-failure.sh;

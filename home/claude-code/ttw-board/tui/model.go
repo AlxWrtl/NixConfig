@@ -251,7 +251,7 @@ func (m *Model) View() tea.View {
 	v := tea.NewView(m.frame)
 	v.AltScreen = true
 	v.MouseMode = tea.MouseModeCellMotion
-	v.WindowTitle = "APEX board"
+	v.WindowTitle = "TTW board"
 	return v
 }
 

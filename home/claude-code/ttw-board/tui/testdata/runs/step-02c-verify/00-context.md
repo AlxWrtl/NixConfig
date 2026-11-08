@@ -1,4 +1,4 @@
-# APEX: synthetic step-02c-verify
+# TTW: synthetic step-02c-verify
 Tier: Standard
 Branch: feat/step-02c-verify
 

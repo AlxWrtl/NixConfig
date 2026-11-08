@@ -99,7 +99,6 @@
         js-lint = import ./checks/js-lint.nix { inherit pkgs; };
         preprod-curl = import ./checks/preprod-curl.nix { inherit pkgs; };
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };
-        skill-retire = import ./checks/skill-retire.nix { inherit pkgs; };
         trello-cli = import ./checks/trello-cli.nix { inherit pkgs; };
         ttw-consistency = import ./checks/ttw-consistency.nix { inherit pkgs; };
         ttw-health = import ./checks/ttw-health.nix { inherit pkgs; };

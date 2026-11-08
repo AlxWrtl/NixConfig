@@ -11,8 +11,8 @@
 // file in another repo sitting on master. The file's repo is read from its
 // nearest existing directory; it allows when that is no repo, a branch
 // that is not protected (detached counts as not), the vault, or a file git
-// ignores and does not track under that repo's `.claude/output/apex/`
-// (APEX run state, updated after a merge).
+// ignores and does not track under that repo's `.claude/output/ttw/`
+// (TTW run state, updated after a merge).
 //
 // Two time bounds, because a JS timer cannot fire while spawnSync blocks:
 // an unref'd watchdog for a stdin that never closes, and a wall-clock
@@ -204,22 +204,21 @@ function isVaultTop(dir) {
   }
 }
 
-// Run state (.claude/output/apex/<run>/ or .claude/output/ttw/<run>/) is the
+// Run state (.claude/output/ttw/<run>/) is the
 // one ignored subtree a protected branch may still write: the coordinator
 // updates its run after the merge. Strictly under <file's
-// toplevel>/.claude/output/apex/ or .claude/output/ttw/, ignored
+// toplevel>/.claude/output/ttw/, ignored
 // by git (check-ignore never reports a TRACKED file: a `git add -f` there
 // stays denied), one link only. Any failure is false.
-const APEX_OUT = path.join(".claude", "output", "apex") + path.sep;
 const TTW_OUT = path.join(".claude", "output", "ttw") + path.sep;
-function isApexOutput(dir, realTarget) {
+function isRunState(dir, realTarget) {
   const top = git(["rev-parse", "--show-toplevel"], dir);
   if (gitBroken(top) !== null || top.status !== 0) return false;
   const t = String(top.stdout || "").replace(/\n$/, "");
   if (t === "") return false;
   const realTop = realpathish(t);
   if (realTop === null) return false;
-  if (!realTarget.startsWith(realTop + path.sep + APEX_OUT) && !realTarget.startsWith(realTop + path.sep + TTW_OUT)) return false;
+  if (!realTarget.startsWith(realTop + path.sep + TTW_OUT)) return false;
   try { if (fs.lstatSync(realTarget).nlink > 1) return false; } catch (e) { if (!e || e.code !== "ENOENT") return false; }
   // check-ignore reads the index, which starts the repo's core.fsmonitor
   // command, outside the sandbox: off, as worktree-env-sync.sh does.
@@ -273,9 +272,9 @@ function main() {
     if (realTop === null) { denyOnBranch("the target path could not be resolved"); return; }
     if (realTarget === realTop || realTarget.startsWith(realTop + path.sep)) {
       if (isVaultTop(realTop)) allow();
-      // APEX run state is exempt: no deny here; the file's own repo decides
+      // TTW run state is exempt: no deny here; the file's own repo decides
       // below (a nested repo under the ignored dir still reads as ignored).
-      if (!isApexOutput(realTop, realTarget)) deny("BLOCKED: on " + safe(branchSeen) + ". " + CUT);
+      if (!isRunState(realTop, realTarget)) deny("BLOCKED: on " + safe(branchSeen) + ". " + CUT);
     }
   }
 
@@ -284,7 +283,7 @@ function main() {
   if (home === null) { denyOnBranch("no existing directory holds the target path"); return; }
   const f = branchOf(home);
   if (f.kind === "broken") denyUnverifiable(f.why + " in the repository the file belongs to");
-  if (f.kind === "branch" && PROTECTED.indexOf(f.branch) !== -1 && !isVaultTop(home) && !isApexOutput(home, realTarget)) {
+  if (f.kind === "branch" && PROTECTED.indexOf(f.branch) !== -1 && !isVaultTop(home) && !isRunState(home, realTarget)) {
     deny("BLOCKED: on " + safe(f.branch) + ". " + CUT);
   }
   allow();

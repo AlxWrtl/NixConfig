@@ -1,4 +1,4 @@
-# Provenance tagging check for APEX plan premises.
+# Provenance tagging check for TTW plan premises.
 #
 # step-02-plan requires every premise to carry a provenance tag as its first
 # token: `[M]` measured, `[I]` inferred. This file guards that rule.

@@ -1,4 +1,4 @@
-# APEX: synthetic stale
+# TTW: synthetic stale
 Tier: Standard
 Branch: feat/stale
 

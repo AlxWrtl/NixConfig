@@ -39,7 +39,7 @@ const ENVELOPE = /^\s*<(bash-(input|stdout|stderr)|task-notification|command-nam
 // (denyWrite in every repo), nix needs the daemon socket, docker its socket,
 // the browser rungs Mach IPC, the probes `git init` fixtures. sandbox-exec
 // cannot nest in Claude's Seatbelt (sandbox_apply: Operation not permitted);
-// ttw-verify-external (and its apex-* alias) times out sandboxed, no EPERM text.
+// ttw-verify-external times out sandboxed, no EPERM text.
 // wrangler reads its OAuth from ~/.config/.wrangler, denied sandboxed, and
 // reports "not logged in" with no EPERM; pnpm run deploy wraps it.
 // curl --noproxy bypasses the sandbox proxy: the direct connection is
@@ -62,7 +62,7 @@ const ALLOW = [
   /^pnpm\s+run\s+deploy(?::[\w-]+)?(?=\s|$)/,
   /^pnpm\s+(?:run\s+)?(?:db:migrate|preflight|test:rls\w*)(?::[\w-]+)?(?=\s|$)/,
   /^curl\b(?=.*\s--noproxy(?:[\s=]|$))/,
-  /^(?:apex|ttw)-verify-external(?=\s|$)/
+  /^ttw-verify-external(?=\s|$)/
 ];
 
 let settled = false;

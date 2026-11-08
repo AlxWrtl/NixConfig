@@ -13,13 +13,9 @@
 # build time, so a regression in the script fails the rebuild. runtimeInputs is
 # PREPENDED to $PATH rather than replacing it, which is why the brew-installed
 # `codex` in /opt/homebrew/bin stays reachable from inside the wrapper.
-#
-# apex -> ttw, phase 2: bin/apex-verify-external is a symlink to
-# ttw-verify-external in the same output; the script never reads $0, so both
-# names print the same text. Dropped in phase 4.
 { pkgs }:
-let
-  ttwVerifyExternal = pkgs.writeShellApplication {
+{
+  ttwVerifyExternalPkg = pkgs.writeShellApplication {
     name = "ttw-verify-external";
     # grep and sed do the failure classification and the secret scrubbing, so
     # they are pinned for the same reason coreutils is: a BSD/GNU difference in
@@ -33,12 +29,5 @@ let
       pkgs.gnused
     ];
     text = builtins.readFile ./scripts/ttw-verify-external.sh;
-  };
-in
-{
-  ttwVerifyExternalPkg = pkgs.symlinkJoin {
-    name = "ttw-verify-external";
-    paths = [ ttwVerifyExternal ];
-    postBuild = "ln -s ttw-verify-external $out/bin/apex-verify-external";
   };
 }

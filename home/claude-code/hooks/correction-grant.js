@@ -7,13 +7,12 @@ const path = require("path");
 const MAX_ROUNDS = 2;
 const BUDGET_MS = 3000;
 const MAX_INPUT = 4 * 1024 * 1024;
-const TOKEN = /^\s*(?:apex|ttw)\s*:\s*\+1\s+tour\s*$/i;
+const TOKEN = /^\s*ttw\s*:\s*\+1\s+tour\s*$/i;
 const ROUND = /^(.+)\.round([1-9][0-9]*)$/;
 const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const APEX_OUT = path.join(".claude", "output", "apex");
-const OUT_DIRS = [APEX_OUT, path.join(".claude", "output", "ttw")];
-const BUDGET_DIRS = ["apex-correction-budget", "ttw-correction-budget"];
+const TTW_OUT = path.join(".claude", "output", "ttw");
+const BUDGET_DIR = "ttw-correction-budget";
 const WRAPPERS = ["<task-notification", "<agent-message", "Another Claude session sent a message", "[SYSTEM NOTIFICATION", "<teammate-message", "<command-name>", "<local-command", "<scheduled-task", "<system-reminder"];
 
 let settled = false;
@@ -70,8 +69,8 @@ function isDir(p) {
 // A run outside the prompt's repo: the run dir its rounds were stamped with
 // by correction-budget.js in this session. A stamp that is no readable JSON
 // file, two dirs, or a dir that is not an existing absolute
-// <repo>/.claude/output/(apex|ttw)/<run-id> in plain ASCII is doubt: null.
-// `rounds` are absolute paths (any budget dir): resolve keeps them as is.
+// <repo>/.claude/output/ttw/<run-id> in plain ASCII is doubt: null.
+// `rounds` are absolute paths: resolve keeps them as is.
 function stampedDir(dir, id, rounds, session) {
   if (typeof session !== "string" || session === "") return null;
   let found = null;
@@ -88,7 +87,7 @@ function stampedDir(dir, id, rounds, session) {
     found = s.dir;
   }
   if (found === null || !path.isAbsolute(found) || found.includes("..") || safe(found) !== found || /[\s`]/.test(found)) return null;
-  if (!OUT_DIRS.some((o) => path.dirname(found).endsWith(path.sep + o)) || path.join(path.dirname(found), id) !== found) return null;
+  if (!path.dirname(found).endsWith(path.sep + TTW_OUT) || path.join(path.dirname(found), id) !== found) return null;
   return isDir(found) ? found : null;
 }
 
@@ -114,25 +113,21 @@ function main() {
   if (typeof data.cwd !== "string" || !path.isAbsolute(data.cwd)) { quiet(); return; }
   const cwd = data.cwd;
   const home = process.env.HOME || os.homedir();
-  // Grants are written to `dir`; rounds and grants are read from every
-  // budget dir (apex and ttw), as absolute paths: a run spent under one is
-  // spent under both.
-  const dir = path.join(home, ".claude", "apex-correction-budget");
+  // Rounds and grants are read from, and grants written to, the budget dir
+  // `dir`, as absolute paths.
+  const dir = path.join(home, ".claude", BUDGET_DIR);
   const names = [];
-  for (const b of BUDGET_DIRS) {
-    const bd = path.join(home, ".claude", b);
-    // A budget dir that is no real directory (a symlink, a file) is doubt:
-    // its rounds and grants may be anyone's, so nothing is granted.
-    let ents;
-    try {
-      if (!fs.lstatSync(bd).isDirectory()) { quiet(); return; }
-      ents = fs.readdirSync(bd);
-    } catch (e) {
-      if (!e || e.code !== "ENOENT") { quiet(); return; }
-      ents = [];
-    }
-    for (const n of ents) names.push(path.join(bd, n));
+  // A budget dir that is no real directory (a symlink, a file) is doubt:
+  // its rounds and grants may be anyone's, so nothing is granted.
+  let ents;
+  try {
+    if (!fs.lstatSync(dir).isDirectory()) { quiet(); return; }
+    ents = fs.readdirSync(dir);
+  } catch (e) {
+    if (!e || e.code !== "ENOENT") { quiet(); return; }
+    ents = [];
   }
+  for (const n of ents) names.push(path.join(dir, n));
 
   const runs = new Map();
   const runOf = (id) => {
@@ -159,7 +154,7 @@ function main() {
   for (const [id, r] of runs) {
     if (r.rounds.length === 0) continue;
     let where = null;
-    if (!OUT_DIRS.some((o) => isDir(path.join(cwd, o, id)))) {
+    if (!isDir(path.join(cwd, TTW_OUT, id))) {
       where = stampedDir(dir, id, r.rounds, data.session_id);
       if (where === null) continue;
     }
@@ -179,7 +174,7 @@ function main() {
 
   // One grant per prompt, claimed by exclusive create.
   const stamp = JSON.stringify({ ts: new Date().toISOString(), session: safe(data.session_id) }) + "\n";
-  // The run's rounds may all sit under the ttw dir: `dir` may not exist yet.
+  // `dir` was read above; it may have been removed since.
   try {
     fs.mkdirSync(dir, { recursive: true });
   } catch (e) {

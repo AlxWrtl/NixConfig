@@ -32,11 +32,11 @@
   measured 2026-10-15), so no gate can run there. Do the tasks in the
   conversation.
 - Repo tools: `ttw-tier --base master` (tier of the real diff),
-  `ttw-health --repo .` (APEX drift, no model call), `trello` (test writes
+  `ttw-health --repo .` (TTW drift, no model call), `trello` (test writes
   on the Tech & Pit board only).
 - Vault: `~/Vaults/AlxVault/02-Projets/nix-darwin/` — hub `nix-darwin.md`,
   then `sessions/` by date (the hub's session list is not kept up to date).
 - Settled, do not re-propose: sandbox residual risk accepted (2026-09-27);
   mods rejected 2026-10-07 (rebuild guard, refusal log, third-party mods
-  without auditable code); behavioural model-run APEX eval and scope ladder
+  without auditable code); behavioural model-run TTW eval and scope ladder
   removed (the schliff `eval-suite.json` stays).

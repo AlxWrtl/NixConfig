@@ -1,4 +1,4 @@
-# APEX: synthetic ext-pass
+# TTW: synthetic ext-pass
 Tier: Standard
 Branch: feat/ext-pass
 

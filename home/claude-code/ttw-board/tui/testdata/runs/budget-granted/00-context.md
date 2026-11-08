@@ -1,4 +1,4 @@
-# APEX: synthetic budget-granted
+# TTW: synthetic budget-granted
 Tier: Standard
 Branch: feat/budget-granted
 

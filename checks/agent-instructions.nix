@@ -310,7 +310,7 @@ let
         )
         + " | ancien verrou prose encore présent: "
         + (if proseGateHits == [ ] then "aucun" else builtins.concatStringsSep ", " proseGateHits)
-        + " — un verrou « demande explicite » fait caler chaque run apex sur un commit/push/PR que le défaut `-pr` autorise déjà, et l'agent sans canal utilisateur (Codex, sous-agent) ne peut jamais le lever. Inversement, sans la ligne ask-first, plus rien ne dit que merge sur master, force-push et réécriture d'historique restent soumis à l'utilisateur";
+        + " — un verrou « demande explicite » fait caler chaque run ttw sur un commit/push/PR que le défaut `-pr` autorise déjà, et l'agent sans canal utilisateur (Codex, sous-agent) ne peut jamais le lever. Inversement, sans la ligne ask-first, plus rien ne dit que merge sur master, force-push et réécriture d'historique restent soumis à l'utilisateur";
     }
     {
       name = "G10 no hand-back: blocked or refused → ask « je le lance ? », never a command for the user to type";

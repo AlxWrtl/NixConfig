@@ -1,5 +1,5 @@
 'use strict'
-// APEX board: stage rules of board.js on the three real 00-context.md shapes (copied from runs
+// TTW board: stage rules of board.js on the three real 00-context.md shapes (copied from runs
 // vorssaint-cask, 01-worktree-env-sync, wrangler-oauth-config) and on synthetic runs covering
 // every AC7 branch. `node test.js [path/to/board.js]`: exits non-zero on the first failure, so a
 // mutant copy of board.js can be tested against the same cases.
@@ -28,7 +28,7 @@ function test(name, fn) {
 // ---- real shapes -----------------------------------------------------------
 
 // No Progress table, no branch, Tier on its own line.
-const VORSSAINT = `# APEX: Ajouter le cask vorssaint (keep-awake capot fermé)
+const VORSSAINT = `# TTW: Ajouter le cask vorssaint (keep-awake capot fermé)
 Tier: Direct
 Flags: -pr
 Files: modules/brew.nix
@@ -47,7 +47,7 @@ Baseline: nix flake check --no-build -> pending
 `
 
 // Tier with a parenthesis, Branch with a trunk note, table with skipped + pending rows.
-const WORKTREE = `# APEX: open .env to the sandbox + global worktree env-file sync hook
+const WORKTREE = `# TTW: open .env to the sandbox + global worktree env-file sync hook
 Date: 2026-10-19
 Tier: High-stakes (sandbox denyRead/allowRead keys; new hook)
 Flags: -t -f -x -pr -o -n -e
@@ -91,7 +91,7 @@ const WORKTREE_FILES = ['00-context.md', '01b-obsidian.md', '02-plan.md', '05-ex
 
 const WORKTREE_VERDICT = JSON.stringify({
   schema_version: 1,
-  tool: 'apex-verify-external',
+  tool: 'ttw-verify-external',
   verdict: 'FAIL',
   reason: '',
   model: 'gpt-5.6-terra',
@@ -110,7 +110,7 @@ const WORKTREE_VERDICT = JSON.stringify({
 
 // Tier line carrying Files and Est-lines, Branch with ", clean", shipped (pr.md) while its
 // table still says 03-execute pending.
-const WRANGLER = `# APEX: allow sandbox write to ~/.config/.wrangler/config
+const WRANGLER = `# TTW: allow sandbox write to ~/.config/.wrangler/config
 Date: 2026-10-18
 Tier: High-stakes (sandbox allowWrite key) — Files: home/claude-code/settings.nix, checks/claude-config.nix — Est-lines: ~8
 Flags: -t -f -x -pr -o -n -e (defaults)
@@ -218,7 +218,7 @@ test('wrangler: without pr.md / commit.txt, live → current 03-execute → Exec
 
 // ---- synthetic: AC7 branches --------------------------------------------------
 
-const ctx = (rows, extra = '') => `# APEX: synthetic\nTier: Standard\nBranch: feat/x\n${extra}\n## Progress\n| Step | Status | Notes |\n|------|--------|-------|\n${rows.map(([s, st]) => `| ${s} | ${st} | |`).join('\n')}\n`
+const ctx = (rows, extra = '') => `# TTW: synthetic\nTier: Standard\nBranch: feat/x\n${extra}\n## Progress\n| Step | Status | Notes |\n|------|--------|-------|\n${rows.map(([s, st]) => `| ${s} | ${st} | |`).join('\n')}\n`
 
 test('idle ≥ 6 h → Terminé; just under 6 h → live', () => {
   const text = ctx([['00-init', 'complete'], ['03-execute', 'in progress']])
@@ -360,7 +360,7 @@ test('all steps done or skipped → Terminé, not inactif', () => {
 })
 
 test('no table → highest NN-*.md; none → Init; no 00-context.md at all', () => {
-  const noTable = '# APEX: bare\nTier: Direct\n'
+  const noTable = '# TTW: bare\nTier: Direct\n'
   assert.strictEqual(run({ context: noTable, files: ['00-context.md', '01-analyze.md', '02-plan.md', '04-validate.md', 'acs.txt'] }).column, 'validate')
   assert.strictEqual(run({ context: noTable, files: ['00-context.md', '02-plan.md', '04-external-verify.json'] }).column, 'plan')
   assert.strictEqual(run({ context: noTable, files: ['00-context.md', '03-execute.md'] }).column, 'execute')
@@ -373,21 +373,21 @@ test('no table → highest NN-*.md; none → Init; no 00-context.md at all', () 
 })
 
 test('tier from Flags when no Tier line: `(mode X)`, `(mode: X —`', () => {
-  assert.strictEqual(board.parseContext('# APEX: t\nFlags: -t -pr (mode Standard, défaut)\n', 't').tier, 'Standard')
-  assert.strictEqual(board.parseContext('# APEX: t\nFlags: -t -x  (mode: high-stakes — touches)\n', 't').tier, 'high-stakes')
+  assert.strictEqual(board.parseContext('# TTW: t\nFlags: -t -pr (mode Standard, défaut)\n', 't').tier, 'Standard')
+  assert.strictEqual(board.parseContext('# TTW: t\nFlags: -t -x  (mode: high-stakes — touches)\n', 't').tier, 'high-stakes')
 })
 
-test('title: `# TTW:` reads like `# APEX:`, any case and separator; a longer word is no prefix', () => {
+test('title: `# TTW:` in any case and separator; `# APEX:` and a longer word are no title prefix', () => {
   assert.strictEqual(board.parseContext('# TTW: renamed run\nTier: Direct\n', 'd').title, 'renamed run')
   assert.strictEqual(board.parseContext('# ttw — renamed run\n', 'd').title, 'renamed run')
   assert.strictEqual(board.parseContext('# **TTW**: bold run\n', 'd').title, 'bold run')
-  assert.strictEqual(board.parseContext('# APEX: old run\n', 'd').title, 'old run')
+  assert.strictEqual(board.parseContext('# APEX: old run\n', 'd').title, 'APEX: old run') // `# APEX:` is not a title
   assert.strictEqual(board.parseContext('# TTWX: not the word\n', 'd').title, 'TTWX: not the word')
   assert.strictEqual(run({ id: 'd', context: '# TTW: shown\nTier: Direct\n' }).title, 'shown')
 })
 
 test('chips: tier unknown dashed, ext absent dashed, corr unused dashed', () => {
-  const r = run({ context: '# APEX: t\n' })
+  const r = run({ context: '# TTW: t\n' })
   assert.deepStrictEqual(r.chips.map((c) => [c.label, c.state]), [['tier', 'unset'], ['ext', 'unset'], ['corr1', 'unset'], ['corr2', 'unset']])
   const one = run({ context: VORSSAINT, budget: { rounds: 1, grants: 0 } })
   assert.deepStrictEqual(one.chips.map((c) => [c.label, c.state]), [['Direct', 'info'], ['ext', 'unset'], ['corr1', 'used'], ['corr2', 'unset']])
@@ -427,7 +427,7 @@ test('verdictFile: the latest round, NN prefix as tie-breaker', () => {
   assert.strictEqual(board.verdictFile(['04-external-verify.json', '06-external-verify.json']), '06-external-verify.json')
   assert.strictEqual(board.verdictFile(['00-context.md', 'acs.txt']), null)
   assert.strictEqual(board.verdictFile(['external-verify.json.bak', 'external-verify.md']), null)
-  // The four real later-round names (apex-pane, 54-nix-audit-fixes, pnpm-store-lock, 65-git-prefix-redos).
+  // The four real later-round names (ttw-pane, 54-nix-audit-fixes, pnpm-store-lock, 65-git-prefix-redos).
   assert.strictEqual(board.verdictFile(['external-verify.json', 'external-verify-2.json']), 'external-verify-2.json')
   assert.strictEqual(board.verdictFile(['04-external-verify-2.json', '04-external-verify.json']), '04-external-verify-2.json')
   assert.strictEqual(board.verdictFile(['external-verify.json', 'external-verify3.json', 'external-verify2.json']), 'external-verify3.json')

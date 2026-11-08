@@ -1,6 +1,6 @@
 package main
 
-// ttw-board --tui: the APEX board of index.html in the terminal, read straight from disk.
+// ttw-board --tui: the TTW board of index.html in the terminal, read straight from disk.
 //
 //	ttw-board-tui [--sessions DIR] <runs-dir> [budget-dir] [repo-name]
 //	ttw-board-tui --derive-json <runs-dir> <budget-dir> <now-ms>   (parity check, not for users)

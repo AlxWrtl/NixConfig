@@ -1,4 +1,4 @@
-# ttw-tier — classify the APEX tier from the DIFF, not from the brief text.
+# ttw-tier — classify the TTW tier from the DIFF, not from the brief text.
 #
 # READ-ONLY: runs only `git diff`, `git show`, `git ls-files`, `git merge-base`
 # and reads files. Never `git add -N`, never writes the index or the tree.
@@ -9,7 +9,7 @@
 #
 # Size: `git diff --numstat REF` (working tree vs REF, tracked files) plus
 # untracked, non-ignored files counted whole by `wc -l`. `.claude/output` is
-# excluded everywhere (APEX's own artifacts). A binary file counts 0 lines but
+# excluded everywhere (TTW's own artifacts). A binary file counts 0 lines but
 # raises the tier to at least standard: its content cannot be read here.
 #
 # Tier: high if any reason; else standard if lines > --max-lines (30) or

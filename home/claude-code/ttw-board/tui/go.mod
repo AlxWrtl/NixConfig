@@ -1,4 +1,4 @@
-module apexboard/tui
+module ttwboard/tui
 
 go 1.26.0
 

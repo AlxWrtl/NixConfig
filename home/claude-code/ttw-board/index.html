@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>APEX board</title>
+<title>TTW board</title>
 <style>
   :root {
     --bg: #14151b;
@@ -242,7 +242,7 @@
 </head>
 <body>
 <header>
-  <h1 id="title">APEX board</h1>
+  <h1 id="title">TTW board</h1>
   <div class="status" id="status" role="status">connexion…</div>
 </header>
 <div id="banner"></div>
@@ -250,7 +250,7 @@
 <footer>
   <span>/ttw &lt;tâche&gt;</span>
   <span>/ttw -x &lt;tâche&gt;</span>
-  <span>apex: +1 tour</span>
+  <span>ttw: +1 tour</span>
   <span>/deck</span>
 </footer>
 
@@ -274,10 +274,10 @@
 <script src="board.js"></script>
 <script>
 // Read-only: every request below is a GET on the python http.server that serves index.html,
-// board.js, meta.json, runs/ (the repo's .claude/output/apex) and budget/ (the correction budget).
+// board.js, meta.json, runs/ (the repo's .claude/output/ttw) and budget/ (the correction budget).
 const POLL_MS = 2000
 const MISS_RECHECK_MS = 30000 // a run without 00-context.md is re-asked at most this often
-const B = window.ApexBoard
+const B = window.TtwBoard
 const CHIP = { info: 'info', pass: 'PASS', fail: 'bad', used: 'CHANGES', unset: '' }
 const LABEL = Object.fromEntries(B.COLUMNS.map((c) => [c.key, c.label]))
 
@@ -433,8 +433,8 @@ async function loadMeta() {
   try {
     const meta = JSON.parse(await fetchText('meta.json'))
     if (typeof meta.repo === 'string' && meta.repo) {
-      $('title').textContent = `APEX board · ${meta.repo}`
-      document.title = `APEX board · ${meta.repo}`
+      $('title').textContent = `TTW board · ${meta.repo}`
+      document.title = `TTW board · ${meta.repo}`
     }
   } catch (err) {
     $('banner').insertAdjacentHTML('beforeend', `<div class="banner">meta.json : ${esc(err.message)}</div>`)

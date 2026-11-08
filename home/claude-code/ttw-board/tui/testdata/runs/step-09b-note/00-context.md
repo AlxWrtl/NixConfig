@@ -1,4 +1,4 @@
-# APEX: synthetic step-09b-note
+# TTW: synthetic step-09b-note
 Tier: Standard
 Branch: feat/step-09b-note
 

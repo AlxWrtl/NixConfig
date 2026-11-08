@@ -2,20 +2,19 @@
 # report runs against a fake ~/.claude and a throwaway git repo, clock fixed by
 # --now 2026-10-20, cut-off 2026-10-10, 30-day BEFORE window.
 #
-#   A1  apex -> ttw, phase 2: the package ships bin/ttw-health AND
-#       bin/apex-health, the old name a symlink to ttw-health in the same
-#       output (dropped in phase 4); F1 runs once more through the alias and
-#       must print the same report. The report's title names ttw-health.
-#   L1  (eval) the one-shot launchd agent apex-health-report of 2026-10-21 is
+#   A1  the package's bin holds exactly ttw-health (the pre-rename alias is
+#       gone). The report's title names ttw-health.
+#   L1  (eval) the one-shot *health-report launchd agent of 2026-10-21 is
 #       gone from home/claude-code.nix: its marker exists, it only re-fired
 #       each 21 Oct to exit. No other agent named *health-report replaces it.
 #
-#   F1  6 BEFORE + 6 AFTER APEX sessions, 1 round each side -> exit 0, VERDICT: ok
-#       (AFTER sessions: a0 calls Skill "apex", a1-a5 Skill "ttw"; both count)
+#   F1  6 BEFORE + 6 AFTER TTW sessions, 1 round each side -> exit 0, VERDICT: ok
+#       (AFTER session a0 calls the pre-rename Skill name, which still counts:
+#       decision D3, past transcripts are not rewritten)
 #   F2  same sessions, AFTER sessions carry 2 rounds each, 0 before
 #                                     -> exit 2, VERDICT: DÉRIVE (rounds / run)
 #   F3  6 BEFORE + 2 AFTER sessions   -> exit 0, VERDICT: insuffisant
-#   F4  F1 + an APEX session with 3 rounds under a `...-scratchpad-...` project
+#   F4  F1 + a TTW session with 3 rounds under a `...-scratchpad-...` project
 #       dir -> report identical to F1 except the excluded count (1)
 #   F5  repo: `feat: a` touches x.txt, `fix: a` touches x.txt 2 days later
 #                                     -> fix-after BEFORE 1/1
@@ -54,7 +53,7 @@ let
   staleAgents = builtins.filter (n: pkgs.lib.hasInfix "health-report" n) launchdAgents;
   launchdGuard =
     if staleAgents != [ ] then
-      throw "ttw-health: L1 FAILED — launchd agent(s) ${builtins.concatStringsSep ", " staleAgents} still declared in home/claude-code.nix. apex-health-report was a one-shot of 2026-10-21 whose marker ~/.cache/apex-health-report.done exists: it only re-fires each 21 Oct to exit. Remove the agent (plan P5), leave the marker"
+      throw "ttw-health: L1 FAILED — launchd agent(s) ${builtins.concatStringsSep ", " staleAgents} still declared in home/claude-code.nix. The health-report agent was a one-shot of 2026-10-21 whose done-marker under ~/.cache exists: it only re-fires each 21 Oct to exit. Remove the agent (plan P5), leave the marker"
     else
       "ttw-health: L1 no *health-report launchd agent OK";
   runtimePath = pkgs.lib.makeBinPath [
@@ -66,7 +65,7 @@ let
     pkgs.diffutils
   ];
 
-  fixtures = pkgs.writeText "apex-health-fixtures.py" ''
+  fixtures = pkgs.writeText "ttw-health-fixtures.py" ''
     import json
     import sys
     from pathlib import Path
@@ -80,17 +79,17 @@ let
         return json.dumps({"type": "assistant", "timestamp": ts, "message": {"id": msg_id, "role": "assistant", "usage": usage, "content": content}})
 
 
-    def session(proj, sid, ts, usage=None, extra=(), skill="apex"):
+    def session(proj, sid, ts, usage=None, extra=(), skill="ttw"):
         d = root / "projects" / proj
         d.mkdir(parents=True, exist_ok=True)
-        apex = [{"type": "tool_use", "name": "Skill", "input": {"skill": skill, "args": "x"}}]
+        call = [{"type": "tool_use", "name": "Skill", "input": {"skill": skill, "args": "x"}}]
         lines = [json.dumps({"type": "user", "timestamp": ts, "message": {"role": "user", "content": "go"}})]
-        lines.append(assistant(sid + "-m1", ts, apex, usage or ZERO))
+        lines.append(assistant(sid + "-m1", ts, call, usage or ZERO))
         lines.extend(extra)
         (d / (sid + ".jsonl")).write_text("\n".join(lines) + "\n")
 
 
-    def budget(name, sid, ts, where="apex-correction-budget"):
+    def budget(name, sid, ts, where="ttw-correction-budget"):
         d = root / where
         d.mkdir(parents=True, exist_ok=True)
         (d / name).write_text(json.dumps({"ts": ts, "tool": "Agent", "session": sid, "description": "r"}) + "\n")
@@ -99,7 +98,7 @@ let
     def base(after_count):
         for i in range(6):
             session("-Users-t-repo", "b%d" % i, "2026-09-%02dT10:00:00.000Z" % (20 + i))
-        # The skill's visible name is `ttw`, its directory `apex`: both count.
+        # D3 pin: a0's transcript calls the pre-rename skill name; it counts.
         for i in range(after_count):
             session("-Users-t-repo", "a%d" % i, "2026-10-%02dT10:00:00.000Z" % (11 + i), skill="apex" if i == 0 else "ttw")
 
@@ -119,9 +118,10 @@ let
                 budget("r%d.round%d" % (i, n), "a%d" % i, "2026-10-%02dT11:00:00.000Z" % (11 + i))
     if scenario == "f3":
         base(2)
-    # F8, apex -> ttw phase 3: a0 writes one 00-context.md under
-    # .claude/output/apex and one under .claude/output/ttw (2 runs), its one
-    # round sits in ttw-correction-budget; b0's in the apex dir.
+    # F8: a0's transcript writes one 00-context.md under the pre-rename run
+    # dir (D3: still counts) and one under .claude/output/ttw (2 runs), its
+    # one round sits in ttw-correction-budget, like b0's; b1's sits in the
+    # pre-rename budget dir, which is no longer read (1 round BEFORE, not 2).
     if scenario == "f8":
         def write(path):
             return {"type": "tool_use", "name": "Write", "input": {"file_path": path, "content": "# TTW: probe"}}
@@ -134,7 +134,8 @@ let
                 extra = [assistant("a0-m2", ts, [write("/Users/t/repo/.claude/output/apex/r-apex/00-context.md"), write("/Users/t/repo/.claude/output/ttw/r-ttw/00-context.md")], ZERO)]
             session("-Users-t-repo", "a%d" % i, ts, extra=extra, skill="ttw")
         budget("rb.round1", "b0", "2026-09-20T11:00:00.000Z")
-        budget("ra.round1", "a0", "2026-10-11T11:00:00.000Z", where="ttw-correction-budget")
+        budget("rc.round1", "b1", "2026-09-21T11:00:00.000Z", where="apex-correction-budget")
+        budget("ra.round1", "a0", "2026-10-11T11:00:00.000Z")
     if scenario == "f6":
         usage = {"input_tokens": 100, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 10000, "output_tokens": 10}
         dup = assistant("t0-m1", "2026-09-20T10:00:01.000Z", [{"type": "text", "text": "same id"}], usage)
@@ -185,27 +186,13 @@ pkgs.runCommand "ttw-health-check" { } ''
   has f1 '^Sessions exclues \(bancs, dépôts jetables\) : 0$'
   echo "ttw-health: F1 no drift OK"
 
-  # A1: the report names itself ttw-health; bin/apex-health is a symlink to
-  # ttw-health in the same package and prints the same report.
+  # A1: the report names itself ttw-health; the package's bin holds exactly
+  # ttw-health (no pre-rename alias left beside it).
   has f1 '^ttw-health — coupure 2026-10-10'
-  if grep -qF 'apex-health' "$TMPDIR/f1.out"; then fail f1 "the report still names apex-health"; fi
   [ -x ${health}/bin/ttw-health ] || { echo "ttw-health: A1 FAILED — bin/ttw-health missing or not executable"; exit 1; }
-  [ -L ${health}/bin/apex-health ] || { echo "ttw-health: A1 FAILED — bin/apex-health is not a symlink (the pre-rename alias of ttw-health, kept until phase 4)"; exit 1; }
-  tgt="$(readlink ${health}/bin/apex-health)"
-  case "$tgt" in
-  ttw-health | ${health}/bin/ttw-health) ;;
-  *)
-    echo "ttw-health: A1 FAILED — bin/apex-health points at '$tgt', not at ttw-health in the same package"
-    exit 1
-    ;;
-  esac
-  [ "$(readlink -f ${health}/bin/apex-health)" = "$(readlink -f ${health}/bin/ttw-health)" ] \
-    || { echo "ttw-health: A1 FAILED — apex-health and ttw-health do not resolve to the same file"; exit 1; }
-  rc=0
-  ${health}/bin/apex-health $FLAGS --claude-dir "$TMPDIR/f1" > "$TMPDIR/f1-alias.out" 2>&1 || rc=$?
-  [ "$rc" = 0 ] && cmp -s "$TMPDIR/f1.out" "$TMPDIR/f1-alias.out" \
-    || { echo "ttw-health: A1 FAILED — apex-health exited $rc or printed another report than ttw-health on F1"; cat "$TMPDIR/f1-alias.out"; exit 1; }
-  echo "ttw-health: A1 apex-health -> ttw-health OK"
+  bins="$(ls -A ${health}/bin | tr '\n' ' ')"
+  [ "$bins" = "ttw-health " ] || { echo "ttw-health: A1 FAILED — bin holds '$bins', want exactly 'ttw-health'"; exit 1; }
+  echo "ttw-health: A1 bin is exactly ttw-health OK"
   echo "${launchdGuard}"
 
   run f2 --claude-dir "$TMPDIR/f2"
@@ -270,23 +257,25 @@ pkgs.runCommand "ttw-health-check" { } ''
   has f6 '^Lignes illisibles ignorées : 1$'
   echo "ttw-health: F6 tokens OK"
 
-  # F8, apex -> ttw phase 3: a run written under .claude/output/ttw counts
-  # (a0: 2 runs, so 7 AFTER), its round under ttw-correction-budget counts
-  # (1/7); the repo's runs are read under both dirs, a `# TTW:` titled one
-  # escalated (2 runs, 1 escalated); a `ttwx` sibling is no run dir.
+  # F8: both transcript run paths count (a0: 2 runs, so 7 AFTER, D3), its
+  # round under ttw-correction-budget counts (1/7) while b1's under the
+  # pre-rename budget dir does not (1/6, not 2/6); on disk the repo's runs are read
+  # under .claude/output/ttw only: r2 escalated counts (1 run, 1 escalated),
+  # the pre-rename r1 does not (it would make it 2 runs, 0.50), nor does
+  # a `ttwx` sibling.
   R="$TMPDIR/repo8"
   mkdir "$R"
   git -C "$R" init -q -b master --template=
   commit "chore: init" 2026-09-01T10:00:00Z y.txt
   mkdir -p "$R/.claude/output/apex/r1" "$R/.claude/output/ttw/r2" "$R/.claude/output/ttwx/r3"
-  printf '%s\n' "# APEX: probe" "Date: 2026-10-12" > "$R/.claude/output/apex/r1/00-context.md"
+  printf '%s\n' "# TTW: probe" "Date: 2026-10-12" > "$R/.claude/output/apex/r1/00-context.md"
   printf '%s\n' "# TTW: probe" "Date: 2026-10-13" "Escalated: Standard -> Deep" > "$R/.claude/output/ttw/r2/00-context.md"
   printf '%s\n' "# TTW: probe" "Date: 2026-10-14" "Escalated: Standard -> Deep" > "$R/.claude/output/ttwx/r3/00-context.md"
   run f8 --claude-dir "$TMPDIR/f8" --repo "$R"
   [ "$rc" = 0 ] || fail f8 "exit $rc, want 0"
-  has f8 '^Sessions APEX : avant 6 \(6 runs\), après 6 \(7 runs\)$'
+  has f8 '^Sessions TTW : avant 6 \(6 runs\), après 6 \(7 runs\)$'
   has f8 '^rounds / run +\| +6 \| +0\.17 \| +7 \| +0\.14 \|'
-  has f8 "^taux d'escalade +\\| +0 \\| +— \\| +2 \\| +0\\.50 \\|"
+  has f8 "^taux d'escalade +\\| +0 \\| +— \\| +1 \\| +1\\.00 \\|"
   echo "ttw-health: F8 ttw runs and budget OK"
 
   # M1 on F2: must not drift.

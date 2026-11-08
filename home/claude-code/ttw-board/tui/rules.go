@@ -120,7 +120,7 @@ var (
 	reBullet   = regexp.MustCompile(`^(?:[-*+]|\d+\.)` + reS + `+`)
 	reHeading1 = regexp.MustCompile(`^#` + reS + `+` + reNS)
 	reHashLead = regexp.MustCompile(`^#` + reS + `+`)
-	reTitle    = regexp.MustCompile(`^(?:` + ci("apex") + `|` + ci("ttw") + `)` + reS + `*[:—–-]` + reS + `*(` + reDot + `+)$`)
+	reTitle    = regexp.MustCompile(`^` + ci("ttw") + reS + `*[:—–-]` + reS + `*(` + reDot + `+)$`)
 	reFlagMode = regexp.MustCompile(`\b` + ci("mode") + reS + `*:?` + reS + `+([^` + jsSpaceClass + `,;)]+)`)
 )
 

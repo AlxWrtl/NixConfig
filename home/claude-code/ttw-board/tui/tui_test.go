@@ -22,7 +22,7 @@ const hourMs = 60 * 60 * 1000
 
 func ctxText(title string, rows [][2]string) string {
 	var sb strings.Builder
-	sb.WriteString("# APEX: " + title + "\nTier: Standard\nBranch: feat/" + title + "\n\n## Progress\n| Step | Status | Notes |\n|------|--------|-------|\n")
+	sb.WriteString("# TTW: " + title + "\nTier: Standard\nBranch: feat/" + title + "\n\n## Progress\n| Step | Status | Notes |\n|------|--------|-------|\n")
 	for _, r := range rows {
 		sb.WriteString("| " + r[0] + " | " + r[1] + " | |\n")
 	}
@@ -303,7 +303,7 @@ func TestRenderBoard180x50(t *testing.T) {
 		last = at
 	}
 	all := strings.Join(text, "\n")
-	for _, want := range []string{"live-failed", "done-pr", "stale", "À TOI", "INACTIF", "étape 04-validate", "APEX board · fixture", "/ttw -x <tâche>", "╭", "╯"} {
+	for _, want := range []string{"live-failed", "done-pr", "stale", "À TOI", "INACTIF", "étape 04-validate", "TTW board · fixture", "/ttw -x <tâche>", "╭", "╯"} {
 		if !strings.Contains(all, want) {
 			t.Fatalf("%q not drawn", want)
 		}

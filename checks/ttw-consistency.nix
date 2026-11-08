@@ -17,7 +17,7 @@ let
   need =
     file: set: n:
     set.${n}
-      or (throw "apex-consistency: ${file} has no attribute '${n}' — the apex -> ttw rename (phase 1) names it so; this check reads the new name only.");
+      or (throw "ttw-consistency:${file} has no attribute '${n}' — the apex -> ttw rename (phase 1) names it so; this check reads the new name only.");
   skillsRaw = import ../home/claude-code/skills.nix;
   skills =
     skillsRaw
@@ -400,7 +400,7 @@ let
       scope = skills.ttwStep00Init;
     }
     {
-      # B5 of checks/apex-metrics-probe.py reads this tally from 05-examine.md:
+      # B5 of checks/ttw-metrics-probe.py reads this tally from 05-examine.md:
       # without it an examine pass that ran is counted unknown, never changed.
       name = "examine: the triage carries a confirmed/unique/dismissed tally";
       needle = "`confirmed=N unique=U dismissed=D`, same format as step-04";
@@ -470,7 +470,7 @@ let
       # sentence left both apex-consistency and readme-consistency green, and
       # `-e` inert. Presence is not effect — so pin the command itself.
       name = "validate: the external pass is actually invoked";
-      needle = "apex-verify-external --base {trunk} --acs";
+      needle = "ttw-verify-external --base {trunk} --acs";
       scope = skills.ttwStep04Validate;
     }
     {
@@ -675,7 +675,7 @@ let
       # Est-lines is the coordinator's own guess; the deterministic re-check
       # on the real diff is what makes the inline tier safe.
       name = "direct: the tier is re-checked on the real diff";
-      needle = "apex-tier --base {trunk}";
+      needle = "ttw-tier --base {trunk}";
       scope = skills.ttwDirect;
     }
     {
@@ -707,7 +707,14 @@ let
     {
       # Standard and High-stakes re-check the tier at validate too.
       name = "validate: the tier is re-checked on the real diff";
-      needle = "apex-tier --base {trunk}";
+      needle = "ttw-tier --base {trunk}";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      # apex -> ttw phase 2: validate proves its ACs through the probe's
+      # installed new name.
+      name = "validate: the AC proof runs the ttw metrics probe";
+      needle = "python3 -I ~/.claude/hooks/ttw-metrics-probe.py --acs";
       scope = skills.ttwStep04Validate;
     }
     {
@@ -979,7 +986,7 @@ let
       m = builtins.match ".*\\| ${label} \\| `([^`]*)` \\|.*" skills.skillTtw;
     in
     if m == null then
-      throw "apex-consistency: no tier row for '${label}' — the table in skillTtw was reformatted or renamed; this check reads flags from it and cannot guess."
+      throw "ttw-consistency:no tier row for '${label}' — the table in skillTtw was reformatted or renamed; this check reads flags from it and cannot guess."
     else
       builtins.head m;
 
@@ -1054,14 +1061,26 @@ let
   # The hooks accept both names until phase 4, the text the model reads
   # teaches only the new one. The rules are read outside any run and point
   # at the installed dir, so they are held to the same.
+  # Phase 2 adds the binary and hook names (the packages and hooks.nix keep
+  # the apex-* alias until phase 4; the text teaches ttw-*), and the sites
+  # that name them: the eval suite, ttw-flags.js and the repo CLAUDE.md. The
+  # run folder `.claude/output/apex/` is not a stale name (phase 4).
   staleNameSites = {
     inherit corpus;
     inherit (rules) ruleNix ruleTypescript ruleReact;
+    inherit (skills) ttwEvalSuite;
+    inherit (hooks) hookTtwFlags;
+    repoClaudeMd = builtins.readFile ../CLAUDE.md;
   };
   staleNames = [
     "APEX-CORRECTION-ROUND"
     "apex: +1 tour"
     "skills/apex"
+    "apex-tier"
+    "apex-verify-external"
+    "apex-metrics-probe"
+    "apex-health"
+    "apex-pr-record"
   ];
   staleNameHits = builtins.concatMap (
     n: map (p: "${n}: '${p}'") (builtins.filter (p: pkgs.lib.hasInfix p staleNameSites.${n}) staleNames)
@@ -1080,7 +1099,7 @@ let
       stale = builtins.filter (e: e.name == "apex") manifest;
     in
     if builtins.length entries != 1 || stale != [ ] then
-      throw "apex-consistency: expected exactly one 'ttw' entry and no 'apex' entry in skills-manifest.nix, found ${toString (builtins.length entries)} 'ttw' and ${toString (builtins.length stale)} 'apex'."
+      throw "ttw-consistency:expected exactly one 'ttw' entry and no 'apex' entry in skills-manifest.nix, found ${toString (builtins.length entries)} 'ttw' and ${toString (builtins.length stale)} 'apex'."
     else
       builtins.head entries;
   manifestPaths = builtins.sort builtins.lessThan (map (f: f.path) apexManifest.files);
@@ -1147,7 +1166,7 @@ let
       parts = pkgs.lib.splitString marker planStep;
     in
     if builtins.length parts != 2 then
-      throw "apex-consistency: '${marker}' occurs ${
+      throw "ttw-consistency:'${marker}' occurs ${
         toString (builtins.length parts - 1)
       } time(s) in step-02-plan, expected exactly 1 — the ordering assertion cannot pick one."
     else
@@ -1213,7 +1232,7 @@ let
   );
   suiteContradictsRouting = diagnosisIsInternal && pkgs.lib.hasInfix "/debug" suiteNarrative;
 
-  fail = msg: throw "apex-consistency: ${msg}";
+  fail = msg: throw "ttw-consistency:${msg}";
 
   # `++` forces every condition, so all failures surface in one error.
   # Branch 2 stays gated: missingInvariants reads `i.needle`, absent on a vacuous invariant.
@@ -1287,12 +1306,12 @@ let
     );
 
 in
-pkgs.runCommand "apex-consistency-check" { } (
+pkgs.runCommand "ttw-consistency-check" { } (
   if problems != [ ] then
     fail ("\n  - " + builtins.concatStringsSep "\n  - " problems)
   else
     ''
-      echo "apex-consistency: ${toString (builtins.length existing)} step files, ${toString (builtins.length invariants)} invariants, ${toString (builtins.length tierRows)} tier rows, manifest + size budget — OK"
+      echo "ttw-consistency:${toString (builtins.length existing)} step files, ${toString (builtins.length invariants)} invariants, ${toString (builtins.length tierRows)} tier rows, manifest + size budget — OK"
       touch $out
     ''
 )

@@ -29,9 +29,9 @@ let
   preprodCurl = import ./claude-code/preprod-curl.nix { inherit pkgs; };
   nixOptions = import ./claude-code/nix-options.nix { inherit pkgs; };
   scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
-  apexVerifyExternal = import ./claude-code/apex-verify-external.nix { inherit pkgs; };
-  apexTier = import ./claude-code/apex-tier.nix { inherit pkgs; };
-  apexHealth = import ./claude-code/apex-health.nix { inherit pkgs; };
+  ttwVerifyExternal = import ./claude-code/ttw-verify-external.nix { inherit pkgs; };
+  ttwTier = import ./claude-code/ttw-tier.nix { inherit pkgs; };
+  ttwHealth = import ./claude-code/ttw-health.nix { inherit pkgs; };
   jevLocate = import ./claude-code/jev-locate.nix { inherit pkgs; };
   apexBoard = import ./claude-code/apex-board.nix { inherit pkgs; };
   claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
@@ -49,9 +49,9 @@ let
   inherit (trello) trelloPkg;
   inherit (preprodCurl) preprodCurlPkg;
   inherit (nixOptions) nixOptionsPkg;
-  inherit (apexVerifyExternal) apexVerifyExternalPkg;
-  inherit (apexTier) apexTierPkg;
-  inherit (apexHealth) apexHealthPkg;
+  inherit (ttwVerifyExternal) ttwVerifyExternalPkg;
+  inherit (ttwTier) ttwTierPkg;
+  inherit (ttwHealth) ttwHealthPkg;
   inherit (jevLocate) jevLocatePkg;
   inherit (apexBoard) apexBoardPkg;
   inherit (claudeDispatch) claudeDispatchPkg;
@@ -88,7 +88,7 @@ let
     hookStopFailure
     hookCircuitBreaker
     hookCircuitBreakerReset
-    hookApexPrRecord
+    hookTtwPrRecord
     hookQualityGate
     hookGovernanceAudit
     hookCorrectionBudget
@@ -100,7 +100,7 @@ let
     hookReactDocsGate
     hookNullResultGate
     hookInstagramWatch
-    hookApexAcsProof
+    hookTtwAcsProof
     ;
   hookWorktreeEnvSync = hooks.hookWorktreeEnvSync {
     jqBin = "${pkgs.jq}/bin/jq";
@@ -376,8 +376,13 @@ let
       text = hookCircuitBreakerReset;
       executable = true;
     };
+    "${claudeDir}/hooks/ttw-pr-record.js" = {
+      text = hookTtwPrRecord;
+      executable = true;
+    };
+    # Pre-rename name, same text, wired nowhere (phase 2; dropped in phase 4).
     "${claudeDir}/hooks/apex-pr-record.js" = {
-      text = hookApexPrRecord;
+      text = hookTtwPrRecord;
       executable = true;
     };
     "${claudeDir}/hooks/quality-gate.js" = {
@@ -432,8 +437,13 @@ let
       text = hookInstagramWatch;
       executable = true;
     };
+    "${claudeDir}/hooks/ttw-metrics-probe.py" = {
+      text = hookTtwAcsProof;
+      executable = true;
+    };
+    # Pre-rename name, same text, wired nowhere (phase 2; dropped in phase 4).
     "${claudeDir}/hooks/apex-metrics-probe.py" = {
-      text = hookApexAcsProof;
+      text = hookTtwAcsProof;
       executable = true;
     };
   };
@@ -442,42 +452,6 @@ in
   # Shell integration
   programs.zsh.shellAliases = aliases;
   programs.zsh.sessionVariables = sessionVars;
-
-  # One-shot apex-health report, 1.5 weeks after the #235 effort/reviewer change:
-  # writes the before/after verdict into the vault Inbox. launchd repeats a
-  # Month/Day interval every year, so a marker file makes it run once.
-  launchd.agents.apex-health-report = {
-    enable = true;
-    config = {
-      ProgramArguments = [
-        "${pkgs.writeShellScript "apex-health-report" ''
-          marker="$HOME/.cache/apex-health-report.done"
-          [ -e "$marker" ] && exit 0
-          out="${settings.alxVaultPath}/01-Inbox/2026-10-21 - apex-health.md"
-          {
-            echo "# apex-health — $(date '+%F %H:%M')"
-            echo
-            echo '```'
-            for repo in "$HOME/.config/nix-darwin" "$HOME/projects/Preliz"; do
-              [ -d "$repo/.git" ] || continue
-              echo "== $repo"
-              ${apexHealthPkg}/bin/apex-health --repo "$repo"
-              echo "exit=$?"
-            done
-            echo '```'
-          } > "$out" 2>&1 && mkdir -p "$HOME/.cache" && touch "$marker"
-        ''}"
-      ];
-      StartCalendarInterval = [
-        {
-          Month = 10;
-          Day = 21;
-          Hour = 9;
-          Minute = 7;
-        }
-      ];
-    };
-  };
 
   home = {
     # npm global prefix (nix store is immutable, npm install -g needs a writable prefix)
@@ -504,9 +478,9 @@ in
       trelloPkg
       preprodCurlPkg
       nixOptionsPkg
-      apexVerifyExternalPkg
-      apexTierPkg
-      apexHealthPkg
+      ttwVerifyExternalPkg
+      ttwTierPkg
+      ttwHealthPkg
       jevLocatePkg
       apexBoardPkg
       claudeDispatchPkg

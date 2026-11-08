@@ -40,7 +40,7 @@ function quit() { process.exit(0); }
 
 function note(msg) {
   // Synchronous: process.exit() can drop an async pipe write.
-  try { fs.writeSync(2, "apex-pr-record: " + String(msg).split("\n")[0].slice(0, 200) + "\n"); } catch {}
+  try { fs.writeSync(2, "ttw-pr-record: " + String(msg).split("\n")[0].slice(0, 200) + "\n"); } catch {}
 }
 
 // The words of a lone simple command, or null when it chains, pipes,
@@ -199,7 +199,7 @@ function main(input) {
   const leaf = head.slice(head.lastIndexOf("/") + 1);
   if (hits.length === 0) hits = unbranched.filter(r => path.basename(r.dir) === leaf || r.lines.slice(0, HEADER_LINES).some(l => namesToken(l, head)));
 
-  const body = "#" + pr.number + " " + pr.url + " — merged (" + sha + ") — recorded by apex-pr-record\n";
+  const body = "#" + pr.number + " " + pr.url + " — merged (" + sha + ") — recorded by ttw-pr-record\n";
   for (const r of hits) {
     if (present(path.join(r.dir, "commit.txt"))) continue;
     try {

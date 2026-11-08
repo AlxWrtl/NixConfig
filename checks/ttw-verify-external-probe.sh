@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Probe the apex-verify-external wrapper: does every degraded path still exit
+# Probe the ttw-verify-external wrapper: does every degraded path still exit
 # with the documented code AND leave a BLOCKED envelope on disk?
 #
 # WHY A STUB AND NEVER THE REAL BINARY. The system under test shells out to the
@@ -29,7 +29,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SUT="${1:-$REPO_ROOT/home/claude-code/scripts/apex-verify-external.sh}"
+SUT="${1:-$REPO_ROOT/home/claude-code/scripts/ttw-verify-external.sh}"
 BASH_BIN="$(command -v bash)"
 
 [ -f "$SUT" ] && [ -r "$SUT" ] || {
@@ -662,11 +662,11 @@ assert_case() {
   if [ -n "$why" ]; then fail_case "$label" "$why"; else ok_case "$label" "exit $CASE_STATUS"; fi
 }
 
-echo "=== apex-verify-external probe (stub codex; the real binary is unreachable) ==="
+echo "=== ttw-verify-external probe (stub codex; the real binary is unreachable) ==="
 
 DIRTY_OUT="$FIX_DIRTY/.claude/output/apex"
 
-if sed -n '/runtimeInputs = \[/,/^[[:space:]]*\];/p' "$REPO_ROOT/home/claude-code/apex-verify-external.nix" \
+if sed -n '/runtimeInputs = \[/,/^[[:space:]]*\];/p' "$REPO_ROOT/home/claude-code/ttw-verify-external.nix" \
   | grep -qE '^[[:space:]]+pkgs\.findutils[[:space:]]*$'; then
   ok_case runtime-inputs-declared "findutils pinned for packaged scrub"
 else

@@ -1,6 +1,14 @@
-# Runtime check for apex-health (home/claude-code/apex-health.nix): the BUILT
+# Runtime check for ttw-health (home/claude-code/ttw-health.nix): the BUILT
 # report runs against a fake ~/.claude and a throwaway git repo, clock fixed by
 # --now 2026-10-20, cut-off 2026-10-10, 30-day BEFORE window.
+#
+#   A1  apex -> ttw, phase 2: the package ships bin/ttw-health AND
+#       bin/apex-health, the old name a symlink to ttw-health in the same
+#       output (dropped in phase 4); F1 runs once more through the alias and
+#       must print the same report. The report's title names ttw-health.
+#   L1  (eval) the one-shot launchd agent apex-health-report of 2026-10-21 is
+#       gone from home/claude-code.nix: its marker exists, it only re-fired
+#       each 21 Oct to exit. No other agent named *health-report replaces it.
 #
 #   F1  6 BEFORE + 6 AFTER APEX sessions, 1 round each side -> exit 0, VERDICT: ok
 #       (AFTER sessions: a0 calls Skill "apex", a1-a5 Skill "ttw"; both count)
@@ -30,8 +38,25 @@
 { pkgs }:
 
 let
-  health = (import ../home/claude-code/apex-health.nix { inherit pkgs; }).apexHealthPkg;
-  script = ../home/claude-code/scripts/apex-health.py;
+  health = (import ../home/claude-code/ttw-health.nix { inherit pkgs; }).ttwHealthPkg;
+  script = ../home/claude-code/scripts/ttw-health.py;
+
+  # L1: the launchd agents home/claude-code.nix declares, read from the module
+  # as evaluated (same stub as checks/hook-wiring.nix: only names are read, no
+  # agent body is forced). `?` and attrNames never force a value.
+  claudeModule = import ../home/claude-code.nix {
+    inherit pkgs;
+    inherit (pkgs) lib;
+    config.home.homeDirectory = "/Users/alx";
+    inputs = { };
+  };
+  launchdAgents = builtins.attrNames (pkgs.lib.attrByPath [ "launchd" "agents" ] { } claudeModule);
+  staleAgents = builtins.filter (n: pkgs.lib.hasInfix "health-report" n) launchdAgents;
+  launchdGuard =
+    if staleAgents != [ ] then
+      throw "ttw-health: L1 FAILED — launchd agent(s) ${builtins.concatStringsSep ", " staleAgents} still declared in home/claude-code.nix. apex-health-report was a one-shot of 2026-10-21 whose marker ~/.cache/apex-health-report.done exists: it only re-fires each 21 Oct to exit. Remove the agent (plan P5), leave the marker"
+    else
+      "ttw-health: L1 no *health-report launchd agent OK";
   runtimePath = pkgs.lib.makeBinPath [
     pkgs.python3
     pkgs.git
@@ -104,7 +129,7 @@ let
         (sub / "agent-1.jsonl").write_text(assistant("s1", "2026-09-20T10:05:00.000Z", [{"type": "text", "text": "sub"}], sub_usage) + "\n")
   '';
 in
-pkgs.runCommand "apex-health-check" { } ''
+pkgs.runCommand "ttw-health-check" { } ''
   export PATH=${runtimePath}
   export HOME="$TMPDIR" GIT_CONFIG_NOSYSTEM=1 GIT_CEILING_DIRECTORIES="$TMPDIR"
   export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
@@ -114,7 +139,7 @@ pkgs.runCommand "apex-health-check" { } ''
   anchor='^    return after > before \* DRIFT_RATIO '
   sed "s/$anchor.*/    return False/" ${script} > "$TMPDIR/mutant.py"
   if [ "$(grep -c "$anchor" ${script})" != 1 ] || grep -q "$anchor" "$TMPDIR/mutant.py" || cmp -s ${script} "$TMPDIR/mutant.py"; then
-    echo "apex-health: canary anchor '$anchor' gone from the script — the mutant equals the source"
+    echo "ttw-health: canary anchor '$anchor' gone from the script — the mutant equals the source"
     exit 1
   fi
 
@@ -128,10 +153,10 @@ pkgs.runCommand "apex-health-check" { } ''
   run() {
     name="$1"; shift
     rc=0
-    ${health}/bin/apex-health $FLAGS "$@" > "$TMPDIR/$name.out" 2>&1 || rc=$?
+    ${health}/bin/ttw-health $FLAGS "$@" > "$TMPDIR/$name.out" 2>&1 || rc=$?
   }
   fail() {
-    echo "apex-health: $1 FAILED — $2"
+    echo "ttw-health: $1 FAILED — $2"
     cat "$TMPDIR/$1.out"
     exit 1
   }
@@ -142,19 +167,42 @@ pkgs.runCommand "apex-health-check" { } ''
   has f1 '^VERDICT: ok$'
   has f1 '^rounds / run +\| +6 \| +0\.17 \| +6 \| +0\.17 \|'
   has f1 '^Sessions exclues \(bancs, dépôts jetables\) : 0$'
-  echo "apex-health: F1 no drift OK"
+  echo "ttw-health: F1 no drift OK"
+
+  # A1: the report names itself ttw-health; bin/apex-health is a symlink to
+  # ttw-health in the same package and prints the same report.
+  has f1 '^ttw-health — coupure 2026-10-10'
+  if grep -qF 'apex-health' "$TMPDIR/f1.out"; then fail f1 "the report still names apex-health"; fi
+  [ -x ${health}/bin/ttw-health ] || { echo "ttw-health: A1 FAILED — bin/ttw-health missing or not executable"; exit 1; }
+  [ -L ${health}/bin/apex-health ] || { echo "ttw-health: A1 FAILED — bin/apex-health is not a symlink (the pre-rename alias of ttw-health, kept until phase 4)"; exit 1; }
+  tgt="$(readlink ${health}/bin/apex-health)"
+  case "$tgt" in
+  ttw-health | ${health}/bin/ttw-health) ;;
+  *)
+    echo "ttw-health: A1 FAILED — bin/apex-health points at '$tgt', not at ttw-health in the same package"
+    exit 1
+    ;;
+  esac
+  [ "$(readlink -f ${health}/bin/apex-health)" = "$(readlink -f ${health}/bin/ttw-health)" ] \
+    || { echo "ttw-health: A1 FAILED — apex-health and ttw-health do not resolve to the same file"; exit 1; }
+  rc=0
+  ${health}/bin/apex-health $FLAGS --claude-dir "$TMPDIR/f1" > "$TMPDIR/f1-alias.out" 2>&1 || rc=$?
+  [ "$rc" = 0 ] && cmp -s "$TMPDIR/f1.out" "$TMPDIR/f1-alias.out" \
+    || { echo "ttw-health: A1 FAILED — apex-health exited $rc or printed another report than ttw-health on F1"; cat "$TMPDIR/f1-alias.out"; exit 1; }
+  echo "ttw-health: A1 apex-health -> ttw-health OK"
+  echo "${launchdGuard}"
 
   run f2 --claude-dir "$TMPDIR/f2"
   [ "$rc" = 2 ] || fail f2 "exit $rc, want 2"
   has f2 '^VERDICT: DÉRIVE \(rounds / run\)$'
   has f2 '^rounds / run +\| +6 \| +0\.00 \| +6 \| +2\.00 \|'
-  echo "apex-health: F2 drift OK"
+  echo "ttw-health: F2 drift OK"
 
   run f3 --claude-dir "$TMPDIR/f3"
   [ "$rc" = 0 ] || fail f3 "exit $rc, want 0"
   has f3 '^VERDICT: insuffisant$'
   has f3 '^rounds / run : insuffisant$'
-  echo "apex-health: F3 insufficient OK"
+  echo "ttw-health: F3 insufficient OK"
 
   run f4 --claude-dir "$TMPDIR/f4"
   [ "$rc" = 0 ] || fail f4 "exit $rc, want 0"
@@ -162,7 +210,7 @@ pkgs.runCommand "apex-health-check" { } ''
   grep -v '^Sessions exclues' "$TMPDIR/f1.out" > "$TMPDIR/f1.cmp"
   grep -v '^Sessions exclues' "$TMPDIR/f4.out" > "$TMPDIR/f4.cmp"
   diff "$TMPDIR/f1.cmp" "$TMPDIR/f4.cmp" || fail f4 "report differs from F1 beyond the excluded count"
-  echo "apex-health: F4 exclusion OK"
+  echo "ttw-health: F4 exclusion OK"
 
   # commit MSG DATE FILE...: appends MSG to each FILE in repo $R and commits at DATE.
   commit() {
@@ -184,7 +232,7 @@ pkgs.runCommand "apex-health-check" { } ''
   [ "$rc" = 0 ] || fail f5 "exit $rc, want 0"
   has f5 '^fix-after : avant 1/1 suivis, après 0/0 suivis'
   has f5 '^taux fix-after +\| +1 \| +1\.00 \|'
-  echo "apex-health: F5 fix-after OK"
+  echo "ttw-health: F5 fix-after OK"
 
   # F7: a fix sharing only README.md is not a follow-up; a docs-only commit is not scored.
   R="$TMPDIR/repo7"
@@ -197,29 +245,29 @@ pkgs.runCommand "apex-health-check" { } ''
   run f7 --claude-dir "$TMPDIR/f1" --repo "$R"
   [ "$rc" = 0 ] || fail f7 "exit $rc, want 0"
   has f7 '^fix-after : avant 0/1 suivis, après 0/0 suivis'
-  echo "apex-health: F7 docs-only overlap OK"
+  echo "ttw-health: F7 docs-only overlap OK"
 
   run f6 --claude-dir "$TMPDIR/f6"
   [ "$rc" = 0 ] || fail f6 "exit $rc, want 0"
   has f6 '^tokens pondérés / run +\| +1 \| +3170\.0 \|'
   has f6 '^tokens de sortie / run +\| +1 \| +12\.0 \|'
   has f6 '^Lignes illisibles ignorées : 1$'
-  echo "apex-health: F6 tokens OK"
+  echo "ttw-health: F6 tokens OK"
 
   # M1 on F2: must not drift.
   m1rc=0
   python3 -I "$TMPDIR/mutant.py" $FLAGS --claude-dir "$TMPDIR/f2" > "$TMPDIR/m1.out" 2>&1 || m1rc=$?
   if [ "$m1rc" = 1 ] || ! grep -q '^VERDICT: ' "$TMPDIR/m1.out"; then
-    echo "apex-health: canary M1 crashed instead of reporting (exit $m1rc)"
+    echo "ttw-health: canary M1 crashed instead of reporting (exit $m1rc)"
     cat "$TMPDIR/m1.out"
     exit 1
   fi
   if grep -q 'DÉRIVE' "$TMPDIR/m1.out"; then
-    echo "apex-health: canary M1 SURVIVED — drift comparison neutralised and F2 still says DÉRIVE; the F2 assertion does not prove the comparison"
+    echo "ttw-health: canary M1 SURVIVED — drift comparison neutralised and F2 still says DÉRIVE; the F2 assertion does not prove the comparison"
     exit 1
   fi
-  echo "apex-health: canary M1 killed — F2 without the comparison: $(grep '^VERDICT' "$TMPDIR/m1.out")"
+  echo "ttw-health: canary M1 killed — F2 without the comparison: $(grep '^VERDICT' "$TMPDIR/m1.out")"
 
-  echo "apex-health: 7 fixtures, 1 canary — OK"
+  echo "ttw-health: 7 fixtures, 1 alias, launchd, 1 canary — OK"
   touch $out
 ''

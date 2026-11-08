@@ -143,6 +143,11 @@
 #      only on a whole first line and never scheduled. One canary per name
 #      on the marker and on the token. A6 holds each pre-rename hook file
 #      byte-identical to its new name.
+#      The ttw-phase2 run runs ttw-pr-record.js and ttw-metrics-probe.py
+#      under their new names (A6 adds the old ones), records with the new
+#      line and keeps a pr.md written under the old one, alone; and lets
+#      ttw-verify-external escape like apex-verify-external, nothing wider.
+#      One canary per name and per widening.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -266,10 +271,13 @@ let
   # settings.json written before the switch, or a session that snapshotted it,
   # still finds a file at the path it names instead of failing open on a
   # missing one. A6 below holds each to its new body. Drop them in phase 4.
+  # Phase 2 adds the PR recorder and the metrics probe.
   hookAliases = {
     "require-apex.js" = "require-ttw.js";
     "apex-flags.js" = "ttw-flags.js";
     "apex-reminder.sh" = "ttw-reminder.sh";
+    "apex-pr-record.js" = "ttw-pr-record.js";
+    "apex-metrics-probe.py" = "ttw-metrics-probe.py";
   };
   knownUnwired = builtins.attrNames hookAliases;
 
@@ -578,115 +586,115 @@ let
       text = "try { data = JSON.parse(input); } catch { quiet(); return; }";
     };
     A-ac-flag = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "flagged = [b for b in parse_ac_blocks(_read(pathlib.Path(path))) if classify(b) == \"unproven\"]";
     };
     A-ac-symlink = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if p.is_symlink() or not p.is_file():";
     };
     A-ac-cap = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "HOOK_CAP = 10";
     };
     A-ac-lecture-re = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "LECTURE = re.compile(r\"\\[lecture\\]\\s*[—–:-]\\s*\\S\")";
     };
     A-ac-lecture = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if LECTURE.search(text):";
     };
     A-ac-deferred = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if DEFERRED.search(text):";
     };
     A-ac-docs = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if AC_DOCS.match(block.prose[0]):";
     };
     A-ac-path = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "ACS_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/02-acs\\.md$\")";
     };
     A-ac-failopen = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "except Exception:";
     };
     A-ac-gate = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "or GATE.search(joined) is not None";
     };
     A-ac-tally = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "TALLY = re.compile(r\"\\bconfirmed=(\\d+)\")";
     };
     A-mem-path = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "MEMORY_PATH = re.compile(r\"/\\.claude/projects/[^/]+/memory/[^/]+\\.md$\")";
     };
     A-mem-slugs = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "for link in sorted(note_links(text) - names):";
     };
     A-mem-index = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if idx is not None and p.name not in index_links(idx):";
     };
     A-mem-dead = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "dead = sorted(index_links(text) - files)";
     };
     A-mem-symlink = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if p.is_symlink():";
     };
     A-mem-fold = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "by_stem.setdefault(stem.replace(\"_\", \"-\"), slug)";
     };
     A-pr-cmd = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "GH_PR_CREATE = re.compile(r\"^\\s*gh\\s+pr\\s+create(\\s|$)\")";
     };
     A-pr-branch = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if ctx is None or run_branch(ctx) != branch:";
     };
     A-pr-done = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if any((r / n).exists() or (r / n).is_symlink() for n in (\"pr.md\", \"commit.txt\")):";
     };
     A-pr-direct = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "NON_DIRECT = frozenset({\"Standard\", \"High-stakes\", \"Diagnosis\"})";
     };
     A-pr-xflag = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "X_FLAG = re.compile(r\"(?<![\\w-])[-+]x(?![\\w-])\")";
     };
     A-pr-head = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "head = head_flag(argv)";
     };
     A-pr-shlex = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "argv = shlex.split(cmd)";
     };
     A-pr-ext = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "for step in (\"x\", \"e\"):";
     };
     A-pr-newest = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "return max(found)[2] if found else None";
     };
     A-pr-failed = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "if _tool_failed(data.get(\"tool_response\")):";
     };
     A-b6-tier = {
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       text = "return found[-1] if found else None";
     };
     A-cb-cron = {
@@ -813,6 +821,12 @@ let
       hook = "sandbox-escape-evidence.js";
       text = "/^pnpm\\s+(?:run\\s+)?(?:db:migrate|preflight|test:rls\\w*)(?::[\\w-]+)?(?=\\s|$)/,";
     };
+    # apex -> ttw phase 2: both binary names, nothing wider: the name ends
+    # on whitespace or the end of the segment, not on `-`, `.` or `/`.
+    A-se-verify = {
+      hook = "sandbox-escape-evidence.js";
+      text = "/^(?:apex|ttw)-verify-external(?=\\s|$)/";
+    };
     A-se-mkdir = {
       hook = "sandbox-escape-evidence.js";
       text = "const EVIDENCE = /Operation not permitted|\\bEPERM\\b|\\bEACCES\\b|Read-only file system|sandbox_violations|Unable to create .*\\.lock|Permission denied|cannot connect to socket|unable to open database file|readonly database|Couldn't load public key|unable to create directory|getaddrinfo ENOTFOUND/i;";
@@ -846,59 +860,59 @@ let
       text = "if cp -p \"$src\" \"$tmp\" 2>/dev/null && ln -n \"$tmp\" \"$dst\" 2>/dev/null; then LIST=\"$LIST, $name\"; fi";
     };
     A-apr-cmd = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "if (!w || w[0] !== \"gh\" || w[1] !== \"pr\" || w[2] !== \"merge\") return;";
     };
     A-apr-failed = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "if (toolFailed(data.tool_response)) return;";
     };
     A-apr-state = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "if (!pr || pr.state !== \"MERGED\") return;";
     };
     A-apr-valueflags = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "if (VALUE_FLAGS.has(a)) {";
     };
     A-apr-branchline = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "let hits = runs.filter(r => r.lines.some(l => branchLine(l, head)));";
     };
     A-apr-prefix = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "return rest.startsWith(head) && /^(\\s|$)/.test(rest.slice(head.length));";
     };
     A-apr-branchless = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "const unbranched = runs.filter(r => !r.lines.some(l => l.startsWith(\"Branch:\")));";
     };
     A-apr-fallback = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "if (hits.length === 0) hits = unbranched";
     };
     A-apr-dirname = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "path.basename(r.dir) === leaf ||";
     };
     A-apr-header = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "const HEADER_LINES = 12;";
     };
     A-apr-token = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "if (endsToken(after)) return true;";
     };
     A-apr-multi = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "for (const r of hits) {";
     };
     A-apr-commit = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "if (present(path.join(r.dir, \"commit.txt\"))) continue;";
     };
     A-apr-wx = {
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       text = "fs.writeFileSync(path.join(r.dir, \"pr.md\"), body, { flag: \"wx\" });";
     };
     A-wh-failopen = {
@@ -1593,7 +1607,7 @@ let
     # Wrong filter: the ACs proven by a command are listed, the unproven not.
     {
       id = "M-ac-flag";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-prose-emits";
       swaps = [
         {
@@ -1605,7 +1619,7 @@ let
     # Symlink followed: another file's first line reaches the model context.
     {
       id = "M-ac-symlink";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-symlink-silent";
       swaps = [
         {
@@ -1617,7 +1631,7 @@ let
     # Cap above the case's count: every unproven AC is listed, no "+N more".
     {
       id = "M-ac-cap";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-cap-emits";
       swaps = [
         {
@@ -1629,7 +1643,7 @@ let
     # A bare `[lecture]` with no reason exempts its AC.
     {
       id = "M-ac-reason";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-bare-lecture-emits";
       swaps = [
         {
@@ -1641,7 +1655,7 @@ let
     # No lecture test: a `[lecture] — reason` AC is listed as unproven.
     {
       id = "M-ac-lecture";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-lecture-silent";
       swaps = [
         {
@@ -1653,7 +1667,7 @@ let
     # No deferred test: a `[deferred to user]` AC is listed as unproven.
     {
       id = "M-ac-deferred";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-deferred-silent";
       swaps = [
         {
@@ -1665,7 +1679,7 @@ let
     # No AC-docs test: the docs line is listed as unproven.
     {
       id = "M-ac-docs";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-docs-silent";
       swaps = [
         {
@@ -1677,7 +1691,7 @@ let
     # Any .md of a run dir is read as its 02-acs.md.
     {
       id = "M-ac-name";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-other-file-silent";
       swaps = [
         {
@@ -1689,7 +1703,7 @@ let
     # Any 02-acs.md, inside an APEX run dir or not.
     {
       id = "M-ac-dir";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-outside-run-silent";
       swaps = [
         {
@@ -1701,7 +1715,7 @@ let
     # Fail-open narrowed to OSError: malformed input exits 1 with a traceback.
     {
       id = "M-ac-failopen";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-malformed-silent";
       swaps = [
         {
@@ -1713,7 +1727,7 @@ let
     # No gate rule in the B2 classifier: `--self-test` mislabels a gate AC.
     {
       id = "M-ac-gate";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-self-test";
       swaps = [
         {
@@ -1725,7 +1739,7 @@ let
     # Tally never detected: every 04-validate.md of a run that ran a pass is flagged.
     {
       id = "M-ac-tally";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-validate-tally-silent";
       swaps = [
         {
@@ -1737,7 +1751,7 @@ let
     # Any .md is read as a memory note: a plain notes dir gets the memory line.
     {
       id = "M-mem-path";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-mem-outside-silent";
       swaps = [
         {
@@ -1749,7 +1763,7 @@ let
     # Slugs ignored: a link to a sibling's own slug is reported.
     {
       id = "M-mem-slugs";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-mem-clean-silent";
       swaps = [
         {
@@ -1761,7 +1775,7 @@ let
     # Index never read: a note missing from MEMORY.md goes unnamed.
     {
       id = "M-mem-index";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-mem-unindexed-emits";
       swaps = [
         {
@@ -1773,7 +1787,7 @@ let
     # Dead index links never computed: MEMORY.md pointing at nothing is silent.
     {
       id = "M-mem-dead";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-mem-index-dead-emits";
       swaps = [
         {
@@ -1785,7 +1799,7 @@ let
     # Symlink followed: another file's links are reported as the note's.
     {
       id = "M-mem-symlink";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-mem-symlink-silent";
       swaps = [
         {
@@ -1797,7 +1811,7 @@ let
     # No `_` → `-` fold: a dashed link to an underscored stem is "no such note".
     {
       id = "M-mem-fold";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-mem-dangling-emits";
       swaps = [
         {
@@ -1809,7 +1823,7 @@ let
     # Any memory/ dir: a notes/memory/ dir outside .claude/projects/ is read.
     {
       id = "M-mem-path-proj";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-mem-notes-memory-silent";
       swaps = [
         {
@@ -1821,7 +1835,7 @@ let
     # Any `gh pr` command reads as a PR creation: `gh pr view` gets the B6 line.
     {
       id = "M-pr-cmd";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-other-command-silent";
       swaps = [
         {
@@ -1833,7 +1847,7 @@ let
     # Branch ignored: another branch's newer unfinished run is named.
     {
       id = "M-pr-branch";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-other-branch-silent";
       swaps = [
         {
@@ -1845,7 +1859,7 @@ let
     # A finished run (pr.md, commit.txt) is still told what it lacks.
     {
       id = "M-pr-done";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-finished-run-silent";
       swaps = [
         {
@@ -1857,7 +1871,7 @@ let
     # Direct owes the Standard files: a Direct run is told it lacks 02-acs.md.
     {
       id = "M-pr-direct";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-direct-silent";
       swaps = [
         {
@@ -1869,7 +1883,7 @@ let
     # `+x` never read: an escalated run with no 05-examine.md owes nothing.
     {
       id = "M-pr-xflag";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-xflag-noexamine-emits";
       swaps = [
         {
@@ -1881,7 +1895,7 @@ let
     # `--head` ignored: the cwd's branch, whose run is complete, is read.
     {
       id = "M-pr-head";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-head-flag-emits";
       swaps = [
         {
@@ -1893,7 +1907,7 @@ let
     # The raw command split on blanks: a `-H` inside a quoted title names the branch.
     {
       id = "M-pr-shlex";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-head-in-title-emits";
       swaps = [
         {
@@ -1905,7 +1919,7 @@ let
     # External tally never owed: a run whose verify passed and has no triage is silent.
     {
       id = "M-pr-ext";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-external-untallied-emits";
       swaps = [
         {
@@ -1917,7 +1931,7 @@ let
     # Oldest unfinished run read: the complete older run hides the newer one's gap.
     {
       id = "M-pr-newest";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-newest-incomplete-emits";
       swaps = [
         {
@@ -1929,7 +1943,7 @@ let
     # An interrupted `gh pr create` (no PR) still gets the B6 line.
     {
       id = "M-pr-failed";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "pr-failed-tool-silent";
       swaps = [
         {
@@ -1941,7 +1955,7 @@ let
     # First Tier: line wins: an escalated run keeps its provisional tier.
     {
       id = "M-b6-tier";
-      hook = "apex-metrics-probe.py";
+      hook = "ttw-metrics-probe.py";
       kills = "ac-self-test";
       swaps = [
         {
@@ -2501,7 +2515,7 @@ let
     # Any command starting with gh read as a merge: `gh pr view 42` records.
     {
       id = "M-apr-cmd";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-notmerge-silent";
       swaps = [
         {
@@ -2513,7 +2527,7 @@ let
     # An interrupted merge call recorded all the same.
     {
       id = "M-apr-failed";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-toolfailed-silent";
       swaps = [
         {
@@ -2525,7 +2539,7 @@ let
     # The state unread: `--auto`, still OPEN, recorded as merged.
     {
       id = "M-apr-state";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-open-silent";
       swaps = [
         {
@@ -2537,7 +2551,7 @@ let
     # Value flags not skipped: `-b 'x y'` becomes the selector.
     {
       id = "M-apr-valueflags";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-selector-args";
       swaps = [
         {
@@ -2549,7 +2563,7 @@ let
     # No `Branch:` match: the run that only names the branch gets pr.md.
     {
       id = "M-apr-branchline";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-branch-write";
       swaps = [
         {
@@ -2561,7 +2575,7 @@ let
     # `Branch: feat/x-2` taken for feat/x.
     {
       id = "M-apr-prefix";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-prefix-nomatch";
       swaps = [
         {
@@ -2573,7 +2587,7 @@ let
     # A header naming feat/x-2 taken for feat/x.
     {
       id = "M-apr-token";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-prefix-nomatch";
       swaps = [
         {
@@ -2585,7 +2599,7 @@ let
     # The header fallback open to runs on another branch.
     {
       id = "M-apr-branchless";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-otherbranch-silent";
       swaps = [
         {
@@ -2597,7 +2611,7 @@ let
     # No header fallback: a run without a `Branch:` line is never recorded.
     {
       id = "M-apr-fallback";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-header-write";
       swaps = [
         {
@@ -2609,7 +2623,7 @@ let
     # No dir-name fallback: a Direct run (no `Branch:` line) never recorded.
     {
       id = "M-apr-dirname";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-dirname-write";
       swaps = [
         {
@@ -2621,7 +2635,7 @@ let
     # The whole file read as header: a name on line 13 counts.
     {
       id = "M-apr-header";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-header-late-silent";
       swaps = [
         {
@@ -2633,7 +2647,7 @@ let
     # First match only: the second run on the branch is left out.
     {
       id = "M-apr-multi";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-multi-write";
       swaps = [
         {
@@ -2645,7 +2659,7 @@ let
     # commit.txt ignored: a committed run gets pr.md too.
     {
       id = "M-apr-commit";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-committxt-silent";
       swaps = [
         {
@@ -2657,12 +2671,100 @@ let
     # No O_EXCL: the existing pr.md overwritten.
     {
       id = "M-apr-wx";
-      hook = "apex-pr-record.js";
+      hook = "ttw-pr-record.js";
       kills = "apr-existing-kept";
       swaps = [
         {
           anchor = "A-apr-wx";
           to = "fs.writeFileSync(path.join(r.dir, \"pr.md\"), body, { flag: \"w\" });";
+        }
+      ];
+    }
+    # apex -> ttw: append instead of O_EXCL, a run recorded under the old
+    # name gets a second line under the new one.
+    {
+      id = "M-apr-append";
+      hook = "ttw-pr-record.js";
+      kills = "apr-oldline-kept";
+      swaps = [
+        {
+          anchor = "A-apr-wx";
+          to = "fs.writeFileSync(path.join(r.dir, \"pr.md\"), body, { flag: \"a\" });";
+        }
+      ];
+    }
+    # apex -> ttw: the ttw-verify-external branch dropped, the new skill text's
+    # sandboxed-timeout escape is denied.
+    {
+      id = "M-se-verify-ttw";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-allowlist-ttw-verify-allow";
+      swaps = [
+        {
+          anchor = "A-se-verify";
+          to = "/^apex-verify-external(?=\\s|$)/";
+        }
+      ];
+    }
+    # The apex-verify-external branch dropped while pre-switch sessions run.
+    {
+      id = "M-se-verify-apex";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-allowlist-verify-allow";
+      swaps = [
+        {
+          anchor = "A-se-verify";
+          to = "/^ttw-verify-external(?=\\s|$)/";
+        }
+      ];
+    }
+    # Nothing else new: a word boundary ends on `-`, `.` or `/`, so
+    # `ttw-verify-external-x` escapes.
+    {
+      id = "M-se-verify-boundary";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-ttw-verify-dash-deny";
+      swaps = [
+        {
+          anchor = "A-se-verify";
+          to = "/^(?:apex|ttw)-verify-external\\b/";
+        }
+      ];
+    }
+    # Nothing else new: no boundary at all, `ttw-verify-externals` escapes too.
+    {
+      id = "M-se-verify-noboundary";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-ttw-verify-suffix-deny";
+      swaps = [
+        {
+          anchor = "A-se-verify";
+          to = "/^(?:apex|ttw)-verify-external/";
+        }
+      ];
+    }
+    # Whitespace required after the name: the bare call, alone in its
+    # segment, no longer escapes.
+    {
+      id = "M-se-verify-eos";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-ttw-verify-bare-allow";
+      swaps = [
+        {
+          anchor = "A-se-verify";
+          to = "/^(?:apex|ttw)-verify-external(?=\\s)/";
+        }
+      ];
+    }
+    # Nothing else new: not anchored, any segment naming it escapes.
+    {
+      id = "M-se-verify-start";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-ttw-verify-arg-deny";
+      swaps = [
+        {
+          anchor = "A-se-verify";
+          to = "/(?:apex|ttw)-verify-external(?=\\s|$)/";
         }
       ];
     }
@@ -3075,6 +3177,14 @@ let
     "se-nonbash-skip-allow"
     "se-allowlist-allow"
     "se-allowlist-verify-allow"
+    "se-allowlist-ttw-verify-allow"
+    "se-ttw-verify-bare-allow"
+    "se-ttw-verify-suffix-deny"
+    "se-ttw-verify-dash-deny"
+    "se-apex-verify-dash-deny"
+    "se-ttw-verify-dot-deny"
+    "se-apex-verify-slash-deny"
+    "se-ttw-verify-arg-deny"
     "se-noproxy-allow"
     "se-deploy-allow"
     "se-directpg-allow"
@@ -3114,6 +3224,7 @@ let
     "apr-dirname-write"
     "apr-header-late-silent"
     "apr-existing-kept"
+    "apr-oldline-kept"
     "apr-committxt-silent"
     "apr-open-silent"
     "apr-ghfail-silent"
@@ -3262,10 +3373,10 @@ let
     "sandbox-escape-evidence.js"
     "worktree-env-sync.sh"
     "session-state.js"
-    "apex-pr-record.js"
+    "ttw-pr-record.js"
     "worktree-in-use.js"
     "instagram-watch.js"
-    "apex-metrics-probe.py"
+    "ttw-metrics-probe.py"
   ];
   timeoutsOf =
     n:
@@ -3286,7 +3397,7 @@ let
   prProbeGroups = builtins.filter (
     g:
     (g.matcher or null) == "Bash"
-    && builtins.any (h: builtins.elem "apex-metrics-probe.py" (hookRefsIn (h.command or ""))) (
+    && builtins.any (h: builtins.elem "ttw-metrics-probe.py" (hookRefsIn (h.command or ""))) (
       entriesOf g
     )
   ) (groupsOf "PostToolUse");
@@ -3752,7 +3863,10 @@ let
     # under $ARO, and a stub gh in $AB that appends its argv to $AB/gh.log
     # and prints $AB/view.json, or fails as on an HTTP error while $AB/fail
     # exists. PATH = the stub, then git.
-    APR_LINE='#42 https://github.com/o/r/pull/42 — merged (abcdef12) — recorded by apex-pr-record'
+    APR_LINE='#42 https://github.com/o/r/pull/42 — merged (abcdef12) — recorded by ttw-pr-record'
+    # The line the hook wrote under its pre-rename name (phase 2): a run
+    # recorded before the switch must keep it, alone.
+    APR_OLD_LINE='#42 https://github.com/o/r/pull/42 — merged (abcdef12) — recorded by apex-pr-record'
     APR_JSON='--json number,url,state,headRefName,mergeCommit'
     apr_fixture() {
       ab="$root/apr/$lbl"
@@ -3993,10 +4107,10 @@ let
         se-*) tmo=${hostTimeout "sandbox-escape-evidence.js"} ;;
         wes-*) tmo=${hostTimeout "worktree-env-sync.sh"} ;;
         ss-*) tmo=${hostTimeout "session-state.js"} ;;
-        apr-*) tmo=${hostTimeout "apex-pr-record.js"} ;;
+        apr-*) tmo=${hostTimeout "ttw-pr-record.js"} ;;
         wh-*) tmo=${hostTimeout "worktree-in-use.js"} ;;
         iw-*) tmo=${hostTimeout "instagram-watch.js"} ;;
-        ac-* | pr-*) tmo=${hostTimeout "apex-metrics-probe.py"} ;;
+        ac-* | pr-*) tmo=${hostTimeout "ttw-metrics-probe.py"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -4595,6 +4709,33 @@ let
         se-allowlist-verify-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'apex-verify-external --acs a.txt' "$2"; is_allow ;;
+        # apex -> ttw phase 2: the new name escapes exactly like the old one...
+        se-allowlist-ttw-verify-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'ttw-verify-external --acs a.txt' "$2"; is_allow ;;
+        se-ttw-verify-bare-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'ttw-verify-external' "$2"; is_allow ;;
+        # ...and nothing wider: a longer word, a name continued by `-`, `.`
+        # or `/` under either prefix, or the name as an argument.
+        se-ttw-verify-suffix-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'ttw-verify-externals --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-ttw-verify-dash-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'ttw-verify-external-x --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-apex-verify-dash-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'apex-verify-external-x --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-ttw-verify-dot-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'ttw-verify-external.py --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-apex-verify-slash-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'apex-verify-external/x --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-ttw-verify-arg-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'echo ttw-verify-external' "$2"; is_deny "Run this command sandboxed first" ;;
         se-noproxy-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'home 000')"
           se_run "curl -s --noproxy '*' -o /dev/null -w '%{http_code}' https://example.com/" "$2"; is_allow ;;
@@ -4832,6 +4973,17 @@ let
           apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
           apr_quiet || return 1
           [ "$(${pkgs.coreutils}/bin/cat "$ARO/e1/pr.md")" = keep ] || { why="the existing pr.md was overwritten"; kind=pwned; return 1; }
+          apr_gh "pr view 42 $APR_JSON" ;;
+        # apex -> ttw: PR 42 recorded before the switch, by the old name. The
+        # run keeps that one line: no second record under the new name.
+        apr-oldline-kept)
+          apr_fixture || return 1
+          apr_view MERGED feat/x
+          apr_ctx o1 "# APEX: one" "Branch: feat/x"
+          printf '%s\n' "$APR_OLD_LINE" > "$ARO/o1/pr.md"
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash")"
+          apr_quiet || return 1
+          [ "$(${pkgs.coreutils}/bin/cat "$ARO/o1/pr.md")" = "$APR_OLD_LINE" ] || { why="the pre-switch record was rewritten or doubled: $(${pkgs.coreutils}/bin/cat "$ARO/o1/pr.md")"; kind=pwned; return 1; }
           apr_gh "pr view 42 $APR_JSON" ;;
         apr-committxt-silent)
           apr_fixture || return 1
@@ -5268,10 +5420,10 @@ let
         se-*) echo ${hookFile "sandbox-escape-evidence.js"} ;;
         wes-*) echo ${hookFile "worktree-env-sync.sh"} ;;
         ss-*) echo ${hookFile "session-state.js"} ;;
-        apr-*) echo ${hookFile "apex-pr-record.js"} ;;
+        apr-*) echo ${hookFile "ttw-pr-record.js"} ;;
         wh-*) echo ${hookFile "worktree-in-use.js"} ;;
         iw-*) echo ${hookFile "instagram-watch.js"} ;;
-        ac-* | pr-*) echo ${hookFile "apex-metrics-probe.py"} ;;
+        ac-* | pr-*) echo ${hookFile "ttw-metrics-probe.py"} ;;
       esac
     }
 
@@ -5357,7 +5509,7 @@ let
     {
       name = "A6 aliases: each pre-rename hook name is installed byte-identical to its wired new name";
       ok = aliasDrift == [ ];
-      msg = "hook alias drift: ${show aliasDrift}. home/claude-code.nix must install require-ttw.js, ttw-flags.js and ttw-reminder.sh (wired in settings.nix) AND the old names require-apex.js, apex-flags.js, apex-reminder.sh from the same hooks.nix attribute, unwired. A live settings.json or a running session still names the old path; a missing or diverging file there is a guard that fails open or runs stale";
+      msg = "hook alias drift: ${show aliasDrift}. home/claude-code.nix must install require-ttw.js, ttw-flags.js, ttw-reminder.sh, ttw-pr-record.js and ttw-metrics-probe.py (wired in settings.nix) AND the old names require-apex.js, apex-flags.js, apex-reminder.sh, apex-pr-record.js, apex-metrics-probe.py from the same hooks.nix attribute, unwired. A live settings.json or a running session still names the old path; a missing or diverging file there is a guard that fails open or runs stale";
     }
     {
       name = "B0 detector: at least one additionalContext site is visible";
@@ -5425,9 +5577,9 @@ let
       msg = "`${whLsofLit}` is not in exactly one line of the installed worktree-in-use.js (home/claude-code/hooks.nix, hooks.hookWorktreeInUse; occurrences: ${toString (occurrences whLsofLit (bodyText "worktree-in-use.js"))}). The wh cases repoint that one literal at a fake lsof; missing, they run the real path the build sandbox lacks, and twice, the copy is only half repointed";
     }
     {
-      name = "D8 pr probe: the Bash apex-metrics-probe group filters on its handler's `if`";
+      name = "D8 pr probe: the Bash ttw-metrics-probe group filters on its handler's `if`";
       ok = prProbeGroups != [ ] && builtins.all prProbeGated prProbeGroups;
-      msg = "PostToolUse group(s) with matcher Bash running apex-metrics-probe.py: ${toString (builtins.length prProbeGroups)}; each must carry no group-level `if` and `\"if\" = \"${prProbeIf}\"` on every handler. `if` is a handler field (hooks reference, common fields): on the group it is ignored without a word and python runs after every Bash call";
+      msg = "PostToolUse group(s) with matcher Bash running ttw-metrics-probe.py: ${toString (builtins.length prProbeGroups)}; each must carry no group-level `if` and `\"if\" = \"${prProbeIf}\"` on every handler. `if` is a handler field (hooks reference, common fields): on the group it is ignored without a word and python runs after every Bash call";
     }
   ];
 

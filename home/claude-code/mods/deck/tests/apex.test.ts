@@ -236,6 +236,12 @@ describe('live steps', () => {
     expect(call('Edit', { file_path: '/repo/src/a.ts' }, true)).toBe('edit')
   })
 
+  test('ttw -> phase 2: ttw-verify-external is the Codex step like apex-verify-external, main loop only', () => {
+    for (const c of ['ttw-verify-external --base master --acs .claude/output/apex/r/02-acs.md', 'apex-verify-external --base master --acs a.txt'])
+      expect(call('Bash', { command: c })).toBe('Codex')
+    for (const c of ['ttw-verify-external --acs a.txt', 'apex-verify-external --acs a.txt']) expect(call('Bash', { command: c }, true)).toBeNull()
+  })
+
   test('agents: implementers, test-runner, reviewers; others none', () => {
     for (const t of ['frontend-expert', 'backend-expert', 'nix-expert', 'debugger', 'quick-fix', 'plugin:nix-expert']) expect(classifyAgent(t)).toBe('implement')
     expect(classifyAgent('test-runner')).toBe('tests')

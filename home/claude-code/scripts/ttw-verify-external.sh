@@ -1,4 +1,4 @@
-# apex-verify-external — one cross-vendor, READ-ONLY verification pass.
+# ttw-verify-external — one cross-vendor, READ-ONLY verification pass.
 #
 # Runs the OpenAI Codex CLI as a second verifier over the SAME bounded brief the
 # Fable diff pass gets: the real diff plus the acceptance criteria, and nothing
@@ -33,7 +33,11 @@
 # build time, so a regression in this script fails the rebuild.
 
 VERSION="1.1.0"
+# The envelope's JSON `tool` field keeps the pre-rename value until phase 4
+# (apex -> ttw); no known reader (the board reads only verdict/findings).
+# Messages name the binary by its new name.
 TOOL="apex-verify-external"
+NAME="ttw-verify-external"
 
 # Minimum Codex CLI that can dispatch the primary model. Sourced from the
 # upstream release notes: gpt-6-astra first appears in rust-v0.153.1
@@ -79,10 +83,10 @@ trap 'cleanup; exit 143' TERM
 
 usage() {
   cat <<'EOF'
-apex-verify-external — external cross-vendor read-only verification pass (Codex CLI)
+ttw-verify-external — external cross-vendor read-only verification pass (Codex CLI)
 
 Usage:
-  apex-verify-external --acs <FILE> [OPTIONS]
+  ttw-verify-external --acs <FILE> [OPTIONS]
 
 Options:
   --acs <FILE>          REQUIRED. Acceptance criteria, plain text. Never the plan;
@@ -149,8 +153,8 @@ say_line() {
 }
 
 usage_error() {
-  printf '%s: %s\n' "$TOOL" "$1" >&2
-  printf 'See: %s --help\n' "$TOOL" >&2
+  printf '%s: %s\n' "$NAME" "$1" >&2
+  printf 'See: %s --help\n' "$NAME" >&2
   say_line "BLOCKED" "none" "0" "usage" "-"
   exit 2
 }
@@ -158,7 +162,7 @@ usage_error() {
 # Fatal before an output location exists. Prints the status line, writes nothing.
 no_envelope_exit() {
   # no_envelope_exit <message> <reason> <code>
-  printf '%s: %s\n' "$TOOL" "$1" >&2
+  printf '%s: %s\n' "$NAME" "$1" >&2
   say_line "BLOCKED" "none" "0" "$2" "-"
   exit "$3"
 }
@@ -185,7 +189,7 @@ emit() {
 
   emit_dir="$(dirname "$OUT")"
   if ! mkdir -p "$emit_dir" 2>/dev/null; then
-    printf '%s: cannot create output directory %s\n' "$TOOL" "$emit_dir" >&2
+    printf '%s: cannot create output directory %s\n' "$NAME" "$emit_dir" >&2
   fi
 
   if ! jq -n \
@@ -224,7 +228,7 @@ emit() {
     # from a complete one.
     rm -f "$OUT" 2>/dev/null || true
     printf '%s: failed to write the verdict envelope to %s (original reason=%s)\n' \
-      "$TOOL" "$OUT" "$emit_reason" >&2
+      "$NAME" "$OUT" "$emit_reason" >&2
     # A green whose artefact does not exist is the one failure this tool must
     # never produce: a caller trusting the exit code would read a PASS that was
     # never written. Downgrade it. A non-zero code keeps its own exit status —
@@ -303,7 +307,7 @@ while [ "$#" -gt 0 ]; do
       exit 0
       ;;
     --version)
-      printf '%s %s\n' "$TOOL" "$VERSION"
+      printf '%s %s\n' "$NAME" "$VERSION"
       exit 0
       ;;
     *)
@@ -369,7 +373,7 @@ fi
 
 # --- output location ----------------------------------------------------------
 #
-# `Bash(apex-verify-external *)` is auto-approved in settings, so an
+# `Bash(ttw-verify-external *)` is auto-approved in settings, so an
 # unconstrained --out would make this a write-model-authored-JSON-anywhere
 # primitive: one flag away from a settings file or a shell rc. The sanctioned
 # root is the APEX output tree of the repository being reviewed, and nothing

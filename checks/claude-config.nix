@@ -263,6 +263,25 @@ let
 
   codexAllowed = builtins.filter (e: builtins.isString e && hasPrefix "Bash(codex" e) allow;
 
+  # --- A31: apex -> ttw, phase 2: both binary names allowed -----------------
+  # The packages ship ttw-tier / ttw-verify-external plus the apex-* alias
+  # until phase 4; a session on either skill text must run without a box. The
+  # allow entries naming either prefix are pinned exactly: any other ttw-* or
+  # apex-* Bash grant (a wildcard, health, board) is a change this rename does
+  # not make. None of the four may sit in deny or ask.
+  renameAllowExpected = [
+    "Bash(apex-tier *)"
+    "Bash(apex-verify-external *)"
+    "Bash(ttw-tier *)"
+    "Bash(ttw-verify-external *)"
+  ];
+  renameAllowGot = builtins.sort builtins.lessThan (
+    builtins.filter (
+      e: builtins.isString e && (hasPrefix "Bash(apex-" e || hasPrefix "Bash(ttw-" e)
+    ) allow
+  );
+  renameBoxed = builtins.filter (e: builtins.elem e renameAllowExpected) (deny ++ ask);
+
   # --- codex plugin companion outside the sandbox (A27) --------------------
   companionNeedle = "codex-companion.mjs\"";
   companionExcluded = builtins.filter (
@@ -618,7 +637,7 @@ let
   emptyHookGroups = builtins.filter (g: (g.hooks or null) == [ ]) preToolUse;
 
   # Flags READ from the tier table in SKILL.md (skillTtw), never restated here — same
-  # extraction as apex-consistency's rowFlags. null = table reformatted.
+  # extraction as ttw-consistency's rowFlags. null = table reformatted.
   diagnosisRow = builtins.match ".*\\| Diagnosis \\| `([^`]*)` \\|.*" skills.skillTtw;
   diagnosisFlags = if diagnosisRow == null then null else builtins.head diagnosisRow;
   readme = builtins.readFile ../README.md;
@@ -1024,6 +1043,17 @@ let
         "permissions.allow grants codex: "
         + builtins.concatStringsSep ", " codexAllowed
         + " — codex runs OUTSIDE the sandbox (excludedCommands); allowed on top of that, any codex call bypasses the whole deny list's intent and the auto classifier never sees it";
+    }
+    {
+      name = "A31 settings: tier and verify-external allowed under both the apex and the ttw name";
+      ok = renameAllowGot == renameAllowExpected && renameBoxed == [ ];
+      msg =
+        "permissions.allow entries starting `Bash(apex-` or `Bash(ttw-`: "
+        + builtins.toJSON renameAllowGot
+        + ", want exactly "
+        + builtins.toJSON renameAllowExpected
+        + (if renameBoxed == [ ] then "" else " / in deny or ask: " + builtins.toJSON renameBoxed)
+        + " — apex -> ttw phase 2: the skill text calls ttw-tier / ttw-verify-external, a session started before the switch still calls the apex-* alias; a missing rule boxes one of them mid-run, an extra one widens the grant beyond the two read-only tools";
     }
     {
       name = "A16 settings: no PreToolUse group with an empty hooks list";

@@ -1,4 +1,4 @@
-"""apex-health: compare APEX runs BEFORE vs AFTER a date and flag a quality drift.
+"""ttw-health: compare APEX runs BEFORE vs AFTER a date and flag a quality drift.
 
 Read-only, zero network, zero model call. Sources: Claude Code transcripts,
 the correction-budget round/grant files, 00-context.md of each repo, git log.
@@ -364,7 +364,7 @@ def build_report(args, periods):
     ]
 
     out = []
-    out.append(f"apex-health — coupure {periods.since.isoformat()}, fenêtre {args.days} j")
+    out.append(f"ttw-health — coupure {periods.since.isoformat()}, fenêtre {args.days} j")
     out.append(f"AVANT = [{periods.start.isoformat()}, {periods.since.isoformat()})")
     out.append(f"APRÈS = [{periods.since.isoformat()}, {periods.now.isoformat()})")
     out.append(f"Sessions APEX : avant {b['sessions']} ({b['runs']} runs), après {a['sessions']} ({a['runs']} runs)")
@@ -402,7 +402,7 @@ def build_report(args, periods):
 
 def main(argv):
     parser = argparse.ArgumentParser(
-        prog="apex-health",
+        prog="ttw-health",
         description="Compare les runs APEX AVANT / APRÈS une date et signale une dérive de qualité (lecture seule, 0 appel modèle).",
     )
     parser.add_argument("--since", default=DEFAULT_SINCE, help=f"date de coupure YYYY-MM-DD ou ISO 8601, UTC (défaut {DEFAULT_SINCE})")
@@ -418,10 +418,10 @@ def main(argv):
         now = parse_when(args.now, "--now") if args.now else datetime.datetime.now(tz=UTC)
         lines, code = build_report(args, Periods(since, args.days, now))
     except UsageError as err:
-        print(f"apex-health : {err}", file=sys.stderr)
+        print(f"ttw-health : {err}", file=sys.stderr)
         return 1
     except OSError as err:
-        print(f"apex-health : erreur d'E/S : {err}", file=sys.stderr)
+        print(f"ttw-health : erreur d'E/S : {err}", file=sys.stderr)
         return 1
     print("\n".join(lines))
     return code

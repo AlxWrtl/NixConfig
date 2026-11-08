@@ -135,20 +135,23 @@ function present(p) {
   try { fs.lstatSync(p); return true; } catch { return false; }
 }
 
-// Every run dir (not a symlink) with a readable 00-context.md, by id.
+// Every run dir (not a symlink) with a readable 00-context.md, by id, under
+// .claude/output/apex then .claude/output/ttw (a missing one has none).
 function runsUnder(top) {
-  const base = path.join(top, ".claude", "output", "apex");
-  let ents;
-  try { ents = fs.readdirSync(base, { withFileTypes: true }); } catch { return []; }
   const runs = [];
-  for (const e of ents.filter(x => x.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
-    const dir = path.join(base, e.name);
-    const ctx = path.join(dir, "00-context.md");
-    try {
-      const st = fs.lstatSync(ctx);
-      if (!st.isFile() || st.size > MAX_CONTEXT) continue;
-      runs.push({ dir, lines: fs.readFileSync(ctx, "utf8").split(/\r?\n/) });
-    } catch {}
+  for (const out of ["apex", "ttw"]) {
+    const base = path.join(top, ".claude", "output", out);
+    let ents;
+    try { ents = fs.readdirSync(base, { withFileTypes: true }); } catch { continue; }
+    for (const e of ents.filter(x => x.isDirectory()).sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))) {
+      const dir = path.join(base, e.name);
+      const ctx = path.join(dir, "00-context.md");
+      try {
+        const st = fs.lstatSync(ctx);
+        if (!st.isFile() || st.size > MAX_CONTEXT) continue;
+        runs.push({ dir, lines: fs.readFileSync(ctx, "utf8").split(/\r?\n/) });
+      } catch {}
+    }
   }
   return runs;
 }

@@ -102,18 +102,27 @@ func TestParityFixtures(t *testing.T) {
 			Key   string
 			More  int
 			Cards []struct {
-				ID, Column string
-				Flag       *string
-				Reasons    []string
+				ID, Column, Title string
+				Flag              *string
+				Reasons, Hints    []string
 			}
 		}
 	}
 	mustDo(t, json.Unmarshal([]byte(out), &tree))
 	where := map[string]string{}
 	more := 0
+	// ttw rename, phase 3: the `# TTW:` run reads its title like an APEX one and its spent
+	// budget hints `ttw: +1 tour`.
+	ttwSeen := false
 	for _, c := range tree.Columns {
 		for _, card := range c.Cards {
 			where[card.ID] = c.Key
+			if card.ID == "ttw-title" {
+				ttwSeen = true
+				if card.Title != "synthetic ttw-title" || len(card.Hints) == 0 || card.Hints[0] != "ttw: +1 tour" {
+					t.Fatalf("ttw-title: title %q hints %q, want %q and %q first", card.Title, card.Hints, "synthetic ttw-title", "ttw: +1 tour")
+				}
+			}
 		}
 		if c.Key == "done" {
 			more = c.More
@@ -127,6 +136,10 @@ func TestParityFixtures(t *testing.T) {
 		"budget-granted": "execute", "ext-pass": "validate", "ext-fail": "human", "ext-blocked": "human",
 		"ext-error": "human", "ext-half": "validate", "ext-rounds": "validate", "live-edge": "execute",
 		"stale-edge": "done", "stale": "done", "no-table": "validate", "no-table-plan": "plan", "unicode-edges": "human",
+		"ttw-title": "human",
+	}
+	if !ttwSeen {
+		t.Fatal("ttw-title fixture not on the board")
 	}
 	for id, col := range want {
 		if where[id] != col {

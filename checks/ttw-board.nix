@@ -1,6 +1,18 @@
-# Runtime check for apex-board (home/claude-code/apex-board.nix): the page's
+# Runtime check for ttw-board (home/claude-code/ttw-board.nix): the page's
 # stage rules under node, the Go terminal board's port of them, then the BUILT
-# launcher in --dry-run against throwaway repos and HOMEs.
+# launcher in --dry-run against throwaway repos and HOMEs. D1-D7 keep the
+# pre-rename layout (.claude/output/apex, ~/.claude/apex-correction-budget):
+# it is the fallback the launcher must still serve.
+#
+#   A1  bin/ttw-board executable; bin/apex-board a symlink to ttw-board in the
+#       same bin dir, both resolving to one file (the pre-rename alias, kept
+#       until phase 4); the TUI binary is bin/ttw-board-tui
+#   A2  usage (unknown option -> exit 2) names ttw-board alone, from either
+#       name; --dry-run through the alias prints the same runs line
+#   A3  runs dir: a repo with only .claude/output/ttw -> runs from it (web and
+#       --tui); with both .claude/output/ttw and .claude/output/apex -> ttw
+#   A4  budget dir: ~/.claude/ttw-correction-budget when it exists (alone or
+#       next to apex-correction-budget), else apex-correction-budget (D1)
 #
 #   T1  `node test.js board.js` (fixtures in the three real 00-context.md
 #       shapes + synthetic À-toi cases)         -> exit 0
@@ -73,27 +85,27 @@
 { pkgs }:
 
 let
-  apexBoard = import ../home/claude-code/apex-board.nix { inherit pkgs; };
-  board = apexBoard.apexBoardPkg;
-  tuiBin = "${apexBoard.tui}/bin/apex-board-tui";
-  pageDir = ../home/claude-code/apex-board;
-  tuiSrc = ../home/claude-code/apex-board/tui;
+  ttwBoard = import ../home/claude-code/ttw-board.nix { inherit pkgs; };
+  board = ttwBoard.ttwBoardPkg;
+  tuiBin = "${ttwBoard.tui}/bin/ttw-board-tui";
+  pageDir = ../home/claude-code/ttw-board;
+  tuiSrc = ../home/claude-code/ttw-board/tui;
   # M3: rules.go with failed read as done. The anchor guard runs in the check
   # script (a vanished anchor builds a mutant equal to the source). Same name
   # and vendorHash: the go-modules output is the one already built, no fetch.
-  m3Src = pkgs.runCommand "apex-board-tui-m3-src" { } ''
+  m3Src = pkgs.runCommand "ttw-board-tui-m3-src" { } ''
     cp -R ${tuiSrc} $out
     chmod -R u+w $out
     sed -i 's/return "failed"/return "done"/' $out/rules.go
   '';
   m3Bin = "${
-    apexBoard.tui.overrideAttrs {
+    ttwBoard.tui.overrideAttrs {
       src = m3Src;
       doCheck = false;
     }
-  }/bin/apex-board-tui";
+  }/bin/ttw-board-tui";
   # S1/S2 harness: `unit SERVE WORKDIR`, `port`, `http PORT`, `down PORT`.
-  probe = pkgs.writeText "apex-board-serve-probe.py" ''
+  probe = pkgs.writeText "ttw-board-serve-probe.py" ''
     import http.client
     import importlib.util
     import os
@@ -211,18 +223,18 @@ let
     pkgs.python3
   ];
 in
-pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
+pkgs.runCommand "ttw-board-check" { __darwinAllowLocalNetworking = true; } ''
   export PATH=${runtimePath}
   export HOME="$TMPDIR/home-none" GIT_CONFIG_NOSYSTEM=1
-  bin=${board}/bin/apex-board
+  bin=${board}/bin/ttw-board
   fail() {
-    echo "apex-board: $*" >&2
+    echo "ttw-board: $*" >&2
     exit 1
   }
 
   # T1: stage rules on the real board.js.
   node ${pageDir}/test.js ${pageDir}/board.js || fail "T1 FAILED — test.js is red on board.js"
-  echo "apex-board: T1 OK — test.js green on board.js"
+  echo "ttw-board: T1 OK — test.js green on board.js"
 
   # Canary M1: failed read as done.
   sed "s/return 'failed'/return 'done'/" ${pageDir}/board.js > "$TMPDIR/mutant.js"
@@ -236,7 +248,7 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   *FAIL*"'human'"*) ;;
   *) fail "canary M1 died for another reason than the À-toi case: $m1" ;;
   esac
-  echo "apex-board: canary M1 killed — failed read as done turns the failed-step run away from À toi"
+  echo "ttw-board: canary M1 killed — failed read as done turns the failed-step run away from À toi"
 
   # P1: board.js (parity.js) and the built Go binary derive the same board.
   # Store files sit at mtime 1: the copy is read once as copied, then aged.
@@ -270,7 +282,7 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
     fail "P1 FAILED — board.js and the Go board differ on the aged fixtures"
   cmp -s "$TMPDIR/plain.js.json" "$TMPDIR/aged.js.json" &&
     fail "P1 aging changed nothing — the stale/live rules are not exercised"
-  echo "apex-board: P1 OK — parity.js and apex-board-tui --derive-json byte-equal, unaged and aged"
+  echo "ttw-board: P1 OK — parity.js and ttw-board-tui --derive-json byte-equal, unaged and aged"
 
   # Canary M3: the Go rules read failed as done.
   if [ "$(grep -c 'return "failed"' ${tuiSrc}/rules.go)" != 1 ] || cmp -s ${tuiSrc}/rules.go ${m3Src}/rules.go; then
@@ -280,7 +292,7 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   if cmp -s "$TMPDIR/m3.js.json" "$TMPDIR/m3.go.json"; then
     fail "canary M3 SURVIVED — a Go board reading failed as done still matches board.js in P1"
   fi
-  echo "apex-board: canary M3 killed — Go rules reading failed as done break the parity"
+  echo "ttw-board: canary M3 killed — Go rules reading failed as done break the parity"
 
   # Fixtures: a repo with one run, a repo without runs, two HOMEs.
   R="$TMPDIR/myrepo"
@@ -292,12 +304,78 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   # has RES LINE: RES holds LINE exactly.
   has() { printf '%s\n' "$1" | grep -qxF -- "$2"; }
 
+  # A1 check_alias PKG NEW OLD: bin/NEW executable; bin/OLD a symlink whose
+  # target is NEW in the same bin dir (`NEW` or `PKG/bin/NEW`), both resolving
+  # to one file. A copy or a wrapper is a second launcher that can drift.
+  check_alias() {
+    pkg="$1"
+    new="$2"
+    old="$3"
+    [ -x "$pkg/bin/$new" ] || fail "A1 FAILED — $pkg/bin/$new is missing or not executable"
+    [ -L "$pkg/bin/$old" ] || fail "A1 FAILED — $pkg/bin/$old is not a symlink (the pre-rename alias of $new, kept until phase 4)"
+    tgt="$(readlink "$pkg/bin/$old")"
+    case "$tgt" in
+    "$new" | "$pkg/bin/$new") ;;
+    *) fail "A1 FAILED — $pkg/bin/$old points at '$tgt', not at $new in the same package" ;;
+    esac
+    [ "$(readlink -f "$pkg/bin/$old")" = "$(readlink -f "$pkg/bin/$new")" ] ||
+      fail "A1 FAILED — $old and $new do not resolve to the same file"
+  }
+  check_alias ${board} ttw-board apex-board
+  [ -x "${tuiBin}" ] || fail "A1 FAILED — ${tuiBin} is missing or not executable"
+  echo "ttw-board: A1 OK — apex-board -> ttw-board, TUI is ttw-board-tui"
+
+  # A2: usage names ttw-board alone, from either name; the alias runs the same.
+  for n in ttw-board apex-board; do
+    rc=0
+    res="$(${board}/bin/$n --no-such-flag 2>&1)" || rc=$?
+    [ "$rc" = 2 ] || fail "A2 '$n --no-such-flag' exited $rc, want 2: $res"
+    case "$res" in
+    *apex-board*) fail "A2 '$n --no-such-flag' still names apex-board: $res" ;;
+    *"usage: ttw-board"*) ;;
+    *) fail "A2 '$n --no-such-flag' usage does not name ttw-board: $res" ;;
+    esac
+  done
+  res="$(HOME="$TMPDIR/home-with" ${board}/bin/apex-board --dry-run "$R")" || fail "A2 apex-board --dry-run exited non-zero: $res"
+  has "$res" "runs -> $Rp/.claude/output/apex" || fail "A2 the apex-board alias does not run the launcher: $res"
+  echo "ttw-board: A2 OK — usage names ttw-board from both names, the alias runs the launcher"
+
+  # A3: runs from .claude/output/ttw when it exists, else apex (D1).
+  Rt="$TMPDIR/ttwrepo"
+  Rb="$TMPDIR/bothrepo"
+  mkdir -p "$Rt/.claude/output/ttw/run-1" "$Rb/.claude/output/ttw/run-1" "$Rb/.claude/output/apex/run-0"
+  printf '# TTW: fixture\n' > "$Rt/.claude/output/ttw/run-1/00-context.md"
+  printf '# TTW: fixture\n' > "$Rb/.claude/output/ttw/run-1/00-context.md"
+  printf '# APEX: fixture\n' > "$Rb/.claude/output/apex/run-0/00-context.md"
+  Rtp="$(cd "$Rt" && pwd -P)"
+  Rbp="$(cd "$Rb" && pwd -P)"
+  for pair in "$Rt:$Rtp" "$Rb:$Rbp"; do
+    repo="''${pair%%:*}"
+    real="''${pair#*:}"
+    res="$(HOME="$TMPDIR/home-without" "$bin" --dry-run "$repo")" || fail "A3 --dry-run $repo exited non-zero: $res"
+    has "$res" "runs -> $real/.claude/output/ttw" || fail "A3 runs link of $repo is not its ttw dir: $res"
+    res="$(HOME="$TMPDIR/home-without" "$bin" --tui --dry-run "$repo")" || fail "A3 --tui --dry-run $repo exited non-zero: $res"
+    has "$res" "runs: $real/.claude/output/ttw" || fail "A3 --tui runs line of $repo is not its ttw dir: $res"
+  done
+  echo "ttw-board: A3 OK — runs from .claude/output/ttw alone or next to apex, web and tui"
+
+  # A4: budget from ~/.claude/ttw-correction-budget when it exists, else apex (D1).
+  mkdir -p "$TMPDIR/home-ttw/.claude/ttw-correction-budget" \
+    "$TMPDIR/home-both/.claude/ttw-correction-budget" "$TMPDIR/home-both/.claude/apex-correction-budget"
+  for h in home-ttw home-both; do
+    res="$(HOME="$TMPDIR/$h" "$bin" --dry-run "$R")" || fail "A4 --dry-run with $h exited non-zero: $res"
+    has "$res" "budget -> $TMPDIR/$h/.claude/ttw-correction-budget" || fail "A4 budget link with $h is not the ttw dir: $res"
+    res="$(HOME="$TMPDIR/$h" "$bin" --tui --dry-run "$R")" || fail "A4 --tui --dry-run with $h exited non-zero: $res"
+    has "$res" "budget: $TMPDIR/$h/.claude/ttw-correction-budget" || fail "A4 --tui budget line with $h is not the ttw dir: $res"
+  done
+  echo "ttw-board: A4 OK — budget from ttw-correction-budget alone or next to apex"
+
   # store_copy RES NAME: NAME is reported as a copy of the page's store file,
   # byte-equal to its source; prints that store dir.
   store_copy() {
     t="$(printf '%s\n' "$1" | sed -n "s|^$2: copy of ||p")"
     case "$t" in
-    /nix/store/*-apex-board-page/"$2") ;;
+    /nix/store/*-ttw-board-page/"$2") ;;
     *) fail "$2 is not reported as a copy of the store page file: '$t'" ;;
     esac
     cmp -s "$t" "${pageDir}/$2" || fail "$2 in the store differs from its source"
@@ -318,7 +396,7 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   [ -n "$root" ] || fail "D1 root line missing: $res"
   [ ! -e "$root" ] || fail "D1 temp root $root left behind after exit"
   [ "$(printf '%s\n' "$res" | wc -l | tr -d ' ')" = 7 ] || fail "D1 expected 7 lines: $res"
-  echo "apex-board: D1 OK — links, copies, meta.json, root removed"
+  echo "ttw-board: D1 OK — links, copies, meta.json, root removed"
 
   # K1: the built script with its cleanup trap disarmed, so the root survives
   # and the page files themselves can be inspected.
@@ -340,39 +418,39 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   done
   [ ! -e "$root/serve.py" ] || fail "K1 serve.py copied into the served root"
   rm -rf "$root"
-  echo "apex-board: K1 OK — index.html and board.js are fresh regular copies, serve.py not served"
+  echo "ttw-board: K1 OK — index.html and board.js are fresh regular copies, serve.py not served"
 
   # D2
   res="$(HOME="$TMPDIR/home-without" "$bin" --dry-run "$R")" || fail "D2 exited non-zero: $res"
   has "$res" "budget: empty dir" || fail "D2 budget not an empty dir: $res"
   has "$res" "url: http://127.0.0.1:8765/" || fail "D2 default port not 8765: $res"
-  echo "apex-board: D2 OK — empty budget dir, default port"
+  echo "ttw-board: D2 OK — empty budget dir, default port"
 
   # D3
   (cd "$R" && git init -q --template=) || fail "D3 git init failed"
   res="$(cd "$R/sub" && "$bin" --dry-run)" || fail "D3 exited non-zero: $res"
   has "$res" "runs -> $Rp/.claude/output/apex" || fail "D3 default repo is not the git toplevel: $res"
-  echo "apex-board: D3 OK — repo defaults to the git toplevel"
+  echo "ttw-board: D3 OK — repo defaults to the git toplevel"
 
   # D4
   rc=0
   res="$("$bin" --dry-run "$TMPDIR/norun" 2>&1)" || rc=$?
   [ "$rc" = 1 ] || fail "D4 expected exit 1 on a repo without runs, got $rc: $res"
   case "$res" in *"not a directory"*) ;; *) fail "D4 message missing: $res" ;; esac
-  echo "apex-board: D4 OK — no runs, exit 1"
+  echo "ttw-board: D4 OK — no runs, exit 1"
 
   # D5
   rc=0
   res="$("$bin" --dry-run --port 0 "$R" 2>&1)" || rc=$?
   [ "$rc" = 2 ] || fail "D5 expected exit 2 on --port 0, got $rc: $res"
-  echo "apex-board: D5 OK — bad port, exit 2"
+  echo "ttw-board: D5 OK — bad port, exit 2"
 
   # D6: --tui --dry-run, no server and no temp root.
-  [ -z "$(find "$TMPDIR" -maxdepth 1 -name 'apex-board.*')" ] || fail "D6 a temp root is already there before the case"
+  [ -z "$(find "$TMPDIR" -maxdepth 1 \( -name 'ttw-board.*' -o -name 'apex-board.*' \))" ] || fail "D6 a temp root is already there before the case"
   res="$(HOME="$TMPDIR/home-with" "$bin" --tui --dry-run --port 0 "$R")" || fail "D6 exited non-zero: $res"
   has "$res" "tui: ${tuiBin}" || fail "D6 tui line is not the built binary ${tuiBin}: $res"
   case "${tuiBin}" in
-  /nix/store/*-apex-board-tui-*/bin/apex-board-tui) ;;
+  /nix/store/*-ttw-board-tui-*/bin/ttw-board-tui) ;;
   *) fail "D6 binary not in the store: ${tuiBin}" ;;
   esac
   [ -x "${tuiBin}" ] || fail "D6 ${tuiBin} is not an executable"
@@ -384,19 +462,19 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   for js in tui.js tui-test.js; do
     [ ! -e "$d/$js" ] || fail "D6 $js still shipped in the store page dir $d"
   done
-  [ -z "$(find "$TMPDIR" -maxdepth 1 -name 'apex-board.*')" ] || fail "D6 --tui made a temp root"
-  echo "apex-board: D6 OK — --tui dry-run: the store Go binary, runs, budget, no node file, no root"
+  [ -z "$(find "$TMPDIR" -maxdepth 1 \( -name 'ttw-board.*' -o -name 'apex-board.*' \))" ] || fail "D6 --tui made a temp root"
+  echo "ttw-board: D6 OK — --tui dry-run: the store Go binary, runs, budget, no node file, no root"
 
   # D7: --tui for real without a terminal, the binary exec'd by store path.
   rc=0
   res="$(PATH=/var/empty HOME="$TMPDIR/home-with" "$bin" --tui "$R" < /dev/null 2>&1)" || rc=$?
-  [ "$rc" = 1 ] || fail "D7 expected exit 1 from apex-board-tui without a terminal, got $rc: $res"
+  [ "$rc" = 1 ] || fail "D7 expected exit 1 from ttw-board-tui without a terminal, got $rc: $res"
   case "$res" in *"needs a terminal"*) ;; *) fail "D7 message missing: $res" ;; esac
-  echo "apex-board: D7 OK — Go binary found with PATH=/var/empty, no terminal refused"
+  echo "ttw-board: D7 OK — Go binary found with PATH=/var/empty, no terminal refused"
 
   # S1: serve.py's gates, imported from the store copy the launcher runs.
   python3 -I ${probe} unit "$d/serve.py" "$TMPDIR/s1" || fail "S1 FAILED — serve.py gates"
-  echo "apex-board: S1 OK — Host and path gates"
+  echo "ttw-board: S1 OK — Host and path gates"
 
   # Canary M2: host_allowed open to every Host.
   anchor='return host in ('
@@ -411,7 +489,7 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   *"FAIL host_allowed('evil.example:8765', 8765) is not False"*) ;;
   *) fail "canary M2 died for another reason than the foreign Host: $m2" ;;
   esac
-  echo "apex-board: canary M2 killed — a Host gate open to all is caught"
+  echo "ttw-board: canary M2 killed — a Host gate open to all is caught"
 
   # S2: the built launcher serving for real.
   S="$TMPDIR/srepo/.claude/output/apex/run-1"
@@ -430,7 +508,7 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   kill -TERM "$spid"
   wait "$spid" || true
   python3 -I ${probe} down "$port" || fail "S2 server outlived a TERM to the launcher"
-  echo "apex-board: S2 OK — Host 403, escape and loop 404, POST 405, 304, listing; TERM frees the port"
+  echo "ttw-board: S2 OK — Host 403, escape and loop 404, POST 405, 304, listing; TERM frees the port"
 
   # B1: loopback only. Comment lines are skipped: headers name the servers.
   code="$(grep -v '^[[:space:]]*#' "$bin")"
@@ -451,8 +529,8 @@ pkgs.runCommand "apex-board-check" { __darwinAllowLocalNetworking = true; } ''
   if printf '%s\n' "$py" | grep -qE -- "--bind|add_argument\(\"(-b|--host|--address)"; then
     fail "B1 serve.py takes a bind argument"
   fi
-  echo "apex-board: B1 OK — serve.py from the store, bound to 127.0.0.1 only"
+  echo "ttw-board: B1 OK — serve.py from the store, bound to 127.0.0.1 only"
 
-  echo "apex-board: 1 node suite, 1 parity case, 8 launcher cases, 2 serve cases, 1 static case, 3 canaries — OK"
+  echo "ttw-board: 1 node suite, 1 parity case, 4 rename cases, 8 launcher cases, 2 serve cases, 1 static case, 3 canaries — OK"
   touch $out
 ''

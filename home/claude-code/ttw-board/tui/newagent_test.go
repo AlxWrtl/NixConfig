@@ -230,6 +230,11 @@ func TestRepoOf(t *testing.T) {
 		"/u/repo/.claude/output/apex/": "/u/repo",
 		"/.claude/output/apex":         "",
 		"repo/.claude/output/apex":     "",
+		"/u/repo/.claude/output/ttw":   "/u/repo",
+		"/u/repo/.claude/output/ttw/":  "/u/repo",
+		"/.claude/output/ttw":          "",
+		"repo/.claude/output/ttw":      "",
+		"/u/repo/.claude/output/ttwx":  "",
 		"/u/repo/runs":                 "",
 		"":                             "",
 	} {

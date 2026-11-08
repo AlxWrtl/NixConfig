@@ -12,6 +12,8 @@ const ROUND = /^(.+)\.round([1-9][0-9]*)$/;
 const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const APEX_OUT = path.join(".claude", "output", "apex");
+const OUT_DIRS = [APEX_OUT, path.join(".claude", "output", "ttw")];
+const BUDGET_DIRS = ["apex-correction-budget", "ttw-correction-budget"];
 const WRAPPERS = ["<task-notification", "<agent-message", "Another Claude session sent a message", "[SYSTEM NOTIFICATION", "<teammate-message", "<command-name>", "<local-command", "<scheduled-task", "<system-reminder"];
 
 let settled = false;
@@ -68,12 +70,13 @@ function isDir(p) {
 // A run outside the prompt's repo: the run dir its rounds were stamped with
 // by correction-budget.js in this session. A stamp that is no readable JSON
 // file, two dirs, or a dir that is not an existing absolute
-// <repo>/.claude/output/apex/<run-id> in plain ASCII is doubt: null.
+// <repo>/.claude/output/(apex|ttw)/<run-id> in plain ASCII is doubt: null.
+// `rounds` are absolute paths (any budget dir): resolve keeps them as is.
 function stampedDir(dir, id, rounds, session) {
   if (typeof session !== "string" || session === "") return null;
   let found = null;
   for (const n of rounds) {
-    const f = path.join(dir, n);
+    const f = path.resolve(dir, n);
     let s;
     try {
       if (!fs.statSync(f).isFile()) return null;
@@ -85,7 +88,7 @@ function stampedDir(dir, id, rounds, session) {
     found = s.dir;
   }
   if (found === null || !path.isAbsolute(found) || found.includes("..") || safe(found) !== found || /[\s`]/.test(found)) return null;
-  if (!path.dirname(found).endsWith(path.sep + APEX_OUT) || path.join(path.dirname(found), id) !== found) return null;
+  if (!OUT_DIRS.some((o) => path.dirname(found).endsWith(path.sep + o)) || path.join(path.dirname(found), id) !== found) return null;
   return isDir(found) ? found : null;
 }
 
@@ -111,13 +114,21 @@ function main() {
   if (typeof data.cwd !== "string" || !path.isAbsolute(data.cwd)) { quiet(); return; }
   const cwd = data.cwd;
   const home = process.env.HOME || os.homedir();
+  // Grants are written to `dir`; rounds and grants are read from every
+  // budget dir (apex and ttw), as absolute paths: a run spent under one is
+  // spent under both.
   const dir = path.join(home, ".claude", "apex-correction-budget");
-  let names;
-  try {
-    names = fs.readdirSync(dir);
-  } catch (e) {
-    if (!e || e.code !== "ENOENT") { quiet(); return; }
-    names = [];
+  const names = [];
+  for (const b of BUDGET_DIRS) {
+    const bd = path.join(home, ".claude", b);
+    let ents;
+    try {
+      ents = fs.readdirSync(bd);
+    } catch (e) {
+      if (!e || e.code !== "ENOENT") { quiet(); return; }
+      ents = [];
+    }
+    for (const n of ents) names.push(path.join(bd, n));
   }
 
   const runs = new Map();
@@ -126,13 +137,14 @@ function main() {
     if (!r) { r = { rounds: [], grants: 0 }; runs.set(id, r); }
     return r;
   };
-  for (const n of names) {
+  for (const full of names) {
+    const n = path.basename(full);
     const round = ROUND.exec(n);
     const grant = round ? null : GRANT.exec(n);
     const id = round ? round[1] : grant ? grant[1] : null;
     if (id === null || !RUN_ID.test(id) || id.includes("..")) continue;
     const r = runOf(id);
-    if (grant) r.grants++; else r.rounds.push(n);
+    if (grant) r.grants++; else r.rounds.push(full);
   }
 
   // The live run is the project's run with the newest round; it alone may be
@@ -144,14 +156,14 @@ function main() {
   for (const [id, r] of runs) {
     if (r.rounds.length === 0) continue;
     let where = null;
-    if (!isDir(path.join(cwd, ".claude", "output", "apex", id))) {
+    if (!OUT_DIRS.some((o) => isDir(path.join(cwd, o, id)))) {
       where = stampedDir(dir, id, r.rounds, data.session_id);
       if (where === null) continue;
     }
     let last = 0;
     for (const n of r.rounds) {
       let t;
-      try { t = fs.statSync(path.join(dir, n)).mtimeMs; } catch { quiet(); return; }
+      try { t = fs.statSync(path.resolve(dir, n)).mtimeMs; } catch { quiet(); return; }
       if (t > last) last = t;
     }
     if (target !== null && last === target.last) tie = true;
@@ -164,6 +176,13 @@ function main() {
 
   // One grant per prompt, claimed by exclusive create.
   const stamp = JSON.stringify({ ts: new Date().toISOString(), session: safe(data.session_id) }) + "\n";
+  // The run's rounds may all sit under the ttw dir: `dir` may not exist yet.
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+  } catch (e) {
+    say("correction-grant: could not record the grant for run " + target.id + " (" + safe(e && e.code ? e.code : "error") + "); nothing was granted.");
+    return;
+  }
   let code = "EEXIST";
   for (let n = 1; n <= target.grants + 1; n++) {
     try {

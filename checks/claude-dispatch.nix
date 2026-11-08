@@ -3,7 +3,7 @@
 # from the sandbox. It is an allow-list, so it only holds while:
 #   - abduco gets exactly `-n <name> <claude> --worktree <name> --name <name> "[claude-dispatch] <brief>"`,
 #     nothing else, and claude is never called directly;
-#   - `--blank <name>` (apex-board's `n`) gives abduco the same argv with
+#   - `--blank <name>` (ttw-board's `n`) gives abduco the same argv with
 #     nothing after `--name <name>`, and its name goes through the same rule;
 #   - wrong arity, a bad name, an empty / blank / one-word / dash-led / multi-line /
 #     oversize brief exit 2 BEFORE abduco is called;

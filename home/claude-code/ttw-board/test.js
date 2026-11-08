@@ -176,7 +176,7 @@ test('worktree: live, ext FAIL and 2 rounds used → À toi, grant hint first', 
   assert.strictEqual(r.column, 'human')
   assert.strictEqual(r.flag, 'à toi')
   assert.deepStrictEqual(r.reasons, ['budget de correction épuisé (2/2)', 'vérif externe FAIL · 1 findings'])
-  assert.strictEqual(r.hints[0], 'apex: +1 tour')
+  assert.strictEqual(r.hints[0], 'ttw: +1 tour')
   assert.deepStrictEqual(r.chips.map((c) => [c.key, c.state]), [['tier', 'info'], ['ext', 'fail'], ['corr1', 'used'], ['corr2', 'used']])
 })
 
@@ -263,13 +263,13 @@ test('live with a BLOCKED line → À toi; BLOCKED in prose, a table cell or a f
   assert.strictEqual(run({ context: ctx([['04-validate', 'complete'], ['05-examine', 'pending']]).replace('| complete | |', '| complete | -e BLOCKED timeout |') }).column, 'validate')
 })
 
-test('budget: rounds ≥ 2 + grants → À toi with `apex: +1 tour`', () => {
+test('budget: rounds ≥ 2 + grants → À toi with `ttw: +1 tour`', () => {
   const text = ctx([['03-execute', 'in progress']])
   assert.strictEqual(run({ context: text, budget: { rounds: 1, grants: 0 } }).column, 'execute')
   assert.strictEqual(run({ context: text, budget: { rounds: 2, grants: 1 } }).column, 'execute')
   const r = run({ context: text, budget: { rounds: 3, grants: 1 } })
   assert.strictEqual(r.column, 'human')
-  assert.deepStrictEqual(r.hints, ['apex: +1 tour'])
+  assert.deepStrictEqual(r.hints, ['ttw: +1 tour'])
   assert.deepStrictEqual(r.chips.slice(2).map((c) => c.state), ['used', 'used', 'used'])
 })
 
@@ -377,6 +377,15 @@ test('tier from Flags when no Tier line: `(mode X)`, `(mode: X —`', () => {
   assert.strictEqual(board.parseContext('# APEX: t\nFlags: -t -x  (mode: high-stakes — touches)\n', 't').tier, 'high-stakes')
 })
 
+test('title: `# TTW:` reads like `# APEX:`, any case and separator; a longer word is no prefix', () => {
+  assert.strictEqual(board.parseContext('# TTW: renamed run\nTier: Direct\n', 'd').title, 'renamed run')
+  assert.strictEqual(board.parseContext('# ttw — renamed run\n', 'd').title, 'renamed run')
+  assert.strictEqual(board.parseContext('# **TTW**: bold run\n', 'd').title, 'bold run')
+  assert.strictEqual(board.parseContext('# APEX: old run\n', 'd').title, 'old run')
+  assert.strictEqual(board.parseContext('# TTWX: not the word\n', 'd').title, 'TTWX: not the word')
+  assert.strictEqual(run({ id: 'd', context: '# TTW: shown\nTier: Direct\n' }).title, 'shown')
+})
+
 test('chips: tier unknown dashed, ext absent dashed, corr unused dashed', () => {
   const r = run({ context: '# APEX: t\n' })
   assert.deepStrictEqual(r.chips.map((c) => [c.label, c.state]), [['tier', 'unset'], ['ext', 'unset'], ['corr1', 'unset'], ['corr2', 'unset']])
@@ -452,4 +461,4 @@ test('fileTone: verdict dot from the first line, JSON verdict', () => {
   assert.strictEqual(board.fileTone('acs.txt', 'AC1'), null)
 })
 
-process.stdout.write(`apex-board: ${passed} tests passed\n`)
+process.stdout.write(`ttw-board: ${passed} tests passed\n`)

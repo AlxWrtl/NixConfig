@@ -40,7 +40,7 @@ import {
   sessionRunOf,
   settleRun,
   statusKind,
-} from '../hooks/apex'
+} from '../hooks/ttw'
 import type { DeckApexRun } from '../types'
 
 const NOW = 10 * STALE_MS
@@ -148,6 +148,13 @@ describe('parseContext', () => {
   test('no heading: the directory name is the title', () => {
     expect(parseContext('Mode: Fast\n', 'my-run').title).toBe('my-run')
     expect(parseContext('# Some plain title\n', 'my-run').title).toBe('Some plain title')
+  })
+
+  test('a TTW heading reads like an APEX one, any case and separator', () => {
+    expect(parseContext('# TTW: renamed run\n', 'd').title).toBe('renamed run')
+    expect(parseContext('# ttw — renamed run\n', 'd').title).toBe('renamed run')
+    expect(parseContext('# APEX: old run\n', 'd').title).toBe('old run')
+    expect(parseContext('# TTWX: not the word\n', 'd').title).toBe('TTWX: not the word')
   })
 })
 

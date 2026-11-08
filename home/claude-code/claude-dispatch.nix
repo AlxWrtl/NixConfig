@@ -29,7 +29,7 @@
 # forbids a session started that way to dispatch.
 #
 # `claude-dispatch --blank <name>` starts the same session with no prompt (no
-# argv after `--name <name>`): apex-board's `n`, a conversation the user
+# argv after `--name <name>`): ttw-board's `n`, a conversation the user
 # starts in the agent pane. It keeps --worktree, as a dispatched session: one
 # blank agent per worktree, the repo's checkout untouched. No marker: nothing
 # was dispatched, the user drives it. A lone `<name>` stays a usage error, so a

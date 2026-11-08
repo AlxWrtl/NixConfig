@@ -504,6 +504,81 @@ let
     "Edit(**/.git/config)"
   ];
   missingGitEditDeny = builtins.filter (d: !(builtins.elem d deny)) requiredGitEditDeny;
+
+  # apex -> ttw, phase 3 (B4): the correction-budget counter is read from
+  # both dirs, so a rule guarding one guards the other in the same list. A
+  # ttw rule exists only as such a twin, nowhere else in settings.json.
+  budgetApex = "apex-correction-budget";
+  budgetTtw = "ttw-correction-budget";
+  budgetListPaths = [
+    [
+      "permissions"
+      "allow"
+    ]
+    [
+      "permissions"
+      "deny"
+    ]
+    [
+      "permissions"
+      "ask"
+    ]
+    [
+      "sandbox"
+      "excludedCommands"
+    ]
+    [
+      "sandbox"
+      "filesystem"
+      "allowWrite"
+    ]
+    [
+      "sandbox"
+      "filesystem"
+      "denyWrite"
+    ]
+    [
+      "sandbox"
+      "filesystem"
+      "allowRead"
+    ]
+    [
+      "sandbox"
+      "filesystem"
+      "denyRead"
+    ]
+  ];
+  budgetListOf = p: builtins.filter builtins.isString (pkgs.lib.attrByPath p [ ] settingsAttrs);
+  budgetTwinGaps = builtins.concatMap (
+    p:
+    let
+      xs = budgetListOf p;
+      where = builtins.concatStringsSep "." p;
+      twinOf =
+        from: to: r:
+        builtins.replaceStrings [ from ] [ to ] r;
+    in
+    map (r: "${where}: ${r} has no ${budgetTtw} twin") (
+      builtins.filter (r: !(builtins.elem (twinOf budgetApex budgetTtw r) xs)) (
+        builtins.filter (hasInfix budgetApex) xs
+      )
+    )
+    ++ map (r: "${where}: ${r} has no ${budgetApex} rule it twins") (
+      builtins.filter (r: !(builtins.elem (twinOf budgetTtw budgetApex r) xs)) (
+        builtins.filter (hasInfix budgetTtw) xs
+      )
+    )
+  ) budgetListPaths;
+  budgetApexDeny = builtins.filter (hasInfix budgetApex) deny;
+  budgetTtwListed = builtins.length (
+    builtins.concatMap (p: builtins.filter (hasInfix budgetTtw) (budgetListOf p)) budgetListPaths
+  );
+  budgetTtwInJson =
+    (
+      builtins.stringLength settings.settingsJson
+      - builtins.stringLength (builtins.replaceStrings [ budgetTtw ] [ "" ] settings.settingsJson)
+    )
+    / builtins.stringLength budgetTtw;
   # Write(path) is accepted but never consulted: it reads as a guard, guards nothing.
   inertWriteDeny = builtins.filter (e: builtins.isString e && hasPrefix "Write(" e) deny;
 
@@ -1054,6 +1129,21 @@ let
         + builtins.toJSON renameAllowExpected
         + (if renameBoxed == [ ] then "" else " / in deny or ask: " + builtins.toJSON renameBoxed)
         + " — apex -> ttw phase 2: the skill text calls ttw-tier / ttw-verify-external, a session started before the switch still calls the apex-* alias; a missing rule boxes one of them mid-run, an extra one widens the grant beyond the two read-only tools";
+    }
+    {
+      name = "A32 settings: every apex-correction-budget rule has its ttw-correction-budget twin in the same list, and no other ttw one";
+      ok =
+        budgetApexDeny != [ ]
+        && budgetTwinGaps == [ ]
+        && budgetTtwListed > 0
+        && budgetTtwInJson == budgetTtwListed;
+      msg =
+        "apex rules in permissions.deny: "
+        + builtins.toJSON budgetApexDeny
+        + " / twin gaps: "
+        + builtins.toJSON budgetTwinGaps
+        + " / ttw-correction-budget: ${toString budgetTtwInJson} occurrence(s) in settings.json, ${toString budgetTtwListed} as a twin rule"
+        + " — apex -> ttw phase 3: correction-budget.js and correction-grant.js count rounds and grants across ~/.claude/apex-correction-budget and ~/.claude/ttw-correction-budget; a guard on one dir only leaves the other writable, and a reset there is a fresh budget";
     }
     {
       name = "A16 settings: no PreToolUse group with an empty hooks list";

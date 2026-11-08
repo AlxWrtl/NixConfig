@@ -43,11 +43,13 @@ in
   # carries `APEX-CORRECTION-ROUND: <run-id>` (or `TTW-CORRECTION-ROUND:`)
   # or, for a run outside the session's repo, its absolute `…/.claude/output/apex/<run-id>` path (an
   # existing dir, no `..`; never a stub run dir created in the session's
-  # repo), counted under the run-id and stamped in the slot as `dir`; each
+  # repo; `…/.claude/output/ttw/<run-id>` too, and a run-id resolves under
+  # either dir), counted under the run-id and stamped in the slot as `dir`; each
   # round claims the first
   # free slot ~/.claude/apex-correction-budget/<run-id>.round<n>, n in
   # 1..MAX_ROUNDS (outside the Bash sandbox's writable paths), and the round
-  # finding none is denied. A slot is created exclusively (O_EXCL), so
+  # finding none is denied. Rounds and grants already in
+  # ~/.claude/ttw-correction-budget count too: they take slots off the cap. A slot is created exclusively (O_EXCL), so
   # parallel marked spawns cannot both take the last one. A round counts
   # when the spawn/send is attempted (PreToolUse), even if a later hook or
   # the user then denies it. A brief naming 06-resolve.md or a correction
@@ -70,9 +72,10 @@ in
   # (case and spacing free) grants the live run of this project — the one with the newest
   # round among runs with a dir under the prompt's (absolute) cwd, or whose
   # round stamps from this same session all name one existing absolute
-  # `…/.claude/output/apex/<run-id>` dir (an unreadable stamp: no) — one
-  # round, only if its budget is spent (rounds >= MAX_ROUNDS + grants); one
-  # <run-id>.grant<n> per prompt (O_EXCL). Task notifications and agent
+  # `…/.claude/output/(apex|ttw)/<run-id>` dir (an unreadable stamp: no) — one
+  # round, only if its budget is spent (rounds >= MAX_ROUNDS + grants, both
+  # read from the apex and ttw budget dirs); one <run-id>.grant<n> per
+  # prompt (O_EXCL), written to the apex budget dir. Task notifications and agent
   # hand-backs also fire this event, without agent_id: a prompt carrying a
   # harness wrapper marker (<task-notification, <agent-message, …) grants
   # nothing, nor does any agent_id key, a "continue", the token below the

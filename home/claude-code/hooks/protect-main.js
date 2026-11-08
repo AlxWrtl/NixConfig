@@ -204,12 +204,14 @@ function isVaultTop(dir) {
   }
 }
 
-// APEX run state (.claude/output/apex/<run>/) is the one ignored subtree a
-// protected branch may still write: the coordinator updates its run after
-// the merge. Strictly under <file's toplevel>/.claude/output/apex/, ignored
+// Run state (.claude/output/apex/<run>/ or .claude/output/ttw/<run>/) is the
+// one ignored subtree a protected branch may still write: the coordinator
+// updates its run after the merge. Strictly under <file's
+// toplevel>/.claude/output/apex/ or .claude/output/ttw/, ignored
 // by git (check-ignore never reports a TRACKED file: a `git add -f` there
 // stays denied), one link only. Any failure is false.
 const APEX_OUT = path.join(".claude", "output", "apex") + path.sep;
+const TTW_OUT = path.join(".claude", "output", "ttw") + path.sep;
 function isApexOutput(dir, realTarget) {
   const top = git(["rev-parse", "--show-toplevel"], dir);
   if (gitBroken(top) !== null || top.status !== 0) return false;
@@ -217,7 +219,7 @@ function isApexOutput(dir, realTarget) {
   if (t === "") return false;
   const realTop = realpathish(t);
   if (realTop === null) return false;
-  if (!realTarget.startsWith(realTop + path.sep + APEX_OUT)) return false;
+  if (!realTarget.startsWith(realTop + path.sep + APEX_OUT) && !realTarget.startsWith(realTop + path.sep + TTW_OUT)) return false;
   try { if (fs.lstatSync(realTarget).nlink > 1) return false; } catch (e) { if (!e || e.code !== "ENOENT") return false; }
   // check-ignore reads the index, which starts the repo's core.fsmonitor
   // command, outside the sandbox: off, as worktree-env-sync.sh does.

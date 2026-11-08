@@ -1,5 +1,5 @@
 'use strict'
-// apex-board parity: what board.js derives from a runs dir, as the JSON the Go TUI writes with
+// ttw-board parity: what board.js derives from a runs dir, as the JSON the Go TUI writes with
 // `--derive-json`. The check compares both byte for byte, so the Go port of board.js
 // (tui/rules.go) cannot drift from the page's rules. Not shipped; the disk reading below is
 // tui.js's (realpath under the runs dir, links never followed out, 512 KB cap, 2000 files).

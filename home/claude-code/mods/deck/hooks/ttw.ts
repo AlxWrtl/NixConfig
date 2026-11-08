@@ -67,8 +67,8 @@ export function parseContext(text: string, dirName: string): DeckApexRun {
 
   const heading = header.find(l => /^#\s+\S/.test(l))
   const headingText = heading === undefined ? undefined : clean(heading.replace(/^#\s+/, ''))
-  const apexTitle = headingText?.match(/^APEX\s*[:—–-]\s*(.+)$/i)?.[1]
-  const title = clean(apexTitle ?? headingText ?? '') || dirName
+  const named = headingText?.match(/^(?:APEX|TTW)\s*[:—–-]\s*(.+)$/i)?.[1]
+  const title = clean(named ?? headingText ?? '') || dirName
 
   const fields = new Map<string, string>()
   for (const line of header) {
@@ -243,7 +243,7 @@ export const STEP_ORDER: readonly DeckApexStepName[] = ['plan', 'edit', 'impleme
 const ALWAYS: ReadonlySet<DeckApexStepName> = new Set<DeckApexStepName>(['edit', 'gate', 'ship'])
 
 const EDITING = new Set(['Edit', 'Write', 'NotebookEdit'])
-const PLAN_PATH = /(^|\/)\.claude\/output\/apex\//
+const PLAN_PATH = /(^|\/)\.claude\/output\/(apex|ttw)\//
 const CODEX = /(?:apex|ttw)-verify-external/
 const SHIP = /\bgit\s+(commit|push)\b|\bgh\s+pr\s+(create|merge)\b/
 const GATE = /nix flake check|pnpm (verify|test|typecheck|lint)|claude plugin (test|validate)|\btsc\b|cargo (check|test)/
@@ -330,7 +330,7 @@ export function answerLines(answer: string): string[] {
     .map(l => shorten(l, 100))
 }
 
-/** A path's last two segments: `hooks/apex.ts`. */
+/** A path's last two segments: `hooks/ttw.ts`. */
 export function pathTail(path: string): string {
   return path.split('/').filter(p => p !== '').slice(-2).join('/')
 }

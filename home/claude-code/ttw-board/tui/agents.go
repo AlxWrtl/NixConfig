@@ -618,7 +618,7 @@ func (g *agentGroup) has(id string) bool {
 	return false
 }
 
-// tabRepo: the board's project, repoOf(runsDir) with a worktree read as its repo (apex-board.sh
+// tabRepo: the board's project, repoOf(runsDir) with a worktree read as its repo (ttw-board.sh
 // passes the toplevel of the worktree it runs in); "" without one: no groups, one kanban of all.
 func tabRepo(runsDir string) string {
 	repo := repoOf(runsDir)
@@ -1056,17 +1056,20 @@ var runLaunch = func(dir string, argv []string) error {
 	return err
 }
 
-// repoOf: the repo apex-board.sh passed, read back from its runs dir `<repo>/.claude/output/apex`
-// (absolute, pwd -P); "" for any other dir: no repo, no launch.
+// repoOf: the repo ttw-board.sh passed, read back from its runs dir `<repo>/.claude/output/ttw`
+// or the pre-rename `<repo>/.claude/output/apex` (absolute, pwd -P); "" for any other dir: no
+// repo, no launch.
 func repoOf(runsDir string) string {
 	if !filepath.IsAbs(runsDir) {
 		return ""
 	}
-	repo, ok := strings.CutSuffix(filepath.Clean(runsDir), "/.claude/output/apex")
-	if !ok {
-		return ""
+	p := filepath.Clean(runsDir)
+	for _, suffix := range []string{"/.claude/output/ttw", "/.claude/output/apex"} {
+		if repo, ok := strings.CutSuffix(p, suffix); ok {
+			return repo
+		}
 	}
-	return repo
+	return ""
 }
 
 // agentName: `agent-HHMMSS` at t, else the first of `-2` … `-99` after it that taken refuses;

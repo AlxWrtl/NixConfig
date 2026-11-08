@@ -1,7 +1,7 @@
 {
   "name": "deck",
   "version": "0.1.0",
-  "description": "Deck: live agent and APEX dashboard on demand (/deck, aliases /apex-pane and /task-board). The APEX run on top while one is live (phases, alerts, background shells), then main model vitals, the on-call architect, subagent cards and swimlanes, the dispatched sessions of the current project, a turn receipt and a session log. Never opens by itself, no status line. Built from Flightdeck v0.3.2 by Stephen Casella (MIT, https://github.com/scasella/claude-flightdeck).",
+  "description": "Deck: live agent and APEX dashboard on demand (/deck, aliases /ttw-pane, /apex-pane and /task-board). The APEX run on top while one is live (phases, alerts, background shells), then main model vitals, the on-call architect, subagent cards and swimlanes, the dispatched sessions of the current project, a turn receipt and a session log. Never opens by itself, no status line. Built from Flightdeck v0.3.2 by Stephen Casella (MIT, https://github.com/scasella/claude-flightdeck).",
   "author": {
     "name": "alx"
   },

@@ -121,8 +121,11 @@ function main() {
   const names = [];
   for (const b of BUDGET_DIRS) {
     const bd = path.join(home, ".claude", b);
+    // A budget dir that is no real directory (a symlink, a file) is doubt:
+    // its rounds and grants may be anyone's, so nothing is granted.
     let ents;
     try {
+      if (!fs.lstatSync(bd).isDirectory()) { quiet(); return; }
       ents = fs.readdirSync(bd);
     } catch (e) {
       if (!e || e.code !== "ENOENT") { quiet(); return; }

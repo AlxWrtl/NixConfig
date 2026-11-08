@@ -1633,6 +1633,20 @@ let
         }
       ];
     }
+    # The slot-index ceiling back in front of the total count: free =
+    # cap - rounds under the other dir, first free apex slot 1..free taken.
+    # Apex round2 + ttw round1 leaves apex slot 1 free: a third round.
+    {
+      id = "M-cb-split-gap";
+      hook = "correction-budget.js";
+      kills = "cb-split-gap-deny";
+      swaps = [
+        {
+          anchor = "A-cb-grants";
+          to = "const cap = MAX_ROUNDS + grantsOf(dir, marker); { let elsewhere = 0; for (const b of BUDGET_DIRS) { const bd = path.join(path.dirname(dir), b); if (bd === dir) continue; let ns = []; try { ns = fs.readdirSync(bd); } catch {} for (const f of ns) { const m = ROUND.exec(f); if (m && m[1] === marker) elsewhere++; } } for (let n = 1; n <= cap - elsewhere; n++) { try { fs.writeFileSync(path.join(dir, marker + \".round\" + n), \"\", { flag: \"wx\" }); } catch (e) { if (e && e.code === \"EEXIST\") continue; throw e; } allow(); return; } }";
+        }
+      ];
+    }
     # A spent run under .claude/output/ttw of the prompt's repo is never
     # granted.
     {
@@ -3233,6 +3247,9 @@ let
     "cb-ttw-budget-round3-deny"
     "cb-split-budget-round3-deny"
     "cb-ttw-budget-round2-allow"
+    "cb-split-gap-deny"
+    "cb-split-gap-grant-allow"
+    "cb-ttw-budget-symlink-deny"
     "cg-token-grants"
     "cg-no-token"
     "cg-inline-token-ignored"
@@ -3260,6 +3277,7 @@ let
     "cg-ttw-grant-counted"
     "cg-ttw-cross-repo-grants"
     "cg-ttwx-cross-repo-bad-dir"
+    "cg-ttw-budget-symlink-refuse"
     "rm-explore-sonnet-deny"
     "rm-navigator-opus-deny"
     "rm-navigator-nomodel-deny"
@@ -4665,6 +4683,50 @@ let
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_allow || return 1
           [ "$(cb_rounds 62-x)" -eq 1 ] || { why="allowed, but $(cb_rounds 62-x) rounds in the apex budget dir, expected 1"; return 1; }
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" ;;
+        # The cap is a TOTAL across both dirs, not a slot index: round2 under
+        # apex and round1 under ttw are two rounds, the apex slot 1 left
+        # free is no third one. Denied, no stamp anywhere.
+        cb-split-gap-deny)
+          cb_reset
+          cb_put "$CBSTATE" 62-x.round2
+          cb_put "$CBTTW" 62-x.round1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] && [ ! -e "$CBSTATE/62-x.round1" ] \
+            || { why="denied, but a round was stamped in the apex budget dir ($(cb_rounds 62-x) there, expected 1)"; return 1; }
+          [ "$(${pkgs.findutils}/bin/find "$CBTTW" -name '62-x.*' | ${pkgs.coreutils}/bin/wc -l | ${pkgs.coreutils}/bin/tr -d ' ')" -eq 1 ] \
+            || { why="denied, but the ttw budget dir changed"; return 1; } ;;
+        # Same gap with one grant, under either dir: exactly one more round
+        # (three in total), then denied at 3/3. Also apex round3 + ttw
+        # round1: two rounds, so one more, not two (slots 1 and 2 both free).
+        cb-split-gap-grant-allow)
+          for spec in "round2 $CBSTATE" "round2 $CBTTW" "round3 $CBSTATE" "round3 $CBTTW"; do
+            hi="''${spec%% *}"
+            gd="''${spec#* }"
+            cb_reset
+            cb_put "$CBSTATE" "62-x.$hi"
+            cb_put "$CBTTW" 62-x.round1
+            cb_put "$gd" 62-x.grant1
+            run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"
+            is_allow || { why="apex $hi + ttw round1 + grant in $gd: round 3 $why"; return 1; }
+            [ "$(cb_rounds 62-x)" -eq 2 ] || { why="apex $hi + grant in $gd: allowed, but $(cb_rounds 62-x) rounds in the apex dir, expected 2"; return 1; }
+            run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"
+            is_deny "budget de correction épuisé (3/3) pour le run 62-x" || { why="apex $hi + grant in $gd: round 4 $why"; return 1; }
+            [ "$(cb_rounds 62-x)" -eq 2 ] || { why="apex $hi + grant in $gd: round 4 denied, but stamped"; return 1; }
+          done ;;
+        # A symlink at ~/.claude/ttw-correction-budget is no budget dir: its
+        # target's grant must not lift the cap. Denied (the budget state is
+        # suspect), nothing stamped.
+        cb-ttw-budget-symlink-deny)
+          cb_reset
+          rm -rf "$root/cbforeign"
+          mkdir -p "$root/cbforeign" "$TMPDIR/.claude"
+          cb_put "$root/cbforeign" 62-x.grant1
+          ln -s "$root/cbforeign" "$CBTTW"
+          cb_put "$CBSTATE" 62-x.round1
+          cb_put "$CBSTATE" 62-x.round2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "BLOCKED" || return 1
+          [ "$(cb_rounds 62-x)" -eq 2 ] || { why="denied, but a round was stamped in the apex budget dir"; return 1; }
+          [ ! -e "$root/cbforeign/62-x.round3" ] || { why="a round was stamped through the symlink"; kind=pwned; return 1; } ;;
         # correction-grant: only the user's token, as the first non-empty
         # line, only for the project's live run once spent.
         cg-token-grants)
@@ -4813,6 +4875,20 @@ let
           cb_reset
           cb_stamp 64-z 2 "$root/cbother/.claude/output/ttwx/64-z" probe
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
+        # A symlink at ~/.claude/ttw-correction-budget: its target's rounds
+        # are no spent budget of this machine. Refused, no grant anywhere.
+        cg-ttw-budget-symlink-refuse)
+          cb_reset
+          rm -rf "$root/cbforeign"
+          mkdir -p "$root/cbforeign" "$TMPDIR/.claude"
+          cb_put "$root/cbforeign" 62-x.round1
+          cb_put "$root/cbforeign" 62-x.round2
+          ln -s "$root/cbforeign" "$CBTTW"
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"
+          # Silent or told, either way: what counts is that nothing was granted.
+          [ "$rc" -eq 0 ] && [ ! -s "$d/$lbl.err" ] || { why="exit $rc or stderr: $(head -c 200 "$d/$lbl.err")"; return 1; }
+          [ "$(grants)" -eq 0 ] || { why="$(grants) grant file(s) in the apex dir: the symlinked dir's rounds were counted"; kind=mismatch; return 1; }
+          [ -z "$(${pkgs.findutils}/bin/find "$root/cbforeign" -name '*.grant*')" ] || { why="a grant was written through the symlink"; kind=pwned; return 1; } ;;
         # Run 66: research agents on haiku, the model named explicitly.
         rm-explore-sonnet-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Explore sonnet)"; is_deny 'model "sonnet"' ;;

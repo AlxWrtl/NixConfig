@@ -47,13 +47,14 @@ ${branch === null ? '' : `Branch: ${branch}\n`}
 type Run = { dir: Dir; name: string; text: string; mtimeMs: number; verdict?: string }
 
 // Budget files per dir: `<run>.round<N>` / `<run>.grant<N>` names.
-type World = { runs: Run[]; budget: Partial<Record<Dir, readonly string[]>>; opened: unknown[] }
+// `head`: the branch .git/HEAD names; unset, there is no HEAD.
+type World = { runs: Run[]; budget: Partial<Record<Dir, readonly string[]>>; opened: unknown[]; head?: string }
 
 const root = (dir: Dir) => `/work/.claude/output/${dir}`
 const budgetDir = (dir: Dir) => `/home/u/.claude/${dir}-correction-budget`
 
-// /work, HOME /home/u, no .git/HEAD (branch unknown: every run is on it). A path the world does
-// not hold throws, as a missing file does.
+// /work, HOME /home/u, .git/HEAD only when `head` is set (unset, the branch is unknown: every
+// run is on it). A path the world does not hold throws, as a missing file does.
 function world(on: On, w: World): void {
   on('session.start', () => ({ cwd: '/work' }))
   on('session.cwd', () => ({ value: '/work' }))
@@ -88,6 +89,7 @@ function world(on: On, w: World): void {
     throw new Error('ENOENT')
   })
   on('fs.read', (_$, e) => {
+    if (w.head !== undefined && e.path === '/work/.git/HEAD') return { value: `ref: refs/heads/${w.head}\n` }
     for (const r of w.runs) {
       if (e.path === `${root(r.dir)}/${r.name}/00-context.md`) return { value: r.text }
       if (r.verdict !== undefined && e.path === `${root(r.dir)}/${r.name}/external-verify.json`) return { value: r.verdict }
@@ -200,6 +202,45 @@ test('control: one round in the apex dir alone is not spent', async ($, on) => {
   await clock.settle()
   const ui = await $.ui.mount(pane(80))
   expect(await ui.find({ type: 'Text', text: /correction budget spent/ })).toBeUndefined()
+  await ui.unmount()
+})
+
+// The hooks count each dir's files: the same name in both dirs is two rounds (or two grants),
+// never one.
+for (const [label, budget, spent] of [
+  ['round1 in each dir is two rounds', { apex: ['my-run.round1'], ttw: ['my-run.round1'] }, '2/2'],
+  [
+    'grant1 in each dir is two grants',
+    { apex: ['my-run.round1', 'my-run.round2', 'my-run.grant1'], ttw: ['my-run.round3', 'my-run.round4', 'my-run.grant1'] },
+    '4/4',
+  ],
+] as const) {
+  test(`same-name budget files in both dirs count per dir: ${label} → spent ${spent}`, async ($, on) => {
+    const clock = mock.clock(on, { now: NOW })
+    world(on, fresh([{ dir: 'apex', name: 'my-run', text: context('APEX', 'b', 'feat/b'), mtimeMs: NOW - 1000 }], budget))
+    await $.session.start(START)
+    await $.command.run(command('deck'))
+    await clock.settle()
+    const ui = await $.ui.mount(pane(80))
+    expect((await ui.find({ type: 'Text', text: exact(`∅ correction budget spent · ${spent} rounds`) }))?.props.color).toBe('error')
+    await ui.unmount()
+  })
+}
+
+test('the newest run is off-branch under ttw: the older on-branch apex run is shown, not a blank deck', async ($, on) => {
+  const clock = mock.clock(on, { now: NOW })
+  const w = fresh([
+    { dir: 'apex', name: 'on-apex', text: context('APEX', 'on branch', 'feat/on'), mtimeMs: NOW - 2000 },
+    { dir: 'ttw', name: 'off-ttw', text: context('TTW', 'off branch', 'feat/off'), mtimeMs: NOW - 1000 },
+  ])
+  w.head = 'feat/on'
+  world(on, w)
+  await $.session.start(START)
+  await $.command.run(command('deck'))
+  await clock.settle()
+  const ui = await $.ui.mount(pane(120))
+  expect(await ui.find({ type: 'Text', text: header('feat/on · Standard') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: header('feat/off · Standard') })).toBeUndefined()
   await ui.unmount()
 })
 

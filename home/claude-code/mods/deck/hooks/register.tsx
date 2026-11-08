@@ -456,18 +456,31 @@ async function scan($: EngineInterface): Promise<DeckApexRun | null> {
   return sessionRunOf(at, await readHead($, cwd), await $.clock.now())
 }
 
+// The newest shown run across the run roots: a root whose newest run is off the branch (or
+// ended) leaves the deck to the other root's, not blank. A tie goes to the first root.
 async function scanFolder($: EngineInterface, cwd: string): Promise<DeckApexRun | null> {
-  let root = ''
-  let newest: RunDir | undefined
+  let best: { run: DeckApexRun; root: string; dir: string; mtimeMs: number } | undefined
+  let head: Promise<string | undefined> | undefined
+  const headOnce = (): Promise<string | undefined> => (head ??= readHead($, cwd))
   for (const name of RUN_ROOTS) {
-    const here = `${cwd}/.claude/output/${name}`
-    const found = await newestRun($, here)
-    if (found !== undefined && (newest === undefined || found.mtimeMs > newest.mtimeMs)) {
-      newest = found
-      root = here
-    }
+    const root = `${cwd}/.claude/output/${name}`
+    const found = await newestRun($, root)
+    if (found === undefined || (best !== undefined && found.mtimeMs <= best.mtimeMs)) continue
+    const run = await shownRun($, root, found, headOnce)
+    if (run !== null) best = { run, root, dir: found.dir, mtimeMs: found.mtimeMs }
   }
-  if (newest === undefined) return null
+  if (best === undefined) return null
+  shownRoot = { dir: best.dir, root: best.root }
+  return best.run
+}
+
+// One root's newest run as the deck shows it, or null: ended, stale, or off the branch.
+async function shownRun(
+  $: EngineInterface,
+  root: string,
+  newest: RunDir,
+  headOnce: () => Promise<string | undefined>,
+): Promise<DeckApexRun | null> {
   let parsed: DeckApexRun
   let liveMs: number
   if (newest.context !== undefined) {
@@ -488,11 +501,10 @@ async function scanFolder($: EngineInterface, cwd: string): Promise<DeckApexRun 
   }
   const now = await $.clock.now()
   if (!isLive(parsed, liveMs, now)) return null
-  const head = await readHead($, cwd)
+  const head = await headOnce()
   // Without a context file the header names the folder (no branch); hidden on the trunk, live 1 h.
   if (newest.context === undefined && !bareShown(parsed, liveMs, head, now)) return null
   if (!onBranch(parsed, head)) return null
-  shownRoot = { dir: newest.dir, root }
   return { ...parsed, dir: newest.dir }
 }
 
@@ -565,21 +577,21 @@ async function refreshVerdict($: EngineInterface, found: DeckApexRun | null): Pr
 }
 
 // The run's correction budget, from the names in ~/.claude/ttw-correction-budget and the
-// pre-rename ~/.claude/apex-correction-budget (one file per round used or granted; a name in
-// both dirs counts once).
+// pre-rename ~/.claude/apex-correction-budget (one file per round used or granted). Each dir's
+// files count on their own, as the hooks count them: a name in both dirs is two.
 async function refreshBudget($: EngineInterface, found: DeckApexRun | null): Promise<void> {
   const dir = found?.dir
   const home = await $.env.get('HOME')
   if (dir === undefined || isSessionDir(dir) || home === undefined || home === '') return putBudget($, null)
-  const names = new Set<string>()
+  const names: string[] = []
   for (const name of RUN_ROOTS) {
     try {
-      for (const entry of await $.fs.list(`${home}/.claude/${name}-correction-budget`)) names.add(entry.name)
+      for (const entry of await $.fs.list(`${home}/.claude/${name}-correction-budget`)) names.push(entry.name)
     } catch {
       // No round was ever claimed in that dir on this machine: none from it.
     }
   }
-  await putBudget($, budgetOf([...names], dir))
+  await putBudget($, budgetOf(names, dir))
 }
 
 // A subagent's still running shells close once it is killed, fails or leaves the agent list:

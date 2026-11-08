@@ -79,18 +79,21 @@ function failed(why) {
 
 // Every file of every budget dir beside `dir` (apex and ttw), as
 // { bd, f }: a run spent under one may not get fresh rounds under the other.
-// A missing dir holds nothing; any other read error throws (fails closed).
+// A missing dir holds nothing; a dir that is no real directory (a symlink,
+// a file) or any other read error throws (fails closed).
 function budgetFiles(dir) {
   const out = [];
   for (const b of BUDGET_DIRS) {
     const bd = path.join(path.dirname(dir), b);
-    let names;
+    let st;
     try {
-      names = fs.readdirSync(bd);
+      st = fs.lstatSync(bd);
     } catch (e) {
       if (e && e.code === "ENOENT") continue;
       throw e;
     }
+    if (!st.isDirectory()) throw new Error("budget dir is not a real directory: " + bd);
+    const names = fs.readdirSync(bd);
     for (const f of names) out.push({ bd, f });
   }
   return out;
@@ -107,15 +110,16 @@ function grantsOf(dir, run) {
   return n;
 }
 
-// Rounds this run spent in a budget dir other than `dir` (the one new
-// stamps go to): they come off the slots `dir` may still hand out.
-function roundsElsewhere(dir, run) {
-  let n = 0;
-  for (const { bd, f } of budgetFiles(dir)) {
+// Rounds this run spent across every budget dir: their total is what the
+// cap bounds, their indices are the slots a new stamp may not reuse.
+function roundsOf(dir, run) {
+  const taken = new Set();
+  let total = 0;
+  for (const { f } of budgetFiles(dir)) {
     const m = ROUND.exec(f);
-    if (bd !== dir && m && m[1] === run) n++;
+    if (m && m[1] === run) { total++; taken.add(Number(m[2])); }
   }
-  return n;
+  return { total, taken };
 }
 
 let input = "";
@@ -196,15 +200,20 @@ function main() {
   }) + "\n";
   try { fs.mkdirSync(dir, { recursive: true }); } catch { denyState("unwritable", dir); return; }
 
-  // Claim a slot by exclusive create: of two racing rounds, one wins.
+  // A round goes out while the run's total, both dirs, is under the cap.
+  // Claim a slot by exclusive create at an index free in both dirs: of two
+  // racing rounds, one wins, the loser counts the winner's round.
   const cap = MAX_ROUNDS + grantsOf(dir, marker);
-  const free = cap - roundsElsewhere(dir, marker);
-  for (let n = 1; n <= free; n++) {
+  const spent = roundsOf(dir, marker);
+  const taken = spent.taken;
+  let total = spent.total;
+  for (let n = 1; total < cap; n++) {
+    if (taken.has(n)) continue;
     const slot = path.join(dir, marker + ".round" + n);
     try {
       fs.writeFileSync(slot, stamp, { flag: "wx" });
     } catch (e) {
-      if (e && e.code === "EEXIST") continue;
+      if (e && e.code === "EEXIST") { total++; continue; }
       denyState("unwritable", slot);
       return;
     }

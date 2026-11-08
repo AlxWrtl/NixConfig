@@ -20,7 +20,7 @@
 #       00-context.md shapes, À-toi cases, links out of a run) copied to
 #       $TMPDIR, read as-is, then aged per mtimes.tsv (default 1 h before
 #       NOW, links untouched); each time `node parity.js` (board.js) and the
-#       BUILT `apex-board-tui --derive-json` on the same RUNS BUDGET NOW
+#       BUILT `ttw-board-tui --derive-json` on the same RUNS BUDGET NOW
 #       -> byte-equal JSON. Its `go test` already ran in the binary's build.
 #   D1  --dry-run --port 9999 <repo>, HOME holds .claude/apex-correction-budget
 #       -> url on 127.0.0.1:9999, runs -> <repo>/.claude/output/apex,
@@ -36,10 +36,10 @@
 #          in the root
 #   D2  same, HOME without the budget dir      -> budget: empty dir, port 8765
 #   D3  no repo argument, cwd = a subdir of a git repo -> runs of its toplevel
-#   D4  repo without .claude/output/apex       -> exit 1, nothing served
+#   D4  repo without .claude/output/ttw or apex -> exit 1, nothing served
 #   D5  --port 0                               -> exit 2 (usage)
 #   D6  --tui --dry-run, HOME with and without the budget dir -> exactly
-#       `tui: <store>/bin/apex-board-tui` (the built Go binary),
+#       `tui: <store>/bin/ttw-board-tui` (the built Go binary),
 #       `runs: <repo>/.claude/output/apex`, `budget: <dir>` / `budget: none`;
 #       no tui.js nor tui-test.js in the store page dir, no temp root made;
 #       --port 0 ignored

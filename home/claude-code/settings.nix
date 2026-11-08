@@ -794,7 +794,9 @@ in
         "Edit(**/.git/config)"
         # correction-budget.js counter: Edit deny also lands in sandbox
         # denyWrite, so neither Edit/Write nor Bash can reset a run's rounds.
+        # Rounds are counted across both dirs (apex -> ttw): guard both.
         "Edit(~/.claude/apex-correction-budget/**)"
+        "Edit(~/.claude/ttw-correction-budget/**)"
         "Bash(gh repo delete*)"
         "Bash(gh auth token*)"
         "Bash(gh auth *--show-token*)"

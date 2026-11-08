@@ -81,7 +81,7 @@
         system-config = self.darwinConfigurations."alex-mbp".system;
         agent-instructions = import ./checks/agent-instructions.nix { inherit pkgs; };
         agent-pane = import ./checks/agent-pane.nix { inherit pkgs; };
-        apex-board = import ./checks/apex-board.nix { inherit pkgs; };
+        ttw-board = import ./checks/ttw-board.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
         claude-dispatch = import ./checks/claude-dispatch.nix { inherit pkgs; };
         claude-mods = import ./checks/claude-mods.nix { inherit pkgs; };

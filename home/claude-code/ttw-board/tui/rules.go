@@ -1,6 +1,6 @@
 package main
 
-// Port of board.js; the parity check in checks/apex-board.nix keeps them equal (parity.js runs
+// Port of board.js; the parity check in checks/ttw-board.nix keeps them equal (parity.js runs
 // board.js on the same runs dir and its JSON must match `--derive-json` byte for byte).
 // Regexes keep board.js's meaning under RE2: JS `\s` / `.` spelled out (jsutil.go), `/i` as
 // explicit letter classes (RE2 case folding also matches ſ and the Kelvin sign), lookaheads as
@@ -38,7 +38,7 @@ var Columns = []Column{
 }
 
 const (
-	hintGrant   = "apex: +1 tour"
+	hintGrant   = "ttw: +1 tour"
 	hintSession = "répondre dans la session · /deck"
 	hintExt     = "relire external-verify.json · corriger dans la session"
 )
@@ -120,7 +120,7 @@ var (
 	reBullet   = regexp.MustCompile(`^(?:[-*+]|\d+\.)` + reS + `+`)
 	reHeading1 = regexp.MustCompile(`^#` + reS + `+` + reNS)
 	reHashLead = regexp.MustCompile(`^#` + reS + `+`)
-	reApex     = regexp.MustCompile(`^` + ci("apex") + reS + `*[:—–-]` + reS + `*(` + reDot + `+)$`)
+	reTitle    = regexp.MustCompile(`^(?:` + ci("apex") + `|` + ci("ttw") + `)` + reS + `*[:—–-]` + reS + `*(` + reDot + `+)$`)
 	reFlagMode = regexp.MustCompile(`\b` + ci("mode") + reS + `*:?` + reS + `+([^` + jsSpaceClass + `,;)]+)`)
 )
 
@@ -218,7 +218,7 @@ func parseContext(text, dirName string) *Context {
 		headingText = clean(reHashLead.ReplaceAllString(header[i], ""))
 	}
 	title := headingText
-	if m := reApex.FindStringSubmatch(headingText); m != nil {
+	if m := reTitle.FindStringSubmatch(headingText); m != nil {
 		title = m[1]
 	}
 	title = clean(title)

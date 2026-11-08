@@ -18,7 +18,7 @@
     # slot is looked up here. Ghostty unreachable: the global pane, said in its header.
     ap = "agent-pane --here";
     # The terminal APEX board (`ab` is Apache's benchmark, /usr/sbin/ab).
-    bd = "apex-board --tui";
+    bd = "ttw-board --tui";
     # Skill analysis tools
     schliff = "uvx schliff";
     schliff-all = "uvx schliff doctor --skill-dirs ~/.claude/skills/ -v";

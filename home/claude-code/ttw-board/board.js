@@ -1,6 +1,6 @@
 'use strict'
 // APEX board, pure part: read a run's 00-context.md (every drifted spelling tolerated, as the deck
-// does in mods/deck/hooks/apex.ts), its directory listing, its correction budget and its external
+// does in mods/deck/hooks/ttw.ts), its directory listing, its correction budget and its external
 // verdict, and derive the column its card sits in. No DOM, no fetch, no clock: `now` comes in.
 // Loaded by index.html (global `ApexBoard`) and by test.js (module.exports).
 
@@ -22,7 +22,7 @@
     { key: 'human', label: 'À toi', who: 'décision', cls: 'human' },
   ]
 
-  const HINT_GRANT = 'apex: +1 tour'
+  const HINT_GRANT = 'ttw: +1 tour'
   const HINT_SESSION = 'répondre dans la session · /deck'
   const HINT_EXT = 'relire external-verify.json · corriger dans la session'
 
@@ -89,8 +89,8 @@
 
     const heading = header.find((l) => /^#\s+\S/.test(l))
     const headingText = heading === undefined ? '' : clean(heading.replace(/^#\s+/, ''))
-    const apex = headingText.match(/^APEX\s*[:—–-]\s*(.+)$/i)
-    const title = clean(apex ? apex[1] : headingText) || dirName
+    const named = headingText.match(/^(?:APEX|TTW)\s*[:—–-]\s*(.+)$/i)
+    const title = clean(named ? named[1] : headingText) || dirName
 
     const fields = new Map()
     for (const line of header) {

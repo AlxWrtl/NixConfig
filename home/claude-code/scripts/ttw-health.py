@@ -20,7 +20,10 @@ DRIFT_RATIO = 1.5
 DRIFT_MIN = 0.1
 FIX_WINDOW = datetime.timedelta(days=7)
 EXCLUDED_MARKERS = ("scratchpad", "-private-tmp-", "-var-folders-")
-CONTEXT_RE = re.compile(r"\.claude/output/apex/([^/]+)/00-context\.md$")
+CONTEXT_RE = re.compile(r"\.claude/output/(?:apex|ttw)/([^/]+)/00-context\.md$")
+# Both names during apex -> ttw: run dirs and correction-budget dirs.
+RUN_DIRS = ("apex", "ttw")
+BUDGET_DIRS = ("apex-correction-budget", "ttw-correction-budget")
 BUDGET_RE = re.compile(r"^(?P<run>.+)\.(?P<kind>round|grant)(?P<n>\d+)$")
 UTC = datetime.timezone.utc
 
@@ -179,10 +182,12 @@ def scan_sessions(claude_dir, periods, stats):
 
 def scan_budget(claude_dir, periods, included, stats):
     counts = {p: {"round": 0, "grant": 0} for p in ("before", "after")}
-    budget = claude_dir / "apex-correction-budget"
-    if not budget.is_dir():
-        return counts
-    for path in sorted(budget.iterdir()):
+    paths = []
+    for name in BUDGET_DIRS:
+        budget = claude_dir / name
+        if budget.is_dir():
+            paths.extend(sorted(budget.iterdir()))
+    for path in paths:
         match = BUDGET_RE.match(path.name)
         if match is None or not path.is_file():
             continue
@@ -225,7 +230,8 @@ def resolve_repos(paths, warnings):
 def scan_escalations(repos, periods):
     counts = {p: {"runs": 0, "escalated": 0} for p in ("before", "after")}
     for repo in repos:
-        for ctx in sorted((repo / ".claude" / "output" / "apex").glob("*/00-context.md")):
+        ctxs = [c for out in RUN_DIRS for c in sorted((repo / ".claude" / "output" / out).glob("*/00-context.md"))]
+        for ctx in ctxs:
             try:
                 lines = ctx.read_text(encoding="utf-8", errors="replace").splitlines()
             except OSError:

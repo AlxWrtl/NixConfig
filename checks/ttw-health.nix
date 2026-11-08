@@ -90,8 +90,8 @@ let
         (d / (sid + ".jsonl")).write_text("\n".join(lines) + "\n")
 
 
-    def budget(name, sid, ts):
-        d = root / "apex-correction-budget"
+    def budget(name, sid, ts, where="apex-correction-budget"):
+        d = root / where
         d.mkdir(parents=True, exist_ok=True)
         (d / name).write_text(json.dumps({"ts": ts, "tool": "Agent", "session": sid, "description": "r"}) + "\n")
 
@@ -119,6 +119,22 @@ let
                 budget("r%d.round%d" % (i, n), "a%d" % i, "2026-10-%02dT11:00:00.000Z" % (11 + i))
     if scenario == "f3":
         base(2)
+    # F8, apex -> ttw phase 3: a0 writes one 00-context.md under
+    # .claude/output/apex and one under .claude/output/ttw (2 runs), its one
+    # round sits in ttw-correction-budget; b0's in the apex dir.
+    if scenario == "f8":
+        def write(path):
+            return {"type": "tool_use", "name": "Write", "input": {"file_path": path, "content": "# TTW: probe"}}
+        for i in range(6):
+            session("-Users-t-repo", "b%d" % i, "2026-09-%02dT10:00:00.000Z" % (20 + i))
+        for i in range(6):
+            ts = "2026-10-%02dT10:00:00.000Z" % (11 + i)
+            extra = ()
+            if i == 0:
+                extra = [assistant("a0-m2", ts, [write("/Users/t/repo/.claude/output/apex/r-apex/00-context.md"), write("/Users/t/repo/.claude/output/ttw/r-ttw/00-context.md")], ZERO)]
+            session("-Users-t-repo", "a%d" % i, ts, extra=extra, skill="ttw")
+        budget("rb.round1", "b0", "2026-09-20T11:00:00.000Z")
+        budget("ra.round1", "a0", "2026-10-11T11:00:00.000Z", where="ttw-correction-budget")
     if scenario == "f6":
         usage = {"input_tokens": 100, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": 10000, "output_tokens": 10}
         dup = assistant("t0-m1", "2026-09-20T10:00:01.000Z", [{"type": "text", "text": "same id"}], usage)
@@ -143,7 +159,7 @@ pkgs.runCommand "ttw-health-check" { } ''
     exit 1
   fi
 
-  for s in f1 f2 f3 f4 f6; do
+  for s in f1 f2 f3 f4 f6 f8; do
     python3 -I ${fixtures} "$TMPDIR/$s" "$s"
   done
   mkdir "$TMPDIR/nogit"
@@ -254,6 +270,25 @@ pkgs.runCommand "ttw-health-check" { } ''
   has f6 '^Lignes illisibles ignorées : 1$'
   echo "ttw-health: F6 tokens OK"
 
+  # F8, apex -> ttw phase 3: a run written under .claude/output/ttw counts
+  # (a0: 2 runs, so 7 AFTER), its round under ttw-correction-budget counts
+  # (1/7); the repo's runs are read under both dirs, a `# TTW:` titled one
+  # escalated (2 runs, 1 escalated); a `ttwx` sibling is no run dir.
+  R="$TMPDIR/repo8"
+  mkdir "$R"
+  git -C "$R" init -q -b master --template=
+  commit "chore: init" 2026-09-01T10:00:00Z y.txt
+  mkdir -p "$R/.claude/output/apex/r1" "$R/.claude/output/ttw/r2" "$R/.claude/output/ttwx/r3"
+  printf '%s\n' "# APEX: probe" "Date: 2026-10-12" > "$R/.claude/output/apex/r1/00-context.md"
+  printf '%s\n' "# TTW: probe" "Date: 2026-10-13" "Escalated: Standard -> Deep" > "$R/.claude/output/ttw/r2/00-context.md"
+  printf '%s\n' "# TTW: probe" "Date: 2026-10-14" "Escalated: Standard -> Deep" > "$R/.claude/output/ttwx/r3/00-context.md"
+  run f8 --claude-dir "$TMPDIR/f8" --repo "$R"
+  [ "$rc" = 0 ] || fail f8 "exit $rc, want 0"
+  has f8 '^Sessions APEX : avant 6 \(6 runs\), après 6 \(7 runs\)$'
+  has f8 '^rounds / run +\| +6 \| +0\.17 \| +7 \| +0\.14 \|'
+  has f8 "^taux d'escalade +\\| +0 \\| +— \\| +2 \\| +0\\.50 \\|"
+  echo "ttw-health: F8 ttw runs and budget OK"
+
   # M1 on F2: must not drift.
   m1rc=0
   python3 -I "$TMPDIR/mutant.py" $FLAGS --claude-dir "$TMPDIR/f2" > "$TMPDIR/m1.out" 2>&1 || m1rc=$?
@@ -268,6 +303,6 @@ pkgs.runCommand "ttw-health-check" { } ''
   fi
   echo "ttw-health: canary M1 killed — F2 without the comparison: $(grep '^VERDICT' "$TMPDIR/m1.out")"
 
-  echo "ttw-health: 7 fixtures, 1 alias, launchd, 1 canary — OK"
+  echo "ttw-health: 8 fixtures, 1 alias, launchd, 1 canary — OK"
   touch $out
 ''

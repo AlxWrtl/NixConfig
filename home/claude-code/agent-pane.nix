@@ -1,5 +1,5 @@
 # agent-pane — the switchable top pane of the agent screen (one Ghostty
-# window: top = one agent session, bottom = apex-board). Run `agent-pane` in
+# window: top = one agent session, bottom = ttw-board). Run `agent-pane` in
 # the top pane; `agent-pane pick <name>` switches the abduco session it
 # shows (a click in the board or the deck will call it).
 #

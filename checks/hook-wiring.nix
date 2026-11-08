@@ -148,6 +148,15 @@
 #      line and keeps a pr.md written under the old one, alone; and lets
 #      ttw-verify-external escape like apex-verify-external, nothing wider.
 #      One canary per name and per widening.
+#      The ttw-phase3 run reads .claude/output/ttw beside .claude/output/apex
+#      and ttw-correction-budget beside apex-correction-budget: a correction
+#      round for a ttw run dir (absolute or by run-id) allowed, a `ttwx`
+#      sibling, `ttw/../apex`, an unnormalized or missing ttw dir denied;
+#      rounds and grants counted across both budget dirs, new stamps and
+#      grants still in the apex one; protect-main exempts ttw run state on
+#      the same terms, a tracked, unignored, hardlinked or `ttwfoo` file
+#      denied; pr-record and the metrics probe read ttw runs, never `ttwx`.
+#      One canary per widening, the budget union included.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -461,7 +470,13 @@ let
     };
     A-pm-apex-prefix = {
       hook = "protect-main.js";
-      text = "if (!realTarget.startsWith(realTop + path.sep + APEX_OUT)) return false;";
+      text = "if (!realTarget.startsWith(realTop + path.sep + APEX_OUT) && !realTarget.startsWith(realTop + path.sep + TTW_OUT)) return false;";
+    };
+    # apex -> ttw, phase 3: the run-state exemption covers both output dirs,
+    # each closed by its separator.
+    A-pm-ttw-sep = {
+      hook = "protect-main.js";
+      text = "const TTW_OUT = path.join(\".claude\", \"output\", \"ttw\") + path.sep;";
     };
     A-pm-apex-ignore = {
       hook = "protect-main.js";
@@ -533,7 +548,25 @@ let
     };
     A-cb-abs = {
       hook = "correction-budget.js";
-      text = "if (path.isAbsolute(marker) && path.dirname(marker).endsWith(path.sep + APEX_OUT) && path.join(path.dirname(marker), path.basename(marker)) === marker) {";
+      text = "if (path.isAbsolute(marker) && OUT_DIRS.some((o) => path.dirname(marker).endsWith(path.sep + o)) && path.join(path.dirname(marker), path.basename(marker)) === marker) {";
+    };
+    # apex -> ttw, phase 3: a run dir under either output dir, rounds counted
+    # across both budget dirs (new stamps still land in the apex one).
+    A-cb-outdirs = {
+      hook = "correction-budget.js";
+      text = "const OUT_DIRS = [APEX_OUT, path.join(\".claude\", \"output\", \"ttw\")];";
+    };
+    A-cb-budget-dirs = {
+      hook = "correction-budget.js";
+      text = "const BUDGET_DIRS = [\"apex-correction-budget\", \"ttw-correction-budget\"];";
+    };
+    A-cg-outdirs = {
+      hook = "correction-grant.js";
+      text = "const OUT_DIRS = [APEX_OUT, path.join(\".claude\", \"output\", \"ttw\")];";
+    };
+    A-cg-budget-dirs = {
+      hook = "correction-grant.js";
+      text = "const BUDGET_DIRS = [\"apex-correction-budget\", \"ttw-correction-budget\"];";
     };
     A-cg-stamped = {
       hook = "correction-grant.js";
@@ -545,7 +578,7 @@ let
     };
     A-cg-abs = {
       hook = "correction-grant.js";
-      text = "if (!path.dirname(found).endsWith(path.sep + APEX_OUT) || path.join(path.dirname(found), id) !== found) return null;";
+      text = "if (!OUT_DIRS.some((o) => path.dirname(found).endsWith(path.sep + o)) || path.join(path.dirname(found), id) !== found) return null;";
     };
     A-cg-token = {
       hook = "correction-grant.js";
@@ -615,7 +648,11 @@ let
     };
     A-ac-path = {
       hook = "ttw-metrics-probe.py";
-      text = "ACS_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/02-acs\\.md$\")";
+      text = "ACS_PATH = re.compile(r\"/\\.claude/output/(?:apex|ttw)/[^/]+/02-acs\\.md$\")";
+    };
+    A-ac-validate-path = {
+      hook = "ttw-metrics-probe.py";
+      text = "VALIDATE_PATH = re.compile(r\"/\\.claude/output/(?:apex|ttw)/[^/]+/04-validate\\.md$\")";
     };
     A-ac-failopen = {
       hook = "ttw-metrics-probe.py";
@@ -1291,6 +1328,31 @@ let
         }
       ];
     }
+    # apex -> ttw, phase 3. The prefix test back to apex alone: TTW run
+    # state is refused on master. Killed on an ALLOW case, as an over-block.
+    {
+      id = "M-pm-ttw-prefix";
+      hook = "protect-main.js";
+      kills = "pm-ttw-new";
+      swaps = [
+        {
+          anchor = "A-pm-apex-prefix";
+          to = "if (!realTarget.startsWith(realTop + path.sep + APEX_OUT)) return false;";
+        }
+      ];
+    }
+    # No separator after `ttw`: a sibling `ttwfoo/` reads as run state.
+    {
+      id = "M-pm-ttw-sep";
+      hook = "protect-main.js";
+      kills = "pm-ttw-sibling";
+      swaps = [
+        {
+          anchor = "A-pm-ttw-sep";
+          to = "const TTW_OUT = path.join(\".claude\", \"output\", \"ttw\");";
+        }
+      ];
+    }
     # Run 65. The `git` prefix without its option-shaped-value guard: each
     # `-C` reads as a value or as an option, a failing rule backtracks
     # through Fibonacci-many splits, and 1000 of them outlive the host timeout.
@@ -1490,7 +1552,7 @@ let
       swaps = [
         {
           anchor = "A-cb-abs";
-          to = "if (path.isAbsolute(marker) && path.dirname(marker).endsWith(path.sep + APEX_OUT)) {";
+          to = "if (path.isAbsolute(marker) && OUT_DIRS.some((o) => path.dirname(marker).endsWith(path.sep + o))) {";
         }
       ];
     }
@@ -1541,6 +1603,73 @@ let
         {
           anchor = "A-cg-abs";
           to = "if (path.join(path.dirname(found), id) !== found) return null;";
+        }
+      ];
+    }
+    # apex -> ttw, phase 3. The output dirs back to apex alone: a run under
+    # .claude/output/ttw is refused a correction round. Killed on an ALLOW
+    # case, as an over-block.
+    {
+      id = "M-cb-out-ttw";
+      hook = "correction-budget.js";
+      kills = "cb-ttw-abs-run-allow";
+      swaps = [
+        {
+          anchor = "A-cb-outdirs";
+          to = "const OUT_DIRS = [APEX_OUT];";
+        }
+      ];
+    }
+    # The union dropped, apex dir only: rounds spent under
+    # ttw-correction-budget are forgotten, a fresh budget for the same run.
+    {
+      id = "M-cb-budget-union";
+      hook = "correction-budget.js";
+      kills = "cb-ttw-budget-round3-deny";
+      swaps = [
+        {
+          anchor = "A-cb-budget-dirs";
+          to = "const BUDGET_DIRS = [\"apex-correction-budget\"];";
+        }
+      ];
+    }
+    # The slot-index ceiling back in front of the total count: free =
+    # cap - rounds under the other dir, first free apex slot 1..free taken.
+    # Apex round2 + ttw round1 leaves apex slot 1 free: a third round.
+    {
+      id = "M-cb-split-gap";
+      hook = "correction-budget.js";
+      kills = "cb-split-gap-deny";
+      swaps = [
+        {
+          anchor = "A-cb-grants";
+          to = "const cap = MAX_ROUNDS + grantsOf(dir, marker); { let elsewhere = 0; for (const b of BUDGET_DIRS) { const bd = path.join(path.dirname(dir), b); if (bd === dir) continue; let ns = []; try { ns = fs.readdirSync(bd); } catch {} for (const f of ns) { const m = ROUND.exec(f); if (m && m[1] === marker) elsewhere++; } } for (let n = 1; n <= cap - elsewhere; n++) { try { fs.writeFileSync(path.join(dir, marker + \".round\" + n), \"\", { flag: \"wx\" }); } catch (e) { if (e && e.code === \"EEXIST\") continue; throw e; } allow(); return; } }";
+        }
+      ];
+    }
+    # A spent run under .claude/output/ttw of the prompt's repo is never
+    # granted.
+    {
+      id = "M-cg-out-ttw";
+      hook = "correction-grant.js";
+      kills = "cg-ttw-rundir-grants";
+      swaps = [
+        {
+          anchor = "A-cg-outdirs";
+          to = "const OUT_DIRS = [APEX_OUT];";
+        }
+      ];
+    }
+    # The union dropped: a run spent under ttw-correction-budget is never
+    # granted.
+    {
+      id = "M-cg-budget-union";
+      hook = "correction-grant.js";
+      kills = "cg-ttw-budget-grants";
+      swaps = [
+        {
+          anchor = "A-cg-budget-dirs";
+          to = "const BUDGET_DIRS = [\"apex-correction-budget\"];";
         }
       ];
     }
@@ -1696,7 +1825,32 @@ let
       swaps = [
         {
           anchor = "A-ac-path";
-          to = "ACS_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/[^/]+\\.md$\")";
+          to = "ACS_PATH = re.compile(r\"/\\.claude/output/(?:apex|ttw)/[^/]+/[^/]+\\.md$\")";
+        }
+      ];
+    }
+    # apex -> ttw, phase 3. ACS_PATH back to apex alone: a TTW run's
+    # 02-acs.md is never read.
+    {
+      id = "M-ac-ttw";
+      hook = "ttw-metrics-probe.py";
+      kills = "ac-ttw-acs-emits";
+      swaps = [
+        {
+          anchor = "A-ac-path";
+          to = "ACS_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/02-acs\\.md$\")";
+        }
+      ];
+    }
+    # VALIDATE_PATH back to apex alone: a TTW run's 04-validate.md is never read.
+    {
+      id = "M-ac-validate-ttw";
+      hook = "ttw-metrics-probe.py";
+      kills = "ac-ttw-validate-untallied-emits";
+      swaps = [
+        {
+          anchor = "A-ac-validate-path";
+          to = "VALIDATE_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/04-validate\\.md$\")";
         }
       ];
     }
@@ -3036,6 +3190,13 @@ let
     "pm-apex-nested"
     "pm-apex-fsmonitor-pwned"
     "pm-apex-sibling"
+    "pm-ttw-new"
+    "pm-ttw-existing"
+    "pm-ttw-crosscwd"
+    "pm-ttw-tracked"
+    "pm-ttw-unignored"
+    "pm-ttw-hardlink"
+    "pm-ttw-sibling"
     "bb-master-commit"
     "bb-master-malformed"
     "bb-master-nogit"
@@ -3080,6 +3241,15 @@ let
     "cb-mixed-conflict"
     "cb-mixed-same"
     "cb-sched-ttw-token"
+    "cb-ttw-abs-run-allow"
+    "cb-ttw-runid-allow"
+    "cb-ttw-abs-bad-deny"
+    "cb-ttw-budget-round3-deny"
+    "cb-split-budget-round3-deny"
+    "cb-ttw-budget-round2-allow"
+    "cb-split-gap-deny"
+    "cb-split-gap-grant-allow"
+    "cb-ttw-budget-symlink-deny"
     "cg-token-grants"
     "cg-no-token"
     "cg-inline-token-ignored"
@@ -3101,6 +3271,13 @@ let
     "cg-cross-repo-bad-dir"
     "cg-ttw-grant"
     "cg-ttw-inline-ignored"
+    "cg-ttw-rundir-grants"
+    "cg-ttw-budget-grants"
+    "cg-split-budget-grants"
+    "cg-ttw-grant-counted"
+    "cg-ttw-cross-repo-grants"
+    "cg-ttwx-cross-repo-bad-dir"
+    "cg-ttw-budget-symlink-refuse"
     "rm-explore-sonnet-deny"
     "rm-navigator-opus-deny"
     "rm-navigator-nomodel-deny"
@@ -3236,6 +3413,7 @@ let
     "apr-multi-write"
     "apr-selector-args"
     "apr-noselector-write"
+    "apr-ttw-write"
     "wh-remove-held"
     "wh-remove-C-force-held"
     "wh-remove-suffix-held"
@@ -3291,6 +3469,9 @@ let
     "ac-validate-blocked-silent"
     "ac-validate-examine-emits"
     "ac-validate-examine-link-silent"
+    "ac-ttw-acs-emits"
+    "ac-ttwx-silent"
+    "ac-ttw-validate-untallied-emits"
     "ac-mem-dangling-emits"
     "ac-mem-clean-silent"
     "ac-mem-unindexed-emits"
@@ -3447,19 +3628,27 @@ let
     # two lines prove the ignore split the cases rest on.
     APEXR="$root/apexr"
     APEXO="$APEXR/.claude/output/apex"
+    # apex -> ttw, phase 3: the same run state under .claude/output/ttw, its
+    # own force-added tracked file and hardlink of a tracked file.
+    TTWO="$APEXR/.claude/output/ttw"
     UNIG="$root/unig"
     {
       g init -q -b master "$APEXR" &&
-        mkdir -p "$APEXR/src" "$APEXO/forced" "$APEXO/old" "$APEXO/hl" &&
+        mkdir -p "$APEXR/src" "$APEXO/forced" "$APEXO/old" "$APEXO/hl" "$TTWO/forced" "$TTWO/old" "$TTWO/hl" &&
         printf '%s\n' '.claude/' > "$APEXR/.gitignore" &&
         printf 'x\n' > "$APEXR/src/a.ts" &&
         printf 'x\n' > "$APEXO/forced/00-context.md" &&
         printf 'x\n' > "$APEXO/old/00-context.md" &&
+        printf 'x\n' > "$TTWO/forced/00-context.md" &&
+        printf 'x\n' > "$TTWO/old/00-context.md" &&
         g -C "$APEXR" add .gitignore src/a.ts &&
-        g -C "$APEXR" add -f .claude/output/apex/forced/00-context.md &&
+        g -C "$APEXR" add -f .claude/output/apex/forced/00-context.md .claude/output/ttw/forced/00-context.md &&
         g -C "$APEXR" -c user.name=p -c user.email=p@p -c commit.gpgsign=false commit -q -m probe &&
         ln -s "$APEXR/src" "$APEXO/lnk" &&
         ln "$APEXR/src/a.ts" "$APEXO/hl/00-context.md" &&
+        ln "$APEXR/src/a.ts" "$TTWO/hl/00-context.md" &&
+        g -C "$APEXR" check-ignore -q -- .claude/output/ttw/new/00-context.md &&
+        ! g -C "$APEXR" check-ignore -q -- .claude/output/ttw/forced/00-context.md &&
         g init -q -b master "$APEXO/nest" &&
         g init -q -b master "$UNIG" &&
         g -C "$APEXR" check-ignore -q -- .claude/output/apex/new/00-context.md &&
@@ -3510,10 +3699,17 @@ let
     CBSTATE="$TMPDIR/.claude/apex-correction-budget"
     # A run outside $CBREPO, named by its absolute run dir.
     CBOTHER="$root/cbother/.claude/output/apex/64-z"
+    # apex -> ttw, phase 3: the budget dir a later writer uses, read with the
+    # apex one as a union; a run only under .claude/output/ttw (66-t in the
+    # repo, 64-z outside it) and a `ttwx` sibling that is no output dir.
+    CBTTW="$TMPDIR/.claude/ttw-correction-budget"
+    CBTTWRUN="$CBREPO/.claude/output/ttw/66-t"
+    CBOTHERT="$root/cbother/.claude/output/ttw/64-z"
     cb_reset() {
       if [ -e "$CBSTATE" ]; then chmod -R u+w "$CBSTATE"; fi
-      rm -rf "$CBSTATE"
-      mkdir -p "$CBREPO/.claude/output/apex/62-x" "$CBREPO/.claude/output/apex/63-y" "$CBOTHER" "$root/cbother/notapex/64-z"
+      rm -rf "$CBSTATE" "$CBTTW"
+      mkdir -p "$CBREPO/.claude/output/apex/62-x" "$CBREPO/.claude/output/apex/63-y" "$CBOTHER" "$root/cbother/notapex/64-z" \
+        "$CBTTWRUN" "$CBOTHERT" "$root/cbother/.claude/output/ttwx/64-z"
     }
     # $1 brief, $2 marker: a run-id, none, or absent for no marker line.
     # $3 model: opus when unset, absent from the input when empty.
@@ -3537,6 +3733,15 @@ let
         ${pkgs.coreutils}/bin/touch -d "@''${3-1700000000}" "$CBSTATE/$1.round$i"
       done
     }
+    # $1 dir (CBSTATE or CBTTW), $2 file name ("62-x.round2", "62-x.grant1"):
+    # one budget file, as cb_spend leaves it, in the named budget dir.
+    cb_put() {
+      mkdir -p "$1"
+      : > "$1/$2"
+      ${pkgs.coreutils}/bin/touch -d "@1700000000" "$1/$2"
+    }
+    # $1 run-id: its round files in the apex budget dir, counted.
+    cb_rounds() { ${pkgs.findutils}/bin/find "$CBSTATE" -name "$1.round*" 2> /dev/null | ${pkgs.coreutils}/bin/wc -l | ${pkgs.coreutils}/bin/tr -d ' '; }
     # $1 run-id, $2 rounds, $3 dir, $4 session: rounds stamped as
     # correction-budget.js leaves them, the run dir recorded.
     cb_stamp() {
@@ -4215,6 +4420,22 @@ let
         # A sibling of apex/ whose name only starts with it is not run state.
         pm-apex-sibling)
           run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXR/.claude/output/apexfoo/x.md")"; is_deny "BLOCKED: on master." ;;
+        # apex -> ttw, phase 3: .claude/output/ttw/ is run state under the
+        # same conditions as apex/, and nothing wider.
+        pm-ttw-new)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$TTWO/new-run/x.md")"; is_allow ;;
+        pm-ttw-existing)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$TTWO/old/00-context.md")"; is_allow ;;
+        pm-ttw-crosscwd)
+          run "$lbl" "$2" "$FEAT" "$GITBIN" "$(pm_in "$TTWO/old/00-context.md")"; is_allow ;;
+        pm-ttw-tracked)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$TTWO/forced/00-context.md")"; is_deny "BLOCKED: on master." ;;
+        pm-ttw-unignored)
+          run "$lbl" "$2" "$UNIG" "$GITBIN" "$(pm_in "$UNIG/.claude/output/ttw/r/00-context.md")"; is_deny "BLOCKED: on master." ;;
+        pm-ttw-hardlink)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$TTWO/hl/00-context.md")"; is_deny "BLOCKED: on master." ;;
+        pm-ttw-sibling)
+          run "$lbl" "$2" "$APEXR" "$GITBIN" "$(pm_in "$APEXR/.claude/output/ttwfoo/x.md")"; is_deny "BLOCKED: on master." ;;
         bb-master-commit)
           run "$lbl" "$2" "$MASTER" "$GITBIN" "$(bb_in "git commit -m x")"; is_deny "BLOCKED: on master." ;;
         bb-master-malformed)
@@ -4418,6 +4639,94 @@ let
           cb_reset
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched CronCreate "$(printf 'check CI\nttw: +1 tour')")"; is_deny "BLOCKED: a scheduled prompt may not carry the correction-grant token" || return 1
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_sched ScheduleWakeup " TTW : +1 Tour ")"; is_deny "only the user types it" ;;
+        # apex -> ttw, phase 3: a run under .claude/output/ttw, named by its
+        # absolute dir or by a run-id found only there, counts like an apex
+        # run; its stamp still lands in the apex budget dir, naming that dir.
+        cb-ttw-abs-run-allow)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$CBOTHERT")"; is_allow || return 1
+          ${jq} -e --arg d "$CBOTHERT" '.dir == $d' "$CBSTATE/64-z.round1" > /dev/null 2>&1 \
+            || { why="allowed, but 64-z.round1 is missing or does not stamp dir $CBOTHERT"; return 1; } ;;
+        cb-ttw-runid-allow)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 66-t)"; is_allow || return 1
+          ${jq} -e --arg d "$CBTTWRUN" '.dir == $d' "$CBSTATE/66-t.round1" > /dev/null 2>&1 \
+            || { why="allowed, but 66-t.round1 is missing or does not stamp dir $CBTTWRUN"; return 1; } ;;
+        # A `ttwx` sibling, `ttw/../apex`, a missing ttw run, an
+        # unnormalized ttw dir: denied, nothing counted in either budget dir.
+        cb-ttw-abs-bad-deny)
+          cb_reset
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/.claude/output/ttwx/64-z")"; is_deny "which is neither none, a run-id" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/.claude/output/ttw/../apex/64-z")"; is_deny "which is neither none, a run-id" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$CBOTHERT/")"; is_deny "which is neither none, a run-id" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$root/cbother/.claude/output/ttw/65-none")"; is_deny "65-none: run dir not found" || return 1
+          [ ! -e "$CBSTATE" ] && [ ! -e "$CBTTW" ] || { why="denied, but a budget dir was touched"; return 1; } ;;
+        # Rounds are counted across both budget dirs: two spent under
+        # ttw-correction-budget, or one under each, deny the third.
+        cb-ttw-budget-round3-deny)
+          cb_reset
+          cb_put "$CBTTW" 62-x.round1
+          cb_put "$CBTTW" 62-x.round2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" || return 1
+          [ "$(cb_rounds 62-x)" -eq 0 ] || { why="denied, but a round was counted in the apex budget dir"; return 1; } ;;
+        cb-split-budget-round3-deny)
+          cb_reset
+          cb_put "$CBSTATE" 62-x.round1
+          cb_put "$CBTTW" 62-x.round2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] || { why="denied, but a round was counted in the apex budget dir"; return 1; } ;;
+        # One round under ttw-correction-budget leaves one: allowed and
+        # stamped once in the apex dir, then the next denied.
+        cb-ttw-budget-round2-allow)
+          cb_reset
+          cb_put "$CBTTW" 62-x.round1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_allow || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] || { why="allowed, but $(cb_rounds 62-x) rounds in the apex budget dir, expected 1"; return 1; }
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" ;;
+        # The cap is a TOTAL across both dirs, not a slot index: round2 under
+        # apex and round1 under ttw are two rounds, the apex slot 1 left
+        # free is no third one. Denied, no stamp anywhere.
+        cb-split-gap-deny)
+          cb_reset
+          cb_put "$CBSTATE" 62-x.round2
+          cb_put "$CBTTW" 62-x.round1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] && [ ! -e "$CBSTATE/62-x.round1" ] \
+            || { why="denied, but a round was stamped in the apex budget dir ($(cb_rounds 62-x) there, expected 1)"; return 1; }
+          [ "$(${pkgs.findutils}/bin/find "$CBTTW" -name '62-x.*' | ${pkgs.coreutils}/bin/wc -l | ${pkgs.coreutils}/bin/tr -d ' ')" -eq 1 ] \
+            || { why="denied, but the ttw budget dir changed"; return 1; } ;;
+        # Same gap with one grant, under either dir: exactly one more round
+        # (three in total), then denied at 3/3. Also apex round3 + ttw
+        # round1: two rounds, so one more, not two (slots 1 and 2 both free).
+        cb-split-gap-grant-allow)
+          for spec in "round2 $CBSTATE" "round2 $CBTTW" "round3 $CBSTATE" "round3 $CBTTW"; do
+            hi="''${spec%% *}"
+            gd="''${spec#* }"
+            cb_reset
+            cb_put "$CBSTATE" "62-x.$hi"
+            cb_put "$CBTTW" 62-x.round1
+            cb_put "$gd" 62-x.grant1
+            run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"
+            is_allow || { why="apex $hi + ttw round1 + grant in $gd: round 3 $why"; return 1; }
+            [ "$(cb_rounds 62-x)" -eq 2 ] || { why="apex $hi + grant in $gd: allowed, but $(cb_rounds 62-x) rounds in the apex dir, expected 2"; return 1; }
+            run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"
+            is_deny "budget de correction épuisé (3/3) pour le run 62-x" || { why="apex $hi + grant in $gd: round 4 $why"; return 1; }
+            [ "$(cb_rounds 62-x)" -eq 2 ] || { why="apex $hi + grant in $gd: round 4 denied, but stamped"; return 1; }
+          done ;;
+        # A symlink at ~/.claude/ttw-correction-budget is no budget dir: its
+        # target's grant must not lift the cap. Denied (the budget state is
+        # suspect), nothing stamped.
+        cb-ttw-budget-symlink-deny)
+          cb_reset
+          rm -rf "$root/cbforeign"
+          mkdir -p "$root/cbforeign" "$TMPDIR/.claude"
+          cb_put "$root/cbforeign" 62-x.grant1
+          ln -s "$root/cbforeign" "$CBTTW"
+          cb_put "$CBSTATE" 62-x.round1
+          cb_put "$CBSTATE" 62-x.round2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "BLOCKED" || return 1
+          [ "$(cb_rounds 62-x)" -eq 2 ] || { why="denied, but a round was stamped in the apex budget dir"; return 1; }
+          [ ! -e "$root/cbforeign/62-x.round3" ] || { why="a round was stamped through the symlink"; kind=pwned; return 1; } ;;
         # correction-grant: only the user's token, as the first non-empty
         # line, only for the project's live run once spent.
         cg-token-grants)
@@ -4531,6 +4840,55 @@ let
           cb_reset
           cb_spend 62-x 2
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in 'The hook says: type `ttw: +1 tour` alone on a line.')"; is_not_granted 0 "" ;;
+        # apex -> ttw, phase 3: a run dir under the repo's .claude/output/ttw,
+        # rounds spent under ttw-correction-budget or split across both
+        # dirs: granted alike, the grant file still in the apex dir.
+        cg-ttw-rundir-grants)
+          cb_reset
+          cb_spend 66-t 2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_granted 66-t 1 3 ;;
+        cg-ttw-budget-grants)
+          cb_reset
+          cb_put "$CBTTW" 62-x.round1
+          cb_put "$CBTTW" 62-x.round2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_granted 62-x 1 3 ;;
+        cg-split-budget-grants)
+          cb_reset
+          cb_put "$CBSTATE" 62-x.round1
+          cb_put "$CBTTW" 62-x.round2
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_granted 62-x 1 3 ;;
+        # A grant under ttw-correction-budget counts: two rounds and one
+        # unused grant are no spent budget.
+        cg-ttw-grant-counted)
+          cb_reset
+          cb_spend 62-x 2
+          cb_put "$CBTTW" 62-x.grant1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
+        # A spent run outside the prompt's repo, stamped with its
+        # .claude/output/ttw dir: granted; a `ttwx` dir is not.
+        cg-ttw-cross-repo-grants)
+          cb_reset
+          cb_stamp 64-z 2 "$CBOTHERT" probe
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_granted 64-z 1 3 || return 1
+          grep -Fq -- "TTW-CORRECTION-ROUND: $CBOTHERT;" "$d/$lbl.out" || { why="granted, but the context does not name the marker $CBOTHERT"; return 1; } ;;
+        cg-ttwx-cross-repo-bad-dir)
+          cb_reset
+          cb_stamp 64-z 2 "$root/cbother/.claude/output/ttwx/64-z" probe
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_not_granted 0 "nothing was granted" ;;
+        # A symlink at ~/.claude/ttw-correction-budget: its target's rounds
+        # are no spent budget of this machine. Refused, no grant anywhere.
+        cg-ttw-budget-symlink-refuse)
+          cb_reset
+          rm -rf "$root/cbforeign"
+          mkdir -p "$root/cbforeign" "$TMPDIR/.claude"
+          cb_put "$root/cbforeign" 62-x.round1
+          cb_put "$root/cbforeign" 62-x.round2
+          ln -s "$root/cbforeign" "$CBTTW"
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"
+          # Silent or told, either way: what counts is that nothing was granted.
+          [ "$rc" -eq 0 ] && [ ! -s "$d/$lbl.err" ] || { why="exit $rc or stderr: $(head -c 200 "$d/$lbl.err")"; return 1; }
+          [ "$(grants)" -eq 0 ] || { why="$(grants) grant file(s) in the apex dir: the symlinked dir's rounds were counted"; kind=mismatch; return 1; }
+          [ -z "$(${pkgs.findutils}/bin/find "$root/cbforeign" -name '*.grant*')" ] || { why="a grant was written through the symlink"; kind=pwned; return 1; } ;;
         # Run 66: research agents on haiku, the model named explicitly.
         rm-explore-sonnet-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Explore sonnet)"; is_deny 'model "sonnet"' ;;
@@ -5093,6 +5451,24 @@ let
           apr_quiet || return 1
           apr_gh "pr view $APR_JSON" || return 1
           apr_has s1 ;;
+        # apex -> ttw, phase 3: runs are read under .claude/output/apex and
+        # .claude/output/ttw alike, every run of the head recorded; a `ttwx`
+        # sibling is no output dir.
+        apr-ttw-write)
+          apr_fixture || return 1
+          apr_view MERGED feat/t
+          apr_ctx a1 "# APEX: one" "Tier: Standard" "Branch: feat/t (trunk: master c74dd29)"
+          for r in "$AR/.claude/output/ttw/t1" "$AR/.claude/output/ttwx/t2"; do
+            mkdir -p "$r" && printf '%s\n' "# TTW: one" "Tier: Standard" "Branch: feat/t (trunk: master c74dd29)" > "$r/00-context.md"
+          done
+          apr_run "$2" "$(apr_in "gh pr merge 42 --squash --delete-branch")"
+          apr_quiet || return 1
+          [ -f "$AR/.claude/output/ttw/t1/pr.md" ] || { why="no ttw/t1/pr.md, expected one"; kind=mismatch; return 1; }
+          got=$(${pkgs.coreutils}/bin/cat "$AR/.claude/output/ttw/t1/pr.md")
+          [ "$got" = "$APR_LINE" ] || { why="ttw/t1/pr.md is '$got', expected '$APR_LINE'"; return 1; }
+          if [ -e "$AR/.claude/output/ttwx/t2/pr.md" ]; then why="pr.md written in ttwx/t2, where none was due"; kind=pwned; return 1; fi
+          apr_gh "pr view 42 $APR_JSON" || return 1
+          apr_has a1 ;;
         # worktree-in-use: denied while the sleep has wts/held as cwd, however
         # the target is spelled.
         wh-remove-held)
@@ -5236,6 +5612,18 @@ let
         ac-outside-run-silent)
           f="$ACR/$lbl/02-acs.md"; ac_put "$f" "$AC_PROSE"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # apex -> ttw, phase 3: a TTW run's 02-acs.md and 04-validate.md are
+        # read like an APEX run's; a `ttwx` sibling is no run dir.
+        ac-ttw-acs-emits)
+          f="$ACR/.claude/output/ttw/$lbl/02-acs.md"; ac_put "$f" "$AC_CMD" "$AC_PROSE"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_emits 1 "$AC_PROSE" "AC5:" ;;
+        ac-ttwx-silent)
+          f="$ACR/.claude/output/ttwx/$lbl/02-acs.md"; ac_put "$f" "$AC_PROSE"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        ac-ttw-validate-untallied-emits)
+          act="$ACR/.claude/output/ttw/$lbl"
+          f="$act/04-validate.md"; ac_put "$f" "PASS"; ac_put "$act/04-external-verify.json" "$AC_VPASS"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_b5_emits "external" ;;
         ac-missing-silent)
           f="$ACO/$lbl/02-acs.md"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;

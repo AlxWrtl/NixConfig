@@ -285,7 +285,7 @@ in
 
     Write this file as init STARTS, before the baseline, and keep the table
     live: a step goes `running` before its work begins and `complete` when
-    it ends, one edit each, never batched at ship time. apex-board puts a
+    it ends, one edit each, never batched at ship time. ttw-board puts a
     run in the column of its first `running` (else `pending`) step, so a
     table written late or filled at the end shows only Execute and Terminé.
 
@@ -2394,7 +2394,7 @@ in
        ```
 
        ACs go in the same file under `## ACs`, one line each. The Progress
-       table is what apex-board reads (NN prefix → column): without it a
+       table is what ttw-board reads (NN prefix → column): without it a
        Direct run sits in Init until it goes stale. One edit per change:
        04-gate goes `running` (03-edit `complete`) at step 6, 08-ship
        `running` at step 9 and `complete` once merged (`-PR`: once the

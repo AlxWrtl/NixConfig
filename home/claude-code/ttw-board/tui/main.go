@@ -1,10 +1,10 @@
 package main
 
-// apex-board --tui: the APEX board of index.html in the terminal, read straight from disk.
+// ttw-board --tui: the APEX board of index.html in the terminal, read straight from disk.
 //
-//	apex-board-tui [--sessions DIR] <runs-dir> [budget-dir] [repo-name]
-//	apex-board-tui --derive-json <runs-dir> <budget-dir> <now-ms>   (parity check, not for users)
-//	apex-board-tui [--sessions DIR] --agents-snapshot <width> <height>   (one Agents frame, text)
+//	ttw-board-tui [--sessions DIR] <runs-dir> [budget-dir] [repo-name]
+//	ttw-board-tui --derive-json <runs-dir> <budget-dir> <now-ms>   (parity check, not for users)
+//	ttw-board-tui [--sessions DIR] --agents-snapshot <width> <height>   (one Agents frame, text)
 //
 // The Agents tab reads $HOME/.claude/session-state unless --sessions names another dir (tests, the
 // check), and asks abduco which sessions run. Read-only but for its actions (agents.go): Enter on
@@ -23,7 +23,7 @@ import (
 )
 
 // abducoBin, agentPaneBin, dispatchBin (claude-dispatch) and claudeBin: absolute paths, set by -X
-// ldflags in apex-board.nix (no PATH lookup). Empty (a bare `go build`): abduco is not asked
+// ldflags in ttw-board.nix (no PATH lookup). Empty (a bare `go build`): abduco is not asked
 // (liveness unknown, said in the tab), and a pick, a stop, a new agent or a resume says the binary
 // is missing, nothing run.
 var abducoBin, agentPaneBin, dispatchBin, claudeBin string
@@ -43,7 +43,7 @@ func run(args []string) int {
 	sessionsDir := defaultSessionsDir()
 	if len(args) > 0 && args[0] == "--sessions" {
 		if len(args) < 2 || args[1] == "" {
-			fmt.Fprintln(os.Stderr, "usage: apex-board-tui --sessions <session-state-dir> ...")
+			fmt.Fprintln(os.Stderr, "usage: ttw-board-tui --sessions <session-state-dir> ...")
 			return 2
 		}
 		sessionsDir, args = args[1], args[2:]
@@ -51,34 +51,34 @@ func run(args []string) int {
 	if len(args) > 0 && args[0] == "--agents-snapshot" {
 		rc := agentsSnapshot(args[1:], sessionsDir, os.Stdout)
 		if rc < 0 {
-			fmt.Fprintln(os.Stderr, "usage: apex-board-tui [--sessions DIR] --agents-snapshot <width> <height>")
+			fmt.Fprintln(os.Stderr, "usage: ttw-board-tui [--sessions DIR] --agents-snapshot <width> <height>")
 			return 2
 		}
 		return rc
 	}
 	if len(args) > 0 && args[0] == "--derive-json" {
 		if len(args) != 4 {
-			fmt.Fprintln(os.Stderr, "usage: apex-board-tui --derive-json <runs-dir> <budget-dir> <now-ms>")
+			fmt.Fprintln(os.Stderr, "usage: ttw-board-tui --derive-json <runs-dir> <budget-dir> <now-ms>")
 			return 2
 		}
 		now, err := strconv.ParseFloat(args[3], 64)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "apex-board --derive-json: bad now-ms %q\n", args[3])
+			fmt.Fprintf(os.Stderr, "ttw-board --derive-json: bad now-ms %q\n", args[3])
 			return 2
 		}
 		out, err := deriveJSON(args[1], args[2], now)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "apex-board --derive-json: %v\n", err)
+			fmt.Fprintf(os.Stderr, "ttw-board --derive-json: %v\n", err)
 			return 1
 		}
 		if _, err := os.Stdout.WriteString(out); err != nil {
-			fmt.Fprintf(os.Stderr, "apex-board --derive-json: %v\n", err)
+			fmt.Fprintf(os.Stderr, "ttw-board --derive-json: %v\n", err)
 			return 1
 		}
 		return 0
 	}
 	if len(args) == 0 || args[0] == "" {
-		fmt.Fprintln(os.Stderr, "usage: apex-board-tui <runs-dir> [budget-dir] [repo-name]")
+		fmt.Fprintln(os.Stderr, "usage: ttw-board-tui <runs-dir> [budget-dir] [repo-name]")
 		return 2
 	}
 	runsDir, budgetDir, repo := args[0], "", ""
@@ -89,7 +89,7 @@ func run(args []string) int {
 		repo = args[2]
 	}
 	if !term.IsTerminal(os.Stdin.Fd()) || !term.IsTerminal(os.Stdout.Fd()) {
-		fmt.Fprintln(os.Stderr, "apex-board --tui: needs a terminal on stdin and stdout")
+		fmt.Fprintln(os.Stderr, "ttw-board --tui: needs a terminal on stdin and stdout")
 		return 1
 	}
 	// The board's own agent pane: its tty's name, else none (the global pane).
@@ -101,7 +101,7 @@ func run(args []string) int {
 	m := newModel(runsDir, budgetDir, repo, w, h)
 	m.setSessionsDir(sessionsDir)
 	if _, err := tea.NewProgram(m).Run(); err != nil {
-		fmt.Fprintf(os.Stderr, "apex-board --tui: %v\n", err)
+		fmt.Fprintf(os.Stderr, "ttw-board --tui: %v\n", err)
 		return 1
 	}
 	return 0

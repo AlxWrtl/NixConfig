@@ -60,7 +60,7 @@ Every other tier owes a 02-acs.md; an examine tally when 05-examine.md
 exists or a `Flags:` line holds `-x` or `+x`; an external tally when the
 external pass ran (B5 rule). A tally file the guards refuse is never named
 and does not count as held. The hook's run: a non-symlink dir of
-<toplevel>/.claude/output/apex/ whose 00-context.md passes the guards and
+<toplevel>/.claude/output/apex/ or .claude/output/ttw/ whose 00-context.md passes the guards and
 whose first `Branch:` token is the branch, with no pr.md and no commit.txt;
 the newest 00-context.md wins. A run's date is its `Date:` line, else the
 mtime of its 00-context.md.
@@ -130,7 +130,7 @@ import sys
 
 KNOWN_EXECUTABLES = frozenset({
     "apex-board", "apex-health", "apex-tier", "awk", "bash", "brew", "cargo",
-    "ttw-health", "ttw-tier", "ttw-verify-external",
+    "ttw-board", "ttw-health", "ttw-tier", "ttw-verify-external",
     "cat", "claude", "codex", "curl", "darwin-rebuild", "deadnix", "diff", "env",
     "find", "gh", "git", "go", "grep", "head", "jq", "launchctl", "ls", "mas",
     "nix", "nix-instantiate", "nix-store", "nixfmt", "node", "npx", "perl",
@@ -147,8 +147,10 @@ GATE = re.compile(
 LECTURE = re.compile(r"\[lecture\]\s*[—–:-]\s*\S")
 DEFERRED = re.compile(r"\[[^\[\]\n]*\bdeferred to user\b[^\]\n]*\]")
 AC_DOCS = re.compile(r"^\s*(?:[-*]\s+)?\**AC-docs\b")
-ACS_PATH = re.compile(r"/\.claude/output/apex/[^/]+/02-acs\.md$")
-VALIDATE_PATH = re.compile(r"/\.claude/output/apex/[^/]+/04-validate\.md$")
+ACS_PATH = re.compile(r"/\.claude/output/(?:apex|ttw)/[^/]+/02-acs\.md$")
+VALIDATE_PATH = re.compile(r"/\.claude/output/(?:apex|ttw)/[^/]+/04-validate\.md$")
+# Run dirs, relative to the repo root: both names during apex -> ttw.
+RUN_DIRS = (pathlib.Path(".claude/output/apex"), pathlib.Path(".claude/output/ttw"))
 MEMORY_PATH = re.compile(r"/\.claude/projects/[^/]+/memory/[^/]+\.md$")
 MEM_LINK = re.compile(r"\[\[([^\]|#]+)")
 INDEX_LINK = re.compile(r"\]\(([^)]+\.md)\)")
@@ -659,11 +661,19 @@ def current_run(cwd, cmd):
     head = head_flag(argv)
     if head is not None:
         branch = head.split(":", 1)[-1]
-    apex = pathlib.Path(top) / ".claude" / "output" / "apex"
-    if apex.is_symlink() or not apex.is_dir():
-        return None
     found = []
-    for r in apex.iterdir():
+    for out in RUN_DIRS:
+        base = pathlib.Path(top) / out
+        if base.is_symlink() or not base.is_dir():
+            continue
+        found += _branch_runs(base, branch)
+    return max(found)[2] if found else None
+
+
+def _branch_runs(base, branch):
+    """(mtime, name, dir) of each unfinished run of `branch` under `base`."""
+    found = []
+    for r in base.iterdir():
         if r.is_symlink() or not r.is_dir():
             continue
         ctx = _guarded_text(r / "00-context.md", HOOK_MAX_BYTES)
@@ -672,7 +682,7 @@ def current_run(cwd, cmd):
         if any((r / n).exists() or (r / n).is_symlink() for n in ("pr.md", "commit.txt")):
             continue
         found.append(((r / "00-context.md").stat().st_mtime, r.name, r))
-    return max(found)[2] if found else None
+    return found
 
 
 def pr_hook(data):
@@ -687,7 +697,7 @@ def pr_hook(data):
     items = [text for key, text in B6_ITEMS if (gaps or {}).get(key) == "missing"]
     if not items:
         return 0
-    msg = (f"APEX run .claude/output/apex/{run.name}/ is missing: {'; '.join(items)}. "
+    msg = (f"APEX run .claude/output/{run.parent.name}/{run.name}/ is missing: {'; '.join(items)}. "
            "Write them before merging (B6).")
     print(json.dumps({"hookSpecificOutput": dict(hookEventName="PostToolUse", additionalContext=msg)}))
     return 0
@@ -806,9 +816,9 @@ def index_links(text):
     return set(INDEX_LINK.findall(text))
 
 
-def metrics(runs_root, mem_root, since=B6_SINCE):
+def metrics(runs_roots, mem_root, since=B6_SINCE):
     out = {}
-    runs = sorted(p for p in runs_root.iterdir() if p.is_dir())
+    runs = sorted(p for root in runs_roots for p in root.iterdir() if p.is_dir())
 
     # B1: correction rounds per run
     corr_runs = corr_items = 0
@@ -825,7 +835,7 @@ def metrics(runs_root, mem_root, since=B6_SINCE):
     out["B1.correction_lines"] = corr_items
 
     # B2: ACs proven by a command vs prose only
-    ac_files = sorted(runs_root.glob("*/02-acs.md"))
+    ac_files = sorted(f for root in runs_roots for f in root.glob("*/02-acs.md"))
     proven = prose = 0
     counts = dict.fromkeys(CLASSES, 0)
     for f in ac_files:
@@ -846,7 +856,7 @@ def metrics(runs_root, mem_root, since=B6_SINCE):
 
     # B3: tokens by phase from 00-context Tokens tables
     phase_tok = {}
-    for f in sorted(runs_root.glob("*/00-context.md")):
+    for f in sorted(f for root in runs_roots for f in root.glob("*/00-context.md")):
         m = re.search(r"## Tokens(.*?)(?:\n## |\Z)", _read(f), re.DOTALL)
         if not m:
             continue
@@ -1033,7 +1043,8 @@ def memory_hook(p):
 
 def main():
     ap = argparse.ArgumentParser(description="APEX run metrics (B1-B6).")
-    ap.add_argument("--runs", type=pathlib.Path, default=pathlib.Path(".claude/output/apex"))
+    ap.add_argument("--runs", type=pathlib.Path, default=None,
+                    help="one runs dir (default: .claude/output/apex and .claude/output/ttw)")
     ap.add_argument(
         "--memory",
         type=pathlib.Path,
@@ -1057,16 +1068,19 @@ def main():
         return self_test()
     if args.acs is not None:
         return acs_report(args.acs.expanduser())
-    runs_root = args.runs.expanduser()
+    if args.runs is not None:
+        runs_roots = [args.runs.expanduser()]
+    else:
+        runs_roots = [p for p in RUN_DIRS if p.is_dir()] or [RUN_DIRS[0]]
     mem_root = args.memory.expanduser()
-    for label, path in (("runs dir", runs_root), ("memory dir", mem_root)):
+    for label, path in [("runs dir", r) for r in runs_roots] + [("memory dir", mem_root)]:
         if not path.is_dir():
             print(f"ttw-metrics-probe: {label} not found: {path}", file=sys.stderr)
             return 2
     if not (mem_root / "MEMORY.md").is_file():
         print(f"ttw-metrics-probe: no MEMORY.md in {mem_root}", file=sys.stderr)
         return 2
-    for key, val in sorted(metrics(runs_root, mem_root, args.since).items()):
+    for key, val in sorted(metrics(runs_roots, mem_root, args.since).items()):
         print(f"{key}={val}")
     return 0
 

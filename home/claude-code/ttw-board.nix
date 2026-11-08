@@ -1,7 +1,8 @@
-# apex-board — the APEX run board (kanban of `.claude/output/apex/<run-id>/`),
+# ttw-board — the TTW run board (kanban of `.claude/output/ttw/<run-id>/`, else
+# the pre-rename `.claude/output/apex/<run-id>/`),
 # packaged as a real binary on PATH.
 #
-# Serves a temp dir of links on 127.0.0.1 with apex-board/serve.py (python's
+# Serves a temp dir of links on 127.0.0.1 with ttw-board/serve.py (python's
 # SimpleHTTPRequestHandler behind a Host gate against DNS rebinding and a
 # realpath gate against symlinks out of the root): the page (index.html +
 # board.js, copied into the store below; test.js and parity.js stay out) and
@@ -9,10 +10,10 @@
 # same store dir but is never copied into the served root. Read-only: GET and
 # HEAD only.
 #
-# `apex-board --tui` execs the Go program built below from apex-board/tui/
+# `ttw-board --tui` execs the Go program built below from ttw-board/tui/
 # (Bubble Tea, a port of board.js's rules): the same board drawn in the
 # terminal, no server, no node. `go test` runs in its checkPhase; the byte
-# parity with board.js is checks/apex-board.nix's job (node is not here).
+# parity with board.js is checks/ttw-board.nix's job (node is not here).
 # Its Agents tab lists the dispatched sessions (session-state files and
 # abduco's list); Enter runs `agent-pane pick <name>`, `x` or the card's ×
 # `agent-pane stop <name>` once confirmed (a second `x`/×), `n` or its
@@ -37,19 +38,19 @@ let
   agentPane = import ./agent-pane.nix { inherit pkgs; };
   dispatch = import ./claude-dispatch.nix { inherit pkgs; };
 
-  boardDir = pkgs.runCommand "apex-board-page" { } ''
+  boardDir = pkgs.runCommand "ttw-board-page" { } ''
     mkdir -p $out
-    cp ${./apex-board/index.html} $out/index.html
-    cp ${./apex-board/board.js} $out/board.js
-    cp ${./apex-board/serve.py} $out/serve.py
+    cp ${./ttw-board/index.html} $out/index.html
+    cp ${./ttw-board/board.js} $out/board.js
+    cp ${./ttw-board/serve.py} $out/serve.py
   '';
 
   # testdata/ keeps its relative links (escapes out of a run dir) in the
   # store src: the disk tests read them as links.
   tui = pkgs.buildGoModule {
-    pname = "apex-board-tui";
+    pname = "ttw-board-tui";
     version = "0";
-    src = ./apex-board/tui;
+    src = ./ttw-board/tui;
     vendorHash = "sha256-qpcRouxzBsHE/fSMvwAeuYYq8mRIAzPpsiVfE77z8Y8=";
     ldflags = [
       "-s"
@@ -60,23 +61,21 @@ let
       "-X main.claudeBin=/opt/homebrew/bin/claude"
     ];
     postInstall = ''
-      mv $out/bin/tui $out/bin/apex-board-tui
+      mv $out/bin/tui $out/bin/ttw-board-tui
     '';
-    meta.mainProgram = "apex-board-tui";
+    meta.mainProgram = "ttw-board-tui";
   };
-  tuiBin = "${tui}/bin/apex-board-tui";
+  tuiBin = "${tui}/bin/ttw-board-tui";
 
-  script = builtins.readFile ./scripts/apex-board.sh;
+  script = builtins.readFile ./scripts/ttw-board.sh;
   missing = builtins.filter (p: !pkgs.lib.hasInfix p script) [
     "@boardDir@"
     "@tuiBin@"
   ];
   text = builtins.replaceStrings [ "@boardDir@" "@tuiBin@" ] [ "${boardDir}" tuiBin ] script;
-in
-{
-  inherit tui;
-  apexBoardPkg = pkgs.writeShellApplication {
-    name = "apex-board";
+
+  ttwBoard = pkgs.writeShellApplication {
+    name = "ttw-board";
     runtimeInputs = [
       pkgs.python3
       pkgs.coreutils
@@ -85,8 +84,17 @@ in
     ];
     text =
       if missing != [ ] then
-        throw "apex-board.nix: placeholder ${builtins.head missing} not found in scripts/apex-board.sh"
+        throw "ttw-board.nix: placeholder ${builtins.head missing} not found in scripts/ttw-board.sh"
       else
         text;
+  };
+in
+{
+  inherit tui;
+  # bin/apex-board: the pre-rename name, a relative link kept until phase 4.
+  ttwBoardPkg = pkgs.symlinkJoin {
+    name = "ttw-board";
+    paths = [ ttwBoard ];
+    postBuild = "ln -s ttw-board $out/bin/apex-board";
   };
 }

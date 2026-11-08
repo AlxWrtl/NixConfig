@@ -1,4 +1,4 @@
-// deck: one live dashboard pane, opened on demand only (/deck, aliases /apex-pane and
+// deck: one live dashboard pane, opened on demand only (/deck, aliases /ttw-pane, /apex-pane and
 // /task-board); it never opens by itself and draws no status line: nothing above the prompt
 // unless you open it.
 // From Flightdeck v0.3.2 (MIT, Stephen Casella): main model vitals, the on-call architect,
@@ -122,9 +122,9 @@ import {
   reviewLines,
   runEndedAt,
   shipEvidence,
-} from './apex'
-import type { StepCell, StepMark } from './apex'
-import { STEP_ORDER as STEP_NAMES } from './apex'
+} from './ttw'
+import type { StepCell, StepMark } from './ttw'
+import { STEP_ORDER as STEP_NAMES } from './ttw'
 import {
   addShell,
   clearFinished,
@@ -168,7 +168,7 @@ const receipt = atom({ plugin: 'deck', key: 'receipt' } as const, null)
 const view = atom({ plugin: 'deck', key: 'view' } as const, DEFAULT_VIEW)
 const roster = atom({ plugin: 'deck', key: 'roster' } as const, DEFAULT_ROSTER)
 const run = atom({ plugin: 'deck', key: 'run' } as const, null)
-const apexSteps = atom({ plugin: 'deck', key: 'apexSteps' } as const, NO_STEPS)
+const ttwSteps = atom({ plugin: 'deck', key: 'apexSteps' } as const, NO_STEPS)
 const verdict = atom({ plugin: 'deck', key: 'verdict' } as const, null)
 const budget = atom({ plugin: 'deck', key: 'budget' } as const, null)
 const shells = atom({ plugin: 'deck', key: 'shells' } as const, [])
@@ -185,6 +185,12 @@ let misses = 0
 // The last run dir a poll found this session (kept through a miss or an ended run), or null:
 // a different one is a new run, which clears the finished cards and shells.
 let lastRunDir: string | null = null
+// Run folders sit under .claude/output/ttw, and under the pre-rename .claude/output/apex until
+// phase 4: both are read, the newest run of the two wins (a tie keeps ttw). The same two names
+// give the correction budget dirs.
+const RUN_ROOTS = ['ttw', 'apex'] as const
+// The root the shown run folder was found in, for its external verification; null before one.
+let shownRoot: { dir: string; root: string } | null = null
 // The poll under way (its number), or null: a second one waits, unless the first is stuck for
 // STUCK_TICKS ticks, when it is given up and polling goes on.
 let pollCount = 0
@@ -290,7 +296,7 @@ async function resetAll($: EngineInterface) {
   await update($, usage, x => ({ ...normalize(DEFAULT_USAGE, x), pct: null, tokens: null }))
   // The run comes back on the next poll; its live steps start over.
   await update($, run, () => null)
-  await update($, apexSteps, () => NO_STEPS)
+  await update($, ttwSteps, () => NO_STEPS)
   await update($, verdict, () => null)
   await update($, budget, () => null)
   await update($, shells, () => [])
@@ -354,7 +360,7 @@ async function newestRun($: EngineInterface, root: string): Promise<RunDir | und
   try {
     entries = await $.fs.list(root)
   } catch {
-    // No .claude/output/apex here (or unreadable): no run to show.
+    // No such root here (or unreadable): no run to show from it.
     return undefined
   }
   const ranked: { dir: string; key: number; context?: number }[] = []
@@ -450,10 +456,31 @@ async function scan($: EngineInterface): Promise<DeckApexRun | null> {
   return sessionRunOf(at, await readHead($, cwd), await $.clock.now())
 }
 
+// The newest shown run across the run roots: a root whose newest run is off the branch (or
+// ended) leaves the deck to the other root's, not blank. A tie goes to the first root.
 async function scanFolder($: EngineInterface, cwd: string): Promise<DeckApexRun | null> {
-  const root = `${cwd}/.claude/output/apex`
-  const newest = await newestRun($, root)
-  if (newest === undefined) return null
+  let best: { run: DeckApexRun; root: string; dir: string; mtimeMs: number } | undefined
+  let head: Promise<string | undefined> | undefined
+  const headOnce = (): Promise<string | undefined> => (head ??= readHead($, cwd))
+  for (const name of RUN_ROOTS) {
+    const root = `${cwd}/.claude/output/${name}`
+    const found = await newestRun($, root)
+    if (found === undefined || (best !== undefined && found.mtimeMs <= best.mtimeMs)) continue
+    const run = await shownRun($, root, found, headOnce)
+    if (run !== null) best = { run, root, dir: found.dir, mtimeMs: found.mtimeMs }
+  }
+  if (best === undefined) return null
+  shownRoot = { dir: best.dir, root: best.root }
+  return best.run
+}
+
+// One root's newest run as the deck shows it, or null: ended, stale, or off the branch.
+async function shownRun(
+  $: EngineInterface,
+  root: string,
+  newest: RunDir,
+  headOnce: () => Promise<string | undefined>,
+): Promise<DeckApexRun | null> {
   let parsed: DeckApexRun
   let liveMs: number
   if (newest.context !== undefined) {
@@ -474,10 +501,11 @@ async function scanFolder($: EngineInterface, cwd: string): Promise<DeckApexRun 
   }
   const now = await $.clock.now()
   if (!isLive(parsed, liveMs, now)) return null
-  const head = await readHead($, cwd)
+  const head = await headOnce()
   // Without a context file the header names the folder (no branch); hidden on the trunk, live 1 h.
   if (newest.context === undefined && !bareShown(parsed, liveMs, head, now)) return null
-  return onBranch(parsed, head) ? { ...parsed, dir: newest.dir } : null
+  if (!onBranch(parsed, head)) return null
+  return { ...parsed, dir: newest.dir }
 }
 
 // The state library reads and writes named atoms only: one writer per atom, each writing
@@ -494,7 +522,7 @@ async function putBudget($: EngineInterface, value: DeckApexBudget | null): Prom
 
 // The live steps, or none (an older shape reads as none).
 async function getSteps($: EngineInterface): Promise<DeckApexSteps> {
-  const s = normalize(NO_STEPS, await read($, apexSteps))
+  const s = normalize(NO_STEPS, await read($, ttwSteps))
   return { runKey: typeof s.runKey === 'string' ? s.runKey : null, steps: listOf(s.steps), current: s.current ?? null }
 }
 
@@ -506,7 +534,7 @@ async function changeSteps($: EngineInterface, fn: (value: DeckApexSteps, runKey
     const runKey = current.runKey ?? (await read($, run))?.dir ?? null
     if (runKey === null) return
     const next = fn(current, runKey)
-    if (next !== current) await update($, apexSteps, () => next)
+    if (next !== current) await update($, ttwSteps, () => next)
   })
 }
 
@@ -522,7 +550,8 @@ async function refreshVerdict($: EngineInterface, found: DeckApexRun | null): Pr
   const dir = found?.dir
   // A session run has no folder: nothing to list.
   if (dir === undefined || isSessionDir(dir)) return putVerdict($, null)
-  const runDir = `${await $.session.cwd()}/.claude/output/apex/${dir}`
+  const root = shownRoot?.dir === dir ? shownRoot.root : `${await $.session.cwd()}/.claude/output/apex`
+  const runDir = `${root}/${dir}`
   let newest: { name: string; mtimeMs: number } | null = null
   try {
     for (const entry of await $.fs.list(runDir)) {
@@ -547,18 +576,20 @@ async function refreshVerdict($: EngineInterface, found: DeckApexRun | null): Pr
   await putVerdict($, next)
 }
 
-// The run's correction budget, from the names in ~/.claude/apex-correction-budget (one file
-// per round used or granted).
+// The run's correction budget, from the names in ~/.claude/ttw-correction-budget and the
+// pre-rename ~/.claude/apex-correction-budget (one file per round used or granted). Each dir's
+// files count on their own, as the hooks count them: a name in both dirs is two.
 async function refreshBudget($: EngineInterface, found: DeckApexRun | null): Promise<void> {
   const dir = found?.dir
   const home = await $.env.get('HOME')
   if (dir === undefined || isSessionDir(dir) || home === undefined || home === '') return putBudget($, null)
-  let names: string[]
-  try {
-    names = (await $.fs.list(`${home}/.claude/apex-correction-budget`)).map(entry => entry.name)
-  } catch {
-    // No round was ever claimed on this machine: no budget to show.
-    names = []
+  const names: string[] = []
+  for (const name of RUN_ROOTS) {
+    try {
+      for (const entry of await $.fs.list(`${home}/.claude/${name}-correction-budget`)) names.push(entry.name)
+    } catch {
+      // No round was ever claimed in that dir on this machine: none from it.
+    }
   }
   await putBudget($, budgetOf(names, dir))
 }
@@ -816,6 +847,11 @@ export const register: Register = (on, options) => {
       // Refused: no /deck this session; the aliases and the observers still run.
     }
     try {
+      await $.command.register({ name: 'ttw-pane', description: 'Opens the deck pane (alias of /deck)' })
+    } catch {
+      // Refused: no /ttw-pane this session; /deck still opens the pane.
+    }
+    try {
       await $.command.register({ name: 'apex-pane', description: 'Opens the deck pane (alias of /deck)' })
     } catch {
       // Refused: no /apex-pane this session; /deck still opens the pane.
@@ -867,6 +903,7 @@ export const register: Register = (on, options) => {
   })
 
   on('command.run', { command: 'deck' }, async ($, e) => runCommand($, e.args))
+  on('command.run', { command: 'ttw-pane' }, async ($, e) => runCommand($, e.args))
   on('command.run', { command: 'apex-pane' }, async ($, e) => runCommand($, e.args))
   on('command.run', { command: 'task-board' }, async ($, e) => runCommand($, e.args))
 
@@ -1034,7 +1071,7 @@ export const register: Register = (on, options) => {
         if (sw.isNew) await clearForNewRun($)
         await update($, sessionRun, () => ({ startedAt: now, lastAt: now, args: shorten(stringField(e, 'args') ?? '', 40) }))
         // Each call starts the run's live steps over, keyed as the session run.
-        await update($, apexSteps, () => startSteps(sessionKey(now)))
+        await update($, ttwSteps, () => startSteps(sessionKey(now)))
         await update($, openStep, () => null)
       })
       pollOnce($)
@@ -1205,7 +1242,7 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = els
     // Clients draw on terminal and desktop only; elsewhere the same frame as static text.
     const hasClient = 'Client' in els && (e.surface === 'terminal' || e.surface === 'desktop')
-    const [m, u, a, cards, lines, t, r, v, apexRun, st, sr, vd, bg, sh, now, open, jobs] = await Promise.all([
+    const [m, u, a, cards, lines, t, r, v, ttwRun, st, sr, vd, bg, sh, now, open, jobs] = await Promise.all([
       getMain($),
       getUsage($),
       getArchitect($),
@@ -1270,7 +1307,7 @@ export const register: Register = (on, options) => {
       )
 
     // ---- APEX: drawn only while a run is live, first and full width
-    const alerts = alertsOf(apexRun, vd, bg)
+    const alerts = alertsOf(ttwRun, vd, bg)
     const shellsRunning = runningShells(sh)
     const doneShells = sh.filter(s => s.status !== 'running')
     const shownShells = [...sh.filter(s => s.status === 'running'), ...doneShells.slice(0, DONE_SHELLS)]
@@ -1370,11 +1407,11 @@ export const register: Register = (on, options) => {
         </Box>
       )
     const apexBlock = (w: number) => {
-      if (apexRun === null) return null
+      if (ttwRun === null) return null
       return (
         <Box flexDirection="column" width={w}>
           <Box flexDirection="column" borderStyle="round" borderColor={C.apex} paddingX={1} width={w}>
-            {headerRow(apexRun)}
+            {headerRow(ttwRun)}
             {taskRow}
             <Box flexWrap="wrap" columnGap={2}>
               {cells.map(cellText)}
@@ -1394,7 +1431,7 @@ export const register: Register = (on, options) => {
       )
     }
     const apexRows =
-      apexRun === null
+      ttwRun === null
         ? 0
         : 2 + 1 + (taskRow === null ? 0 : 1) + 1 + (explain?.lines.length ?? 0) + (detailRow === null ? 0 : 1) + alerts.length + shownShells.length + (hiddenShells > 0 ? 1 : 0) + 1
 
@@ -1828,7 +1865,7 @@ export const register: Register = (on, options) => {
       // While a run is live it takes its rows first: header, task, step row, its detail, each
       // alert, the running shells; the agents and the receipt get what is left of the 8.
       const apexRest =
-        apexRun === null
+        ttwRun === null
           ? []
           : [
               ...(detailRow === null ? [] : [detailRow]),
@@ -1839,12 +1876,12 @@ export const register: Register = (on, options) => {
               )),
               ...sh.filter(s => s.status === 'running').map(s => shellRow(s, W)),
             ]
-      const apexHead = apexRun === null ? [] : [headerRow(apexRun), ...(taskRow === null ? [] : [taskRow])]
+      const apexHead = ttwRun === null ? [] : [headerRow(ttwRun), ...(taskRow === null ? [] : [taskRow])]
       // The open explanation takes the agents' rows first: at most 3, and at least 1 while the
       // run's other rows leave none.
       const explainN = Math.min(3, explain?.lines.length ?? 0, Math.max(1, MINI_ROWS - 1 - bgN - apexHead.length - 1 - apexRest.length))
       const apexMini =
-        apexRun === null
+        ttwRun === null
           ? []
           : [...apexHead, <Box overflow="hidden">{stepRow()}</Box>, ...explainRows(explainN), ...apexRest].slice(0, MINI_ROWS - 1 - bgN)
       const room = MINI_ROWS - 1 - bgN - apexMini.length
@@ -1904,7 +1941,7 @@ export const register: Register = (on, options) => {
 
     const legend = fitLegend(
       [
-        ...(apexRun !== null ? [{ label: 'apex', color: C.apex }] : []),
+        ...(ttwRun !== null ? [{ label: 'apex', color: C.apex }] : []),
         { label: 'main', color: C.main },
         { label: 'agents', color: C.agent },
         ...(showArchitect ? [{ label: cfg.architectLabel.toLowerCase(), color: C.arch }] : []),

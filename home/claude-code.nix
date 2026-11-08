@@ -33,7 +33,7 @@ let
   ttwTier = import ./claude-code/ttw-tier.nix { inherit pkgs; };
   ttwHealth = import ./claude-code/ttw-health.nix { inherit pkgs; };
   jevLocate = import ./claude-code/jev-locate.nix { inherit pkgs; };
-  apexBoard = import ./claude-code/apex-board.nix { inherit pkgs; };
+  ttwBoard = import ./claude-code/ttw-board.nix { inherit pkgs; };
   claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
   agentPane = import ./claude-code/agent-pane.nix { inherit pkgs; };
   activationScripts = import ./claude-code/activation.nix {
@@ -53,7 +53,7 @@ let
   inherit (ttwTier) ttwTierPkg;
   inherit (ttwHealth) ttwHealthPkg;
   inherit (jevLocate) jevLocatePkg;
-  inherit (apexBoard) apexBoardPkg;
+  inherit (ttwBoard) ttwBoardPkg;
   inherit (claudeDispatch) claudeDispatchPkg;
   inherit (agentPane) agentPanePkg;
   inherit (graphifyReindex) graphifyReindexPkg;
@@ -107,7 +107,7 @@ let
     gitBin = "${pkgs.git}/bin/git";
   };
   # Per-session state of an abduco session (dispatched agents), for
-  # apex-board and the deck to read: see the header of the hook.
+  # ttw-board and the deck to read: see the header of the hook.
   hookSessionState = builtins.readFile ./claude-code/hooks/session-state.js;
   inherit (agents)
     agentFrontend
@@ -482,7 +482,7 @@ in
       ttwTierPkg
       ttwHealthPkg
       jevLocatePkg
-      apexBoardPkg
+      ttwBoardPkg
       claudeDispatchPkg
       pkgs.abduco
       agentPanePkg

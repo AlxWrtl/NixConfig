@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // UserPromptSubmit, Stop, Notification, SessionStart and SessionEnd: the state
-// of a dispatched session, for the readers of PR 4 (apex-board's Agents tab,
+// of a dispatched session, for the readers of PR 4 (ttw-board's Agents tab,
 // the deck). Since #299 a dispatched session runs under abduco with Claude's
 // daemon off, so ~/.claude/jobs is no longer written; this file replaces it.
 //

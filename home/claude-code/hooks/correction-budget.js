@@ -8,6 +8,9 @@ const MAX_ROUNDS = 2;
 const BUDGET_MS = 3000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const APEX_OUT = path.join(".claude", "output", "apex");
+const OUT_DIRS = [APEX_OUT, path.join(".claude", "output", "ttw")];
+const BUDGET_DIRS = ["apex-correction-budget", "ttw-correction-budget"];
+const ROUND = /^(.+)\.round([1-9][0-9]*)$/;
 const MARKER = /^[\s>*`-]*(?:APEX|TTW)-CORRECTION-ROUND:\s*([^\s`]*)[\s`]*$/;
 const MENTIONS = /06-resolve\.md|correction round/i;
 const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
@@ -74,15 +77,49 @@ function failed(why) {
   allow();
 }
 
+// Every file of every budget dir beside `dir` (apex and ttw), as
+// { bd, f }: a run spent under one may not get fresh rounds under the other.
+// A missing dir holds nothing; a dir that is no real directory (a symlink,
+// a file) or any other read error throws (fails closed).
+function budgetFiles(dir) {
+  const out = [];
+  for (const b of BUDGET_DIRS) {
+    const bd = path.join(path.dirname(dir), b);
+    let st;
+    try {
+      st = fs.lstatSync(bd);
+    } catch (e) {
+      if (e && e.code === "ENOENT") continue;
+      throw e;
+    }
+    if (!st.isDirectory()) throw new Error("budget dir is not a real directory: " + bd);
+    const names = fs.readdirSync(bd);
+    for (const f of names) out.push({ bd, f });
+  }
+  return out;
+}
+
 // Rounds the user granted this run past MAX_ROUNDS: one <run>.grant<n> file
 // each, written by correction-grant.js from the user's own prompt.
 function grantsOf(dir, run) {
   let n = 0;
-  for (const f of fs.readdirSync(dir)) {
+  for (const { f } of budgetFiles(dir)) {
     const m = GRANT.exec(f);
     if (m && m[1] === run) n++;
   }
   return n;
+}
+
+// Rounds this run spent across every budget dir: their total is what the
+// cap bounds, their indices are the slots a new stamp may not reuse.
+function roundsOf(dir, run) {
+  const taken = new Set();
+  let total = 0;
+  for (const { f } of budgetFiles(dir)) {
+    const m = ROUND.exec(f);
+    if (m && m[1] === run) { total++; taken.add(Number(m[2])); }
+  }
+  return { total, taken };
 }
 
 let input = "";
@@ -122,10 +159,11 @@ function main() {
   if (!marker && MENTIONS.test(prompt)) { denyNoMarker(); return; }
   if (marker === null || marker === "none") { allow(); return; }
   // A run outside the session's repo is named by its absolute run dir,
-  // <repo>/.claude/output/apex/<run-id>; its budget is keyed by the run-id.
+  // <repo>/.claude/output/(apex|ttw)/<run-id>; its budget is keyed by the
+  // run-id.
   const named = marker;
   let runDir = null;
-  if (path.isAbsolute(marker) && path.dirname(marker).endsWith(path.sep + APEX_OUT) && path.join(path.dirname(marker), path.basename(marker)) === marker) {
+  if (path.isAbsolute(marker) && OUT_DIRS.some((o) => path.dirname(marker).endsWith(path.sep + o)) && path.join(path.dirname(marker), path.basename(marker)) === marker) {
     runDir = marker;
     marker = path.basename(marker);
   }
@@ -136,7 +174,9 @@ function main() {
   marked = marker;
 
   const cwd = typeof data.cwd === "string" && data.cwd !== "" ? data.cwd : process.cwd();
-  if (runDir === null) runDir = path.join(cwd, ".claude", "output", "apex", marker);
+  // A run-id resolves under the first output dir holding it; under neither,
+  // the apex path is the one the deny names.
+  if (runDir === null) runDir = OUT_DIRS.map((o) => path.join(cwd, o, marker)).find((p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } }) || path.join(cwd, APEX_OUT, marker);
   let isDir;
   try { isDir = fs.statSync(runDir).isDirectory(); } catch { isDir = false; }
   if (!isDir) {
@@ -160,14 +200,20 @@ function main() {
   }) + "\n";
   try { fs.mkdirSync(dir, { recursive: true }); } catch { denyState("unwritable", dir); return; }
 
-  // Claim a slot by exclusive create: of two racing rounds, one wins.
+  // A round goes out while the run's total, both dirs, is under the cap.
+  // Claim a slot by exclusive create at an index free in both dirs: of two
+  // racing rounds, one wins, the loser counts the winner's round.
   const cap = MAX_ROUNDS + grantsOf(dir, marker);
-  for (let n = 1; n <= cap; n++) {
+  const spent = roundsOf(dir, marker);
+  const taken = spent.taken;
+  let total = spent.total;
+  for (let n = 1; total < cap; n++) {
+    if (taken.has(n)) continue;
     const slot = path.join(dir, marker + ".round" + n);
     try {
       fs.writeFileSync(slot, stamp, { flag: "wx" });
     } catch (e) {
-      if (e && e.code === "EEXIST") continue;
+      if (e && e.code === "EEXIST") { total++; continue; }
       denyState("unwritable", slot);
       return;
     }

@@ -16,7 +16,7 @@
 # Absolute binary paths (substituted at build time).
 abduco_bin="@abduco@"
 claude_bin="@claude@"
-# `claude-dispatch --blank <name>` (apex-board's `n`): the same session with
+# `claude-dispatch --blank <name>` (ttw-board's `n`): the same session with
 # no prompt, a clean conversation waiting for the user, so no marker either:
 # the user types the first prompt, as in a main session. A forgotten brief
 # (`claude-dispatch <name>`) stays an error: blank has to be asked for. No

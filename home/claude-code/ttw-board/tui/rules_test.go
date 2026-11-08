@@ -41,6 +41,25 @@ func TestParseContextShapes(t *testing.T) {
 	}
 }
 
+// ttw rename, phase 3: a `# TTW:` heading reads like `# APEX:` (board.js's test.js has the same
+// cases), and the grant hint names ttw.
+func TestParseContextTTWTitle(t *testing.T) {
+	for in, want := range map[string]string{
+		"# TTW: renamed run\nTier: Direct\n": "renamed run",
+		"# ttw — renamed run\n":              "renamed run",
+		"# **TTW**: bold run\n":              "bold run",
+		"# APEX: old run\n":                  "old run",
+		"# TTWX: not the word\n":             "TTWX: not the word",
+	} {
+		if got := parseContext(in, "d").Title; got != want {
+			t.Errorf("parseContext(%q).Title = %q, want %q", in, got, want)
+		}
+	}
+	if hintGrant != "ttw: +1 tour" {
+		t.Errorf("hintGrant = %q, want %q", hintGrant, "ttw: +1 tour")
+	}
+}
+
 func TestBlockedLine(t *testing.T) {
 	for _, line := range []string{"BLOCKED: waiting for the user", "**Status:** BLOCKED (needs key)", "- BLOCKED by the sandbox"} {
 		if _, ok := blockedLine([]string{line}); !ok {

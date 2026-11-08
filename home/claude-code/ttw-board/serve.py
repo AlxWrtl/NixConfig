@@ -1,4 +1,4 @@
-"""apex-board server: the board's temp root, read-only, on 127.0.0.1 only.
+"""ttw-board server: the board's temp root, read-only, on 127.0.0.1 only.
 
 usage: python3 serve.py --directory ROOT PORT
 
@@ -14,7 +14,7 @@ Last-Modified / If-Modified-Since, GET and HEAD) with two gates in front:
                 back onto its own parent chain, else 404 (closes a symlink out
                 of a run and a link loop the page would list forever)
 
-The bind address is fixed here, never an argument. checks/apex-board.nix
+The bind address is fixed here, never an argument. checks/ttw-board.nix
 imports the two gates and runs this file through the built launcher.
 """
 
@@ -82,7 +82,7 @@ class Handler(SimpleHTTPRequestHandler):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="apex-board-serve")
+    parser = argparse.ArgumentParser(prog="ttw-board-serve")
     parser.add_argument("--directory", required=True)
     parser.add_argument("port", type=int)
     args = parser.parse_args(argv)

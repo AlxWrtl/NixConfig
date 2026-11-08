@@ -124,6 +124,17 @@ func TestAgentRunsNoTabRepo(t *testing.T) {
 	wantKeys(t, f.keys(t), "p1")
 }
 
+// ttw rename, phase 3: a board on `<repo>/.claude/output/ttw` keeps its tab repo (worktree
+// agents still read), and an agent whose runs sit under `.claude/output/ttw` only is read.
+func TestAgentRunsTTWDir(t *testing.T) {
+	f := newAgentFixture(t)
+	ttw := filepath.Join(f.repo, ".claude", "output", "ttw")
+	mustDo(t, os.Rename(f.runs, ttw))
+	f.runs = ttw
+	putFile(t, filepath.Join(f.wt, "wb", ".claude", "output", "ttw", "t1", "00-context.md"), ctxText("wt-ttw", nil))
+	wantKeys(t, f.keys(t), "r1", "wa/r1", "wa/r2", "wb/t1", "~ga/g1")
+}
+
 // A board opened in a worktree reads that worktree's runs once, as its own.
 func TestAgentRunsBoardInWorktree(t *testing.T) {
 	f := newAgentFixture(t)

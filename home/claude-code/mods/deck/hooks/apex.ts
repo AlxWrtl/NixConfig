@@ -244,7 +244,7 @@ const ALWAYS: ReadonlySet<DeckApexStepName> = new Set<DeckApexStepName>(['edit',
 
 const EDITING = new Set(['Edit', 'Write', 'NotebookEdit'])
 const PLAN_PATH = /(^|\/)\.claude\/output\/apex\//
-const CODEX = /apex-verify-external/
+const CODEX = /(?:apex|ttw)-verify-external/
 const SHIP = /\bgit\s+(commit|push)\b|\bgh\s+pr\s+(create|merge)\b/
 const GATE = /nix flake check|pnpm (verify|test|typecheck|lint)|claude plugin (test|validate)|\btsc\b|cargo (check|test)/
 

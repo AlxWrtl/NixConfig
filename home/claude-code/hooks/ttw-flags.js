@@ -5,7 +5,7 @@
 // on 2026-10-07: a 28-line Notification matcher change was forced to
 // high-stakes (Codex + Fable) only because the brief said "settings" and
 // "hook". Words in a brief are not risk; the diff is. Risk is now decided on
-// the diff by `apex-tier` (SKILL.md tier table). This hook never rewrites the
+// the diff by `ttw-tier` (SKILL.md tier table). This hook never rewrites the
 // call and never decides a permission.
 //
 // FAIL-OPEN: every error exits 0 (no output, or context=unknown).
@@ -57,7 +57,7 @@ process.stdin.on("end", () => {
         hookEventName: "PreToolUse",
         additionalContext: "TTW start: context=" + (n === null ? "unknown" : n)
           + " tokens; transcript=" + tp
-          + ". Tier is decided on the diff (SKILL.md); apex-tier re-checks it."
+          + ". Tier is decided on the diff (SKILL.md); ttw-tier re-checks it."
       }
     }));
   } catch (e) { /* fail open */ }

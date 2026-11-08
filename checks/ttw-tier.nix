@@ -1,5 +1,14 @@
-# Runtime check for apex-tier (home/claude-code/apex-tier.nix): the BUILT
+# Runtime check for ttw-tier (home/claude-code/ttw-tier.nix): the BUILT
 # classifier runs against throwaway git repos and must return the expected tier.
+#
+#   A1  apex -> ttw, phase 2: the package ships bin/ttw-tier AND bin/apex-tier,
+#       the old name a symlink to ttw-tier in the same output (a session
+#       started before the switch still finds it; dropped in phase 4). F2
+#       runs once more through the alias. Same for ttw-verify-external, built
+#       here because no other flake check builds it: bin/apex-verify-external
+#       -> ttw-verify-external, `--help` identical from both names.
+#   A2  self-name: usage and --help name ttw-tier / ttw-verify-external, never
+#       the apex-* name.
 #
 #   F1  `matcher = "permission_prompt|elicitation_dialog";` added in a new
 #       group under hooks.Notification            -> direct
@@ -26,13 +35,15 @@
 { pkgs }:
 
 let
-  tier = (import ../home/claude-code/apex-tier.nix { inherit pkgs; }).apexTierPkg;
-  script = ../home/claude-code/scripts/apex-tier.sh;
+  tier = (import ../home/claude-code/ttw-tier.nix { inherit pkgs; }).ttwTierPkg;
+  vext = (import ../home/claude-code/ttw-verify-external.nix { inherit pkgs; }).ttwVerifyExternalPkg;
+  script = ../home/claude-code/scripts/ttw-tier.sh;
   runtimePath = pkgs.lib.makeBinPath [
     pkgs.git
     pkgs.gawk
     pkgs.gnugrep
     pkgs.coreutils
+    pkgs.diffutils
     pkgs.gnused
     pkgs.bash
   ];
@@ -155,7 +166,7 @@ let
     }
   '';
 in
-pkgs.runCommand "apex-tier-check" { } ''
+pkgs.runCommand "ttw-tier-check" { } ''
   export PATH=${runtimePath}
   export HOME="$TMPDIR" GIT_CONFIG_NOSYSTEM=1
   export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t
@@ -163,9 +174,56 @@ pkgs.runCommand "apex-tier-check" { } ''
   # Canary M1: PERM_RE replaced by a regex that never matches.
   sed "s/^PERM_RE=.*/PERM_RE='x^'/" ${script} > "$TMPDIR/mutant.sh"
   if ! grep -qx "PERM_RE='x^'" "$TMPDIR/mutant.sh" || [ "$(grep -c '^PERM_RE=' "$TMPDIR/mutant.sh")" != 1 ]; then
-    echo "apex-tier: canary anchor '^PERM_RE=' gone from the script — the mutant equals the source"
+    echo "ttw-tier: canary anchor '^PERM_RE=' gone from the script — the mutant equals the source"
     exit 1
   fi
+
+  # A1 check_alias PKG NEW OLD: bin/NEW executable; bin/OLD a symlink whose
+  # target is NEW in the same bin dir (`NEW` or `PKG/bin/NEW`), both resolving
+  # to one file. A copy, a wrapper or a link straight into another store path
+  # is a second binary that can drift from the first.
+  check_alias() {
+    pkg="$1"; new="$2"; old="$3"
+    [ -x "$pkg/bin/$new" ] || { echo "ttw-tier: A1 FAILED — $pkg/bin/$new is missing or not executable"; exit 1; }
+    [ -L "$pkg/bin/$old" ] || { echo "ttw-tier: A1 FAILED — $pkg/bin/$old is not a symlink (the pre-rename alias of $new, kept until phase 4)"; exit 1; }
+    tgt="$(readlink "$pkg/bin/$old")"
+    case "$tgt" in
+    "$new" | "$pkg/bin/$new") ;;
+    *)
+      echo "ttw-tier: A1 FAILED — $pkg/bin/$old points at '$tgt', not at $new in the same package"
+      exit 1
+      ;;
+    esac
+    [ "$(readlink -f "$pkg/bin/$old")" = "$(readlink -f "$pkg/bin/$new")" ] \
+      || { echo "ttw-tier: A1 FAILED — $old and $new do not resolve to the same file"; exit 1; }
+    echo "ttw-tier: A1 $old -> $new OK"
+  }
+  check_alias ${tier} ttw-tier apex-tier
+  check_alias ${vext} ttw-verify-external apex-verify-external
+
+  # A2: the usage line names the new binary, from either name.
+  for n in ttw-tier apex-tier; do
+    rc=0
+    ${tier}/bin/$n --no-such-flag > "$TMPDIR/usage-$n.out" 2>&1 || rc=$?
+    if [ "$rc" != 2 ] || ! grep -qF 'usage: ttw-tier' "$TMPDIR/usage-$n.out" || grep -qF 'apex-tier' "$TMPDIR/usage-$n.out"; then
+      echo "ttw-tier: A2 FAILED — '$n --no-such-flag' exited $rc (want 2) and/or its text does not name ttw-tier alone:"
+      cat "$TMPDIR/usage-$n.out"
+      exit 1
+    fi
+  done
+  echo "ttw-tier: A2 usage names ttw-tier OK"
+  for n in ttw-verify-external apex-verify-external; do
+    rc=0
+    ${vext}/bin/$n --help > "$TMPDIR/help-$n.out" 2>&1 || rc=$?
+    if [ "$rc" != 0 ] || ! grep -qF 'ttw-verify-external --acs <FILE>' "$TMPDIR/help-$n.out" || grep -qF 'apex-verify-external' "$TMPDIR/help-$n.out"; then
+      echo "ttw-tier: A2 FAILED — '$n --help' exited $rc (want 0) and/or its text does not name ttw-verify-external alone:"
+      cat "$TMPDIR/help-$n.out"
+      exit 1
+    fi
+  done
+  cmp -s "$TMPDIR/help-ttw-verify-external.out" "$TMPDIR/help-apex-verify-external.out" \
+    || { echo "ttw-tier: A2 FAILED — --help differs between ttw-verify-external and its apex-verify-external alias"; exit 1; }
+  echo "ttw-tier: A2 --help names ttw-verify-external OK"
 
   # fixture NAME: a fresh repo on master with the base files, then branch feat/x.
   fixture() {
@@ -187,80 +245,81 @@ pkgs.runCommand "apex-tier-check" { } ''
   # expect LABEL WANT_TIER WANT_REASON(or -) CMD...: runs CMD in the current repo.
   expect() {
     label="$1"; want="$2"; reason="$3"; shift 3
-    res="$("$@" --base master)" || { echo "apex-tier: $label FAILED — classifier exited non-zero: $res"; exit 1; }
+    res="$("$@" --base master)" || { echo "ttw-tier: $label FAILED — classifier exited non-zero: $res"; exit 1; }
     got="$(printf '%s\n' "$res" | sed -n 's/^tier=\([a-z]*\) .*/\1/p')"
     if [ "$got" != "$want" ]; then
-      echo "apex-tier: $label FAILED — expected tier=$want, got: $res"
+      echo "ttw-tier: $label FAILED — expected tier=$want, got: $res"
       exit 1
     fi
     if [ "$reason" != - ] && ! printf '%s\n' "$res" | grep -qF "$reason"; then
-      echo "apex-tier: $label FAILED — tier=$want but reason '$reason' missing: $res"
+      echo "ttw-tier: $label FAILED — tier=$want but reason '$reason' missing: $res"
       exit 1
     fi
-    echo "apex-tier: $label OK — $res"
+    echo "ttw-tier: $label OK — $res"
   }
 
   fixture f1
   cp ${settingsF1} settings.nix
-  expect "F1 Notification matcher" direct - ${tier}/bin/apex-tier
+  expect "F1 Notification matcher" direct - ${tier}/bin/ttw-tier
 
   fixture f2
   cp ${settingsF2} settings.nix
-  expect "F2 deny-list entry" high permission@settings.nix ${tier}/bin/apex-tier
+  expect "F2 deny-list entry" high permission@settings.nix ${tier}/bin/ttw-tier
+  expect "F2 through the apex-tier alias (A1)" high permission@settings.nix ${tier}/bin/apex-tier
 
   fixture f3
   cp ${hookF3} hooks/x.js
-  expect "F3 hook permissionDecision" high hook-decision@hooks/x.js ${tier}/bin/apex-tier
+  expect "F3 hook permissionDecision" high hook-decision@hooks/x.js ${tier}/bin/ttw-tier
 
   fixture f4
   for i in $(seq 1 40); do printf 'line %s\n' "$i"; done >> README.md
-  expect "F4 README +40 lines" standard - ${tier}/bin/apex-tier
+  expect "F4 README +40 lines" standard - ${tier}/bin/ttw-tier
 
   fixture f5
   printf 'FOO=bar\n' > .env.example
-  expect "F5 new .env.example" high secret-path ${tier}/bin/apex-tier
+  expect "F5 new .env.example" high secret-path ${tier}/bin/ttw-tier
 
   fixture f6
   cp ${guardF6} hooks/guard.js
-  expect "F6 guard condition above unchanged deny" high hook-decision@hooks/guard.js ${tier}/bin/apex-tier
+  expect "F6 guard condition above unchanged deny" high hook-decision@hooks/guard.js ${tier}/bin/ttw-tier
 
   fixture f7
   mkdir -p config
   printf '{}\n' > config/apikey.json
-  expect "F7 new config/apikey.json" high secret-path@config/apikey.json ${tier}/bin/apex-tier
+  expect "F7 new config/apikey.json" high secret-path@config/apikey.json ${tier}/bin/ttw-tier
 
   fixture f8
   mkdir -p scripts
   printf 'DELETE FROM users;\n' > scripts/purge.sql
-  expect "F8 DELETE FROM in purge.sql" high destructive@scripts/purge.sql ${tier}/bin/apex-tier
+  expect "F8 DELETE FROM in purge.sql" high destructive@scripts/purge.sql ${tier}/bin/ttw-tier
 
   fixture f9
   cp ${notifyF9} hooks/notification.sh
-  expect "F9 notifier text change" direct - ${tier}/bin/apex-tier
+  expect "F9 notifier text change" direct - ${tier}/bin/ttw-tier
 
   fixture f10
   for n in a b c d; do printf 'x\n' > "$n.txt"; done
-  expect "F10 4 new files" direct - ${tier}/bin/apex-tier
+  expect "F10 4 new files" direct - ${tier}/bin/ttw-tier
 
   fixture f11
   for n in a b c d e; do printf 'x\n' > "$n.txt"; done
-  expect "F11 5 new files" standard - ${tier}/bin/apex-tier
+  expect "F11 5 new files" standard - ${tier}/bin/ttw-tier
 
   # M1 on F2: must not be high.
   fixture m1
   cp ${settingsF2} settings.nix
   m1="$(bash -euo pipefail "$TMPDIR/mutant.sh" --base master)" || {
-    echo "apex-tier: canary M1 crashed instead of classifying: $m1"
+    echo "ttw-tier: canary M1 crashed instead of classifying: $m1"
     exit 1
   }
   case "$m1" in
   tier=high*)
-    echo "apex-tier: canary M1 SURVIVED — PERM_RE neutralised and F2 is still high ($m1); the F2 assertion does not prove the permission class"
+    echo "ttw-tier: canary M1 SURVIVED — PERM_RE neutralised and F2 is still high ($m1); the F2 assertion does not prove the permission class"
     exit 1
     ;;
   esac
-  echo "apex-tier: canary M1 killed — F2 without PERM_RE: $m1"
+  echo "ttw-tier: canary M1 killed — F2 without PERM_RE: $m1"
 
-  echo "apex-tier: 11 fixtures, 1 canary — OK"
+  echo "ttw-tier: 11 fixtures, 2 aliases, 1 canary — OK"
   touch $out
 ''

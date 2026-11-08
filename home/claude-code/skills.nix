@@ -82,7 +82,7 @@ in
 
     Adding or removing a notification hook or a settings value is NOT high.
 
-    The tier is re-checked on the real diff by `apex-tier --base {trunk}`
+    The tier is re-checked on the real diff by `ttw-tier --base {trunk}`
     (`{trunk}` = the branch this run cut from). A higher tier than planned
     escalates, keeping the branch and the diff (DIRECT.md, ROUTING.md).
 
@@ -727,7 +727,7 @@ in
        when no command can prove it (the reason says why), and
        `[deferred to user]` when the proof needs the user (sudo, a password).
        Use them rarely: the share of `[lecture]` ACs is measured apart, and the
-       apex-metrics-probe hook lists the unproven ACs each time 02-acs.md is written.
+       ttw-metrics-probe hook lists the unproven ACs each time 02-acs.md is written.
 
     4. **Testing Strategy** (if -t flag active):
        ```
@@ -1051,7 +1051,7 @@ in
     persist it.
 
     If `-e` is active, run the external cross-vendor pass after the machine
-    gate: `apex-verify-external --base {trunk} --acs
+    gate: `ttw-verify-external --base {trunk} --acs
     .claude/output/apex/{task-id}/02-acs.md --out
     .claude/output/apex/{task-id}/04-external-verify.json`. `{trunk}` is the
     branch this run cut from, not a constant — read it, never assume `master`.
@@ -1082,7 +1082,7 @@ in
        `[lecture]` and `[deferred to user]` ACs are listed apart in
        `04-validate.md` (lecture: what was read and the verdict; deferred: the
        command for the user), never counted as proven by a command.
-       `python3 -I ~/.claude/hooks/apex-metrics-probe.py --acs .claude/output/apex/{task-id}/02-acs.md`
+       `python3 -I ~/.claude/hooks/ttw-metrics-probe.py --acs .claude/output/apex/{task-id}/02-acs.md`
        prints the class of each AC.
 
     2. **Build Check**: run only the SAFE checks (see ORCHESTRATION.md), and
@@ -1116,7 +1116,7 @@ in
        One without is a finding, sent back to plan, never waived; `Docs: n/a (text)`
        over a diff that adds one is a finding too. AC-docs is an AC, so the `-e`
        pass and any Fable pass check it with no extra brief.
-    8. **Tier re-check**: run `apex-tier --base {trunk}` on the real diff and
+    8. **Tier re-check**: run `ttw-tier --base {trunk}` on the real diff and
        record its line (`tier=… lines=… files=… reasons=…`) verbatim in
        `04-validate.md`. `tier=high` on a Standard run escalates to
        High-stakes before the terminal router: keep the branch and the diff,
@@ -1193,7 +1193,7 @@ in
 
     ### Security & data integrity (added on signal)
     The security and data-integrity boxes are added to the reviewer's checklist when the run is High-stakes
-    (SKILL.md tier gate), `apex-tier` reports `tier=high`, or the real diff touches
+    (SKILL.md tier gate), `ttw-tier` reports `tier=high`, or the real diff touches
     a HIGH path, auth, shell/SQL/template construction, or permission/sandbox
     config.
     - [ ] AuthN/authZ gaps; missing input validation; data exposed in responses.
@@ -1352,7 +1352,7 @@ in
     branch. Once the gate is green, merge it yourself, then return to
     `{trunk}`, pull and delete the local branch (COMMANDS.md shapes).
     Force-pushing and rewriting pushed history still need the user's
-    explicit go. Once `gh pr create` succeeds, the apex-metrics-probe hook
+    explicit go. Once `gh pr create` succeeds, the ttw-metrics-probe hook
     names the run files this run still lacks (02-acs.md, the examine or
     external tally): write them before merging.
 
@@ -1734,10 +1734,10 @@ in
           "name": "minimal-task-direct",
           "category": "minimal",
           "prompt": "ttw add a missing semicolon in index.ts",
-          "expected_behavior": "TTW runs at the Direct tier: inline edit, machine gate, then apex-tier re-checks the real diff; no implementer is spawned.",
+          "expected_behavior": "TTW runs at the Direct tier: inline edit, machine gate, then ttw-tier re-checks the real diff; no implementer is spawned.",
           "assertions": [
             {"type": "pattern", "value": "Direct", "description": "The tier gate picks Direct for a one-line, non-sensitive diff"},
-            {"type": "pattern", "value": "gate|apex-tier", "description": "Direct still runs the machine gate and the apex-tier real-diff re-check"},
+            {"type": "pattern", "value": "gate|ttw-tier", "description": "Direct still runs the machine gate and the ttw-tier real-diff re-check"},
             {"type": "excludes", "value": "overkill", "description": "Must not decline the task as too big a hammer"},
             {"type": "excludes", "value": "too small", "description": "Must not decline the task for its size"},
             {"type": "excludes", "value": "quick-fix", "description": "Must not reroute to quick-fix — excludes is a literal substring test, so each phrasing needs its own entry"}
@@ -1750,7 +1750,7 @@ in
           "expected_behavior": "The tier gate picks Direct: adding a notification hook matcher is a settings value, not a sensitive surface; the words hook and settings in the brief do not make it high-stakes.",
           "assertions": [
             {"type": "pattern", "value": "Direct", "description": "Tier is decided on the diff, not on the brief's words"},
-            {"type": "pattern", "value": "gate|apex-tier", "description": "Direct still runs the machine gate and the apex-tier re-check"},
+            {"type": "pattern", "value": "gate|ttw-tier", "description": "Direct still runs the machine gate and the ttw-tier re-check"},
             {"type": "excludes", "value": "tier=high", "description": "A notification matcher is not a sensitive surface"}
           ]
         },
@@ -2056,7 +2056,7 @@ in
 
     - Standard, Diagnosis and High-stakes. Direct is the one inline tier
       (steps/DIRECT.md): the coordinator edits a small, non-sensitive diff
-      itself, guarded by the machine gate and `apex-tier` on the real diff,
+      itself, guarded by the machine gate and `ttw-tier` on the real diff,
       and escalates here the moment either says no.
     - In Standard/High-stakes the coordinator never grades its own work: a
       separate implementer subagent writes the diff, the coordinator verifies.
@@ -2211,7 +2211,7 @@ in
     ## External verify (`-e`) — one cross-vendor read-only pass
 
     `-e` is a default of the High-stakes set only; a run escalated to
-    High-stakes by `apex-tier` gains it, `-E` cancels it, and in Diagnosis or
+    High-stakes by `ttw-tier` gains it, `-E` cancels it, and in Diagnosis or
     Standard it runs only when typed.
     On high-stakes, `-e` is the default read-only DETECTOR on the diff, and Fable is not spawned beside it.
 
@@ -2289,7 +2289,7 @@ in
 
     ## Pressure-test — when the diff changes TTW's own rules
 
-    `apex-consistency` asserts a clause is PRESENT. Presence is not effect. On
+    `ttw-consistency` asserts a clause is PRESENT. Presence is not effect. On
     2026-09-05 three rules shipped in one session that read well and did
     nothing: a test written over a set union, which deduplicates and so could
     never fire; a checklist whose first item was phrased with the opposite
@@ -2417,12 +2417,12 @@ in
        is not a quiet addition — it is a re-tier: go to step 7's escalation.
     6. **Machine gate.** Re-run the baseline command; read the exit code and
        the tail only (ORCHESTRATION.md "Coordinator context").
-    7. **Tier re-check.** Run `apex-tier --base {trunk}` and read its verdict
+    7. **Tier re-check.** Run `ttw-tier --base {trunk}` and read its verdict
        line. Escalate when it is anything but `tier=direct`, OR the gate is
        red (a red gate never gets a fix inline):
-       - Direct escalates to Standard (or to High-stakes when `apex-tier`
+       - Direct escalates to Standard (or to High-stakes when `ttw-tier`
          says `tier=high`): keep the branch and the diff, record the cause
-         in `00-context.md` (`Escalated: {apex-tier verdict | gate red: check}`),
+         in `00-context.md` (`Escalated: {ttw-tier verdict | gate red: check}`),
          then go to step-02-plan with the Standard or High-stakes default
          flags. High-stakes also reads `steps/HIGH-STAKES.md`.
        - Direct never runs a correction round inline. The first implementer
@@ -2435,13 +2435,13 @@ in
     9. **Ship.** Commit, push, PR and merge per `steps/COMMANDS.md`
        (`-pr` default; `-PR` opts out of the whole ship step — no commit, the
        change stays uncommitted on the run's branch, as in Standard). Fill the `## Tokens`
-       end row, then present: tier, files, gate verdict, `apex-tier` line,
+       end row, then present: tier, files, gate verdict, `ttw-tier` line,
        PR link.
 
     ## What Direct never does
 
     - Spawn an implementer, an analyzer or a verifier.
-    - Skip `apex-tier --base {trunk}`, or trust `Est-lines:` over its verdict.
+    - Skip `ttw-tier --base {trunk}`, or trust `Est-lines:` over its verdict.
     - Edit a path outside `Files:` without re-tiering.
     - Correct a red gate inline.
     - Edit before a red test, unless the diff has no behaviour to test.

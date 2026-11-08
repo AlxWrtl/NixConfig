@@ -21,10 +21,10 @@ harness change.
 The metrics stay a manual probe (the run dirs are git-ignored), while
 --self-test and --hook are run by checks/hook-wiring.nix:
 
-    python3 -I checks/apex-metrics-probe.py [--runs DIR] [--memory DIR] [--since DATE]
-    python3 -I checks/apex-metrics-probe.py --self-test
-    python3 -I checks/apex-metrics-probe.py --acs FILE
-    python3 -I checks/apex-metrics-probe.py --hook < event.json
+    python3 -I checks/ttw-metrics-probe.py [--runs DIR] [--memory DIR] [--since DATE]
+    python3 -I checks/ttw-metrics-probe.py --self-test
+    python3 -I checks/ttw-metrics-probe.py --acs FILE
+    python3 -I checks/ttw-metrics-probe.py --hook < event.json
 
 Output: one key=value line per metric, sorted. A missing directory or index
 exits 2 with a message on stderr.
@@ -33,7 +33,7 @@ exits 2 with a message on stderr.
 exit 1 when one is unproven, 2 when the file is missing.
 
 --hook is the same file deployed as the PostToolUse hook on Write|Edit
-(~/.claude/hooks/apex-metrics-probe.py): it reads the event on stdin and,
+(~/.claude/hooks/ttw-metrics-probe.py): it reads the event on stdin and,
 when the written file is an APEX run's 02-acs.md, lists its unproven ACs,
 count first and capped, as context for the model. A symlink, a non-regular
 file or one over HOOK_MAX_BYTES is not read: DEFERRED backtracks
@@ -130,6 +130,7 @@ import sys
 
 KNOWN_EXECUTABLES = frozenset({
     "apex-board", "apex-health", "apex-tier", "awk", "bash", "brew", "cargo",
+    "ttw-health", "ttw-tier", "ttw-verify-external",
     "cat", "claude", "codex", "curl", "darwin-rebuild", "deadnix", "diff", "env",
     "find", "gh", "git", "go", "grep", "head", "jq", "launchctl", "ls", "mas",
     "nix", "nix-instantiate", "nix-store", "nixfmt", "node", "npx", "perl",
@@ -929,7 +930,7 @@ def acs_report(path):
     try:
         text = _read(path)
     except OSError as e:
-        print(f"apex-metrics-probe: cannot read {path}: {e.strerror or e}", file=sys.stderr)
+        print(f"ttw-metrics-probe: cannot read {path}: {e.strerror or e}", file=sys.stderr)
         return 2
     blocks = parse_ac_blocks(text)
     counts = dict.fromkeys(CLASSES, 0)
@@ -1060,10 +1061,10 @@ def main():
     mem_root = args.memory.expanduser()
     for label, path in (("runs dir", runs_root), ("memory dir", mem_root)):
         if not path.is_dir():
-            print(f"apex-metrics-probe: {label} not found: {path}", file=sys.stderr)
+            print(f"ttw-metrics-probe: {label} not found: {path}", file=sys.stderr)
             return 2
     if not (mem_root / "MEMORY.md").is_file():
-        print(f"apex-metrics-probe: no MEMORY.md in {mem_root}", file=sys.stderr)
+        print(f"ttw-metrics-probe: no MEMORY.md in {mem_root}", file=sys.stderr)
         return 2
     for key, val in sorted(metrics(runs_root, mem_root, args.since).items()):
         print(f"{key}={val}")

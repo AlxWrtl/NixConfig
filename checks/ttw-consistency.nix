@@ -470,7 +470,7 @@ let
       # sentence left both apex-consistency and readme-consistency green, and
       # `-e` inert. Presence is not effect — so pin the command itself.
       name = "validate: the external pass is actually invoked";
-      needle = "apex-verify-external --base {trunk} --acs";
+      needle = "ttw-verify-external --base {trunk} --acs";
       scope = skills.ttwStep04Validate;
     }
     {
@@ -675,7 +675,7 @@ let
       # Est-lines is the coordinator's own guess; the deterministic re-check
       # on the real diff is what makes the inline tier safe.
       name = "direct: the tier is re-checked on the real diff";
-      needle = "apex-tier --base {trunk}";
+      needle = "ttw-tier --base {trunk}";
       scope = skills.ttwDirect;
     }
     {
@@ -707,7 +707,14 @@ let
     {
       # Standard and High-stakes re-check the tier at validate too.
       name = "validate: the tier is re-checked on the real diff";
-      needle = "apex-tier --base {trunk}";
+      needle = "ttw-tier --base {trunk}";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      # apex -> ttw phase 2: validate proves its ACs through the probe's
+      # installed new name.
+      name = "validate: the AC proof runs the ttw metrics probe";
+      needle = "python3 -I ~/.claude/hooks/ttw-metrics-probe.py --acs";
       scope = skills.ttwStep04Validate;
     }
     {
@@ -1054,14 +1061,26 @@ let
   # The hooks accept both names until phase 4, the text the model reads
   # teaches only the new one. The rules are read outside any run and point
   # at the installed dir, so they are held to the same.
+  # Phase 2 adds the binary and hook names (the packages and hooks.nix keep
+  # the apex-* alias until phase 4; the text teaches ttw-*), and the sites
+  # that name them: the eval suite, ttw-flags.js and the repo CLAUDE.md. The
+  # run folder `.claude/output/apex/` is not a stale name (phase 4).
   staleNameSites = {
     inherit corpus;
     inherit (rules) ruleNix ruleTypescript ruleReact;
+    inherit (skills) ttwEvalSuite;
+    inherit (hooks) hookTtwFlags;
+    repoClaudeMd = builtins.readFile ../CLAUDE.md;
   };
   staleNames = [
     "APEX-CORRECTION-ROUND"
     "apex: +1 tour"
     "skills/apex"
+    "apex-tier"
+    "apex-verify-external"
+    "apex-metrics-probe"
+    "apex-health"
+    "apex-pr-record"
   ];
   staleNameHits = builtins.concatMap (
     n: map (p: "${n}: '${p}'") (builtins.filter (p: pkgs.lib.hasInfix p staleNameSites.${n}) staleNames)

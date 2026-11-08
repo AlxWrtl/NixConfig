@@ -82,10 +82,6 @@
         agent-instructions = import ./checks/agent-instructions.nix { inherit pkgs; };
         agent-pane = import ./checks/agent-pane.nix { inherit pkgs; };
         apex-board = import ./checks/apex-board.nix { inherit pkgs; };
-        apex-consistency = import ./checks/apex-consistency.nix { inherit pkgs; };
-        apex-health = import ./checks/apex-health.nix { inherit pkgs; };
-        apex-plan-provenance = import ./checks/apex-plan-provenance.nix { inherit pkgs; };
-        apex-tier = import ./checks/apex-tier.nix { inherit pkgs; };
         claude-config = import ./checks/claude-config.nix { inherit pkgs; };
         claude-dispatch = import ./checks/claude-dispatch.nix { inherit pkgs; };
         claude-mods = import ./checks/claude-mods.nix { inherit pkgs; };
@@ -105,6 +101,10 @@
         readme-consistency = import ./checks/readme-consistency.nix { inherit pkgs; };
         skill-retire = import ./checks/skill-retire.nix { inherit pkgs; };
         trello-cli = import ./checks/trello-cli.nix { inherit pkgs; };
+        ttw-consistency = import ./checks/ttw-consistency.nix { inherit pkgs; };
+        ttw-health = import ./checks/ttw-health.nix { inherit pkgs; };
+        ttw-plan-provenance = import ./checks/ttw-plan-provenance.nix { inherit pkgs; };
+        ttw-tier = import ./checks/ttw-tier.nix { inherit pkgs; };
       };
 
       # System configuration

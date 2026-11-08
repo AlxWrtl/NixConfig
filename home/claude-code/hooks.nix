@@ -299,8 +299,8 @@ in
   # It used to rewrite the flags from regexes over the BRIEF TEXT. Retired on
   # 2026-10-07: a 28-line Notification matcher change was forced to
   # high-stakes because the brief said "settings"/"hook". Words are not risk;
-  # the diff is. Risk is now decided on the diff by `apex-tier`
-  # (apex-tier.nix), per the tier table in SKILL.md.
+  # the diff is. Risk is now decided on the diff by `ttw-tier`
+  # (ttw-tier.nix), per the tier table in SKILL.md.
   #
   # FAIL-OPEN: any error exits 0 (no output, or context=unknown).
   hookTtwFlags = builtins.readFile ./hooks/ttw-flags.js;
@@ -324,7 +324,7 @@ in
   # additionalContext line naming the files. jq and git are absolute store
   # paths: the hook PATH is not guaranteed (see the node comment at the top of
   # settings.nix). A function of its two binaries, not two more arguments of
-  # this file: checks/apex-consistency.nix stubs every argument here and would
+  # this file: checks/ttw-consistency.nix stubs every argument here and would
   # stop evaluating on a new one.
   hookWorktreeEnvSync =
     { jqBin, gitBin }:
@@ -405,12 +405,12 @@ in
 
   # PostToolUse on Write|Edit: lists the ACs of an APEX 02-acs.md that name no
   # command and carry no `[lecture] — reason` / `[deferred to user]` marker.
-  # The body IS checks/apex-metrics-probe.py, run with --hook: one classifier for
+  # The body IS checks/ttw-metrics-probe.py, run with --hook: one classifier for
   # the gate and the B2 metric, so the replay and the hook cannot drift.
   # Also PostToolUse on Bash: after a lone `gh pr create`, names the B6 run
   # files (02-acs.md, examine/external tallies) the branch's run still lacks.
   # Fail-open: any error exits 0 with nothing on stdout.
-  hookApexAcsProof = builtins.readFile ../../checks/apex-metrics-probe.py;
+  hookTtwAcsProof = builtins.readFile ../../checks/ttw-metrics-probe.py;
 
   hookSubagentStop = builtins.readFile ./hooks/subagent-stop.js;
 
@@ -427,7 +427,7 @@ in
   hookCircuitBreakerReset = builtins.readFile ./hooks/circuit-breaker-reset.js;
 
   # After a `gh pr merge` that merged: pr.md in the APEX run of that branch.
-  hookApexPrRecord = builtins.readFile ./hooks/apex-pr-record.js;
+  hookTtwPrRecord = builtins.readFile ./hooks/ttw-pr-record.js;
 
   hookStopFailure = builtins.readFile ./hooks/stop-failure.sh;
 

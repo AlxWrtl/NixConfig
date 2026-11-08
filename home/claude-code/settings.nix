@@ -3,7 +3,7 @@
 let
   # Absolute path to node — /bin/sh can't find nix-installed node in PATH
   node = "/run/current-system/sw/bin/node";
-  # Same for python3 (modules/packages.nix): the apex-metrics-probe hook.
+  # Same for python3 (modules/packages.nix): the ttw-metrics-probe hook.
   python3 = "/run/current-system/sw/bin/python3";
 
   # Obsidian vault — shared constant, reusable by other modules.
@@ -671,9 +671,12 @@ in
         "Bash(nix-options *)"
         # External cross-vendor verifier (APEX `-e`). Wrapper around a
         # read-only `codex exec` subprocess: it reviews, it never edits.
+        # The apex-* rules cover the pre-rename alias until phase 4.
         "Bash(apex-verify-external *)"
+        "Bash(ttw-verify-external *)"
         # APEX tier classifier: read-only git diff/show/ls-files over the diff.
         "Bash(apex-tier *)"
+        "Bash(ttw-tier *)"
         # Knowledge-graph refresh wrapper (no args; writes only to ~/GraphVault
         # — see sandbox allowWrite). Fired in background by APEX steps 01b/09b.
         "Bash(graphify-reindex)"
@@ -854,7 +857,7 @@ in
         {
           # Reports the context size (tokens, from the transcript tail) when
           # TTW starts. Context only: never rewrites the flags, never decides
-          # a permission. The tier is decided on the diff by `apex-tier`.
+          # a permission. The tier is decided on the diff by `ttw-tier`.
           matcher = "Skill";
           hooks = [
             {
@@ -1028,7 +1031,7 @@ in
           ];
         }
         {
-          # Quatre déclencheurs (le corps EST checks/apex-metrics-probe.py) :
+          # Quatre déclencheurs (le corps EST checks/ttw-metrics-probe.py) :
           # 1. un 02-acs.md de run APEX : liste les AC qui ne nomment aucune
           #    commande et ne portent ni `[lecture] — raison` ni
           #    `[deferred to user]` (même classifieur que la métrique B2) ;
@@ -1045,7 +1048,7 @@ in
           hooks = [
             {
               type = "command";
-              command = "${python3} -I ~/.claude/hooks/apex-metrics-probe.py --hook";
+              command = "${python3} -I ~/.claude/hooks/ttw-metrics-probe.py --hook";
               timeout = 5;
             }
           ];
@@ -1064,7 +1067,7 @@ in
             {
               type = "command";
               "if" = "Bash(gh pr create *)";
-              command = "${python3} -I ~/.claude/hooks/apex-metrics-probe.py --hook";
+              command = "${python3} -I ~/.claude/hooks/ttw-metrics-probe.py --hook";
               timeout = 5;
             }
           ];
@@ -1095,7 +1098,7 @@ in
           hooks = [
             {
               type = "command";
-              command = "${node} ~/.claude/hooks/apex-pr-record.js";
+              command = "${node} ~/.claude/hooks/ttw-pr-record.js";
               timeout = 15;
             }
           ];

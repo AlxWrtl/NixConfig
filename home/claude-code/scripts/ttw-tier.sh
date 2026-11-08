@@ -1,4 +1,4 @@
-# apex-tier — classify the APEX tier from the DIFF, not from the brief text.
+# ttw-tier — classify the APEX tier from the DIFF, not from the brief text.
 #
 # READ-ONLY: runs only `git diff`, `git show`, `git ls-files`, `git merge-base`
 # and reads files. Never `git add -N`, never writes the index or the tree.
@@ -46,7 +46,7 @@
 # --paths once the diff exists — that run is authoritative.
 
 usage() {
-  echo "usage: apex-tier [--base REF] [--max-lines N] [--paths PATH...]" >&2
+  echo "usage: ttw-tier [--base REF] [--max-lines N] [--paths PATH...]" >&2
   exit 2
 }
 
@@ -79,7 +79,7 @@ while [ $# -gt 0 ]; do
     usage
     ;;
   *)
-    echo "apex-tier: unknown argument: $1" >&2
+    echo "ttw-tier: unknown argument: $1" >&2
     usage
     ;;
   esac
@@ -87,7 +87,7 @@ done
 
 case "$max_lines" in
 '' | *[!0-9]*)
-  echo "apex-tier: --max-lines needs a non-negative integer" >&2
+  echo "ttw-tier: --max-lines needs a non-negative integer" >&2
   usage
   ;;
 esac
@@ -192,7 +192,7 @@ else
     [ -n "$base" ] || base="HEAD"
   fi
   if ! git rev-parse --verify --quiet "${base}^{commit}" >/dev/null; then
-    echo "apex-tier: --base is not a commit: $base" >&2
+    echo "ttw-tier: --base is not a commit: $base" >&2
     usage
   fi
 

@@ -41,7 +41,7 @@
 # Its malformed-stdin subset is wired into checks/codex-config.nix (run by
 # `nix flake check` against the installed scripts, git on PATH, repo on main);
 # the rest stays standalone, like checks/scrapling-shim-fuzz.sh and
-# checks/apex-verify-external-probe.sh.
+# checks/ttw-verify-external-probe.sh.
 #
 # usage: codex-hooks-probe.sh [protect-main.js] [quality-gate.js] [block-main-shell.js]
 #        All three default to the repo copies, and positions 1 and 2 keep the

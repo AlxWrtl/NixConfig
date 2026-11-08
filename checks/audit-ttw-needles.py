@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Audit the SHAPE of every needle in checks/apex-consistency.nix.
+"""Audit the SHAPE of every needle in checks/ttw-consistency.nix.
 
 WHAT THIS REPLACED, AND WHY
 ---------------------------
@@ -45,8 +45,8 @@ Judgement belongs to the reader; this only says where to look.
 
 USAGE
 -----
-  python3 checks/audit-apex-needles.py
-  python3 checks/audit-apex-needles.py --strict   # exit 1 if any HEADING
+  python3 checks/audit-ttw-needles.py
+  python3 checks/audit-ttw-needles.py --strict   # exit 1 if any HEADING
 
 Not wired into `nix flake check`: the verdicts need a human, and a heuristic
 that blocks a merge would just get worked around.
@@ -58,7 +58,7 @@ import re
 import sys
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-CHECK = REPO / "checks" / "apex-consistency.nix"
+CHECK = REPO / "checks" / "ttw-consistency.nix"
 SOURCES = [
     REPO / "home" / "claude-code" / "skills.nix",
     REPO / "home" / "claude-code" / "hooks.nix",
@@ -78,7 +78,7 @@ def unescape_nix(s):
 def parse_invariants(text):
     block = re.search(r"\n  invariants = \[\n(.*?)\n  \];\n", text, re.S)
     if not block:
-        sys.exit("apex-consistency.nix: could not locate the `invariants` list")
+        sys.exit("ttw-consistency.nix: could not locate the `invariants` list")
     return [
         (unescape_nix(m.group(1)), unescape_nix(m.group(2)))
         for m in re.finditer(

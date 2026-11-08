@@ -33,7 +33,7 @@
 # entries in the order they are given. A set would reorder the tree behind
 # your back on the next read.
 #
-# No argument on purpose: `checks/apex-consistency.nix` imports `skills.nix`
+# No argument on purpose: `checks/ttw-consistency.nix` imports `skills.nix`
 # bare, and any check must be able to import this the same way.
 let
   skills = import ./skills.nix;

@@ -31,8 +31,8 @@
   (`secrets.nix` = `GITCRYPT` blob, `git status` fails on the clean filter;
   measured 2026-10-15), so no gate can run there. Do the tasks in the
   conversation.
-- Repo tools: `apex-tier --base master` (tier of the real diff),
-  `apex-health --repo .` (APEX drift, no model call), `trello` (test writes
+- Repo tools: `ttw-tier --base master` (tier of the real diff),
+  `ttw-health --repo .` (APEX drift, no model call), `trello` (test writes
   on the Tech & Pit board only).
 - Vault: `~/Vaults/AlxVault/02-Projets/nix-darwin/` — hub `nix-darwin.md`,
   then `sessions/` by date (the hub's session list is not kept up to date).

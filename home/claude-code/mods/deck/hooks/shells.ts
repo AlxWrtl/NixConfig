@@ -2,9 +2,9 @@
 // Every function returns the SAME array reference when nothing changed, so a
 // caller can skip the state write (and the redraw it causes).
 
-import type { DeckApexShell, DeckApexShellStatus } from '../types'
+import type { DeckTtwShell, DeckTtwShellStatus } from '../types'
 
-export type Shell = DeckApexShell
+export type Shell = DeckTtwShell
 
 export const CAP = 50
 
@@ -23,7 +23,7 @@ const TEAMMATE = 'teammate'
 
 // An ended status word, or undefined for anything else (still running, or a
 // word this build does not name: the shell keeps `running`).
-export type EndedStatus = Exclude<DeckApexShellStatus, 'running'>
+export type EndedStatus = Exclude<DeckTtwShellStatus, 'running'>
 
 function endedStatus(word: string | undefined): EndedStatus | undefined {
   if (word === 'completed' || word === 'failed' || word === 'killed') return word

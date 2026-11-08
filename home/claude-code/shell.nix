@@ -17,7 +17,7 @@
     # (`--here`), the one the board finds when this pane is clicked during a placement, so no
     # slot is looked up here. Ghostty unreachable: the global pane, said in its header.
     ap = "agent-pane --here";
-    # The terminal APEX board (`ab` is Apache's benchmark, /usr/sbin/ab).
+    # The terminal TTW board (`ab` is Apache's benchmark, /usr/sbin/ab).
     bd = "ttw-board --tui";
     # Skill analysis tools
     schliff = "uvx schliff";

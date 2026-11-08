@@ -20,7 +20,7 @@ in
     "$schema" = "https://json.schemastore.org/claude-code-settings.json";
     language = "french";
     # high, pas xhigh : sur Opus 5.5 les niveaux sont recalibrés (medium >= high
-    # d'Opus 5). Banc du 2026-10-10, 3 PR réelles rejouées par /apex complet :
+    # d'Opus 5). Banc du 2026-10-10, 3 PR réelles rejouées par /ttw complet :
     # qualité égale sur les 3, xhigh = +25-45 % de coût sur 2 d'entre elles.
     # /effort xhigh reste dispo à la demande.
     # Force-overridden par le merge activation — la valeur live suit le nix.
@@ -71,7 +71,7 @@ in
     # dernier Opus ; le suffixe `[1m]` sélectionne le contexte 1M. Valeur
     # alignée sur ce que /model écrit dans le live (alias, pas un identifiant
     # daté). Fable n'est plus coordinateur — il est spawné en vérificateur
-    # read-only sur diff haut-enjeu seulement, voir apex ORCHESTRATION.md.
+    # read-only sur diff haut-enjeu seulement, voir ttw ORCHESTRATION.md.
     # NON force-overridden dans la 2e passe jq, MAIS cette valeur re-seed le
     # live quand la clé y est absente (le CLI la retire quand /model écrit son
     # choix dans ~/.claude.json) — d'où l'obligation de la garder alignée sur
@@ -353,7 +353,7 @@ in
           # TypeSafe Jev : clé API pour le banc de sélection de blocs (sans wrapper, comme Neon ; api.typesafe.ai passe par allowed_domains, commande par commande).
           "${homeDirectory}/.config/secrets/typesafe-api-key"
         ];
-        # graphify-reindex (fired in BACKGROUND by APEX steps 01b/09b) writes
+        # graphify-reindex (fired in BACKGROUND by TTW steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the
         # default sandbox write-set (cwd + tmp) would kill it with "operation
         # not permitted" and force a dangerouslyDisableSandbox box at the end
@@ -392,7 +392,7 @@ in
         # widens the sandbox while implying a capability that does not exist is
         # worse than none. The browser rungs run with the sandbox disabled —
         # verified working, one confirmation box.
-        # The codex CLI (APEX `-e`, external verifier) opens a session state DB
+        # The codex CLI (TTW `-e`, external verifier) opens a session state DB
         # under $CODEX_HOME. With the sandbox as-is, the run aborts before it
         # reviews anything: `unable to open database file` on
         # ~/.codex/state_5.sqlite. No flag relocates it, so the path is the
@@ -669,16 +669,13 @@ in
         "Bash(preprod-curl *)"
         # Nix option docs at the flake.lock rev: read-only eval, sandboxed, own read-only-store fallback. Never in excludedCommands.
         "Bash(nix-options *)"
-        # External cross-vendor verifier (APEX `-e`). Wrapper around a
+        # External cross-vendor verifier (TTW `-e`). Wrapper around a
         # read-only `codex exec` subprocess: it reviews, it never edits.
-        # The apex-* rules cover the pre-rename alias until phase 4.
-        "Bash(apex-verify-external *)"
         "Bash(ttw-verify-external *)"
-        # APEX tier classifier: read-only git diff/show/ls-files over the diff.
-        "Bash(apex-tier *)"
+        # TTW tier classifier: read-only git diff/show/ls-files over the diff.
         "Bash(ttw-tier *)"
         # Knowledge-graph refresh wrapper (no args; writes only to ~/GraphVault
-        # — see sandbox allowWrite). Fired in background by APEX steps 01b/09b.
+        # — see sandbox allowWrite). Fired in background by TTW steps 01b/09b.
         "Bash(graphify-reindex)"
         # vault-snapshot auto-commits dirty notes onto `vault/<stamp>` in the
         # vault, then uploads the encrypted bundle to AlxWrtl/attic. Run as
@@ -794,8 +791,6 @@ in
         "Edit(**/.git/config)"
         # correction-budget.js counter: Edit deny also lands in sandbox
         # denyWrite, so neither Edit/Write nor Bash can reset a run's rounds.
-        # Rounds are counted across both dirs (apex -> ttw): guard both.
-        "Edit(~/.claude/apex-correction-budget/**)"
         "Edit(~/.claude/ttw-correction-budget/**)"
         "Bash(gh repo delete*)"
         "Bash(gh auth token*)"
@@ -957,10 +952,10 @@ in
           hooks = [
             {
               type = "command";
-              # APEX/TTW correction-round budget: denies the 3rd marked round
-              # (APEX- or TTW-CORRECTION-ROUND) of a run, spawned or re-briefed
+              # TTW correction-round budget: denies the 3rd marked round
+              # (TTW-CORRECTION-ROUND) of a run, spawned or re-briefed
               # by SendMessage, and a CronCreate or ScheduleWakeup prompt
-              # carrying the `apex: +1 tour` or `ttw: +1 tour` grant line
+              # carrying the `ttw: +1 tour` grant line
               # (it would come back as a user turn). NOT async — a deny must
               # land before the spawn.
               command = "${node} ~/.claude/hooks/correction-budget.js";
@@ -1034,10 +1029,10 @@ in
         }
         {
           # Quatre déclencheurs (le corps EST checks/ttw-metrics-probe.py) :
-          # 1. un 02-acs.md de run APEX : liste les AC qui ne nomment aucune
+          # 1. un 02-acs.md de run TTW : liste les AC qui ne nomment aucune
           #    commande et ne portent ni `[lecture] — raison` ni
           #    `[deferred to user]` (même classifieur que la métrique B2) ;
-          # 2. un 04-validate.md de run APEX : nomme les passes (e, x) qui ont
+          # 2. un 04-validate.md de run TTW : nomme les passes (e, x) qui ont
           #    tourné sans laisser de décompte (métrique B5) ;
           # 3. une note mémoire Claude ou son MEMORY.md : nomme ce que B4
           #    compte contre elle (lien mort, note absente de l'index) ;
@@ -1093,7 +1088,7 @@ in
         }
         {
           # Après un `gh pr merge` qui a fusionné : écrit pr.md dans le run
-          # APEX de la branche (le board le passe en Terminé). Synchrone :
+          # TTW de la branche (le board le passe en Terminé). Synchrone :
           # pr.md est sur disque avant le tour suivant. Timeout au-dessus des
           # 2 + 2 + 10 s internes (lecture, git, gh).
           matcher = "Bash";
@@ -1137,7 +1132,7 @@ in
             }
             {
               type = "command";
-              # Correction-round grant: a prompt line `apex: +1 tour` or
+              # Correction-round grant: a prompt line
               # `ttw: +1 tour` gives the spent run one more round. NOT async — the grant must be
               # on disk before the coordinator re-spawns.
               command = "${node} ~/.claude/hooks/correction-grant.js";

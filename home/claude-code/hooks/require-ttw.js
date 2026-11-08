@@ -19,7 +19,7 @@ process.stdin.on("end", () => {
       // Over 256 K characters the command is not read at all: every pass
       // below is skipped and it counts as a write shape. No recorded
       // call comes near (the longest unique one is 44 497 chars); only
-      // a repo without APEX pays for it, as a deny.
+      // a repo without TTW pays for it, as a deny.
       const HUGE = command.length > 262144;
 
       // THE SECOND DOOR. Edit/Write are not the only way to change a file:
@@ -628,24 +628,23 @@ process.stdin.on("end", () => {
       } catch { process.exit(0); }
     }
 
-    // Match the structured Skill call, never the word "apex": a
-    // conversation that merely discusses APEX would match a bare grep.
+    // Match the structured Skill call, never the word "ttw": a
+    // conversation that merely discusses TTW would match a bare grep.
     const t = data.transcript_path;
     if (!t || !fs.existsSync(t)) process.exit(0);
 
-    const APEX = "\"name\":\"Skill\",\"input\":{\"skill\":\"apex\"";
     const TTW = "\"name\":\"Skill\",\"input\":{\"skill\":\"ttw\"";
     const lines = fs.readFileSync(t, "utf8").split("\n");
 
     // Walk backwards from line `from`: whichever comes first decides. An
-    // APEX call before any user turn means APEX ran for THIS task -> pass.
-    // A user turn first means this is a new request with no APEX yet -> deny.
+    // TTW call before any user turn means TTW ran for THIS task -> pass.
+    // A user turn first means this is a new request with no TTW yet -> deny.
     const openAt = from => {
     for (let i = from; i >= 0; i--) {
       const line = lines[i];
       if (!line) continue;
 
-      if (line.indexOf(APEX) !== -1 || line.indexOf(TTW) !== -1) return true;
+      if (line.indexOf(TTW) !== -1) return true;
 
       // A prompt typed while the model works is often recorded only as an
       // attachment, never as a user line: a queued_command marked human
@@ -671,7 +670,7 @@ process.stdin.on("end", () => {
       // typed by anyone. This one is load-bearing: invoking a Skill writes
       // the skill's own body back as an isMeta user line, AFTER the Skill
       // marker. Without this skip the backwards walk hits that line first
-      // and denies forever — apex plants a fresh one on every retry.
+      // and denies forever — ttw plants a fresh one on every retry.
       // Replayed over 4 real transcripts: 161/161 historical edits denied.
       if (msg.isMeta === true) continue;
 
@@ -695,7 +694,7 @@ process.stdin.on("end", () => {
         : (Array.isArray(c) ? c.filter(b => b && b.type === "text").map(b => b.text || "").join("") : "");
       if (/^\s*<(bash-(input|stdout|stderr)|task-notification|command-name|local-command-)/.test(text)) continue;
 
-      return false; // a real user turn, reached before any APEX call
+      return false; // a real user turn, reached before any TTW call
     }
     return false;
     };
@@ -703,7 +702,7 @@ process.stdin.on("end", () => {
 
     // A subagent's tool calls carry agent_id and the PARENT's transcript, so
     // a user turn typed after the spawn would deny a subagent the coordinator
-    // launched under APEX. Its gate is ALSO the parent's gate at its last
+    // launched under TTW. Its gate is ALSO the parent's gate at its last
     // instruction: the spawn (the assistant line holding the Agent tool_use
     // its meta file names), or a later SendMessage to it, which can relay a
     // new request. A SendMessage to a name that is not another known

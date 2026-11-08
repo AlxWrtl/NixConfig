@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""APEX run metrics read from the on-disk runs, to compare before/after a
+"""TTW run metrics read from the on-disk runs, to compare before/after a
 harness change.
 
     B1  correction rounds: runs, runs with a correction round, rate, and the
@@ -34,7 +34,7 @@ exit 1 when one is unproven, 2 when the file is missing.
 
 --hook is the same file deployed as the PostToolUse hook on Write|Edit
 (~/.claude/hooks/ttw-metrics-probe.py): it reads the event on stdin and,
-when the written file is an APEX run's 02-acs.md, lists its unproven ACs,
+when the written file is a TTW run's 02-acs.md, lists its unproven ACs,
 count first and capped, as context for the model. A symlink, a non-regular
 file or one over HOOK_MAX_BYTES is not read: DEFERRED backtracks
 quadratically on a line of unclosed brackets, 0.8 s at 64 KiB. One classifier for the
@@ -60,7 +60,7 @@ Every other tier owes a 02-acs.md; an examine tally when 05-examine.md
 exists or a `Flags:` line holds `-x` or `+x`; an external tally when the
 external pass ran (B5 rule). A tally file the guards refuse is never named
 and does not count as held. The hook's run: a non-symlink dir of
-<toplevel>/.claude/output/apex/ or .claude/output/ttw/ whose 00-context.md passes the guards and
+<toplevel>/.claude/output/ttw/ whose 00-context.md passes the guards and
 whose first `Branch:` token is the branch, with no pr.md and no commit.txt;
 the newest 00-context.md wins. A run's date is its `Date:` line, else the
 mtime of its 00-context.md.
@@ -129,7 +129,7 @@ import subprocess
 import sys
 
 KNOWN_EXECUTABLES = frozenset({
-    "apex-board", "apex-health", "apex-tier", "awk", "bash", "brew", "cargo",
+    "awk", "bash", "brew", "cargo",
     "ttw-board", "ttw-health", "ttw-tier", "ttw-verify-external",
     "cat", "claude", "codex", "curl", "darwin-rebuild", "deadnix", "diff", "env",
     "find", "gh", "git", "go", "grep", "head", "jq", "launchctl", "ls", "mas",
@@ -147,10 +147,10 @@ GATE = re.compile(
 LECTURE = re.compile(r"\[lecture\]\s*[—–:-]\s*\S")
 DEFERRED = re.compile(r"\[[^\[\]\n]*\bdeferred to user\b[^\]\n]*\]")
 AC_DOCS = re.compile(r"^\s*(?:[-*]\s+)?\**AC-docs\b")
-ACS_PATH = re.compile(r"/\.claude/output/(?:apex|ttw)/[^/]+/02-acs\.md$")
-VALIDATE_PATH = re.compile(r"/\.claude/output/(?:apex|ttw)/[^/]+/04-validate\.md$")
-# Run dirs, relative to the repo root: both names during apex -> ttw.
-RUN_DIRS = (pathlib.Path(".claude/output/apex"), pathlib.Path(".claude/output/ttw"))
+ACS_PATH = re.compile(r"/\.claude/output/ttw/[^/]+/02-acs\.md$")
+VALIDATE_PATH = re.compile(r"/\.claude/output/ttw/[^/]+/04-validate\.md$")
+# Run dirs, relative to the repo root.
+RUN_DIRS = (pathlib.Path(".claude/output/ttw"),)
 MEMORY_PATH = re.compile(r"/\.claude/projects/[^/]+/memory/[^/]+\.md$")
 MEM_LINK = re.compile(r"\[\[([^\]|#]+)")
 INDEX_LINK = re.compile(r"\]\(([^)]+\.md)\)")
@@ -272,10 +272,10 @@ def has_command_v0(block):
     return "`" in block.prose[0]
 
 
-# Real AC blocks, verbatim from .claude/output/apex/<run>/02-acs.md.
+# Real AC blocks, from .claude/output/ttw/<run>/02-acs.md (run ids and names renamed to ttw in phase 4).
 # (run dir, AC, expected has_command, text)
 FIXTURES = [
-    ("53-apex-leftovers", "AC3", True,
+    ("53-ttw-leftovers", "AC3", True,
      "- AC3: nix flake check green; diff limited to the 2 files."),
     ("65-git-prefix-redos", "AC5", True,
      "AC5 nix flake check green (js-lint included); no eslint-disable."),
@@ -294,7 +294,7 @@ FIXTURES = [
     ("59-vault-snapshot-sandbox", "AC8", True, (
         "- AC8: `nix flake check` is green:\n"
         "  - hook-wiring still 25/8\n"
-        "  - apex-consistency evaluates (hooks.nix takes no new argument)\n"
+        "  - ttw-consistency evaluates (hooks.nix takes no new argument)\n"
         "  - vault-snapshot passes writeShellApplication shellcheck")),
     ("16-codex-skills-from-source", "AC-4", True, (
         "**AC-4 — Le check de structure passe.**\n"
@@ -326,7 +326,7 @@ FIXTURES = [
      "AC6 Header comment explains the linear-time construction in one or two sentences."),
 ]
 
-# Real AC blocks, verbatim from .claude/output/apex/<run>/02-acs.md.
+# Real AC blocks, from .claude/output/ttw/<run>/02-acs.md (run ids and names renamed to ttw in phase 4).
 # (run dir, AC, expected class, text)
 CLASS_FIXTURES = [
     ("25-goat-worker-launchagent", "AC8", "deferred", (
@@ -339,34 +339,34 @@ CLASS_FIXTURES = [
         "AC15 — Routage positif : même job, après démarrage du worker "
         "[démarrage deferred to user R-e] → terminé, sortie contient `Darwin` "
         "et les chemins de claude et codex.")),
-    ("53-apex-leftovers", "AC-docs", "docs",
+    ("53-ttw-leftovers", "AC-docs", "docs",
      "- AC-docs: n/a (text)."),
     ("54-nix-audit-fixes", "AC-docs", "docs",
      "- AC-docs: nixfmt@1.5.0 — `nixfmt --check <files>` (rung 5)."),
-    ("76-apex-ac-proof", "AC13", "lecture", (
+    ("76-ttw-ac-proof", "AC13", "lecture", (
         "AC13 [lecture] — the new AC rule reads as one rule in step-02, step-04 and "
         "the verify loop, its two exceptions named alike in all three; "
-        "apex-consistency proves the sentences exist, not that a planner reads "
+        "ttw-consistency proves the sentences exist, not that a planner reads "
         "them unambiguously.")),
     ("27-goat-agent-sandbox", "AC3", "unproven", (
         "- AC3 Chaque exception L4/W6 du profil figure dans "
-        "`scratchpad/apex27/03-exceptions.md` avec la commande D1/D2 qui l'exige "
+        "`scratchpad/ttw27/03-exceptions.md` avec la commande D1/D2 qui l'exige "
         "(relecture coordinateur, 1:1).")),
     ("65-git-prefix-redos", "AC6", "unproven",
      "AC6 Header comment explains the linear-time construction in one or two sentences."),
-    ("53-apex-leftovers", "AC3", "command",
+    ("53-ttw-leftovers", "AC3", "command",
      "- AC3: nix flake check green; diff limited to the 2 files."),
 ]
 
-# Real tally text, verbatim from .claude/output/apex/<run>/<file>.
+# Real tally text, from .claude/output/ttw/<run>/<file> (run ids and names renamed to ttw in phase 4).
 # (run dir, file, expected outcome, text)
 B5_TALLY_FIXTURES = [
-    ("76-apex-ac-proof", "05-examine.md", "changed", (
+    ("76-ttw-ac-proof", "05-examine.md", "changed", (
         "F3 | commit sweeping staged preprod files | noted | procedural; commit names "
         "the 8 paths (AC17)\n"
         "confirmed=4 unique=4 dismissed=3\n")),
-    ("67-apex-token-diet", "04-external-triage.md", "not changed", (
-        "# External triage — 67-apex-token-diet\n"
+    ("67-ttw-token-diet", "04-external-triage.md", "not changed", (
+        "# External triage — 67-ttw-token-diet\n"
         "Verdict: PASS (gpt-6-astra), 0 findings.\n"
         "\n"
         "confirmed=0 unique=0 dismissed=0\n")),
@@ -393,13 +393,13 @@ B5_VAULT_FIXTURES = [
      "- [[A]] — prior decision on the same hook\n", "Context: [[A]] settles the timeout.\n"),
     ("plan cites nothing", "not changed",
      "- [[A]] — prior decision on the same hook\n", "Files: checks/x.nix\n"),
-    # Real lines: 67-apex-token-diet/01b-obsidian.md:13 (prefix), 02-plan.md:45.
+    # Real lines: 67-ttw-token-diet/01b-obsidian.md:13 (prefix), 02-plan.md:45.
     ("vault path against basename", "changed", (
-        "- [[02-Projets/nix-darwin/sessions/2026-08-14 - refonte-verification-apex]] / "
-        "[[02-Projets/nix-darwin/sessions/2026-08-11 - enforcement-apex-et-nettoyage]] — "
+        "- [[02-Projets/nix-darwin/sessions/2026-08-14 - refonte-verification-ttw]] / "
+        "[[02-Projets/nix-darwin/sessions/2026-08-11 - enforcement-ttw-et-nettoyage]] — "
         "fix-loop bounds (2 correction rounds)\n"), (
-        "T12 Session note (-n): supersedes [[2026-08-14 - refonte-verification-apex]] and "
-        "[[2026-09-09 - verificateur-externe-codex-dans-apex]]; keep threshold ≥1 unique "
+        "T12 Session note (-n): supersedes [[2026-08-14 - refonte-verification-ttw]] and "
+        "[[2026-09-09 - verificateur-externe-codex-dans-ttw]]; keep threshold ≥1 unique "
         "confirmed / 10 runs over ~4 weeks, read from 04-external-triage.md.\n")),
     ("alias, anchor, case, .md", "changed",
      "- [[A.md]] — prior decision\n", "See [[a#Decision|the decision]].\n"),
@@ -428,18 +428,18 @@ B5_ANALYZE_FIXTURES = [
      "Files: checks/hook-wiring.nix\n", "Tier: standard\n"),
 ]
 
-# Real 00-context.md lines, verbatim from .claude/output/apex/<run>/.
+# Real 00-context.md lines, from .claude/output/ttw/<run>/ (run ids and names renamed to ttw in phase 4).
 # (source, expected tier, expected examine due, text). "escalated" joins two
 # real Tier: lines in escalation order: the last one decides.
 B6_FIXTURES = [
     ("escalated: 77-correction-lessons + deck-bg-open", "High-stakes", True, (
-        "Flags: -t -pr -o -n (Standard, provisoire : revu sur le diff réel par apex-tier)\n"
+        "Flags: -t -pr -o -n (Standard, provisoire : revu sur le diff réel par ttw-tier)\n"
         "Tier: Standard (provisoire)\n"
         "Tier: High-stakes. Flags: -t -x -pr -o -n -e\n")),
     ("77-correction-lessons", "Standard", False, (
-        "Flags: -t -pr -o -n (Standard, provisoire : revu sur le diff réel par apex-tier)\n"
+        "Flags: -t -pr -o -n (Standard, provisoire : revu sur le diff réel par ttw-tier)\n"
         "Tier: Standard (provisoire)\n")),
-    ("76-apex-ac-proof", "Standard", True, (
+    ("76-ttw-ac-proof", "Standard", True, (
         "Tier: Standard (provisional) — Files: unknown (analyze)\n"
         "Flags: -t -pr -o -n; escalated +x +e at validate\n")),
     ("ui-expert-skill", "Standard", False,
@@ -697,7 +697,7 @@ def pr_hook(data):
     items = [text for key, text in B6_ITEMS if (gaps or {}).get(key) == "missing"]
     if not items:
         return 0
-    msg = (f"APEX run .claude/output/{run.parent.name}/{run.name}/ is missing: {'; '.join(items)}. "
+    msg = (f"TTW run .claude/output/{run.parent.name}/{run.name}/ is missing: {'; '.join(items)}. "
            "Write them before merging (B6).")
     print(json.dumps({"hookSpecificOutput": dict(hookEventName="PostToolUse", additionalContext=msg)}))
     return 0
@@ -1042,9 +1042,9 @@ def memory_hook(p):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="APEX run metrics (B1-B6).")
+    ap = argparse.ArgumentParser(description="TTW run metrics (B1-B6).")
     ap.add_argument("--runs", type=pathlib.Path, default=None,
-                    help="one runs dir (default: .claude/output/apex and .claude/output/ttw)")
+                    help="one runs dir (default: .claude/output/ttw)")
     ap.add_argument(
         "--memory",
         type=pathlib.Path,

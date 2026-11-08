@@ -1,14 +1,10 @@
 # Runtime check for ttw-tier (home/claude-code/ttw-tier.nix): the BUILT
 # classifier runs against throwaway git repos and must return the expected tier.
 #
-#   A1  apex -> ttw, phase 2: the package ships bin/ttw-tier AND bin/apex-tier,
-#       the old name a symlink to ttw-tier in the same output (a session
-#       started before the switch still finds it; dropped in phase 4). F2
-#       runs once more through the alias. Same for ttw-verify-external, built
-#       here because no other flake check builds it: bin/apex-verify-external
-#       -> ttw-verify-external, `--help` identical from both names.
-#   A2  self-name: usage and --help name ttw-tier / ttw-verify-external, never
-#       the apex-* name.
+#   A1  the package's bin holds exactly ttw-tier, executable (the pre-rename
+#       alias is gone). Same for ttw-verify-external, built here because no
+#       other flake check builds it: its bin holds exactly ttw-verify-external.
+#   A2  self-name: usage and --help name ttw-tier / ttw-verify-external.
 #
 #   F1  `matcher = "permission_prompt|elicitation_dialog";` added in a new
 #       group under hooks.Notification            -> direct
@@ -178,51 +174,33 @@ pkgs.runCommand "ttw-tier-check" { } ''
     exit 1
   fi
 
-  # A1 check_alias PKG NEW OLD: bin/NEW executable; bin/OLD a symlink whose
-  # target is NEW in the same bin dir (`NEW` or `PKG/bin/NEW`), both resolving
-  # to one file. A copy, a wrapper or a link straight into another store path
-  # is a second binary that can drift from the first.
-  check_alias() {
-    pkg="$1"; new="$2"; old="$3"
-    [ -x "$pkg/bin/$new" ] || { echo "ttw-tier: A1 FAILED — $pkg/bin/$new is missing or not executable"; exit 1; }
-    [ -L "$pkg/bin/$old" ] || { echo "ttw-tier: A1 FAILED — $pkg/bin/$old is not a symlink (the pre-rename alias of $new, kept until phase 4)"; exit 1; }
-    tgt="$(readlink "$pkg/bin/$old")"
-    case "$tgt" in
-    "$new" | "$pkg/bin/$new") ;;
-    *)
-      echo "ttw-tier: A1 FAILED — $pkg/bin/$old points at '$tgt', not at $new in the same package"
-      exit 1
-      ;;
-    esac
-    [ "$(readlink -f "$pkg/bin/$old")" = "$(readlink -f "$pkg/bin/$new")" ] \
-      || { echo "ttw-tier: A1 FAILED — $old and $new do not resolve to the same file"; exit 1; }
-    echo "ttw-tier: A1 $old -> $new OK"
+  # A1 check_bin PKG NAME: bin/NAME executable and the only entry of bin/.
+  check_bin() {
+    pkg="$1"; name="$2"
+    [ -x "$pkg/bin/$name" ] || { echo "ttw-tier: A1 FAILED — $pkg/bin/$name is missing or not executable"; exit 1; }
+    bins="$(ls -A "$pkg/bin" | tr '\n' ' ')"
+    [ "$bins" = "$name " ] || { echo "ttw-tier: A1 FAILED — $pkg/bin holds '$bins', want exactly '$name'"; exit 1; }
+    echo "ttw-tier: A1 bin is exactly $name OK"
   }
-  check_alias ${tier} ttw-tier apex-tier
-  check_alias ${vext} ttw-verify-external apex-verify-external
+  check_bin ${tier} ttw-tier
+  check_bin ${vext} ttw-verify-external
 
-  # A2: the usage line names the new binary, from either name.
-  for n in ttw-tier apex-tier; do
-    rc=0
-    ${tier}/bin/$n --no-such-flag > "$TMPDIR/usage-$n.out" 2>&1 || rc=$?
-    if [ "$rc" != 2 ] || ! grep -qF 'usage: ttw-tier' "$TMPDIR/usage-$n.out" || grep -qF 'apex-tier' "$TMPDIR/usage-$n.out"; then
-      echo "ttw-tier: A2 FAILED — '$n --no-such-flag' exited $rc (want 2) and/or its text does not name ttw-tier alone:"
-      cat "$TMPDIR/usage-$n.out"
-      exit 1
-    fi
-  done
+  # A2: the usage line and --help name the binary.
+  rc=0
+  ${tier}/bin/ttw-tier --no-such-flag > "$TMPDIR/usage.out" 2>&1 || rc=$?
+  if [ "$rc" != 2 ] || ! grep -qF 'usage: ttw-tier' "$TMPDIR/usage.out"; then
+    echo "ttw-tier: A2 FAILED — 'ttw-tier --no-such-flag' exited $rc (want 2) and/or its text does not name ttw-tier:"
+    cat "$TMPDIR/usage.out"
+    exit 1
+  fi
   echo "ttw-tier: A2 usage names ttw-tier OK"
-  for n in ttw-verify-external apex-verify-external; do
-    rc=0
-    ${vext}/bin/$n --help > "$TMPDIR/help-$n.out" 2>&1 || rc=$?
-    if [ "$rc" != 0 ] || ! grep -qF 'ttw-verify-external --acs <FILE>' "$TMPDIR/help-$n.out" || grep -qF 'apex-verify-external' "$TMPDIR/help-$n.out"; then
-      echo "ttw-tier: A2 FAILED — '$n --help' exited $rc (want 0) and/or its text does not name ttw-verify-external alone:"
-      cat "$TMPDIR/help-$n.out"
-      exit 1
-    fi
-  done
-  cmp -s "$TMPDIR/help-ttw-verify-external.out" "$TMPDIR/help-apex-verify-external.out" \
-    || { echo "ttw-tier: A2 FAILED — --help differs between ttw-verify-external and its apex-verify-external alias"; exit 1; }
+  rc=0
+  ${vext}/bin/ttw-verify-external --help > "$TMPDIR/help.out" 2>&1 || rc=$?
+  if [ "$rc" != 0 ] || ! grep -qF 'ttw-verify-external --acs <FILE>' "$TMPDIR/help.out"; then
+    echo "ttw-tier: A2 FAILED — 'ttw-verify-external --help' exited $rc (want 0) and/or its text does not name ttw-verify-external:"
+    cat "$TMPDIR/help.out"
+    exit 1
+  fi
   echo "ttw-tier: A2 --help names ttw-verify-external OK"
 
   # fixture NAME: a fresh repo on master with the base files, then branch feat/x.
@@ -265,7 +243,6 @@ pkgs.runCommand "ttw-tier-check" { } ''
   fixture f2
   cp ${settingsF2} settings.nix
   expect "F2 deny-list entry" high permission@settings.nix ${tier}/bin/ttw-tier
-  expect "F2 through the apex-tier alias (A1)" high permission@settings.nix ${tier}/bin/apex-tier
 
   fixture f3
   cp ${hookF3} hooks/x.js

@@ -1,4 +1,4 @@
-# APEX: synthetic shipped-reserve
+# TTW: synthetic shipped-reserve
 Tier: Standard
 Branch: feat/shipped-reserve
 

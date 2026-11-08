@@ -1,7 +1,7 @@
 # graphify-reindex — incremental refresh of the AlxVault knowledge graph.
 # (writeShellApplication prepends set -euo pipefail and shellchecks at build.)
 #
-# Fired in the BACKGROUND by APEX step-09b (after the session note is written)
+# Fired in the BACKGROUND by TTW step-09b (after the session note is written)
 # and by step-01b (catch-up when the graph is stale). Contract with callers:
 #   - ALWAYS exits 0: a failed reindex degrades to a stale graph; it never
 #     blocks or fails a session. The next run catches up.

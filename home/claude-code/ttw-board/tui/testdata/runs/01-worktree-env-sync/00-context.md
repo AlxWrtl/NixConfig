@@ -1,4 +1,4 @@
-# APEX: open .env to the sandbox + global worktree env-file sync hook
+# TTW: open .env to the sandbox + global worktree env-file sync hook
 Date: 2026-10-19
 Tier: High-stakes (sandbox denyRead/allowRead keys; new hook)
 Flags: -t -f -x -pr -o -n -e

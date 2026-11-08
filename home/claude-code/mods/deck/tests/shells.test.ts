@@ -1,4 +1,4 @@
-// Ported from apex-band (shell, notification, TaskStop and orphan cases): the owner's end
+// Ported from ttw-band (shell, notification, TaskStop and orphan cases): the owner's end
 // comes from its turn.complete (shellsAfterTurn, applied by register.tsx to every subagent) or
 // the agent snapshot (closeBySnapshot).
 import { describe, expect, test } from 'claude-code/testing'

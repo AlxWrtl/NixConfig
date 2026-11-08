@@ -1,4 +1,4 @@
-# APEX: synthetic current-both
+# TTW: synthetic current-both
 Tier: Standard
 Branch: feat/current-both
 

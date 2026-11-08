@@ -90,7 +90,7 @@ let
       # Lu par l'autocompaction : https://code.claude.com/docs/en/costs
       name = "Compact instructions";
       body = ''
-        - Keep first: active TTW run (id, tier, step, `.claude/output/apex/<id>/`),
+        - Keep first: active TTW run (id, tier, step, `.claude/output/ttw/<id>/`),
           decisions + their why, files touched + gate state, explicit user asks.
         - Drop raw tool output already summarized.
       '';

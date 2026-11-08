@@ -1,4 +1,4 @@
-# APEX: allow sandbox write to ~/.config/.wrangler/config
+# TTW: allow sandbox write to ~/.config/.wrangler/config
 Date: 2026-10-18
 Tier: High-stakes (sandbox allowWrite key) — Files: home/claude-code/settings.nix, checks/claude-config.nix — Est-lines: ~8
 Flags: -t -f -x -pr -o -n -e (defaults)

@@ -1,7 +1,7 @@
 package main
 
-// The Runs tab also reads the agents' runs: `<repo>/.claude/worktrees/<name>/.claude/output/apex`
-// and `<genericRoot>/<name>/.claude/output/apex`. Each link of the way must be a real dir; a
+// The Runs tab also reads the agents' runs: `<repo>/.claude/worktrees/<name>/.claude/output/ttw`
+// and `<genericRoot>/<name>/.claude/output/ttw`. Each link of the way must be a real dir; a
 // link's target sits inside the agents' dir here, so only the Lstat guard can refuse it (the
 // realpath guard has its own test).
 
@@ -23,22 +23,22 @@ func putFile(t *testing.T, p, text string) {
 	mustDo(t, os.WriteFile(p, []byte(text), 0o644))
 }
 
-// apexOf: the runs dir of an agent's home dir.
-func apexOf(home string) string { return filepath.Join(home, ".claude", "output", "apex") }
+// runsOf: the runs dir of an agent's home dir.
+func runsOf(home string) string { return filepath.Join(home, ".claude", "output", "ttw") }
 
 // newAgentFixture: main run r1; worktree agent wa with r1 (same id) and r2; generic ga with g1.
 func newAgentFixture(t *testing.T) *agentFixture {
 	t.Helper()
 	root := t.TempDir()
 	f := &agentFixture{root: root, repo: filepath.Join(root, "repo")}
-	f.runs = apexOf(f.repo)
+	f.runs = runsOf(f.repo)
 	f.wt = filepath.Join(f.repo, ".claude", "worktrees")
 	f.gen = filepath.Join(root, "agents")
 	putFile(t, filepath.Join(f.runs, "r1", "00-context.md"), ctxText("main-one", nil))
-	putFile(t, filepath.Join(apexOf(filepath.Join(f.wt, "wa")), "r1", "00-context.md"), ctxText("wt-one", nil))
-	putFile(t, filepath.Join(apexOf(filepath.Join(f.wt, "wa")), "r1", "wt-only.md"), "# only in wa\n")
-	putFile(t, filepath.Join(apexOf(filepath.Join(f.wt, "wa")), "r2", "00-context.md"), ctxText("wt-two", nil))
-	putFile(t, filepath.Join(apexOf(filepath.Join(f.gen, "ga")), "g1", "00-context.md"), ctxText("gen-one", nil))
+	putFile(t, filepath.Join(runsOf(filepath.Join(f.wt, "wa")), "r1", "00-context.md"), ctxText("wt-one", nil))
+	putFile(t, filepath.Join(runsOf(filepath.Join(f.wt, "wa")), "r1", "wt-only.md"), "# only in wa\n")
+	putFile(t, filepath.Join(runsOf(filepath.Join(f.wt, "wa")), "r2", "00-context.md"), ctxText("wt-two", nil))
+	putFile(t, filepath.Join(runsOf(filepath.Join(f.gen, "ga")), "g1", "00-context.md"), ctxText("gen-one", nil))
 	stubGenericRoot(t, f.gen)
 	return f
 }
@@ -112,7 +112,7 @@ func TestAgentRunsNotInDerive(t *testing.T) {
 	}
 }
 
-// Without a tab repo (runs dir not `<repo>/.claude/output/apex`): no worktree source.
+// Without a tab repo (runs dir not `<repo>/.claude/output/ttw`): no worktree source.
 func TestAgentRunsNoTabRepo(t *testing.T) {
 	f := newAgentFixture(t)
 	stubGenericRoot(t, filepath.Join(f.root, "none"))
@@ -124,21 +124,10 @@ func TestAgentRunsNoTabRepo(t *testing.T) {
 	wantKeys(t, f.keys(t), "p1")
 }
 
-// ttw rename, phase 3: a board on `<repo>/.claude/output/ttw` keeps its tab repo (worktree
-// agents still read), and an agent whose runs sit under `.claude/output/ttw` only is read.
-func TestAgentRunsTTWDir(t *testing.T) {
-	f := newAgentFixture(t)
-	ttw := filepath.Join(f.repo, ".claude", "output", "ttw")
-	mustDo(t, os.Rename(f.runs, ttw))
-	f.runs = ttw
-	putFile(t, filepath.Join(f.wt, "wb", ".claude", "output", "ttw", "t1", "00-context.md"), ctxText("wt-ttw", nil))
-	wantKeys(t, f.keys(t), "r1", "wa/r1", "wa/r2", "wb/t1", "~ga/g1")
-}
-
 // A board opened in a worktree reads that worktree's runs once, as its own.
 func TestAgentRunsBoardInWorktree(t *testing.T) {
 	f := newAgentFixture(t)
-	f.runs = apexOf(filepath.Join(f.wt, "wa"))
+	f.runs = runsOf(filepath.Join(f.wt, "wa"))
 	wantKeys(t, f.keys(t), "r1", "r2", "~ga/g1")
 }
 
@@ -163,7 +152,7 @@ func TestAgentRunsLinkGuards(t *testing.T) {
 			move(t, filepath.Join(f.repo, ".claude"), filepath.Join(f.repo, "claude-real"))
 		}, []string{"r1", "~ga/g1"}},
 		{"name", func(t *testing.T, f *agentFixture) {
-			putFile(t, filepath.Join(apexOf(filepath.Join(f.wt, "x-real")), "l1", "00-context.md"), ctxText("linked", nil))
+			putFile(t, filepath.Join(runsOf(filepath.Join(f.wt, "x-real")), "l1", "00-context.md"), ctxText("linked", nil))
 			mustDo(t, os.Rename(filepath.Join(f.wt, "x-real"), filepath.Join(f.wt, ".x-real")))
 			mustDo(t, os.Symlink(filepath.Join(f.wt, ".x-real"), filepath.Join(f.wt, "wl")))
 		}, []string{"r1", "wa/r1", "wa/r2", "~ga/g1"}},
@@ -173,18 +162,18 @@ func TestAgentRunsLinkGuards(t *testing.T) {
 		{"output", func(t *testing.T, f *agentFixture) {
 			move(t, filepath.Join(f.wt, "wa", ".claude", "output"), filepath.Join(f.wt, "wa", ".claude", "out2"))
 		}, []string{"r1", "~ga/g1"}},
-		{"apex", func(t *testing.T, f *agentFixture) {
-			move(t, apexOf(filepath.Join(f.wt, "wa")), filepath.Join(f.wt, "wa", ".claude", "output", "apex2"))
+		{"ttw", func(t *testing.T, f *agentFixture) {
+			move(t, runsOf(filepath.Join(f.wt, "wa")), filepath.Join(f.wt, "wa", ".claude", "output", "ttw2"))
 		}, []string{"r1", "~ga/g1"}},
 		{"generic root", func(t *testing.T, f *agentFixture) {
 			move(t, f.gen, filepath.Join(f.root, "agents-real"))
 		}, []string{"r1", "wa/r1", "wa/r2"}},
-		{"generic apex", func(t *testing.T, f *agentFixture) {
-			move(t, apexOf(filepath.Join(f.gen, "ga")), filepath.Join(f.gen, "ga", "apex2"))
+		{"generic ttw", func(t *testing.T, f *agentFixture) {
+			move(t, runsOf(filepath.Join(f.gen, "ga")), filepath.Join(f.gen, "ga", "ttw2"))
 		}, []string{"r1", "wa/r1", "wa/r2"}},
 		{"invalid name", func(t *testing.T, f *agentFixture) {
-			putFile(t, filepath.Join(apexOf(filepath.Join(f.wt, "Bad_Name")), "b1", "00-context.md"), ctxText("bad", nil))
-			putFile(t, filepath.Join(apexOf(filepath.Join(f.wt, "-x")), "b2", "00-context.md"), ctxText("dash", nil))
+			putFile(t, filepath.Join(runsOf(filepath.Join(f.wt, "Bad_Name")), "b1", "00-context.md"), ctxText("bad", nil))
+			putFile(t, filepath.Join(runsOf(filepath.Join(f.wt, "-x")), "b2", "00-context.md"), ctxText("dash", nil))
 		}, []string{"r1", "wa/r1", "wa/r2", "~ga/g1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -219,7 +208,7 @@ func TestAgentRunsFileOutsideSource(t *testing.T) {
 	f := newAgentFixture(t)
 	secret := filepath.Join(f.root, "secret-ctx.md")
 	putFile(t, secret, ctxText("secret", nil))
-	ln := filepath.Join(apexOf(filepath.Join(f.wt, "wa")), "r3", "00-context.md")
+	ln := filepath.Join(runsOf(filepath.Join(f.wt, "wa")), "r3", "00-context.md")
 	mustDo(t, os.MkdirAll(filepath.Dir(ln), 0o755))
 	mustDo(t, os.Symlink(secret, ln))
 	runs, _, err := (&Reader{RunsDir: f.runs, Agents: true}).Read()
@@ -260,7 +249,7 @@ func TestAgentRunsDrawer(t *testing.T) {
 	}
 	send(m, key('q'))
 	cmd := m.openDrawer(0, 0, "wa/r2")
-	move(t, apexOf(filepath.Join(f.wt, "wa")), filepath.Join(f.wt, "wa", ".claude", "output", "apex2"))
+	move(t, runsOf(filepath.Join(f.wt, "wa")), filepath.Join(f.wt, "wa", ".claude", "output", "ttw2"))
 	send(m, cmd())
 	if m.drawer == nil || len(m.drawer.files) != 0 || m.drawer.doc == nil || m.drawer.doc.Kind != "outside" {
 		t.Fatalf("drawer of a swapped source: %+v", m.drawer)

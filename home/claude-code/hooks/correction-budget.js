@@ -7,16 +7,17 @@ const path = require("path");
 const MAX_ROUNDS = 2;
 const BUDGET_MS = 3000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const APEX_OUT = path.join(".claude", "output", "apex");
-const OUT_DIRS = [APEX_OUT, path.join(".claude", "output", "ttw")];
-const BUDGET_DIRS = ["apex-correction-budget", "ttw-correction-budget"];
+const TTW_OUT = path.join(".claude", "output", "ttw");
+const BUDGET_DIR = "ttw-correction-budget";
 const ROUND = /^(.+)\.round([1-9][0-9]*)$/;
-const MARKER = /^[\s>*`-]*(?:APEX|TTW)-CORRECTION-ROUND:\s*([^\s`]*)[\s`]*$/;
-const MENTIONS = /06-resolve\.md|correction round/i;
+const MARKER = /^[\s>*`-]*TTW-CORRECTION-ROUND:\s*([^\s`]*)[\s`]*$/;
+// Any separator: a brief carrying only a pre-rename marker line (unread by
+// MARKER) still names a correction round, so it is denied, never uncounted.
+const MENTIONS = /06-resolve\.md|correction[\s_-]*round/i;
 const GRANT = /^(.+)\.grant([1-9][0-9]*)$/;
 // Same line as correction-grant.js: a scheduled prompt comes back as a user
 // turn, so the model may not schedule the user's grant.
-const TOKEN = /^\s*(?:apex|ttw)\s*:\s*\+1\s+tour\s*$/i;
+const TOKEN = /^\s*ttw\s*:\s*\+1\s+tour\s*$/i;
 const SCHEDULERS = ["CronCreate", "ScheduleWakeup"];
 
 let settled = false;
@@ -77,26 +78,19 @@ function failed(why) {
   allow();
 }
 
-// Every file of every budget dir beside `dir` (apex and ttw), as
-// { bd, f }: a run spent under one may not get fresh rounds under the other.
-// A missing dir holds nothing; a dir that is no real directory (a symlink,
-// a file) or any other read error throws (fails closed).
+// Every file of the budget dir `dir`, as { bd, f }. A missing dir holds
+// nothing; a dir that is no real directory (a symlink, a file) or any other
+// read error throws (fails closed).
 function budgetFiles(dir) {
-  const out = [];
-  for (const b of BUDGET_DIRS) {
-    const bd = path.join(path.dirname(dir), b);
-    let st;
-    try {
-      st = fs.lstatSync(bd);
-    } catch (e) {
-      if (e && e.code === "ENOENT") continue;
-      throw e;
-    }
-    if (!st.isDirectory()) throw new Error("budget dir is not a real directory: " + bd);
-    const names = fs.readdirSync(bd);
-    for (const f of names) out.push({ bd, f });
+  let st;
+  try {
+    st = fs.lstatSync(dir);
+  } catch (e) {
+    if (e && e.code === "ENOENT") return [];
+    throw e;
   }
-  return out;
+  if (!st.isDirectory()) throw new Error("budget dir is not a real directory: " + dir);
+  return fs.readdirSync(dir).map((f) => ({ bd: dir, f }));
 }
 
 // Rounds the user granted this run past MAX_ROUNDS: one <run>.grant<n> file
@@ -110,7 +104,7 @@ function grantsOf(dir, run) {
   return n;
 }
 
-// Rounds this run spent across every budget dir: their total is what the
+// Rounds this run spent in the budget dir: their total is what the
 // cap bounds, their indices are the slots a new stamp may not reuse.
 function roundsOf(dir, run) {
   const taken = new Set();
@@ -159,24 +153,23 @@ function main() {
   if (!marker && MENTIONS.test(prompt)) { denyNoMarker(); return; }
   if (marker === null || marker === "none") { allow(); return; }
   // A run outside the session's repo is named by its absolute run dir,
-  // <repo>/.claude/output/(apex|ttw)/<run-id>; its budget is keyed by the
+  // <repo>/.claude/output/ttw/<run-id>; its budget is keyed by the
   // run-id.
   const named = marker;
   let runDir = null;
-  if (path.isAbsolute(marker) && OUT_DIRS.some((o) => path.dirname(marker).endsWith(path.sep + o)) && path.join(path.dirname(marker), path.basename(marker)) === marker) {
+  if (path.isAbsolute(marker) && path.dirname(marker).endsWith(path.sep + TTW_OUT) && path.join(path.dirname(marker), path.basename(marker)) === marker) {
     runDir = marker;
     marker = path.basename(marker);
   }
   if (!RUN_ID.test(marker) || named.includes("..")) {
-    deny("BLOCKED: TTW-CORRECTION-ROUND names \"" + safe(named) + "\", which is neither none, a run-id like 62-correction-budget, nor an absolute <repo>/.claude/output/apex/<run-id> path; fix the line, then retry.");
+    deny("BLOCKED: TTW-CORRECTION-ROUND names \"" + safe(named) + "\", which is neither none, a run-id like 62-correction-budget, nor an absolute <repo>/.claude/output/ttw/<run-id> path; fix the line, then retry.");
     return;
   }
   marked = marker;
 
   const cwd = typeof data.cwd === "string" && data.cwd !== "" ? data.cwd : process.cwd();
-  // A run-id resolves under the first output dir holding it; under neither,
-  // the apex path is the one the deny names.
-  if (runDir === null) runDir = OUT_DIRS.map((o) => path.join(cwd, o, marker)).find((p) => { try { return fs.statSync(p).isDirectory(); } catch { return false; } }) || path.join(cwd, APEX_OUT, marker);
+  // A run-id resolves under the repo's .claude/output/ttw only.
+  if (runDir === null) runDir = path.join(cwd, TTW_OUT, marker);
   let isDir;
   try { isDir = fs.statSync(runDir).isDirectory(); } catch { isDir = false; }
   if (!isDir) {
@@ -189,7 +182,7 @@ function main() {
   if (data.tool_name !== "SendMessage" && ti.model !== "opus") { const asked = ti.model === undefined || ti.model === null || ti.model === "" ? "absent" : "\"" + safe(ti.model) + "\""; deny("BLOCKED: correction rounds run on opus. This correction brief for run " + marker + " has model " + asked + "; re-spawn it with model: \"opus\". No round was counted."); return; }
 
   const home = process.env.HOME || os.homedir();
-  const dir = path.join(home, ".claude", "apex-correction-budget");
+  const dir = path.join(home, ".claude", BUDGET_DIR);
   const stamp = JSON.stringify({
     ts: new Date().toISOString(),
     tool: safe(data.tool_name),
@@ -200,8 +193,8 @@ function main() {
   }) + "\n";
   try { fs.mkdirSync(dir, { recursive: true }); } catch { denyState("unwritable", dir); return; }
 
-  // A round goes out while the run's total, both dirs, is under the cap.
-  // Claim a slot by exclusive create at an index free in both dirs: of two
+  // A round goes out while the run's total is under the cap.
+  // Claim a slot by exclusive create at a free index: of two
   // racing rounds, one wins, the loser counts the winner's round.
   const cap = MAX_ROUNDS + grantsOf(dir, marker);
   const spent = roundsOf(dir, marker);

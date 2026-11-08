@@ -1,18 +1,14 @@
 # Runtime check for ttw-board (home/claude-code/ttw-board.nix): the page's
 # stage rules under node, the Go terminal board's port of them, then the BUILT
-# launcher in --dry-run against throwaway repos and HOMEs. D1-D7 keep the
-# pre-rename layout (.claude/output/apex, ~/.claude/apex-correction-budget):
-# it is the fallback the launcher must still serve.
+# launcher in --dry-run against throwaway repos and HOMEs.
 #
-#   A1  bin/ttw-board executable; bin/apex-board a symlink to ttw-board in the
-#       same bin dir, both resolving to one file (the pre-rename alias, kept
-#       until phase 4); the TUI binary is bin/ttw-board-tui
-#   A2  usage (unknown option -> exit 2) names ttw-board alone, from either
-#       name; --dry-run through the alias prints the same runs line
-#   A3  runs dir: a repo with only .claude/output/ttw -> runs from it (web and
-#       --tui); with both .claude/output/ttw and .claude/output/apex -> ttw
-#   A4  budget dir: ~/.claude/ttw-correction-budget when it exists (alone or
-#       next to apex-correction-budget), else apex-correction-budget (D1)
+#   A1  the launcher's bin dir holds exactly ttw-board (executable), no other
+#       name; the TUI binary is bin/ttw-board-tui
+#   A2  usage (unknown option -> exit 2) names ttw-board
+#   A3  runs dir: a repo with .claude/output/ttw -> runs from it (web and
+#       --tui); a repo with only the pre-rename output dir -> exit 1, no runs
+#   A4  budget dir: ~/.claude/ttw-correction-budget when it exists, else an
+#       empty dir (the pre-rename budget dir is not read)
 #
 #   T1  `node test.js board.js` (fixtures in the three real 00-context.md
 #       shapes + synthetic À-toi cases)         -> exit 0
@@ -22,9 +18,9 @@
 #       NOW, links untouched); each time `node parity.js` (board.js) and the
 #       BUILT `ttw-board-tui --derive-json` on the same RUNS BUDGET NOW
 #       -> byte-equal JSON. Its `go test` already ran in the binary's build.
-#   D1  --dry-run --port 9999 <repo>, HOME holds .claude/apex-correction-budget
-#       -> url on 127.0.0.1:9999, runs -> <repo>/.claude/output/apex,
-#          budget -> $HOME/.claude/apex-correction-budget, index.html and
+#   D1  --dry-run --port 9999 <repo>, HOME holds .claude/ttw-correction-budget
+#       -> url on 127.0.0.1:9999, runs -> <repo>/.claude/output/ttw,
+#          budget -> $HOME/.claude/ttw-correction-budget, index.html and
 #          board.js: copy of the store file (byte-equal to the sources,
 #          test.js not shipped, serve.py byte-equal next to them),
 #          meta.json {"repo":"<basename>"}, temp root gone on exit
@@ -36,11 +32,11 @@
 #          in the root
 #   D2  same, HOME without the budget dir      -> budget: empty dir, port 8765
 #   D3  no repo argument, cwd = a subdir of a git repo -> runs of its toplevel
-#   D4  repo without .claude/output/ttw or apex -> exit 1, nothing served
+#   D4  repo without .claude/output/ttw -> exit 1, nothing served
 #   D5  --port 0                               -> exit 2 (usage)
 #   D6  --tui --dry-run, HOME with and without the budget dir -> exactly
 #       `tui: <store>/bin/ttw-board-tui` (the built Go binary),
-#       `runs: <repo>/.claude/output/apex`, `budget: <dir>` / `budget: none`;
+#       `runs: <repo>/.claude/output/ttw`, `budget: <dir>` / `budget: none`;
 #       no tui.js nor tui-test.js in the store page dir, no temp root made;
 #       --port 0 ignored
 #   D7  --tui with PATH=/var/empty, stdin </dev/null and stdout a pipe -> the
@@ -296,79 +292,63 @@ pkgs.runCommand "ttw-board-check" { __darwinAllowLocalNetworking = true; } ''
 
   # Fixtures: a repo with one run, a repo without runs, two HOMEs.
   R="$TMPDIR/myrepo"
-  mkdir -p "$R/.claude/output/apex/run-1" "$R/sub" "$TMPDIR/norun" \
-    "$TMPDIR/home-with/.claude/apex-correction-budget" "$TMPDIR/home-without"
-  printf '# APEX: fixture\n' > "$R/.claude/output/apex/run-1/00-context.md"
+  mkdir -p "$R/.claude/output/ttw/run-1" "$R/sub" "$TMPDIR/norun" \
+    "$TMPDIR/home-with/.claude/ttw-correction-budget" "$TMPDIR/home-without"
+  printf '# TTW: fixture\n' > "$R/.claude/output/ttw/run-1/00-context.md"
   Rp="$(cd "$R" && pwd -P)"
 
   # has RES LINE: RES holds LINE exactly.
   has() { printf '%s\n' "$1" | grep -qxF -- "$2"; }
 
-  # A1 check_alias PKG NEW OLD: bin/NEW executable; bin/OLD a symlink whose
-  # target is NEW in the same bin dir (`NEW` or `PKG/bin/NEW`), both resolving
-  # to one file. A copy or a wrapper is a second launcher that can drift.
-  check_alias() {
-    pkg="$1"
-    new="$2"
-    old="$3"
-    [ -x "$pkg/bin/$new" ] || fail "A1 FAILED — $pkg/bin/$new is missing or not executable"
-    [ -L "$pkg/bin/$old" ] || fail "A1 FAILED — $pkg/bin/$old is not a symlink (the pre-rename alias of $new, kept until phase 4)"
-    tgt="$(readlink "$pkg/bin/$old")"
-    case "$tgt" in
-    "$new" | "$pkg/bin/$new") ;;
-    *) fail "A1 FAILED — $pkg/bin/$old points at '$tgt', not at $new in the same package" ;;
-    esac
-    [ "$(readlink -f "$pkg/bin/$old")" = "$(readlink -f "$pkg/bin/$new")" ] ||
-      fail "A1 FAILED — $old and $new do not resolve to the same file"
-  }
-  check_alias ${board} ttw-board apex-board
+  # A1: the launcher's bin dir holds exactly ttw-board, executable.
+  [ -x "${board}/bin/ttw-board" ] || fail "A1 FAILED — ${board}/bin/ttw-board is missing or not executable"
+  [ "$(ls -A "${board}/bin")" = "ttw-board" ] ||
+    fail "A1 FAILED — ${board}/bin holds more than ttw-board: $(ls -A "${board}/bin" | tr '\n' ' ')"
   [ -x "${tuiBin}" ] || fail "A1 FAILED — ${tuiBin} is missing or not executable"
-  echo "ttw-board: A1 OK — apex-board -> ttw-board, TUI is ttw-board-tui"
+  echo "ttw-board: A1 OK — bin/ttw-board alone, TUI is ttw-board-tui"
 
-  # A2: usage names ttw-board alone, from either name; the alias runs the same.
-  for n in ttw-board apex-board; do
-    rc=0
-    res="$(${board}/bin/$n --no-such-flag 2>&1)" || rc=$?
-    [ "$rc" = 2 ] || fail "A2 '$n --no-such-flag' exited $rc, want 2: $res"
-    case "$res" in
-    *apex-board*) fail "A2 '$n --no-such-flag' still names apex-board: $res" ;;
-    *"usage: ttw-board"*) ;;
-    *) fail "A2 '$n --no-such-flag' usage does not name ttw-board: $res" ;;
-    esac
-  done
-  res="$(HOME="$TMPDIR/home-with" ${board}/bin/apex-board --dry-run "$R")" || fail "A2 apex-board --dry-run exited non-zero: $res"
-  has "$res" "runs -> $Rp/.claude/output/apex" || fail "A2 the apex-board alias does not run the launcher: $res"
-  echo "ttw-board: A2 OK — usage names ttw-board from both names, the alias runs the launcher"
+  # A2: usage names ttw-board.
+  rc=0
+  res="$(${board}/bin/ttw-board --no-such-flag 2>&1)" || rc=$?
+  [ "$rc" = 2 ] || fail "A2 'ttw-board --no-such-flag' exited $rc, want 2: $res"
+  case "$res" in
+  *"usage: ttw-board"*) ;;
+  *) fail "A2 'ttw-board --no-such-flag' usage does not name ttw-board: $res" ;;
+  esac
+  echo "ttw-board: A2 OK — usage names ttw-board"
 
-  # A3: runs from .claude/output/ttw when it exists, else apex (D1).
+  # A3: runs from .claude/output/ttw; a repo with only the pre-rename output
+  # dir has no runs.
   Rt="$TMPDIR/ttwrepo"
-  Rb="$TMPDIR/bothrepo"
-  mkdir -p "$Rt/.claude/output/ttw/run-1" "$Rb/.claude/output/ttw/run-1" "$Rb/.claude/output/apex/run-0"
+  Ro="$TMPDIR/oldrepo"
+  mkdir -p "$Rt/.claude/output/ttw/run-1" "$Ro/.claude/output/apex/run-0"
   printf '# TTW: fixture\n' > "$Rt/.claude/output/ttw/run-1/00-context.md"
-  printf '# TTW: fixture\n' > "$Rb/.claude/output/ttw/run-1/00-context.md"
-  printf '# APEX: fixture\n' > "$Rb/.claude/output/apex/run-0/00-context.md"
+  printf '# TTW: fixture\n' > "$Ro/.claude/output/apex/run-0/00-context.md"
   Rtp="$(cd "$Rt" && pwd -P)"
-  Rbp="$(cd "$Rb" && pwd -P)"
-  for pair in "$Rt:$Rtp" "$Rb:$Rbp"; do
-    repo="''${pair%%:*}"
-    real="''${pair#*:}"
-    res="$(HOME="$TMPDIR/home-without" "$bin" --dry-run "$repo")" || fail "A3 --dry-run $repo exited non-zero: $res"
-    has "$res" "runs -> $real/.claude/output/ttw" || fail "A3 runs link of $repo is not its ttw dir: $res"
-    res="$(HOME="$TMPDIR/home-without" "$bin" --tui --dry-run "$repo")" || fail "A3 --tui --dry-run $repo exited non-zero: $res"
-    has "$res" "runs: $real/.claude/output/ttw" || fail "A3 --tui runs line of $repo is not its ttw dir: $res"
+  res="$(HOME="$TMPDIR/home-without" "$bin" --dry-run "$Rt")" || fail "A3 --dry-run $Rt exited non-zero: $res"
+  has "$res" "runs -> $Rtp/.claude/output/ttw" || fail "A3 runs link of $Rt is not its ttw dir: $res"
+  res="$(HOME="$TMPDIR/home-without" "$bin" --tui --dry-run "$Rt")" || fail "A3 --tui --dry-run $Rt exited non-zero: $res"
+  has "$res" "runs: $Rtp/.claude/output/ttw" || fail "A3 --tui runs line of $Rt is not its ttw dir: $res"
+  for mode in "" --tui; do
+    rc=0
+    res="$(HOME="$TMPDIR/home-without" "$bin" $mode --dry-run "$Ro" 2>&1)" || rc=$?
+    [ "$rc" = 1 ] || fail "A3 '$mode' on a repo with only the old output dir exited $rc, want 1: $res"
+    case "$res" in *"no runs here"*) ;; *) fail "A3 '$mode' on the old output dir: message missing: $res" ;; esac
   done
-  echo "ttw-board: A3 OK — runs from .claude/output/ttw alone or next to apex, web and tui"
+  echo "ttw-board: A3 OK — runs from .claude/output/ttw alone, web and tui; the old output dir has no runs"
 
-  # A4: budget from ~/.claude/ttw-correction-budget when it exists, else apex (D1).
-  mkdir -p "$TMPDIR/home-ttw/.claude/ttw-correction-budget" \
-    "$TMPDIR/home-both/.claude/ttw-correction-budget" "$TMPDIR/home-both/.claude/apex-correction-budget"
-  for h in home-ttw home-both; do
-    res="$(HOME="$TMPDIR/$h" "$bin" --dry-run "$R")" || fail "A4 --dry-run with $h exited non-zero: $res"
-    has "$res" "budget -> $TMPDIR/$h/.claude/ttw-correction-budget" || fail "A4 budget link with $h is not the ttw dir: $res"
-    res="$(HOME="$TMPDIR/$h" "$bin" --tui --dry-run "$R")" || fail "A4 --tui --dry-run with $h exited non-zero: $res"
-    has "$res" "budget: $TMPDIR/$h/.claude/ttw-correction-budget" || fail "A4 --tui budget line with $h is not the ttw dir: $res"
-  done
-  echo "ttw-board: A4 OK — budget from ttw-correction-budget alone or next to apex"
+  # A4: budget from ~/.claude/ttw-correction-budget when it exists, else an
+  # empty dir: a HOME holding only the pre-rename budget dir gets none.
+  mkdir -p "$TMPDIR/home-old/.claude/apex-correction-budget"
+  res="$(HOME="$TMPDIR/home-with" "$bin" --dry-run "$R")" || fail "A4 --dry-run with home-with exited non-zero: $res"
+  has "$res" "budget -> $TMPDIR/home-with/.claude/ttw-correction-budget" || fail "A4 budget link is not the ttw dir: $res"
+  res="$(HOME="$TMPDIR/home-with" "$bin" --tui --dry-run "$R")" || fail "A4 --tui --dry-run with home-with exited non-zero: $res"
+  has "$res" "budget: $TMPDIR/home-with/.claude/ttw-correction-budget" || fail "A4 --tui budget line is not the ttw dir: $res"
+  res="$(HOME="$TMPDIR/home-old" "$bin" --dry-run "$R")" || fail "A4 --dry-run with home-old exited non-zero: $res"
+  has "$res" "budget: empty dir" || fail "A4 the old budget dir was read: $res"
+  res="$(HOME="$TMPDIR/home-old" "$bin" --tui --dry-run "$R")" || fail "A4 --tui --dry-run with home-old exited non-zero: $res"
+  has "$res" "budget: none" || fail "A4 --tui read the old budget dir: $res"
+  echo "ttw-board: A4 OK — budget from ttw-correction-budget alone, the old dir is not read"
 
   # store_copy RES NAME: NAME is reported as a copy of the page's store file,
   # byte-equal to its source; prints that store dir.
@@ -385,8 +365,8 @@ pkgs.runCommand "ttw-board-check" { __darwinAllowLocalNetworking = true; } ''
   # D1
   res="$(HOME="$TMPDIR/home-with" "$bin" --dry-run --port 9999 "$R")" || fail "D1 exited non-zero: $res"
   has "$res" "url: http://127.0.0.1:9999/" || fail "D1 url line missing: $res"
-  has "$res" "runs -> $Rp/.claude/output/apex" || fail "D1 runs link wrong: $res"
-  has "$res" "budget -> $TMPDIR/home-with/.claude/apex-correction-budget" || fail "D1 budget link wrong: $res"
+  has "$res" "runs -> $Rp/.claude/output/ttw" || fail "D1 runs link wrong: $res"
+  has "$res" "budget -> $TMPDIR/home-with/.claude/ttw-correction-budget" || fail "D1 budget link wrong: $res"
   has "$res" 'meta.json: {"repo":"myrepo"}' || fail "D1 meta.json wrong: $res"
   d="$(store_copy "$res" index.html)"
   store_copy "$res" board.js >/dev/null
@@ -429,14 +409,14 @@ pkgs.runCommand "ttw-board-check" { __darwinAllowLocalNetworking = true; } ''
   # D3
   (cd "$R" && git init -q --template=) || fail "D3 git init failed"
   res="$(cd "$R/sub" && "$bin" --dry-run)" || fail "D3 exited non-zero: $res"
-  has "$res" "runs -> $Rp/.claude/output/apex" || fail "D3 default repo is not the git toplevel: $res"
+  has "$res" "runs -> $Rp/.claude/output/ttw" || fail "D3 default repo is not the git toplevel: $res"
   echo "ttw-board: D3 OK — repo defaults to the git toplevel"
 
   # D4
   rc=0
   res="$("$bin" --dry-run "$TMPDIR/norun" 2>&1)" || rc=$?
   [ "$rc" = 1 ] || fail "D4 expected exit 1 on a repo without runs, got $rc: $res"
-  case "$res" in *"not a directory"*) ;; *) fail "D4 message missing: $res" ;; esac
+  case "$res" in *"no runs here"*) ;; *) fail "D4 message missing: $res" ;; esac
   echo "ttw-board: D4 OK — no runs, exit 1"
 
   # D5
@@ -446,7 +426,7 @@ pkgs.runCommand "ttw-board-check" { __darwinAllowLocalNetworking = true; } ''
   echo "ttw-board: D5 OK — bad port, exit 2"
 
   # D6: --tui --dry-run, no server and no temp root.
-  [ -z "$(find "$TMPDIR" -maxdepth 1 \( -name 'ttw-board.*' -o -name 'apex-board.*' \))" ] || fail "D6 a temp root is already there before the case"
+  [ -z "$(find "$TMPDIR" -maxdepth 1 -name 'ttw-board.*')" ] || fail "D6 a temp root is already there before the case"
   res="$(HOME="$TMPDIR/home-with" "$bin" --tui --dry-run --port 0 "$R")" || fail "D6 exited non-zero: $res"
   has "$res" "tui: ${tuiBin}" || fail "D6 tui line is not the built binary ${tuiBin}: $res"
   case "${tuiBin}" in
@@ -454,15 +434,15 @@ pkgs.runCommand "ttw-board-check" { __darwinAllowLocalNetworking = true; } ''
   *) fail "D6 binary not in the store: ${tuiBin}" ;;
   esac
   [ -x "${tuiBin}" ] || fail "D6 ${tuiBin} is not an executable"
-  has "$res" "runs: $Rp/.claude/output/apex" || fail "D6 runs line wrong: $res"
-  has "$res" "budget: $TMPDIR/home-with/.claude/apex-correction-budget" || fail "D6 budget line wrong: $res"
+  has "$res" "runs: $Rp/.claude/output/ttw" || fail "D6 runs line wrong: $res"
+  has "$res" "budget: $TMPDIR/home-with/.claude/ttw-correction-budget" || fail "D6 budget line wrong: $res"
   [ "$(printf '%s\n' "$res" | wc -l | tr -d ' ')" = 3 ] || fail "D6 expected 3 lines: $res"
   res="$(HOME="$TMPDIR/home-without" "$bin" --tui --dry-run "$R")" || fail "D6 (no budget) exited non-zero: $res"
   has "$res" "budget: none" || fail "D6 budget not none: $res"
   for js in tui.js tui-test.js; do
     [ ! -e "$d/$js" ] || fail "D6 $js still shipped in the store page dir $d"
   done
-  [ -z "$(find "$TMPDIR" -maxdepth 1 \( -name 'ttw-board.*' -o -name 'apex-board.*' \))" ] || fail "D6 --tui made a temp root"
+  [ -z "$(find "$TMPDIR" -maxdepth 1 -name 'ttw-board.*')" ] || fail "D6 --tui made a temp root"
   echo "ttw-board: D6 OK — --tui dry-run: the store Go binary, runs, budget, no node file, no root"
 
   # D7: --tui for real without a terminal, the binary exec'd by store path.
@@ -492,10 +472,10 @@ pkgs.runCommand "ttw-board-check" { __darwinAllowLocalNetworking = true; } ''
   echo "ttw-board: canary M2 killed — a Host gate open to all is caught"
 
   # S2: the built launcher serving for real.
-  S="$TMPDIR/srepo/.claude/output/apex/run-1"
+  S="$TMPDIR/srepo/.claude/output/ttw/run-1"
   mkdir -p "$S/sub" "$TMPDIR/outside"
   printf 'secret\n' > "$TMPDIR/outside/secret"
-  printf '# APEX: served\n' > "$S/00-context.md"
+  printf '# TTW: served\n' > "$S/00-context.md"
   ln -s "$TMPDIR/outside/secret" "$S/escape"
   ln -s . "$S/loop"
   port="$(python3 -I ${probe} port)" || fail "S2 no free loopback port"

@@ -1,4 +1,4 @@
-# APEX: synthetic blocked-prose
+# TTW: synthetic blocked-prose
 Tier: Standard
 Branch: feat/blocked-prose
 

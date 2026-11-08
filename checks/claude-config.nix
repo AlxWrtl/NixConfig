@@ -133,7 +133,7 @@ let
 
   # Le corpus des SKILL.md vient du MANIFESTE, pas des attributs aplatis de
   # skills.nix ci-dessus : `textAttrs skills` ramasse aussi les `steps/*.md`
-  # d'apex, qui n'ont légitimement AUCUN frontmatter. Les itérer ferait échouer
+  # de ttw, qui n'ont légitimement AUCUN frontmatter. Les itérer ferait échouer
   # A10 sur des fichiers sains. Le manifeste est la seule source qui dise quel
   # texte part vers quel chemin déployé ; on ne garde que les `SKILL.md`, les
   # seuls que le loader parse comme frontmatter. Import nu, sans argument :
@@ -263,15 +263,13 @@ let
 
   codexAllowed = builtins.filter (e: builtins.isString e && hasPrefix "Bash(codex" e) allow;
 
-  # --- A31: apex -> ttw, phase 2: both binary names allowed -----------------
-  # The packages ship ttw-tier / ttw-verify-external plus the apex-* alias
-  # until phase 4; a session on either skill text must run without a box. The
-  # allow entries naming either prefix are pinned exactly: any other ttw-* or
-  # apex-* Bash grant (a wildcard, health, board) is a change this rename does
-  # not make. None of the four may sit in deny or ask.
+  # --- A31: tier and verify-external allowed under the ttw name only -------
+  # The packages ship ttw-tier / ttw-verify-external, nothing under the old
+  # apex-* names. The allow entries naming either prefix are pinned exactly:
+  # an `apex-` Bash grant is a retired name come back, any other ttw-* grant
+  # (a wildcard, health, board) widens the two read-only tools. Neither may
+  # sit in deny or ask.
   renameAllowExpected = [
-    "Bash(apex-tier *)"
-    "Bash(apex-verify-external *)"
     "Bash(ttw-tier *)"
     "Bash(ttw-verify-external *)"
   ];
@@ -505,10 +503,11 @@ let
   ];
   missingGitEditDeny = builtins.filter (d: !(builtins.elem d deny)) requiredGitEditDeny;
 
-  # apex -> ttw, phase 3 (B4): the correction-budget counter is read from
-  # both dirs, so a rule guarding one guards the other in the same list. A
-  # ttw rule exists only as such a twin, nowhere else in settings.json.
-  budgetApex = "apex-correction-budget";
+  # The correction-budget counter lives in ~/.claude/ttw-correction-budget
+  # only: a deny rule guards it, the retired apex-correction-budget dir is
+  # named nowhere, and the ttw dir appears in settings.json only as a rule
+  # of the listed paths.
+  budgetOld = "apex-correction-budget";
   budgetTtw = "ttw-correction-budget";
   budgetListPaths = [
     [
@@ -549,27 +548,13 @@ let
     ]
   ];
   budgetListOf = p: builtins.filter builtins.isString (pkgs.lib.attrByPath p [ ] settingsAttrs);
-  budgetTwinGaps = builtins.concatMap (
+  budgetOldListed = builtins.concatMap (
     p:
-    let
-      xs = budgetListOf p;
-      where = builtins.concatStringsSep "." p;
-      twinOf =
-        from: to: r:
-        builtins.replaceStrings [ from ] [ to ] r;
-    in
-    map (r: "${where}: ${r} has no ${budgetTtw} twin") (
-      builtins.filter (r: !(builtins.elem (twinOf budgetApex budgetTtw r) xs)) (
-        builtins.filter (hasInfix budgetApex) xs
-      )
-    )
-    ++ map (r: "${where}: ${r} has no ${budgetApex} rule it twins") (
-      builtins.filter (r: !(builtins.elem (twinOf budgetTtw budgetApex r) xs)) (
-        builtins.filter (hasInfix budgetTtw) xs
-      )
+    map (r: "${builtins.concatStringsSep "." p}: ${r}") (
+      builtins.filter (hasInfix budgetOld) (budgetListOf p)
     )
   ) budgetListPaths;
-  budgetApexDeny = builtins.filter (hasInfix budgetApex) deny;
+  budgetTtwDeny = builtins.filter (hasInfix budgetTtw) deny;
   budgetTtwListed = builtins.length (
     builtins.concatMap (p: builtins.filter (hasInfix budgetTtw) (budgetListOf p)) budgetListPaths
   );
@@ -1120,7 +1105,7 @@ let
         + " — codex runs OUTSIDE the sandbox (excludedCommands); allowed on top of that, any codex call bypasses the whole deny list's intent and the auto classifier never sees it";
     }
     {
-      name = "A31 settings: tier and verify-external allowed under both the apex and the ttw name";
+      name = "A31 settings: tier and verify-external allowed under the ttw name only";
       ok = renameAllowGot == renameAllowExpected && renameBoxed == [ ];
       msg =
         "permissions.allow entries starting `Bash(apex-` or `Bash(ttw-`: "
@@ -1128,22 +1113,22 @@ let
         + ", want exactly "
         + builtins.toJSON renameAllowExpected
         + (if renameBoxed == [ ] then "" else " / in deny or ask: " + builtins.toJSON renameBoxed)
-        + " — apex -> ttw phase 2: the skill text calls ttw-tier / ttw-verify-external, a session started before the switch still calls the apex-* alias; a missing rule boxes one of them mid-run, an extra one widens the grant beyond the two read-only tools";
+        + " — the skill text calls ttw-tier / ttw-verify-external and no package ships the retired apex-* names; a missing rule boxes one of them mid-run, an `apex-` one grants a name nothing should run, an extra ttw one widens the grant beyond the two read-only tools";
     }
     {
-      name = "A32 settings: every apex-correction-budget rule has its ttw-correction-budget twin in the same list, and no other ttw one";
+      name = "A32 settings: a ttw-correction-budget deny rule, the retired apex-correction-budget dir named nowhere";
       ok =
-        budgetApexDeny != [ ]
-        && budgetTwinGaps == [ ]
+        budgetTtwDeny != [ ]
+        && budgetOldListed == [ ]
         && budgetTtwListed > 0
         && budgetTtwInJson == budgetTtwListed;
       msg =
-        "apex rules in permissions.deny: "
-        + builtins.toJSON budgetApexDeny
-        + " / twin gaps: "
-        + builtins.toJSON budgetTwinGaps
-        + " / ttw-correction-budget: ${toString budgetTtwInJson} occurrence(s) in settings.json, ${toString budgetTtwListed} as a twin rule"
-        + " — apex -> ttw phase 3: correction-budget.js and correction-grant.js count rounds and grants across ~/.claude/apex-correction-budget and ~/.claude/ttw-correction-budget; a guard on one dir only leaves the other writable, and a reset there is a fresh budget";
+        "ttw rules in permissions.deny: "
+        + builtins.toJSON budgetTtwDeny
+        + " / apex-correction-budget entries: "
+        + builtins.toJSON budgetOldListed
+        + " / ttw-correction-budget: ${toString budgetTtwInJson} occurrence(s) in settings.json, ${toString budgetTtwListed} in the listed paths"
+        + " — correction-budget.js and correction-grant.js count rounds and grants in ~/.claude/ttw-correction-budget only; without its deny rule a reset there is a fresh budget, and a rule on the retired dir guards nothing";
     }
     {
       name = "A16 settings: no PreToolUse group with an empty hooks list";
@@ -1154,7 +1139,7 @@ let
         + " — an empty group runs nothing but reads as a guard: whoever audits settings.json believes that matcher is hooked when no hook runs there";
     }
     {
-      name = "A17 apex: no unconditional approval wait in step-02, step-02c, step-09";
+      name = "A17 ttw: no unconditional approval wait in step-02, step-02c, step-09";
       ok =
         !(hasInfix "wait for the answer" skills.ttwStep09Finish)
         && !(hasInfix "always — and wait for the answer" skills.ttwStep02cVerify)
@@ -1162,7 +1147,7 @@ let
       msg = "an unconditional wait is back in step-09 (\"wait for the answer\"), step-02c (\"always — and wait for the answer\") or step-02 (\"Always, no opt-out\") — every run then stalls on a user round trip the `-pr` default already authorized; only high-stakes or `-q` may wait";
     }
     {
-      name = "A18 apex: diagnosis ships a PR, and README says so";
+      name = "A18 ttw: diagnosis ships a PR, and README says so";
       ok =
         diagnosisFlags != null
         && builtins.elem "-pr" (pkgs.lib.splitString " " diagnosisFlags)

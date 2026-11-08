@@ -37,11 +37,11 @@ func groupSessions(withTab bool) []*sessionInput {
 	return out
 }
 
-// groupsModel: the Agents tab of a board run in groupsTab (runsDir as apex-board.sh passes it).
+// groupsModel: the Agents tab of a board run in groupsTab (runsDir as ttw-board.sh passes it).
 func groupsModel(t *testing.T, sessions []*sessionInput, w, h int) *Model {
 	t.Helper()
 	stubGenericRoot(t, "/g/agents")
-	m := newModel(groupsTab+"/.claude/output/apex", "", "Tab", w, h)
+	m := newModel(groupsTab+"/.claude/output/ttw", "", "Tab", w, h)
 	m.tab = tabAgents
 	m.applyAgents(&agentsPoll{board: deriveAgents(sessions, testNow), now: testNow, clock: "12:00:00"})
 	return m
@@ -67,12 +67,12 @@ func groupIDs(g *agentGroup) []string {
 
 func TestTabRepo(t *testing.T) {
 	for runs, want := range map[string]string{
-		"/u/repo/.claude/output/apex":                       "/u/repo",
-		"/u/repo/.claude/worktrees/wt/.claude/output/apex":  "/u/repo",
-		"/u/repo/.claude/worktrees/wt/.claude/output/apex/": "/u/repo",
-		"/u/repo/.claude/worktrees/a/b/.claude/output/apex": "/u/repo/.claude/worktrees/a/b",
-		"relative/.claude/worktrees/wt/.claude/output/apex": "",
-		"/.claude/worktrees/wt/.claude/output/apex":         "/.claude/worktrees/wt",
+		"/u/repo/.claude/output/ttw":                       "/u/repo",
+		"/u/repo/.claude/worktrees/wt/.claude/output/ttw":  "/u/repo",
+		"/u/repo/.claude/worktrees/wt/.claude/output/ttw/": "/u/repo",
+		"/u/repo/.claude/worktrees/a/b/.claude/output/ttw": "/u/repo/.claude/worktrees/a/b",
+		"relative/.claude/worktrees/wt/.claude/output/ttw": "",
+		"/.claude/worktrees/wt/.claude/output/ttw":         "/.claude/worktrees/wt",
 		"": "",
 	} {
 		if got := tabRepo(runs); got != want {

@@ -24,15 +24,15 @@ func TestStatusKind(t *testing.T) {
 }
 
 func TestParseContextShapes(t *testing.T) {
-	c := parseContext("# APEX: t\nFlags: -t -pr (mode Standard, défaut)\n", "t")
+	c := parseContext("# TTW: t\nFlags: -t -pr (mode Standard, défaut)\n", "t")
 	if c.Tier == nil || *c.Tier != "Standard" {
 		t.Fatal("tier from (mode X)")
 	}
-	c = parseContext("# APEX: t\nFlags: -t -x  (mode: high-stakes — touches)\n", "t")
+	c = parseContext("# TTW: t\nFlags: -t -x  (mode: high-stakes — touches)\n", "t")
 	if c.Tier == nil || *c.Tier != "high-stakes" {
 		t.Fatal("tier from (mode: X —")
 	}
-	c = parseContext("# APEX: x\nTier: High-stakes (sandbox allowWrite key) — Files: a — Est-lines: ~8\nBranch: fix/a (trunk: master), clean\n", "d")
+	c = parseContext("# TTW: x\nTier: High-stakes (sandbox allowWrite key) — Files: a — Est-lines: ~8\nBranch: fix/a (trunk: master), clean\n", "d")
 	if *c.Tier != "High-stakes" || *c.Branch != "fix/a" || c.Steps != nil {
 		t.Fatalf("%+v", c)
 	}
@@ -41,14 +41,14 @@ func TestParseContextShapes(t *testing.T) {
 	}
 }
 
-// ttw rename, phase 3: a `# TTW:` heading reads like `# APEX:` (board.js's test.js has the same
+// ttw rename, phase 3: a `# TTW:` heading reads like `# TTW:` (board.js's test.js has the same
 // cases), and the grant hint names ttw.
 func TestParseContextTTWTitle(t *testing.T) {
 	for in, want := range map[string]string{
 		"# TTW: renamed run\nTier: Direct\n": "renamed run",
 		"# ttw — renamed run\n":              "renamed run",
 		"# **TTW**: bold run\n":              "bold run",
-		"# APEX: old run\n":                  "old run",
+		"# APEX: old run\n":                  "APEX: old run", // `# APEX:` is not a title
 		"# TTWX: not the word\n":             "TTWX: not the word",
 	} {
 		if got := parseContext(in, "d").Title; got != want {
@@ -195,7 +195,7 @@ func TestJSSemantics(t *testing.T) {
 
 // deliveredRun: test.js's run() on a live run of the given Progress rows.
 func deliveredRun(rows, extra string, files []string, budget Budget, verdict string) *Card {
-	text := "# APEX: synthetic\nTier: Standard\nBranch: feat/x\n" + extra + "\n## Progress\n| Step | Status | Notes |\n|------|--------|-------|\n" + rows
+	text := "# TTW: synthetic\nTier: Standard\nBranch: feat/x\n" + extra + "\n## Progress\n| Step | Status | Notes |\n|------|--------|-------|\n" + rows
 	now, ms := float64(parityNow), float64(parityNow-3600*1000)
 	in := &RunInput{ID: "r", Context: &text, MtimeMs: &ms, Files: files, Budget: &budget}
 	if verdict != "" {

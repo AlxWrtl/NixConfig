@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// PreToolUse on Skill: reports the context size at APEX start, nothing else.
+// PreToolUse on Skill: reports the context size at TTW start, nothing else.
 //
 // It used to classify risk from the BRIEF TEXT and rewrite the flags. Removed
 // on 2026-10-07: a 28-line Notification matcher change was forced to
@@ -49,7 +49,7 @@ process.stdin.on("end", () => {
   try {
     const data = JSON.parse(input);
     const ti = data.tool_input || {};
-    if (ti.skill !== "apex" && ti.skill !== "ttw") process.exit(0);
+    if (ti.skill !== "ttw") process.exit(0);
     const n = contextTokens(data.transcript_path);
     const tp = typeof data.transcript_path === "string" ? data.transcript_path : "unknown";
     process.stdout.write(JSON.stringify({

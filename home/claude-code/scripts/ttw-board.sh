@@ -3,16 +3,15 @@
 #
 # usage: ttw-board [--tui] [--port N] [--no-open] [--dry-run] [repo]
 #
-# repo defaults to the git toplevel of the cwd; exit 1 if it holds neither a
-# `.claude/output/ttw` nor a `.claude/output/apex` directory (ttw wins when
-# both exist). READ-ONLY: the served root is a temp dir of links and page copies, the page only issues GETs, and serve.py (next to the
+# repo defaults to the git toplevel of the cwd; exit 1 if it holds no
+# `.claude/output/ttw` directory. READ-ONLY: the served root is a temp dir of links and page copies, the page only issues GETs, and serve.py (next to the
 # page in the store, never in the root) answers GET/HEAD only, to a Host of
 # 127.0.0.1:<port> or localhost:<port> only, inside the root, runs/ or budget/.
 #
 # Served root (removed on exit, Ctrl-C included):
 #   index.html, board.js  copies of the page in the nix store, made at launch
-#   runs                  -> <repo>/.claude/output/ttw, else <repo>/.claude/output/apex
-#   budget                -> ~/.claude/ttw-correction-budget, else the apex one, else an empty dir
+#   runs                  -> <repo>/.claude/output/ttw
+#   budget                -> ~/.claude/ttw-correction-budget, else an empty dir
 #   meta.json             {"repo": "<basename of repo>"}
 #
 # --dry-run builds the root, prints it and stops, one entry per line:
@@ -103,25 +102,16 @@ repo="$(cd "$repo" 2>/dev/null && pwd -P)" || {
   echo "ttw-board: no such directory: $repo" >&2
   exit 1
 }
-# The ttw dir wins; the apex one is the pre-rename layout, read until phase 4.
 runs="$repo/.claude/output/ttw"
 if [ ! -d "$runs" ]; then
-  runs="$repo/.claude/output/apex"
-fi
-if [ ! -d "$runs" ]; then
-  echo "ttw-board: no runs here: neither $repo/.claude/output/ttw nor $runs, not a directory" >&2
+  echo "ttw-board: no runs here: $runs is not a directory" >&2
   exit 1
 fi
 
-# Same order for the correction budget; "" when neither exists.
+# The correction budget; "" when its dir does not exist.
 budget_src=""
-if [ -n "${HOME:-}" ]; then
-  for b in "$HOME/.claude/ttw-correction-budget" "$HOME/.claude/apex-correction-budget"; do
-    if [ -d "$b" ]; then
-      budget_src="$b"
-      break
-    fi
-  done
+if [ -n "${HOME:-}" ] && [ -d "$HOME/.claude/ttw-correction-budget" ]; then
+  budget_src="$HOME/.claude/ttw-correction-budget"
 fi
 
 if [ "$tui" -eq 1 ]; then

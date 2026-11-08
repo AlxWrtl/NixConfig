@@ -1,9 +1,9 @@
 # Structural consistency check for README.md.
 #
-# The README had drifted on nearly every factual claim it made — six APEX
+# The README had drifted on nearly every factual claim it made — six TTW
 # flags that no longer existed, four shell aliases defined nowhere, three
 # inventories undercounted by five each — and not one check went red. checks/
-# guarded the APEX skill and the Claude config; the document DESCRIBING them
+# guarded the TTW skill and the Claude config; the document DESCRIBING them
 # was guarded by nobody. That asymmetry is the whole reason it rotted.
 #
 # Two rules hold this file together, both learned the hard way from four
@@ -43,7 +43,7 @@ let
   # Deterministic slice. builtins.match must NOT be used for this: POSIX
   # leftmost-longest grows the leading `.*` maximally, so ".*START(.*)STOP.*"
   # binds START to its LAST occurrence. Measured on this very file's first
-  # draft: adding a "### APEX related commands" heading shrank the APEX slice
+  # draft: adding a "### TTW related commands" heading shrank the TTW slice
   # from 3629 to 646 bytes and the check still printed OK.
   #
   # splitString is exact. Markers are newline-anchored so a longer heading
@@ -64,7 +64,7 @@ let
     else
       builtins.head closed;
 
-  apexSection = section "APEX" "\n## APEX\n" "\n## Shell Aliases\n" readme;
+  ttwSection = section "TTW" "\n## TTW\n" "\n## Shell Aliases\n" readme;
   structureTree = section "structure tree" "\n## Structure\n\n```\n" "\n```\n" readme;
   aliasSection = section "shell alias" "\n## Shell Aliases\n" "\n## Troubleshooting\n" readme;
   aliasFence = section "shell alias code block" "```bash\n" "\n```" aliasSection;
@@ -134,15 +134,13 @@ let
   knownFlags = lib.unique (
     lib.concatMap (p: builtins.filter (s: s != "") (lib.splitString "/" p)) skillPairs
   );
-  apexInvocations = nonEmpty "/ttw usage examples" (
-    builtins.filter (l: builtins.match ".*/ttw .*" l != null) (splitLines apexSection)
+  ttwInvocations = nonEmpty "/ttw usage examples" (
+    builtins.filter (l: builtins.match ".*/ttw .*" l != null) (splitLines ttwSection)
   );
   invocationFlags = lib.unique (
     map (m: "-" + builtins.head m) (
       builtins.filter builtins.isList (
-        builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" (
-          "\n" + builtins.concatStringsSep "\n" apexInvocations
-        )
+        builtins.split "[^A-Za-z0-9-]-([A-Za-z0-9]+)" ("\n" + builtins.concatStringsSep "\n" ttwInvocations)
       )
     )
   );
@@ -274,7 +272,7 @@ let
 
   problems =
     lib.optional (flagsOnlyInReadme != [ ] || flagsOnlyInSkill != [ ])
-      "the README flag table no longer matches the APEX skill. In the README only: ${builtins.concatStringsSep ", " flagsOnlyInReadme}. In the skill only: ${builtins.concatStringsSep ", " flagsOnlyInSkill}. Pairs are 'enable/disable', so a mismatch can be a missing flag OR a wrong disable letter; skills.nix is the source of truth."
+      "the README flag table no longer matches the TTW skill. In the README only: ${builtins.concatStringsSep ", " flagsOnlyInReadme}. In the skill only: ${builtins.concatStringsSep ", " flagsOnlyInSkill}. Pairs are 'enable/disable', so a mismatch can be a missing flag OR a wrong disable letter; skills.nix is the source of truth."
     ++
       lib.optional (unknownFlags != [ ])
         "/ttw example(s) type flag(s) the skill does not declare: ${builtins.concatStringsSep ", " unknownFlags}. A usage example that types a removed flag teaches a command that does nothing."

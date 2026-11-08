@@ -1,4 +1,4 @@
-# APEX: synthetic ext-half
+# TTW: synthetic ext-half
 Tier: Standard
 Branch: feat/ext-half
 

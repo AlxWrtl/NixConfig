@@ -37,14 +37,14 @@ func stubLaunch(t testing.TB, err error) *[]launchCall {
 	return &calls
 }
 
-// newAgentModel: the fixture's Agents tab, its runs dir under a temp repo (as apex-board.sh passes
+// newAgentModel: the fixture's Agents tab, its runs dir under a temp repo (as ttw-board.sh passes
 // it); the repo returned.
 func newAgentModel(t *testing.T) (*Model, string) {
 	t.Helper()
 	f := newSessionsFixture(t)
 	m := agentsModel(t, f, 180, 50)
 	repo := filepath.Join(t.TempDir(), "repo")
-	m.runsDir = filepath.Join(repo, ".claude", "output", "apex")
+	m.runsDir = filepath.Join(repo, ".claude", "output", "ttw")
 	return m, repo
 }
 
@@ -159,7 +159,7 @@ func TestNewAgentFailures(t *testing.T) {
 		t.Fatalf("no binary: note %q", m.ag.note)
 	}
 	dispatchBin = "/nix/store/x-claude-dispatch/bin/claude-dispatch"
-	for _, runs := range []string{"", "relative/.claude/output/apex", "/x/runs", "/.claude/output/apex/../apex2"} {
+	for _, runs := range []string{"", "relative/.claude/output/ttw", "/x/runs", "/.claude/output/ttw/../ttw2"} {
 		m.runsDir = runs
 		if cmd := send(m, char('n')); cmd != nil || m.ag.note != "nouvel agent : dépôt inconnu, rien lancé" {
 			t.Fatalf("runs dir %q: note %q", runs, m.ag.note)
@@ -226,17 +226,13 @@ func TestLaunchAgentSkipsListed(t *testing.T) {
 
 func TestRepoOf(t *testing.T) {
 	for runs, want := range map[string]string{
-		"/u/repo/.claude/output/apex":  "/u/repo",
-		"/u/repo/.claude/output/apex/": "/u/repo",
-		"/.claude/output/apex":         "",
-		"repo/.claude/output/apex":     "",
-		"/u/repo/.claude/output/ttw":   "/u/repo",
-		"/u/repo/.claude/output/ttw/":  "/u/repo",
-		"/.claude/output/ttw":          "",
-		"repo/.claude/output/ttw":      "",
-		"/u/repo/.claude/output/ttwx":  "",
-		"/u/repo/runs":                 "",
-		"":                             "",
+		"/u/repo/.claude/output/ttw":  "/u/repo",
+		"/u/repo/.claude/output/ttw/": "/u/repo",
+		"/.claude/output/ttw":         "",
+		"repo/.claude/output/ttw":     "",
+		"/u/repo/.claude/output/ttwx": "",
+		"/u/repo/runs":                "",
+		"":                            "",
 	} {
 		if got := repoOf(runs); got != want {
 			t.Errorf("repoOf(%q) = %q, want %q", runs, got, want)
@@ -945,7 +941,7 @@ func TestResumeGeneric(t *testing.T) {
 // the main repo, never in the worktree (a worktree of a worktree).
 func TestNewAgentFromWorktree(t *testing.T) {
 	m, repo := newAgentModel(t)
-	m.runsDir = filepath.Join(repo, ".claude", "worktrees", "w1", ".claude", "output", "apex")
+	m.runsDir = filepath.Join(repo, ".claude", "worktrees", "w1", ".claude", "output", "ttw")
 	launches := stubLaunch(t, nil)
 	stubPick(t, nil)
 	send(m, send(m, char('n'))())

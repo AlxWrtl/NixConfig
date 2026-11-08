@@ -33,10 +33,7 @@
 # build time, so a regression in this script fails the rebuild.
 
 VERSION="1.1.0"
-# The envelope's JSON `tool` field keeps the pre-rename value until phase 4
-# (apex -> ttw); no known reader (the board reads only verdict/findings).
-# Messages name the binary by its new name.
-TOOL="apex-verify-external"
+TOOL="ttw-verify-external"
 NAME="ttw-verify-external"
 
 # Minimum Codex CLI that can dispatch the primary model. Sourced from the
@@ -94,7 +91,7 @@ Options:
   --base <REF>          Diff = merge-base(REF, HEAD)..worktree, plus untracked
                         files synthesized read-only. Default: the first of
                         master, main, or origin/HEAD that resolves.
-  --out <FILE>          Default: <repo>/.claude/output/apex/external-verify.json
+  --out <FILE>          Default: <repo>/.claude/output/ttw/external-verify.json
                         Must resolve under <repo>/.claude/output/ — this binary is
                         auto-approved in the allowlist, so it may not be turned
                         into a write-JSON-anywhere primitive.
@@ -141,7 +138,7 @@ FAIL whose fix-list cannot be read is not a fix-list; the more specific original
 reason is printed on stderr.
 
 Env:
-  APEX_CODEX_MODEL   model PREPENDED to the built-in chain, tried first
+  TTW_CODEX_MODEL    model PREPENDED to the built-in chain, tried first
 EOF
 }
 
@@ -345,7 +342,7 @@ fi
 
 # --- base ref -----------------------------------------------------------------
 #
-# `master` was hard-coded, and APEX claims to run in any project. Fall through
+# `master` was hard-coded, and TTW claims to run in any project. Fall through
 # the plausible names rather than reporting "cannot resolve a merge base" for a
 # repository whose only sin is being called main.
 
@@ -376,7 +373,7 @@ fi
 # `Bash(ttw-verify-external *)` is auto-approved in settings, so an
 # unconstrained --out would make this a write-model-authored-JSON-anywhere
 # primitive: one flag away from a settings file or a shell rc. The sanctioned
-# root is the APEX output tree of the repository being reviewed, and nothing
+# root is the TTW output tree of the repository being reviewed, and nothing
 # else. `..` is rejected outright rather than normalised, because normalising a
 # path that may not exist yet is where these checks usually spring a leak.
 
@@ -408,7 +405,7 @@ fi
 OUT_ROOT="$REPO_PHYS/.claude/output"
 
 if [ -z "$OUT" ]; then
-  OUT="$OUT_ROOT/apex/external-verify.json"
+  OUT="$OUT_ROOT/ttw/external-verify.json"
 else
   # Rejected rather than normalised: a `..` normalised against a path whose
   # tail does not exist yet is exactly where these checks spring a leak.
@@ -449,7 +446,7 @@ fi
 # The whole design is that the reviewer is told WHAT the change must satisfy and
 # never WHY the author thinks it does. Handing --acs the planning document
 # quietly undoes that, and it is an easy slip: the two files live side by side.
-# APEX now writes a criteria-only artefact at .claude/output/apex/{id}/02-acs.md,
+# TTW now writes a criteria-only artefact at .claude/output/ttw/{id}/02-acs.md,
 # so this guard enforces a rule that already exists on paper.
 if grep -qE 'Premises|Risks & Mitigations|## 2\. Tasks' "$ACS"; then
   SUMMARY="the --acs file looks like a plan, not acceptance criteria: it contains plan headings, and the reviewer must not be told the rationale"
@@ -888,7 +885,7 @@ fi
 #
 # The last rung passes no -m at all, so the CLI's own default answers rather
 # than the chain running out on a machine whose build predates every name we
-# hard-coded. APEX_CODEX_MODEL is PREPENDED, never substituted: an override that
+# hard-coded. TTW_CODEX_MODEL is PREPENDED, never substituted: an override that
 # silently disabled the fallback would turn one typo into a BLOCKED run.
 # --model is the deliberate way to pin exactly one model.
 
@@ -896,8 +893,8 @@ CHAIN=()
 if [ -n "$MODEL_FORCED" ]; then
   CHAIN=("$MODEL_FORCED")
 else
-  if [ -n "${APEX_CODEX_MODEL:-}" ]; then
-    CHAIN+=("$APEX_CODEX_MODEL")
+  if [ -n "${TTW_CODEX_MODEL:-}" ]; then
+    CHAIN+=("$TTW_CODEX_MODEL")
   fi
   CHAIN+=(gpt-6-astra gpt-5.6-terra "")
 fi

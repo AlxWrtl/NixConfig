@@ -1,4 +1,4 @@
-# APEX: synthetic ext-blocked
+# TTW: synthetic ext-blocked
 Tier: Standard
 Branch: feat/ext-blocked
 

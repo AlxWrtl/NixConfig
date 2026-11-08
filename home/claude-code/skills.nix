@@ -42,10 +42,10 @@ in
   skillTtw = ''
     ---
     name: ttw
-    description: "Universal task workflow (TTW, ex-APEX) — EVERY task that modifies files routes through TTW, in any project, any size or type: feature, fix, bug, refactor, config, docs. A tier gate sizes the run from the diff: Direct (inline), Diagnosis, Standard, High-stakes. Not for pure questions or research with zero file modification."
+    description: "Universal task workflow (TTW) — EVERY task that modifies files routes through TTW, in any project, any size or type: feature, fix, bug, refactor, config, docs. A tier gate sizes the run from the diff: Direct (inline), Diagnosis, Standard, High-stakes. Not for pure questions or research with zero file modification."
     ---
 
-    # TTW (ex-APEX): tiered implementation workflow
+    # TTW: tiered implementation workflow
 
     This file is the router. Read ONLY the file for your tier — every other
     step file stays unread unless your tier's route reaches it.
@@ -105,7 +105,7 @@ in
 
     Branch-first and on-disk persistence are INVARIANTS of every tier, not
     options: the branch is cut per the Git section of CLAUDE.md, and the run's
-    files live under `.claude/output/apex/{task-id}/`. Every spawn passes an
+    files live under `.claude/output/ttw/{task-id}/`. Every spawn passes an
     explicit `model` per CLAUDE.md — never inherit.
 
     Flag precedence, highest first:
@@ -151,7 +151,7 @@ in
       back (manual verification / skip the gated step), never swallow it.
     - Unknown flag → reject it and print the valid flag list.
     - Re-running is safe: branch/commit steps are no-ops when applied, and
-      the summaries under `.claude/output/apex/` let a run resume by hand.
+      the summaries under `.claude/output/ttw/` let a run resume by hand.
 
     ${handoffs [
       "Diagnosis stays INSIDE ttw — execute phase spawns the debugger agent (model: opus)."
@@ -244,19 +244,19 @@ in
 
     Create output directory for this task:
     ```
-    .claude/output/apex/{task-id}/
+    .claude/output/ttw/{task-id}/
     ```
 
     Where `{task-id}` is a zero-padded sequential number + short slug (e.g., `01-user-auth`).
 
     Create initial context file:
     ```
-    .claude/output/apex/{task-id}/00-context.md
+    .claude/output/ttw/{task-id}/00-context.md
     ```
 
     With content:
     ```markdown
-    # APEX: {task description}
+    # TTW: {task description}
     Date: {current date}
     Tier: {tier}
     Flags: {active flags}
@@ -415,7 +415,7 @@ in
     examine reviewer when -x runs, replayed only under -p.
 
     ## If save mode (-s):
-    Write findings to `.claude/output/apex/{task-id}/01-analyze.md`
+    Write findings to `.claude/output/ttw/{task-id}/01-analyze.md`
 
     ## Next Step
 
@@ -613,7 +613,7 @@ in
     An `-o` that silently changes nothing is the whole reason this rule exists.
 
     ## If save mode (-s):
-    Target file: `.claude/output/apex/{task-id}/01b-obsidian-context.md`.
+    Target file: `.claude/output/ttw/{task-id}/01b-obsidian-context.md`.
     - If file absent → `Write` with the full context report.
     - If file present → `Edit` to append `\n\n## Run {ISO-timestamp}\n\n{report}`.
 
@@ -769,7 +769,7 @@ in
 
     Besides the plan, write the Acceptance Criteria — and nothing else, no
     premises, no rationale, no task list — to
-    `.claude/output/apex/{task-id}/02-acs.md`.
+    `.claude/output/ttw/{task-id}/02-acs.md`.
     Copy every `Docs:` line into it as one criterion, `AC-docs:` — a condition
     on the diff, not rationale — so validate, Fable and `-e` check it without the plan.
     A verifier is handed 02-acs.md and never the plan. That file is the ONLY thing a
@@ -894,7 +894,7 @@ in
     did.
 
     ## If save mode (-s):
-    Write verification results to `.claude/output/apex/{task-id}/02c-verify.md`
+    Write verification results to `.claude/output/ttw/{task-id}/02c-verify.md`
 
     ## Next Step
 
@@ -1026,7 +1026,7 @@ in
     on; editing it yourself is a finding, not an option.
 
     ## If save mode (-s):
-    Update progress in `.claude/output/apex/{task-id}/00-context.md`
+    Update progress in `.claude/output/ttw/{task-id}/00-context.md`
 
     ## Next Step
 
@@ -1052,8 +1052,8 @@ in
 
     If `-e` is active, run the external cross-vendor pass after the machine
     gate: `ttw-verify-external --base {trunk} --acs
-    .claude/output/apex/{task-id}/02-acs.md --out
-    .claude/output/apex/{task-id}/04-external-verify.json`. `{trunk}` is the
+    .claude/output/ttw/{task-id}/02-acs.md --out
+    .claude/output/ttw/{task-id}/04-external-verify.json`. `{trunk}` is the
     branch this run cut from, not a constant — read it, never assume `master`.
     The ACs file is the one step-02-plan persisted alone; passing the plan
     instead hands the reviewer the rationale the whole pass exists to withhold.
@@ -1061,7 +1061,7 @@ in
     and its brief is the same bounded one Fable gets — diff plus ACs, never
     the rationale. Arbitrate its findings yourself:
     an external BLOCKED verdict is an unrun check, never a green one.
-    Write `.claude/output/apex/{task-id}/04-external-triage.md`: one line per
+    Write `.claude/output/ttw/{task-id}/04-external-triage.md`: one line per
     finding — `id | file:line | confirmed | evidence` or
     `id | file:line | dismissed | reason` — then a tally
     `confirmed=N unique=U dismissed=D`, where unique = confirmed and found by
@@ -1082,7 +1082,7 @@ in
        `[lecture]` and `[deferred to user]` ACs are listed apart in
        `04-validate.md` (lecture: what was read and the verdict; deferred: the
        command for the user), never counted as proven by a command.
-       `python3 -I ~/.claude/hooks/ttw-metrics-probe.py --acs .claude/output/apex/{task-id}/02-acs.md`
+       `python3 -I ~/.claude/hooks/ttw-metrics-probe.py --acs .claude/output/ttw/{task-id}/02-acs.md`
        prints the class of each AC.
 
     2. **Build Check**: run only the SAFE checks (see ORCHESTRATION.md), and
@@ -1209,7 +1209,7 @@ in
     - **Important**: logic bugs, error handling gaps
     - **Minor**: naming, style, minor improvements
 
-    Then write the triage into `.claude/output/apex/{task-id}/05-examine.md`:
+    Then write the triage into `.claude/output/ttw/{task-id}/05-examine.md`:
     one line per finding — `id | file:line | confirmed | evidence` or
     `id | file:line | dismissed | reason` — then the tally
     `confirmed=N unique=U dismissed=D`, same format as step-04.
@@ -1523,7 +1523,7 @@ in
       only, never into the vault.
 
     ## If save mode (-s):
-    Also copy the note content to `.claude/output/apex/{task-id}/09b-obsidian-note.md`
+    Also copy the note content to `.claude/output/ttw/{task-id}/09b-obsidian-note.md`
     (local mirror for traceability).
 
     ## Output
@@ -2040,8 +2040,8 @@ in
        an AC reported non prouvé is not green. Max 2 correction rounds,
        enforced by the correction-budget hook (PreToolUse on Agent): every
        correction brief carries the line `TTW-CORRECTION-ROUND: <run-id>`
-       (<run-id> = this run's `.claude/output/apex/` dir name) or, for a run
-       outside the session's repo, its absolute `…/.claude/output/apex/<run-id>`
+       (<run-id> = this run's `.claude/output/ttw/` dir name) or, for a run
+       outside the session's repo, its absolute `…/.claude/output/ttw/<run-id>`
        path (no spaces); never create a stub run dir in the session's repo. Any other brief
        naming 06-resolve.md or a correction round carries
        `TTW-CORRECTION-ROUND: none`. A round goes through Agent or SendMessage,
@@ -2136,7 +2136,7 @@ in
 
     ## Persistence
 
-    Write each phase summary to `.claude/output/apex/{task-id}/NN-{phase}.md` as
+    Write each phase summary to `.claude/output/ttw/{task-id}/NN-{phase}.md` as
     it completes. The coordinator's live context holds only the summaries; the
     disk copy is the source of truth for manual resume.
     ## Commands
@@ -2367,10 +2367,10 @@ in
     1. **Branch.** Per the Git section of CLAUDE.md: on `main`/`master`, cut
        `{type}/{task-id}` before the first edit; on a feature branch, stay.
        Record `{trunk}` = the branch you cut from.
-    2. **Context file.** Write `.claude/output/apex/{task-id}/00-context.md`:
+    2. **Context file.** Write `.claude/output/ttw/{task-id}/00-context.md`:
 
        ```markdown
-       # APEX: {task}
+       # TTW: {task}
        Tier: Direct
        Flags: {resolved flags}
        Branch: {branch} (trunk: {trunk})
@@ -2427,7 +2427,7 @@ in
          flags. High-stakes also reads `steps/HIGH-STAKES.md`.
        - Direct never runs a correction round inline. The first implementer
          brief after an escalation runs on `model: opus` and carries `TTW-CORRECTION-ROUND: {run-id}`
-         ({run-id} = this run's `.claude/output/apex/` dir name), so the
+         ({run-id} = this run's `.claude/output/ttw/` dir name), so the
          correction budget counts it.
     8. **Self-check.** Read `git diff` of the touched files and check each AC
        against it, one line per AC: `AC — met | not met — evidence`. A not-met

@@ -1,4 +1,4 @@
-# APEX: synthetic current-word
+# TTW: synthetic current-word
 Tier: Standard
 Branch: feat/current-word
 

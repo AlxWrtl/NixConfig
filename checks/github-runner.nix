@@ -111,7 +111,7 @@ let
   # Extend with the public holbertonschool-* repos.
   publicRepos = [
     "NixConfig"
-    "apex-skill"
+    "ttw-skill"
   ];
   sudoAs = "sudo -u ${account}";
   beginMarker = "# ${name} BEGIN";

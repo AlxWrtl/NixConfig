@@ -1,11 +1,11 @@
-// Ported from apex-band (context.test, the phases and verdict cases of stats.test), plus what
+// Ported from ttw-band (context.test, the phases and verdict cases of stats.test), plus what
 // the block and the log show of a run.
 import { describe, expect, test } from 'claude-code/testing'
 
 import {
   BARE_STALE_MS,
   STALE_MS,
-  apexHeader,
+  ttwHeader,
   bareShown,
   callSwitch,
   classifyAgent,
@@ -41,15 +41,15 @@ import {
   settleRun,
   statusKind,
 } from '../hooks/ttw'
-import type { DeckApexRun } from '../types'
+import type { DeckTtwRun } from '../types'
 
 const NOW = 10 * STALE_MS
 
-const STANDARD = `# APEX: mods task-board + apex-band
+const STANDARD = `# TTW: mods task-board + ttw-band
 Date: 2026-10-06
 Mode: Standard (allégé) — hook HIGH signal
 Flags: -t -pr -o -n (-X -E)
-Branch: feat/claude-mods-task-board-apex-band
+Branch: feat/claude-mods-task-board-ttw-band
 Baseline: nix flake check --no-build -> green (13 ✅)
 
 ## Progress
@@ -62,7 +62,7 @@ Baseline: nix flake check --no-build -> green (13 ✅)
 | 09-finish | pending | |
 `
 
-const TIERED = `# APEX: mod maison \`deck\`
+const TIERED = `# TTW: mod maison \`deck\`
 Date: 2026-10-09
 Tier: Standard (mods UI; no hook guard) — files under home/claude-code/mods/
 Flags: -t -pr -o -n
@@ -76,7 +76,7 @@ Branch: feat/deck-mod (trunk: master)
 | 04-validate | pending | |
 `
 
-const FRENCH = `# APEX — garde de sécurité
+const FRENCH = `# TTW — garde de sécurité
 **Mode:** **haut-enjeu** (garde de sécurité — un affaiblissement laisse passer un
   contournement)
 Flags résolus: -t -x -pr -o -n
@@ -94,7 +94,7 @@ Baseline skipped: tree dirty
 | 09-finish | pending | |
 `
 
-const NO_MODE = `# APEX: no mode line
+const NO_MODE = `# TTW: no mode line
 Flags: -t -x -v -pr -o -n (mode haut-enjeu, -v ajouté)
 Branch: feat/x
 
@@ -106,9 +106,9 @@ free text
 describe('parseContext', () => {
   test('standard header and Progress table: Mode read as the tier', () => {
     const run = parseContext(STANDARD, 'dir')
-    expect(run.title).toBe('mods task-board + apex-band')
+    expect(run.title).toBe('mods task-board + ttw-band')
     expect(run.tier).toBe('Standard')
-    expect(run.branch).toBe('feat/claude-mods-task-board-apex-band')
+    expect(run.branch).toBe('feat/claude-mods-task-board-ttw-band')
     expect(run.steps.length).toBe(5)
     expect(run.steps[1]?.kind).toBe('done')
     expect(run.currentStep).toBe('02-plan')
@@ -119,7 +119,7 @@ describe('parseContext', () => {
     expect(run.tier).toBe('Standard')
     expect(run.branch).toBe('feat/deck-mod')
     expect(run.currentStep).toBe('03-execute')
-    expect(parseContext('# APEX: x\nTier: High-stakes (new hook)\nMode: Fast\n', 'd').tier).toBe('High-stakes')
+    expect(parseContext('# TTW: x\nTier: High-stakes (new hook)\nMode: Fast\n', 'd').tier).toBe('High-stakes')
   })
 
   test('Branche, Flags résolus, bold wrapped Mode', () => {
@@ -140,7 +140,7 @@ describe('parseContext', () => {
 
   test('CRLF line endings', () => {
     const run = parseContext(STANDARD.replace(/\n/g, '\r\n'), 'dir')
-    expect(run.branch).toBe('feat/claude-mods-task-board-apex-band')
+    expect(run.branch).toBe('feat/claude-mods-task-board-ttw-band')
     expect(run.steps.length).toBe(5)
     expect(run.currentStep).toBe('02-plan')
   })
@@ -150,11 +150,14 @@ describe('parseContext', () => {
     expect(parseContext('# Some plain title\n', 'my-run').title).toBe('Some plain title')
   })
 
-  test('a TTW heading reads like an APEX one, any case and separator', () => {
+  test('a TTW heading names the run, any case and separator', () => {
     expect(parseContext('# TTW: renamed run\n', 'd').title).toBe('renamed run')
     expect(parseContext('# ttw — renamed run\n', 'd').title).toBe('renamed run')
-    expect(parseContext('# APEX: old run\n', 'd').title).toBe('old run')
     expect(parseContext('# TTWX: not the word\n', 'd').title).toBe('TTWX: not the word')
+  })
+
+  test('`# APEX:` is not a title (the heading stays whole, no run name is stripped from it)', () => {
+    expect(parseContext('# APEX: old run\n', 'my-run').title).toBe('APEX: old run')
   })
 })
 
@@ -202,7 +205,7 @@ describe('branch', () => {
   const run = parseContext(STANDARD, 'd')
 
   test('a symbolic ref names the branch; a detached sha or garbage none', () => {
-    expect(headBranch('ref: refs/heads/fix/apex-band-hide\n')).toBe('fix/apex-band-hide')
+    expect(headBranch('ref: refs/heads/fix/ttw-band-hide\n')).toBe('fix/ttw-band-hide')
     expect(headBranch('ref: refs/heads/feat/x\r\n')).toBe('feat/x')
     expect(headBranch('5328846a1b2c3d4e5f60718293a4b5c6d7e8f901\n')).toBeUndefined()
     expect(headBranch('gitdir: ../.git/worktrees/x\n')).toBeUndefined()
@@ -210,9 +213,9 @@ describe('branch', () => {
   })
 
   test('same branch is on, another is off; unknown either side is on', () => {
-    expect(onBranch(run, 'feat/claude-mods-task-board-apex-band')).toBe(true)
+    expect(onBranch(run, 'feat/claude-mods-task-board-ttw-band')).toBe(true)
     expect(onBranch(run, 'master')).toBe(false)
-    expect(onBranch(parseContext('# APEX: x\n', 'd'), 'master')).toBe(true)
+    expect(onBranch(parseContext('# TTW: x\n', 'd'), 'master')).toBe(true)
     expect(onBranch(run, undefined)).toBe(true)
   })
 })
@@ -222,9 +225,9 @@ describe('live steps', () => {
   const call = (tool: string, input: { file_path?: string; notebook_path?: string; command?: string }, inSubagent = false) =>
     classifyCall(tool, input, inSubagent)
 
-  test('AC4: writes under .claude/output/apex are plan, any other edit is edit', () => {
-    expect(call('Write', { file_path: '/repo/.claude/output/apex/run/02-plan.md' })).toBe('plan')
-    expect(call('Edit', { file_path: '.claude/output/apex/run/00-context.md' })).toBe('plan')
+  test('AC4: writes under .claude/output/ttw are plan, any other edit is edit', () => {
+    expect(call('Write', { file_path: '/repo/.claude/output/ttw/run/02-plan.md' })).toBe('plan')
+    expect(call('Edit', { file_path: '.claude/output/ttw/run/00-context.md' })).toBe('plan')
     expect(call('Edit', { file_path: '/repo/src/a.ts' })).toBe('edit')
     expect(call('Write', { file_path: '/repo/src/b.ts' })).toBe('edit')
     expect(call('NotebookEdit', { notebook_path: '/repo/n.ipynb' })).toBe('edit')
@@ -234,19 +237,18 @@ describe('live steps', () => {
   test('gate, Codex and ship from the main loop Bash; AC6: never from a subagent', () => {
     for (const c of ['nix flake check', 'pnpm test', 'pnpm typecheck && pnpm lint', 'claude plugin validate --strict x', 'npx tsc -p .', 'cargo test'])
       expect(call('Bash', { command: c })).toBe('gate')
-    expect(call('Bash', { command: 'scripts/apex-verify-external run-x' })).toBe('Codex')
+    expect(call('Bash', { command: 'scripts/ttw-verify-external run-x' })).toBe('Codex')
     for (const c of ['git commit -m x', 'git push -u origin f', 'gh pr create -F b', 'gh pr merge 3 --squash'])
       expect(call('Bash', { command: c })).toBe('ship')
     expect(call('Bash', { command: 'ls -la' })).toBeNull()
     expect(call('Bash', { command: 'tscx' })).toBeNull()
-    for (const c of ['pnpm test', 'apex-verify-external', 'git commit -m x']) expect(call('Bash', { command: c }, true)).toBeNull()
+    for (const c of ['pnpm test', 'ttw-verify-external', 'git commit -m x']) expect(call('Bash', { command: c }, true)).toBeNull()
     expect(call('Edit', { file_path: '/repo/src/a.ts' }, true)).toBe('edit')
   })
 
-  test('ttw -> phase 2: ttw-verify-external is the Codex step like apex-verify-external, main loop only', () => {
-    for (const c of ['ttw-verify-external --base master --acs .claude/output/apex/r/02-acs.md', 'apex-verify-external --base master --acs a.txt'])
-      expect(call('Bash', { command: c })).toBe('Codex')
-    for (const c of ['ttw-verify-external --acs a.txt', 'apex-verify-external --acs a.txt']) expect(call('Bash', { command: c }, true)).toBeNull()
+  test('ttw-verify-external is the Codex step, main loop only; the old name is none', () => {
+    expect(call('Bash', { command: 'ttw-verify-external --base master --acs .claude/output/ttw/r/02-acs.md' })).toBe('Codex')
+    expect(call('Bash', { command: 'ttw-verify-external --acs a.txt' }, true)).toBeNull()
   })
 
   test('agents: implementers, test-runner, reviewers; others none', () => {
@@ -328,12 +330,12 @@ describe('what the block and the log show', () => {
   })
 
   test('the header names the branch (else the title) and the tier', () => {
-    expect(apexHeader(parseContext(TIERED, 'd'))).toBe('APEX · feat/deck-mod · Standard')
-    expect(apexHeader({ title: 'no branch run', steps: [] })).toBe('APEX · no branch run')
+    expect(ttwHeader(parseContext(TIERED, 'd'))).toBe('TTW · feat/deck-mod · Standard')
+    expect(ttwHeader({ title: 'no branch run', steps: [] })).toBe('TTW · no branch run')
   })
 
   test('a log line when a run appears, its step moves or it ends; none otherwise', () => {
-    const a: DeckApexRun = { title: 't', branch: 'feat/x', steps: [], currentStep: '03-execute', dir: 'r1' }
+    const a: DeckTtwRun = { title: 't', branch: 'feat/x', steps: [], currentStep: '03-execute', dir: 'r1' }
     expect(phaseNote(null, null)).toBeNull()
     expect(phaseNote(null, a)).toBe('feat/x · 03-execute')
     expect(phaseNote(a, { ...a })).toBeNull()
@@ -344,7 +346,7 @@ describe('what the block and the log show', () => {
 })
 
 describe('settleRun', () => {
-  const a: DeckApexRun = { title: 't', steps: [], currentStep: '03-execute', dir: 'r1' }
+  const a: DeckTtwRun = { title: 't', steps: [], currentStep: '03-execute', dir: 'r1' }
 
   test('a run found is kept as found, the miss count reset', () => {
     expect(settleRun(null, a, 0)).toEqual({ run: a, misses: 0 })
@@ -379,8 +381,8 @@ describe('runFromFiles (a run folder without 00-context.md)', () => {
       '08-run-tests:pending',
       '09-finish:pending',
     ])
-    expect(apexHeader({ ...run, branch: 'feat/x' })).toBe('APEX · feat/x')
-    expect(apexHeader(run)).toBe('APEX · 04-nav-flottante')
+    expect(ttwHeader({ ...run, branch: 'feat/x' })).toBe('TTW · feat/x')
+    expect(ttwHeader(run)).toBe('TTW · 04-nav-flottante')
     expect(isLive(run, NOW - 1000, NOW)).toBe(true)
   })
 
@@ -449,7 +451,7 @@ describe('a run folder without 00-context.md: step files, trunk, 1 h window', ()
   })
 
   test('its header names the folder, not a branch', () => {
-    expect(apexHeader(plan(NOW))).toBe('APEX · 04-nav')
+    expect(ttwHeader(plan(NOW))).toBe('TTW · 04-nav')
   })
 })
 
@@ -470,9 +472,9 @@ describe('runSwitch (a new run clears the finished cards)', () => {
   })
 
   test('with settleRun: a 1-poll miss then the same run clears nothing', () => {
-    const a: DeckApexRun = { title: 't', steps: [], dir: 'a' }
+    const a: DeckTtwRun = { title: 't', steps: [], dir: 'a' }
     let last: string | null = null
-    let shown: DeckApexRun | null = null
+    let shown: DeckTtwRun | null = null
     let misses = 0
     const news: boolean[] = []
     for (const found of [a, null, a, null, null, a]) {
@@ -487,19 +489,19 @@ describe('runSwitch (a new run clears the finished cards)', () => {
   })
 })
 
-describe('session run (a main-loop Skill(apex) call, no run folder)', () => {
+describe('session run (a main-loop Skill(ttw) call, no run folder)', () => {
   const at = { startedAt: NOW - 5000, lastAt: NOW - 5000, args: 'fix the thing' }
 
-  test('live off the trunk under 1 h from the last call: HEAD as header, no tier, one current apex row', () => {
+  test('live off the trunk under 1 h from the last call: HEAD as header, no tier, one current ttw row', () => {
     const run = sessionRunOf(at, 'feat/x', NOW)
     expect(run).toEqual({
-      title: 'apex',
+      title: 'ttw',
       branch: 'feat/x',
-      steps: [{ step: 'apex', status: 'in progress', kind: 'running' }],
-      currentStep: 'apex',
+      steps: [{ step: 'ttw', status: 'in progress', kind: 'running' }],
+      currentStep: 'ttw',
       dir: sessionKey(at.startedAt),
     })
-    expect(run === null ? '' : apexHeader(run)).toBe('APEX · feat/x')
+    expect(run === null ? '' : ttwHeader(run)).toBe('TTW · feat/x')
     expect(run === null ? undefined : phaseMark(run.steps[0] ?? { step: '', status: '', kind: 'other' }, run.currentStep)).toBe('current')
   })
 

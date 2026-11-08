@@ -1,8 +1,8 @@
 'use strict'
-// APEX board, pure part: read a run's 00-context.md (every drifted spelling tolerated, as the deck
+// TTW board, pure part: read a run's 00-context.md (every drifted spelling tolerated, as the deck
 // does in mods/deck/hooks/ttw.ts), its directory listing, its correction budget and its external
 // verdict, and derive the column its card sits in. No DOM, no fetch, no clock: `now` comes in.
-// Loaded by index.html (global `ApexBoard`) and by test.js (module.exports).
+// Loaded by index.html (global `TtwBoard`) and by test.js (module.exports).
 
 ;(function () {
   /** A run is live only while its 00-context.md moved in the last 6 hours. */
@@ -89,7 +89,7 @@
 
     const heading = header.find((l) => /^#\s+\S/.test(l))
     const headingText = heading === undefined ? '' : clean(heading.replace(/^#\s+/, ''))
-    const named = headingText.match(/^(?:APEX|TTW)\s*[:—–-]\s*(.+)$/i)
+    const named = headingText.match(/^TTW\s*[:—–-]\s*(.+)$/i)
     const title = clean(named ? named[1] : headingText) || dirName
 
     const fields = new Map()
@@ -390,5 +390,5 @@
     sortFiles,
   }
   if (typeof module !== 'undefined' && module.exports) module.exports = api
-  else globalThis.ApexBoard = api
+  else globalThis.TtwBoard = api
 })()

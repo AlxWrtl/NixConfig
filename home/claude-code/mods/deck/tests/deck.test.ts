@@ -184,7 +184,7 @@ test('a fresh session draws on every surface and width, empty panels hidden', as
       expect(await ui.find({ text: /· main$/ })).toBeDefined()
       expect(await ui.find({ text: /session log/ })).toBeDefined()
       expect(await ui.find({ text: /agents ·/ })).toBeUndefined() // no subagents: no agents panel
-      expect(await ui.find({ text: /^APEX/ })).toBeUndefined() // no live run: no APEX block
+      expect(await ui.find({ text: /^TTW/ })).toBeUndefined() // no live run: no TTW block
       await ui.unmount()
     }
   }

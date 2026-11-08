@@ -1,4 +1,4 @@
-# APEX: synthetic blocked-cell
+# TTW: synthetic blocked-cell
 Tier: Standard
 Branch: feat/blocked-cell
 

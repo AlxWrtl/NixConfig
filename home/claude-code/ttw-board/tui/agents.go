@@ -1057,17 +1057,14 @@ var runLaunch = func(dir string, argv []string) error {
 }
 
 // repoOf: the repo ttw-board.sh passed, read back from its runs dir `<repo>/.claude/output/ttw`
-// or the pre-rename `<repo>/.claude/output/apex` (absolute, pwd -P); "" for any other dir: no
-// repo, no launch.
+// (absolute, pwd -P); "" for any other dir: no repo, no launch.
 func repoOf(runsDir string) string {
 	if !filepath.IsAbs(runsDir) {
 		return ""
 	}
 	p := filepath.Clean(runsDir)
-	for _, suffix := range []string{"/.claude/output/ttw", "/.claude/output/apex"} {
-		if repo, ok := strings.CutSuffix(p, suffix); ok {
-			return repo
-		}
+	if repo, ok := strings.CutSuffix(p, "/.claude/output/ttw"); ok {
+		return repo
 	}
 	return ""
 }

@@ -1,5 +1,5 @@
-// The APEX block and the commands, through the hooks: a live run read from mocked files, the
-// block drawn first and only while the run is live, its phase moves in the log as `apex`.
+// The TTW block and the commands, through the hooks: a live run read from mocked files, the
+// block drawn first and only while the run is live, its phase moves in the log as `ttw`.
 import { expect, mock, test } from 'claude-code/testing'
 import type { ElementQuery, FoundElement } from 'claude-code/testing'
 import type { On } from 'claude-code'
@@ -21,7 +21,7 @@ const pane = (bodyColumns: number, surface: 'terminal' | 'mobile' = 'terminal') 
   },
 })
 
-const context = (current: '03-execute' | '04-validate') => `# APEX: run under test
+const context = (current: '03-execute' | '04-validate') => `# TTW: run under test
 Tier: Standard (mods UI) — files under mods/
 Branch: feat/test
 
@@ -70,9 +70,9 @@ const exact = (text: string): RegExp => new RegExp(`^${text.replace(/[.*+?^${}()
 type Bare = { name: string; files: { name: string; mtimeMs: number }[]; dirMtimeMs?: number }
 
 type World = {
-  // The run's files: absent → no .claude/output/apex at all.
+  // The run's files: absent → no .claude/output/ttw at all.
   run?: { current: '03-execute' | '04-validate'; mtimeMs?: number; verdict?: string; rounds?: number }
-  // A second run folder, .claude/output/apex/<name>, holding these files and no 00-context.md.
+  // A second run folder, .claude/output/ttw/<name>, holding these files and no 00-context.md.
   bare?: Bare
   // More folders without 00-context.md, beside `bare`.
   others?: Bare[]
@@ -80,17 +80,17 @@ type World = {
   head?: string
   opened: unknown[]
   statuses: number
-  // Reads of the run folders (fs.list of .claude/output/apex): one per poll.
+  // Reads of the run folders (fs.list of .claude/output/ttw): one per poll.
   polls: number
 }
 
 const fresh = (run?: World['run']): World => ({ ...(run === undefined ? {} : { run }), opened: [], statuses: 0, polls: 0 })
 
-const APEX_ROOT = '/work/.claude/output/apex'
+const TTW_ROOT = '/work/.claude/output/ttw'
 
 const bareDirs = (w: World): Bare[] => [...(w.bare === undefined ? [] : [w.bare]), ...(w.others ?? [])]
 
-// /work with (or without) a live run in .claude/output/apex/my-run, HOME at /home/u. A missing
+// /work with (or without) a live run in .claude/output/ttw/my-run, HOME at /home/u. A missing
 // path throws, so the host's read of it rejects.
 function world(on: On, w: World): void {
   on('session.start', () => ({ cwd: '/work' }))
@@ -100,33 +100,33 @@ function world(on: On, w: World): void {
   on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200_000 }, rateLimits: [], cost: { usd: 1.5 } } }))
   on('agent.list', () => ({ value: [] }))
   on('fs.list', (_$, e) => {
-    if (e.path === '/work/.claude/output/apex') w.polls += 1
+    if (e.path === '/work/.claude/output/ttw') w.polls += 1
     const r = w.run
     const bares = bareDirs(w)
-    if (bares.length > 0 && e.path === APEX_ROOT)
+    if (bares.length > 0 && e.path === TTW_ROOT)
       return {
         value: [
           ...(r === undefined ? [] : [{ name: 'my-run', kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false }]),
           ...bares.map(b => ({ name: b.name, kind: 'dir' as const, size: 0, mtimeMs: 0, isLink: false })),
         ],
       }
-    const b = bares.find(d => e.path === `${APEX_ROOT}/${d.name}`)
+    const b = bares.find(d => e.path === `${TTW_ROOT}/${d.name}`)
     if (b !== undefined)
       return { value: b.files.map(f => ({ name: f.name, kind: 'file' as const, size: 1, mtimeMs: f.mtimeMs, isLink: false })) }
     if (r === undefined) throw new Error('ENOENT')
-    if (e.path === '/work/.claude/output/apex') return { value: [{ name: 'my-run', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }
-    if (e.path === '/work/.claude/output/apex/my-run' && r.verdict !== undefined)
+    if (e.path === '/work/.claude/output/ttw') return { value: [{ name: 'my-run', kind: 'dir', size: 0, mtimeMs: 0, isLink: false }] }
+    if (e.path === '/work/.claude/output/ttw/my-run' && r.verdict !== undefined)
       return { value: [{ name: 'external-verify.json', kind: 'file', size: 1, mtimeMs: 1, isLink: false }] }
-    if (e.path === '/home/u/.claude/apex-correction-budget')
+    if (e.path === '/home/u/.claude/ttw-correction-budget')
       return { value: Array.from({ length: r.rounds ?? 0 }, (_, i) => ({ name: `my-run.round${i + 1}`, kind: 'file', size: 0, mtimeMs: 0, isLink: false })) }
     throw new Error('ENOENT')
   })
   on('fs.stat', (_$, e) => {
     for (const b of bareDirs(w)) {
-      if (e.path === `${APEX_ROOT}/${b.name}`)
+      if (e.path === `${TTW_ROOT}/${b.name}`)
         return { value: { kind: 'dir', size: 0, mtimeMs: b.dirMtimeMs ?? Math.max(0, ...b.files.map(f => f.mtimeMs)), isLink: false } }
-      if (!e.path.startsWith(`${APEX_ROOT}/${b.name}/`)) continue
-      const file = b.files.find(f => e.path === `${APEX_ROOT}/${b.name}/${f.name}`)
+      if (!e.path.startsWith(`${TTW_ROOT}/${b.name}/`)) continue
+      const file = b.files.find(f => e.path === `${TTW_ROOT}/${b.name}/${f.name}`)
       if (file === undefined) throw new Error('ENOENT')
       return { value: { kind: 'file', size: 1, mtimeMs: file.mtimeMs, isLink: false } }
     }
@@ -135,7 +135,7 @@ function world(on: On, w: World): void {
   on('fs.read', (_$, e) => {
     const r = w.run
     if (r !== undefined && e.path.endsWith('/external-verify.json') && r.verdict !== undefined) return { value: r.verdict }
-    if (r !== undefined && e.path === `${APEX_ROOT}/my-run/00-context.md`) return { value: context(r.current) }
+    if (r !== undefined && e.path === `${TTW_ROOT}/my-run/00-context.md`) return { value: context(r.current) }
     if (e.path === '/work/.git/HEAD') return { value: `ref: refs/heads/${w.head ?? 'feat/test'}\n` }
     throw new Error('ENOENT')
   })
@@ -168,7 +168,7 @@ const inline = (bodyColumns: number, surface: 'terminal' | 'mobile') => ({
   props: { ...pane(bodyColumns, surface).props, placement: 'inline' as const },
 })
 
-test('without a live run there is no APEX block, no frame, no legend entry; a stale run neither', async ($, on) => {
+test('without a live run there is no TTW block, no frame, no legend entry; a stale run neither', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w = fresh()
   world(on, w)
@@ -176,22 +176,22 @@ test('without a live run there is no APEX block, no frame, no legend entry; a st
   await openDeck($, clock)
   const ui = await $.ui.mount(pane(120))
   expect(await ui.find({ text: /· main$/ })).toBeDefined()
-  expect(await ui.find({ text: /^APEX/ })).toBeUndefined()
-  expect(await ui.find({ type: 'Text', text: exact(' apex') })).toBeUndefined()
+  expect(await ui.find({ text: /^TTW/ })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: exact(' ttw') })).toBeUndefined()
   await ui.unmount()
 
   // A run whose context file has not moved for 6 hours is not live either.
   w.run = { current: '03-execute', mtimeMs: NOW - 7 * 60 * 60 * 1000 }
   await clock.advance(5000)
   const stale = await $.ui.mount(pane(120))
-  expect(await stale.find({ text: /^APEX/ })).toBeUndefined()
+  expect(await stale.find({ text: /^TTW/ })).toBeUndefined()
   await stale.unmount()
 
   // Positive control: the same run, its file just written, draws.
   w.run = { current: '03-execute' }
   await clock.advance(5000)
   const live = await $.ui.mount(pane(120))
-  expect(await live.find({ type: 'Text', text: exact('APEX · feat/test · Standard') })).toBeDefined()
+  expect(await live.find({ type: 'Text', text: exact('TTW · feat/test · Standard') })).toBeDefined()
   await live.unmount()
 })
 
@@ -203,7 +203,7 @@ test('a live run folder without 00-context.md draws, dock and inline: the folder
   await openDeck($, clock)
   for (const mount of [pane(120), inline(80, 'terminal')]) {
     const ui = await $.ui.mount(mount)
-    expect(await ui.find({ type: 'Text', text: exact('APEX · 04-nav-flottante') })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: exact('TTW · 04-nav-flottante') })).toBeDefined()
     // The live step row stands where the phase dots were.
     expect(await ui.find({ type: 'Text', text: exact('○ edit') })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: exact('◐ 02-plan') })).toBeUndefined()
@@ -215,7 +215,7 @@ test('a live run folder without 00-context.md draws, dock and inline: the folder
   await clock.advance(5000)
   await clock.advance(5000)
   const stale = await $.ui.mount(pane(120))
-  expect(await stale.find({ text: /^APEX/ })).toBeUndefined()
+  expect(await stale.find({ text: /^TTW/ })).toBeUndefined()
   await stale.unmount()
 
   // A 09-finish file: the run ended.
@@ -229,7 +229,7 @@ test('a live run folder without 00-context.md draws, dock and inline: the folder
   await clock.advance(5000)
   await clock.advance(5000)
   const ended = await $.ui.mount(pane(120))
-  expect(await ended.find({ text: /^APEX/ })).toBeUndefined()
+  expect(await ended.find({ text: /^TTW/ })).toBeUndefined()
   await ended.unmount()
 })
 
@@ -243,8 +243,8 @@ test('a newer run folder without 00-context.md beats an older live one with it',
   await $.session.start(START)
   await openDeck($, clock)
   const ui = await $.ui.mount(pane(120))
-  expect(await ui.find({ type: 'Text', text: exact('APEX · zz-newer') })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: exact('APEX · feat/test · Standard') })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: exact('TTW · zz-newer') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: exact('TTW · feat/test · Standard') })).toBeUndefined()
   expect(await ui.find({ type: 'Text', text: exact('○ edit') })).toBeDefined()
   await ui.unmount()
 })
@@ -260,7 +260,7 @@ test('a live run draws first: header with branch and tier, the step row in place
   await drain($.turn.step({ turnId: 't1', index: 0, model: 'claude-opus-5-5', messageCount: 1 }))
   for (const cols of [64, 120]) {
     const ui = await $.ui.mount(pane(cols))
-    const header = await ui.find({ type: 'Text', text: exact('APEX · feat/test · Standard') })
+    const header = await ui.find({ type: 'Text', text: exact('TTW · feat/test · Standard') })
     expect(header?.props.color).toBe('planMode')
     expect(header?.props.bold).toBe(true)
     for (const s of ['edit', 'gate', 'ship']) expect((await ui.find({ type: 'Text', text: exact(`○ ${s}`) }))?.props.color).toBe('inactive')
@@ -268,9 +268,9 @@ test('a live run draws first: header with branch and tier, the step row in place
     expect(await ui.find({ text: /^[●◐○] \S+ \d+k$/ })).toBeUndefined()
     // First, above every panel.
     const texts = (await ui.findAll({ type: 'Text' })).map(t => t.text)
-    const at = texts.findIndex(t => t === 'APEX · feat/test · Standard')
+    const at = texts.findIndex(t => t === 'TTW · feat/test · Standard')
     expect(at >= 0 && at < texts.findIndex(t => /· main$/.test(t))).toBe(true)
-    expect(await ui.find({ type: 'Text', text: exact(' apex') })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: exact(' ttw') })).toBeDefined()
     await ui.unmount()
   }
 })
@@ -367,7 +367,7 @@ test("an architect's shells close when its turn ends without an answer", async (
   await ui.unmount()
 })
 
-test('a phase change is written to the log as apex, in its own colour; a run ends after two misses', async ($, on) => {
+test('a phase change is written to the log as ttw, in its own colour; a run ends after two misses', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w = fresh({ current: '03-execute' })
   world(on, w)
@@ -378,7 +378,7 @@ test('a phase change is written to the log as apex, in its own colour; a run end
   const ui = await $.ui.mount(pane(80))
   expect(await ui.find({ type: 'Text', text: exact('feat/test · 03-execute') })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: exact('03-execute → 04-validate') })).toBeDefined()
-  const who = await ui.findAll({ type: 'Text', text: exact('apex') })
+  const who = await ui.findAll({ type: 'Text', text: exact('ttw') })
   expect(who.length).toBe(2)
   expect(who.every(x => x.props.color === 'planMode')).toBe(true)
   await ui.unmount()
@@ -387,13 +387,13 @@ test('a phase change is written to the log as apex, in its own colour; a run end
   w.run = undefined
   await clock.advance(5000)
   const once = await $.ui.mount(pane(80))
-  expect(await once.find({ text: /^APEX/ })).toBeDefined()
+  expect(await once.find({ text: /^TTW/ })).toBeDefined()
   expect(await once.find({ type: 'Text', text: exact('run ended') })).toBeUndefined()
   await once.unmount()
   // The second in a row is: the block leaves, the log says so.
   await clock.advance(5000)
   const gone = await $.ui.mount(pane(80))
-  expect(await gone.find({ text: /^APEX/ })).toBeUndefined()
+  expect(await gone.find({ text: /^TTW/ })).toBeUndefined()
   expect(await gone.find({ type: 'Text', text: exact('run ended') })).toBeDefined()
   await gone.unmount()
 })
@@ -405,7 +405,7 @@ test('the run folders are polled only while the pane is open, plus once per fini
   await $.session.start(START)
   await clock.advance(20_000)
   expect(w.polls).toBe(0)
-  // A finished main turn polls once, the pane closed: the log's apex line is written.
+  // A finished main turn polls once, the pane closed: the log's ttw line is written.
   await $.turn.start({ text: 'go', turnId: 'P1' })
   await $.turn.complete({ answer: 'ok', durationMs: 10, isAborted: false, turnId: 'P1', reason: 'answer' })
   await clock.settle()
@@ -454,7 +454,7 @@ test('inline, a live run takes its rows first: dots, each alert, running shells,
     const ui = await $.ui.mount(inline(80, surface))
     const root = (await ui.drawn()) as { children?: unknown[] }
     expect((root.children ?? []).filter(Boolean).length <= 8).toBe(true)
-    expect(await ui.find({ type: 'Text', text: exact('APEX · feat/test · Standard') })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: exact('TTW · feat/test · Standard') })).toBeDefined()
     expect((await ui.find({ type: 'Text', text: exact('○ edit') }))?.props.color).toBe('inactive')
     expect(await ui.find({ type: 'Text', text: exact('○ ship') })).toBeDefined()
     expect(await ui.find({ type: 'Text', text: exact('◐ 03-execute') })).toBeUndefined()
@@ -495,7 +495,7 @@ test('no gate and no other-loops panel, whatever runs; a plain call passes throu
   }
 })
 
-for (const name of ['deck', 'apex-pane', 'task-board']) {
+for (const name of ['deck', 'ttw-pane', 'task-board']) {
   test(`/${name} opens the deck pane`, async ($, on) => {
     const clock = mock.clock(on, { now: NOW })
     const w = fresh()
@@ -540,8 +540,8 @@ test('a run folder without 00-context.md is hidden while HEAD is master or main'
     w.head = head
     await clock.advance(5000)
     const ui = await $.ui.mount(pane(120))
-    const header = await ui.find({ type: 'Text', text: /^APEX ·[^◐●○✗]*$/ })
-    expect(header?.text).toBe(head === 'feat/x' ? 'APEX · 04-nav' : undefined)
+    const header = await ui.find({ type: 'Text', text: /^TTW ·[^◐●○✗]*$/ })
+    expect(header?.text).toBe(head === 'feat/x' ? 'TTW · 04-nav' : undefined)
     await ui.unmount()
   }
 })
@@ -556,7 +556,7 @@ test('ranking: newest time wins, past the folders own mtime; the 3 ranked newest
   const header = async (): Promise<string | undefined> => {
     await clock.advance(5000)
     const ui = await $.ui.mount(pane(120))
-    const found = await ui.find({ type: 'Text', text: /^APEX ·[^◐●○✗]*$/ })
+    const found = await ui.find({ type: 'Text', text: /^TTW ·[^◐●○✗]*$/ })
     await ui.unmount()
     return found?.text
   }
@@ -564,12 +564,12 @@ test('ranking: newest time wins, past the folders own mtime; the 3 ranked newest
   // A context run newer than a bare folder wins: its tier in the header.
   w.run = { current: '03-execute', mtimeMs: NOW - 1000 }
   w.bare = { name: 'zz-old', files: step(NOW - 60_000) }
-  expect(await header()).toBe('APEX · feat/test · Standard')
+  expect(await header()).toBe('TTW · feat/test · Standard')
 
   // A bare folder ranked first by its own mtime, its step file older: the context run wins.
   w.run = { current: '03-execute', mtimeMs: NOW - 60_000 }
   w.bare = { name: 'zz-moved', files: step(NOW - 90_000), dirMtimeMs: NOW + 9000 }
-  expect(await header()).toBe('APEX · feat/test · Standard')
+  expect(await header()).toBe('TTW · feat/test · Standard')
 
   // Four bare folders: only the 3 ranked newest are listed; the newest step among them wins.
   w.run = undefined
@@ -580,7 +580,7 @@ test('ranking: newest time wins, past the folders own mtime; the 3 ranked newest
     { name: 'r3', files: step(NOW - 6000), dirMtimeMs: NOW - 300 },
     { name: 'r4', files: step(NOW + 9000), dirMtimeMs: NOW - 400 },
   ]
-  expect(await header()).toBe('APEX · r1')
+  expect(await header()).toBe('TTW · r1')
 
   // A folder without a step file takes no slot and is never chosen.
   w.others = [
@@ -589,7 +589,7 @@ test('ranking: newest time wins, past the folders own mtime; the 3 ranked newest
     { name: 'r2', files: step(NOW - 8000), dirMtimeMs: NOW - 200 },
     { name: 'r3', files: step(NOW + 19_000), dirMtimeMs: NOW - 300 },
   ]
-  expect(await header()).toBe('APEX · r3')
+  expect(await header()).toBe('TTW · r3')
 
   // The newest context run is listed even when 3 bare folders rank above it.
   w.run = { current: '03-execute', mtimeMs: NOW - 60_000 }
@@ -598,7 +598,7 @@ test('ranking: newest time wins, past the folders own mtime; the 3 ranked newest
     { name: 'r2', files: step(NOW - 120_000), dirMtimeMs: NOW - 200 },
     { name: 'r3', files: step(NOW - 120_000), dirMtimeMs: NOW - 300 },
   ]
-  expect(await header()).toBe('APEX · feat/test · Standard')
+  expect(await header()).toBe('TTW · feat/test · Standard')
 })
 
 test('a new run clears the finished cards and shells; the running ones stay', async ($, on) => {
@@ -640,14 +640,14 @@ test('a new run clears the finished cards and shells; the running ones stay', as
   w.bare = { name: 'run-b', files: [{ name: '03-execute.md', mtimeMs: NOW + 4000 }] }
   await clock.advance(5000)
   const next = await $.ui.mount(pane(120))
-  expect(await next.find({ type: 'Text', text: exact('APEX · run-b') })).toBeDefined()
+  expect(await next.find({ type: 'Text', text: exact('TTW · run-b') })).toBeDefined()
   expect(await next.find({ type: 'Text', text: exact('agents · 1 running · 1 total') })).toBeDefined()
   expect(await next.find({ type: 'Text', text: exact('keep running') })).toBeDefined()
   expect(await next.find({ type: 'Text', text: exact('stop me') })).toBeUndefined()
   await next.unmount()
 })
 
-// ---------------------------------------------------------------- session run (Skill(apex), no folder)
+// ---------------------------------------------------------------- session run (Skill(ttw), no folder)
 
 const skill = (name: string, n: number) => ({ tool: 'Skill', skill: name, args: `brief ${n}`, tool_use_id: `tu-skill-${n}` }) as const
 
@@ -659,9 +659,9 @@ function skillTool(on: On, seen: unknown[]): void {
   })
 }
 
-const sessionHeader = { type: 'Text' as const, text: /^APEX ·[^◐●○✗]*$/ }
+const sessionHeader = { type: 'Text' as const, text: /^TTW ·[^◐●○✗]*$/ }
 
-test('a main-loop Skill(apex) call without a run folder draws HEAD as header and the step row; the call passes unchanged', async ($, on) => {
+test('a main-loop Skill(ttw) call without a run folder draws HEAD as header and the step row; the call passes unchanged', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   const w = fresh()
   world(on, w)
@@ -670,22 +670,21 @@ test('a main-loop Skill(apex) call without a run folder draws HEAD as header and
   await $.session.start(START)
   await openDeck($, clock)
   const before = await $.ui.mount(pane(120))
-  expect(await before.find({ text: /^APEX/ })).toBeUndefined()
+  expect(await before.find({ text: /^TTW/ })).toBeUndefined()
   await before.unmount()
 
-  const call = skill('apex', 1)
-  expect(await $.tool.call(call)).toEqual({ result: { success: true, commandName: 'apex' } })
+  const call = skill('ttw', 1)
+  expect(await $.tool.call(call)).toEqual({ result: { success: true, commandName: 'ttw' } })
   expect(seen[0]).toEqual(call)
   await clock.advance(5000)
   const ui = await $.ui.mount(pane(120))
-  expect((await ui.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  expect((await ui.find(sessionHeader))?.text).toBe('TTW · feat/test')
   expect(await ui.find({ type: 'Text', text: exact('○ edit') })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: exact('◐ apex') })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: exact('◐ ttw') })).toBeUndefined()
   await ui.unmount()
 })
 
-// The skill's visible name is `ttw` (its folder stays `apex`): either name draws the run.
-test('a main-loop Skill(ttw) call draws the same session run as Skill(apex); Skill(ttwx) draws none', async ($, on) => {
+test('a main-loop Skill(ttw) call draws the session run; Skill(ttwx) draws none', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh())
   const seen: unknown[] = []
@@ -695,7 +694,7 @@ test('a main-loop Skill(ttw) call draws the same session run as Skill(apex); Ski
   await $.tool.call(skill('ttwx', 1))
   await clock.advance(5000)
   const other = await $.ui.mount(pane(120))
-  expect(await other.find({ text: /^APEX/ })).toBeUndefined()
+  expect(await other.find({ text: /^TTW/ })).toBeUndefined()
   await other.unmount()
 
   const call = skill('ttw', 2)
@@ -703,7 +702,7 @@ test('a main-loop Skill(ttw) call draws the same session run as Skill(apex); Ski
   expect(seen[1]).toEqual(call)
   await clock.advance(5000)
   const ui = await $.ui.mount(pane(120))
-  expect((await ui.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  expect((await ui.find(sessionHeader))?.text).toBe('TTW · feat/test')
   expect(await ui.find({ type: 'Text', text: exact('○ edit') })).toBeDefined()
   await ui.unmount()
 })
@@ -715,12 +714,12 @@ test('the session run hides on master or main, 1 h after the last call, and on /
   skillTool(on, [])
   await $.session.start(START)
   await openDeck($, clock)
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   for (const head of ['master', 'main', 'feat/x']) {
     w.head = head
     await clock.advance(5000)
     const ui = await $.ui.mount(pane(120))
-    expect((await ui.find(sessionHeader))?.text).toBe(head === 'feat/x' ? 'APEX · feat/x' : undefined)
+    expect((await ui.find(sessionHeader))?.text).toBe(head === 'feat/x' ? 'TTW · feat/x' : undefined)
     await ui.unmount()
   }
   // 1 h after the last call: gone.
@@ -730,10 +729,10 @@ test('the session run hides on master or main, 1 h after the last call, and on /
   await late.unmount()
 
   // A new call brings it back; /clear drops it.
-  await $.tool.call(skill('apex', 2))
+  await $.tool.call(skill('ttw', 2))
   await clock.advance(5000)
   const back = await $.ui.mount(pane(120))
-  expect((await back.find(sessionHeader))?.text).toBe('APEX · feat/x')
+  expect((await back.find(sessionHeader))?.text).toBe('TTW · feat/x')
   await back.unmount()
   await $.session.end({ reason: 'clear', sessionId: 's1' } as never)
   await clock.advance(5000)
@@ -742,7 +741,7 @@ test('the session run hides on master or main, 1 h after the last call, and on /
   await cleared.unmount()
 
   // /deck reset drops it too.
-  await $.tool.call(skill('apex', 3))
+  await $.tool.call(skill('ttw', 3))
   await clock.advance(5000)
   expect(await $.command.run({ ...command('deck'), args: 'reset' })).toEqual({ text: 'Deck reset.' })
   await clock.advance(5000)
@@ -757,15 +756,15 @@ test('a live run folder wins over the session run', async ($, on) => {
   skillTool(on, [])
   await $.session.start(START)
   await openDeck($, clock)
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   await clock.advance(5000)
   const ui = await $.ui.mount(pane(120))
-  expect(await ui.find({ type: 'Text', text: exact('APEX · feat/test · Standard') })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: exact('◐ apex') })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: exact('TTW · feat/test · Standard') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: exact('◐ ttw') })).toBeUndefined()
   await ui.unmount()
 })
 
-test("a subagent's Skill(apex), another skill or a failed call draws no session run", async ($, on) => {
+test("a subagent's Skill(ttw), another skill or a failed call draws no session run", async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh())
   on('tool.call', { tool: 'Skill' }, (_$, e) =>
@@ -774,22 +773,22 @@ test("a subagent's Skill(apex), another skill or a failed call draws no session 
   await $.session.start(START)
   await openDeck($, clock)
   // The kit types no agentId on a call; the hooks read it at run time.
-  await $.tool.call({ ...skill('apex', 1), agentId: 'sub1' } as never)
+  await $.tool.call({ ...skill('ttw', 1), agentId: 'sub1' } as never)
   await $.tool.call(skill('commit', 2))
-  await $.tool.call(skill('apex', 3))
+  await $.tool.call(skill('ttw', 3))
   await clock.advance(5000)
   const ui = await $.ui.mount(pane(120))
-  expect(await ui.find({ text: /^APEX/ })).toBeUndefined()
+  expect(await ui.find({ text: /^TTW/ })).toBeUndefined()
   await ui.unmount()
   // Positive control: the same call on the main loop draws.
-  await $.tool.call(skill('apex', 4))
+  await $.tool.call(skill('ttw', 4))
   await clock.advance(5000)
   const live = await $.ui.mount(pane(120))
-  expect((await live.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  expect((await live.find(sessionHeader))?.text).toBe('TTW · feat/test')
   await live.unmount()
 })
 
-test('a second Skill(apex) is a new run: finished cards and shells go, running ones stay; the first clears nothing', async ($, on) => {
+test('a second Skill(ttw) is a new run: finished cards and shells go, running ones stay; the first clears nothing', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh())
   skillTool(on, [])
@@ -817,18 +816,18 @@ test('a second Skill(apex) is a new run: finished cards and shells go, running o
   await $.tool.call({ tool: 'Bash', command: 'sleep 9', description: 'stop me', run_in_background: true, tool_use_id: 'tu-2' })
   await $.tool.call({ tool: 'TaskStop', task_id: 'b2', tool_use_id: 'tu-3' })
 
-  // The session's first apex call: nothing cleared.
-  await $.tool.call(skill('apex', 1))
+  // The session's first ttw call: nothing cleared.
+  await $.tool.call(skill('ttw', 1))
   await clock.advance(5000)
   const first = await $.ui.mount(pane(120))
-  expect((await first.find(sessionHeader))?.text).toBe('APEX · feat/test')
+  expect((await first.find(sessionHeader))?.text).toBe('TTW · feat/test')
   expect(await first.find({ type: 'Text', text: exact('agents · 1 running · 2 total') })).toBeDefined()
   expect(await first.find({ type: 'Text', text: exact('stop me') })).toBeDefined()
   await first.unmount()
 
   // A second call: a new run.
   await clock.advance(5000)
-  await $.tool.call(skill('apex', 2))
+  await $.tool.call(skill('ttw', 2))
   await clock.advance(5000)
   const next = await $.ui.mount(pane(120))
   expect(await next.find({ type: 'Text', text: exact('agents · 1 running · 1 total') })).toBeDefined()
@@ -843,7 +842,7 @@ test('a second Skill(apex) is a new run: finished cards and shells go, running o
 // its command, the rest answers { ok: true }.
 function tools(on: On, stdout: (command: string) => string = () => ''): void {
   on('tool.call', (_$, e) => {
-    if (e.tool === 'Skill') return { result: { success: true, commandName: 'apex' } }
+    if (e.tool === 'Skill') return { result: { success: true, commandName: 'ttw' } }
     const command: unknown = Reflect.get(e, 'command')
     if (e.tool === 'Bash') return { result: { stdout: stdout(typeof command === 'string' ? command : ''), stderr: '', interrupted: false } }
     return { result: { ok: true } }
@@ -865,14 +864,14 @@ const spawnOf = (subagentType: string, description: string) => ({
 
 // The engine allows one unmatched tool.call observer per module: the step and the turn's edit
 // count share it, and this test sees both from one call.
-test('AC1/AC6: Skill(apex), an edit, a gate: ● edit ◐ gate ○ ship; a subagent Bash is no gate; the one call observer feeds steps and turn', async ($, on) => {
+test('AC1/AC6: Skill(ttw), an edit, a gate: ● edit ◐ gate ○ ship; a subagent Bash is no gate; the one call observer feeds steps and turn', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh())
   tools(on)
   await $.session.start(START)
   await openDeck($, clock)
   await $.turn.start({ text: 'go', turnId: 'S1' })
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   // The call passes unchanged through both unfiltered tool.call observers.
   expect(await $.tool.call(editCall('/work/src/a.ts'))).toEqual({ result: { ok: true } })
   await $.tool.call({ ...bash('pnpm test'), agentId: 'sub1' } as never)
@@ -911,7 +910,7 @@ test('AC2: a reviewer running shows ◐ review and its detail with a live clock;
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'r1' }))
   await $.session.start(START)
   await openDeck($, clock)
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   await $.agent.spawn(spawnOf('code-reviewer', 'Adversarial review'))
   await clock.advance(7000)
   const ui = await $.ui.mount(pane(120))
@@ -927,34 +926,34 @@ test('AC2: a reviewer running shows ◐ review and its detail with a live clock;
   await done.unmount()
 })
 
-test('AC3: apex-verify-external output: ● Codex PASS, then Codex FAIL 2 in the warning colour', async ($, on) => {
+test('AC3: ttw-verify-external output: ● Codex PASS, then Codex FAIL 2 in the warning colour', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh())
   let verdict = 'EXTERNAL-VERIFY PASS run=r findings=0'
-  tools(on, c => (c.includes('apex-verify-external') ? verdict : ''))
+  tools(on, c => (c.includes('ttw-verify-external') ? verdict : ''))
   await $.session.start(START)
   await openDeck($, clock)
-  await $.tool.call(skill('apex', 1))
-  await $.tool.call(bash('apex-verify-external .claude/output/apex/r'))
+  await $.tool.call(skill('ttw', 1))
+  await $.tool.call(bash('ttw-verify-external .claude/output/ttw/r'))
   await clock.advance(5000)
   const pass = await $.ui.mount(pane(120))
   expect((await pass.find({ type: 'Text', text: exact('● Codex PASS') }))?.props.color).toBe('planMode')
   await pass.unmount()
   verdict = 'EXTERNAL-VERIFY FAIL run=r findings=2'
-  await $.tool.call(bash('apex-verify-external .claude/output/apex/r'))
+  await $.tool.call(bash('ttw-verify-external .claude/output/ttw/r'))
   const fail = await $.ui.mount(pane(120))
   expect((await fail.find({ type: 'Text', text: exact('● Codex FAIL 2') }))?.props.color).toBe('error')
   await fail.unmount()
 })
 
-test('AC4: writes under .claude/output/apex are plan, not edit; git commit and gh pr are ship', async ($, on) => {
+test('AC4: writes under .claude/output/ttw are plan, not edit; git commit and gh pr are ship', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh())
   tools(on)
   await $.session.start(START)
   await openDeck($, clock)
-  await $.tool.call(skill('apex', 1))
-  await $.tool.call({ tool: 'Write', file_path: '/work/.claude/output/apex/r/02-plan.md', content: 'x' })
+  await $.tool.call(skill('ttw', 1))
+  await $.tool.call({ tool: 'Write', file_path: '/work/.claude/output/ttw/r/02-plan.md', content: 'x' })
   await clock.advance(5000)
   const plan = await $.ui.mount(pane(120))
   expect(await plan.find({ type: 'Text', text: exact('◐ plan') })).toBeDefined()
@@ -969,26 +968,26 @@ test('AC4: writes under .claude/output/apex are plan, not edit; git commit and g
   await ship.unmount()
 })
 
-test('AC5: a new Skill(apex) resets the steps; the header clock counts from that call, the task under it', async ($, on) => {
+test('AC5: a new Skill(ttw) resets the steps; the header clock counts from that call, the task under it', async ($, on) => {
   const clock = mock.clock(on, { now: NOW })
   world(on, fresh())
   tools(on)
   await $.session.start(START)
   await openDeck($, clock)
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   await $.tool.call(editCall('/work/src/a.ts'))
   await clock.advance(65_000)
   const first = await $.ui.mount(pane(120))
-  expect((await first.find(sessionHeader))?.text).toBe('APEX · feat/test')
-  expect(await drawn(first, 'apex-clock')).toBe('1:05')
+  expect((await first.find(sessionHeader))?.text).toBe('TTW · feat/test')
+  expect(await drawn(first, 'ttw-clock')).toBe('1:05')
   expect(await first.find({ type: 'Text', text: exact('brief 1') })).toBeDefined()
   expect(await first.find({ type: 'Text', text: exact('◐ edit') })).toBeDefined()
   await first.unmount()
 
-  await $.tool.call(skill('apex', 2))
+  await $.tool.call(skill('ttw', 2))
   await clock.advance(5000)
   const second = await $.ui.mount(pane(120))
-  expect(await drawn(second, 'apex-clock')).toBe('0:05')
+  expect(await drawn(second, 'ttw-clock')).toBe('0:05')
   expect(await second.find({ type: 'Text', text: exact('brief 2') })).toBeDefined()
   expect(await second.find({ type: 'Text', text: exact('○ edit') })).toBeDefined()
   await second.unmount()
@@ -1000,12 +999,12 @@ test('AC5: with a live run folder the header keeps its tier and gains the call c
   tools(on)
   await $.session.start(START)
   await openDeck($, clock)
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   await $.tool.call(bash('nix flake check'))
   await clock.advance(5000)
   const ui = await $.ui.mount(pane(120))
-  expect(await ui.find({ type: 'Text', text: exact('APEX · feat/test · Standard') })).toBeDefined()
-  expect(await drawn(ui, 'apex-clock')).toBe('0:05')
+  expect(await ui.find({ type: 'Text', text: exact('TTW · feat/test · Standard') })).toBeDefined()
+  expect(await drawn(ui, 'ttw-clock')).toBe('0:05')
   expect(await ui.find({ type: 'Text', text: exact('◐ gate') })).toBeDefined()
   await ui.unmount()
 })
@@ -1019,20 +1018,20 @@ test('details AC1: the run clock freezes once the main turn ends at rest (dim, n
   await $.session.start(START)
   await openDeck($, clock)
   await $.turn.start({ text: 'go', turnId: 'C1' })
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   await clock.advance(30_000)
   await $.turn.complete({ answer: 'done', durationMs: 30_000, isAborted: false, turnId: 'C1', reason: 'answer' })
   for (const wait of [5000, 60_000]) {
     await clock.advance(wait)
     const ui = await $.ui.mount(pane(120))
-    expect((await ui.find(sessionHeader))?.text).toBe('APEX · feat/test')
+    expect((await ui.find(sessionHeader))?.text).toBe('TTW · feat/test')
     expect((await ui.find({ type: 'Text', text: exact('0:30') }))?.props.color).toBe('inactive')
     await ui.unmount()
   }
   // New activity: the clock runs again from the call.
   await $.tool.call(editCall('/work/src/a.ts'))
   const again = await $.ui.mount(pane(120))
-  expect(await drawn(again, 'apex-clock')).toBe('1:35')
+  expect(await drawn(again, 'ttw-clock')).toBe('1:35')
   expect(await again.find({ type: 'Text', text: exact('0:30') })).toBeUndefined()
   await again.unmount()
 })
@@ -1045,12 +1044,12 @@ test('details AC1: an agent of the run still running keeps the clock live past t
   await $.session.start(START)
   await openDeck($, clock)
   await $.turn.start({ text: 'go', turnId: 'C2' })
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   await $.agent.spawn(spawnOf('frontend-expert', 'Build it'))
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'C2', reason: 'answer' })
   await clock.advance(10_000)
   const live = await $.ui.mount(pane(120))
-  expect(await drawn(live, 'apex-clock')).toBe('0:10')
+  expect(await drawn(live, 'ttw-clock')).toBe('0:10')
   await live.unmount()
   // Its end brings the run to rest at that end.
   await $.turn.complete({ answer: 'Built.', durationMs: 10_000, isAborted: false, turnId: 'I1', agentId: 'i1', reason: 'answer' })
@@ -1067,7 +1066,7 @@ test('details AC2/AC3: a step Button opens its explanation, again closes it, ano
   on('agent.spawn', () => ({ model: 'claude-opus-5-5', agentId: 'r1' }))
   await $.session.start(START)
   await openDeck($, clock)
-  await $.tool.call(skill('apex', 1))
+  await $.tool.call(skill('ttw', 1))
   await $.tool.call(editCall('/work/src/a.ts'))
   await $.tool.call(editCall('/work/hooks/b.tsx'))
   await $.tool.call(bash('pnpm test'))
@@ -1119,7 +1118,7 @@ test('details AC5: inline, an open explanation stays within the 8 rows', async (
   const root = (await ui.drawn()) as { children?: unknown[] }
   expect((root.children ?? []).filter(Boolean).length <= 8).toBe(true)
   expect(await ui.find({ type: 'Text', text: exact('not reached yet') })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: exact('APEX · feat/test · Standard') })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: exact('TTW · feat/test · Standard') })).toBeDefined()
   await ui.press({ key: 'step-gate' })
   expect(await ui.find({ type: 'Text', text: exact('not reached yet') })).toBeUndefined()
   await ui.unmount()

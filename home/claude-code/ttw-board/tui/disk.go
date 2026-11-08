@@ -392,8 +392,7 @@ func (r *Reader) readSource(src *runSource, dir, base string, ids []string, budg
 // ---- agents' runs ----------------------------------------------------------------
 
 // runSource: the runs dir of an agent, `<tabRepo>/.claude/worktrees/<name>/.claude/output/ttw`
-// or `<genericRoot>/<name>/.claude/output/ttw` (Generic), each else its `apex` dir. nil is the
-// board's own runs dir.
+// or `<genericRoot>/<name>/.claude/output/ttw` (Generic). nil is the board's own runs dir.
 type runSource struct {
 	Dir, Agent string
 	Generic    bool
@@ -476,12 +475,7 @@ func agentSources(runsDir string) ([]*runSource, []string) {
 							continue
 						}
 						home := filepath.Join(root, e.Name())
-						// ttw when the entry exists (a link included: the chain refuses it
-						// below), else the pre-rename apex dir.
 						dir := filepath.Join(home, ".claude", "output", "ttw")
-						if _, err := os.Lstat(dir); err != nil {
-							dir = filepath.Join(home, ".claude", "output", "apex")
-						}
 						chain := append(slices.Clone(above), root, home, filepath.Join(home, ".claude"), filepath.Join(home, ".claude", "output"), dir)
 						out = append(out, &runSource{Dir: dir, Agent: e.Name(), Generic: generic, parent: parent, chain: chain})
 					}

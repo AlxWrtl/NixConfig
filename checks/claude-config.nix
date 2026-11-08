@@ -637,7 +637,7 @@ let
   emptyHookGroups = builtins.filter (g: (g.hooks or null) == [ ]) preToolUse;
 
   # Flags READ from the tier table in SKILL.md (skillTtw), never restated here — same
-  # extraction as apex-consistency's rowFlags. null = table reformatted.
+  # extraction as ttw-consistency's rowFlags. null = table reformatted.
   diagnosisRow = builtins.match ".*\\| Diagnosis \\| `([^`]*)` \\|.*" skills.skillTtw;
   diagnosisFlags = if diagnosisRow == null then null else builtins.head diagnosisRow;
   readme = builtins.readFile ../README.md;

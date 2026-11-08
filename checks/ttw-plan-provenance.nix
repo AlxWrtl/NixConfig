@@ -33,7 +33,7 @@ let
   skills = import ../home/claude-code/skills.nix;
 
   splitLines = lib.splitString "\n";
-  fail = msg: throw ("apex-plan-provenance: " + msg);
+  fail = msg: throw ("ttw-plan-provenance: " + msg);
 
   # Borrowed verbatim from readme-consistency.nix: when an extractor stops
   # matching, its corpus becomes [] and every comparison against [] is green
@@ -166,7 +166,7 @@ let
   fixturesVacuous = builtins.length goodBullets != builtins.length badBullets;
 
 in
-pkgs.runCommand "apex-plan-provenance-check" { } (
+pkgs.runCommand "ttw-plan-provenance-check" { } (
   if ruleMissing then
     fail "step-02-plan no longer contains '${taggingClause}'. This check has lost its subject: it guards a provenance-tagging rule that the skill no longer states, so every assertion below would be enforcing a convention nothing asks for. Restore the clause in ttwStep02Plan, or delete this check deliberately."
   else if untaggedGood != [ ] then
@@ -187,7 +187,7 @@ pkgs.runCommand "apex-plan-provenance-check" { } (
     fail "the two fixtures no longer hold the same number of premises (good: ${toString (builtins.length goodBullets)}, bad: ${toString (builtins.length badBullets)}). The bad fixture is only a control while it is the good one minus exactly one tag; once the two drift apart, the assertions above are comparing two different texts and the red they report says nothing about the detector."
   else
     ''
-      echo "apex-plan-provenance: tagging clause present, detector silent on the tagged fixture and red on the untagged one — OK"
+      echo "ttw-plan-provenance: tagging clause present, detector silent on the tagged fixture and red on the untagged one — OK"
       touch $out
     ''
 )

@@ -17,7 +17,7 @@ let
   need =
     file: set: n:
     set.${n}
-      or (throw "apex-consistency: ${file} has no attribute '${n}' — the apex -> ttw rename (phase 1) names it so; this check reads the new name only.");
+      or (throw "ttw-consistency:${file} has no attribute '${n}' — the apex -> ttw rename (phase 1) names it so; this check reads the new name only.");
   skillsRaw = import ../home/claude-code/skills.nix;
   skills =
     skillsRaw
@@ -400,7 +400,7 @@ let
       scope = skills.ttwStep00Init;
     }
     {
-      # B5 of checks/apex-metrics-probe.py reads this tally from 05-examine.md:
+      # B5 of checks/ttw-metrics-probe.py reads this tally from 05-examine.md:
       # without it an examine pass that ran is counted unknown, never changed.
       name = "examine: the triage carries a confirmed/unique/dismissed tally";
       needle = "`confirmed=N unique=U dismissed=D`, same format as step-04";
@@ -986,7 +986,7 @@ let
       m = builtins.match ".*\\| ${label} \\| `([^`]*)` \\|.*" skills.skillTtw;
     in
     if m == null then
-      throw "apex-consistency: no tier row for '${label}' — the table in skillTtw was reformatted or renamed; this check reads flags from it and cannot guess."
+      throw "ttw-consistency:no tier row for '${label}' — the table in skillTtw was reformatted or renamed; this check reads flags from it and cannot guess."
     else
       builtins.head m;
 
@@ -1099,7 +1099,7 @@ let
       stale = builtins.filter (e: e.name == "apex") manifest;
     in
     if builtins.length entries != 1 || stale != [ ] then
-      throw "apex-consistency: expected exactly one 'ttw' entry and no 'apex' entry in skills-manifest.nix, found ${toString (builtins.length entries)} 'ttw' and ${toString (builtins.length stale)} 'apex'."
+      throw "ttw-consistency:expected exactly one 'ttw' entry and no 'apex' entry in skills-manifest.nix, found ${toString (builtins.length entries)} 'ttw' and ${toString (builtins.length stale)} 'apex'."
     else
       builtins.head entries;
   manifestPaths = builtins.sort builtins.lessThan (map (f: f.path) apexManifest.files);
@@ -1166,7 +1166,7 @@ let
       parts = pkgs.lib.splitString marker planStep;
     in
     if builtins.length parts != 2 then
-      throw "apex-consistency: '${marker}' occurs ${
+      throw "ttw-consistency:'${marker}' occurs ${
         toString (builtins.length parts - 1)
       } time(s) in step-02-plan, expected exactly 1 — the ordering assertion cannot pick one."
     else
@@ -1232,7 +1232,7 @@ let
   );
   suiteContradictsRouting = diagnosisIsInternal && pkgs.lib.hasInfix "/debug" suiteNarrative;
 
-  fail = msg: throw "apex-consistency: ${msg}";
+  fail = msg: throw "ttw-consistency:${msg}";
 
   # `++` forces every condition, so all failures surface in one error.
   # Branch 2 stays gated: missingInvariants reads `i.needle`, absent on a vacuous invariant.
@@ -1306,12 +1306,12 @@ let
     );
 
 in
-pkgs.runCommand "apex-consistency-check" { } (
+pkgs.runCommand "ttw-consistency-check" { } (
   if problems != [ ] then
     fail ("\n  - " + builtins.concatStringsSep "\n  - " problems)
   else
     ''
-      echo "apex-consistency: ${toString (builtins.length existing)} step files, ${toString (builtins.length invariants)} invariants, ${toString (builtins.length tierRows)} tier rows, manifest + size budget — OK"
+      echo "ttw-consistency:${toString (builtins.length existing)} step files, ${toString (builtins.length invariants)} invariants, ${toString (builtins.length tierRows)} tier rows, manifest + size budget — OK"
       touch $out
     ''
 )

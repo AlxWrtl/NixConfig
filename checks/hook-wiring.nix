@@ -821,10 +821,11 @@ let
       hook = "sandbox-escape-evidence.js";
       text = "/^pnpm\\s+(?:run\\s+)?(?:db:migrate|preflight|test:rls\\w*)(?::[\\w-]+)?(?=\\s|$)/,";
     };
-    # apex -> ttw phase 2: both binary names, nothing wider.
+    # apex -> ttw phase 2: both binary names, nothing wider: the name ends
+    # on whitespace or the end of the segment, not on `-`, `.` or `/`.
     A-se-verify = {
       hook = "sandbox-escape-evidence.js";
-      text = "/^(?:apex|ttw)-verify-external\\b/";
+      text = "/^(?:apex|ttw)-verify-external(?=\\s|$)/";
     };
     A-se-mkdir = {
       hook = "sandbox-escape-evidence.js";
@@ -2701,7 +2702,7 @@ let
       swaps = [
         {
           anchor = "A-se-verify";
-          to = "/^apex-verify-external\\b/";
+          to = "/^apex-verify-external(?=\\s|$)/";
         }
       ];
     }
@@ -2713,19 +2714,45 @@ let
       swaps = [
         {
           anchor = "A-se-verify";
-          to = "/^ttw-verify-external\\b/";
+          to = "/^ttw-verify-external(?=\\s|$)/";
         }
       ];
     }
-    # Nothing else new: no word boundary, `ttw-verify-externals` escapes too.
+    # Nothing else new: a word boundary ends on `-`, `.` or `/`, so
+    # `ttw-verify-external-x` escapes.
     {
       id = "M-se-verify-boundary";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-ttw-verify-dash-deny";
+      swaps = [
+        {
+          anchor = "A-se-verify";
+          to = "/^(?:apex|ttw)-verify-external\\b/";
+        }
+      ];
+    }
+    # Nothing else new: no boundary at all, `ttw-verify-externals` escapes too.
+    {
+      id = "M-se-verify-noboundary";
       hook = "sandbox-escape-evidence.js";
       kills = "se-ttw-verify-suffix-deny";
       swaps = [
         {
           anchor = "A-se-verify";
           to = "/^(?:apex|ttw)-verify-external/";
+        }
+      ];
+    }
+    # Whitespace required after the name: the bare call, alone in its
+    # segment, no longer escapes.
+    {
+      id = "M-se-verify-eos";
+      hook = "sandbox-escape-evidence.js";
+      kills = "se-ttw-verify-bare-allow";
+      swaps = [
+        {
+          anchor = "A-se-verify";
+          to = "/^(?:apex|ttw)-verify-external(?=\\s)/";
         }
       ];
     }
@@ -2737,7 +2764,7 @@ let
       swaps = [
         {
           anchor = "A-se-verify";
-          to = "/(?:apex|ttw)-verify-external\\b/";
+          to = "/(?:apex|ttw)-verify-external(?=\\s|$)/";
         }
       ];
     }
@@ -3151,7 +3178,12 @@ let
     "se-allowlist-allow"
     "se-allowlist-verify-allow"
     "se-allowlist-ttw-verify-allow"
+    "se-ttw-verify-bare-allow"
     "se-ttw-verify-suffix-deny"
+    "se-ttw-verify-dash-deny"
+    "se-apex-verify-dash-deny"
+    "se-ttw-verify-dot-deny"
+    "se-apex-verify-slash-deny"
     "se-ttw-verify-arg-deny"
     "se-noproxy-allow"
     "se-deploy-allow"
@@ -4681,10 +4713,26 @@ let
         se-allowlist-ttw-verify-allow)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'ttw-verify-external --acs a.txt' "$2"; is_allow ;;
-        # ...and nothing wider: a longer word, or the name as an argument.
+        se-ttw-verify-bare-allow)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'ttw-verify-external' "$2"; is_allow ;;
+        # ...and nothing wider: a longer word, a name continued by `-`, `.`
+        # or `/` under either prefix, or the name as an argument.
         se-ttw-verify-suffix-deny)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'ttw-verify-externals --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-ttw-verify-dash-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'ttw-verify-external-x --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-apex-verify-dash-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'apex-verify-external-x --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-ttw-verify-dot-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'ttw-verify-external.py --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
+        se-apex-verify-slash-deny)
+          se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
+          se_run 'apex-verify-external/x --acs a.txt' "$2"; is_deny "Run this command sandboxed first" ;;
         se-ttw-verify-arg-deny)
           se_tx "$(se_user 'fix the build')" "$(se_use u1 m1)" "$(se_res u1 'built')"
           se_run 'echo ttw-verify-external' "$2"; is_deny "Run this command sandboxed first" ;;

@@ -62,7 +62,7 @@ const ALLOW = [
   /^pnpm\s+run\s+deploy(?::[\w-]+)?(?=\s|$)/,
   /^pnpm\s+(?:run\s+)?(?:db:migrate|preflight|test:rls\w*)(?::[\w-]+)?(?=\s|$)/,
   /^curl\b(?=.*\s--noproxy(?:[\s=]|$))/,
-  /^(?:apex|ttw)-verify-external\b/
+  /^(?:apex|ttw)-verify-external(?=\s|$)/
 ];
 
 let settled = false;

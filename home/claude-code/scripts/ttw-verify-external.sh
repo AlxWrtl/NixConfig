@@ -33,8 +33,9 @@
 # build time, so a regression in this script fails the rebuild.
 
 VERSION="1.1.0"
-# The envelope's JSON `tool` field keeps the pre-rename value: the board reads
-# it (apex -> ttw, phase 3). Messages name the binary by its new name.
+# The envelope's JSON `tool` field keeps the pre-rename value until phase 4
+# (apex -> ttw); no known reader (the board reads only verdict/findings).
+# Messages name the binary by its new name.
 TOOL="apex-verify-external"
 NAME="ttw-verify-external"
 

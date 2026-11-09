@@ -1,0 +1,12 @@
+- [@DATE@] (rien)
+- [@DATE@] Five — un — deux — blog — https://five.example/
+- [@DATE@] Img ![x](https://img.example/x.png) — résumé — blog — https://img.example/
+- [@DATE@] Ftp — résumé — code — ftp://ftp.example/x
+- [@DATE@] Wiki [[note]] — résumé — blog — https://wiki.example/
+- [@DATE@] Tick — résumé — `blog` — https://tick.example/
+- [@DATE@] Social — type inconnu — social — https://social.example/
+- [2000-01-01] Stale — autre jour — blog — https://stale.example/
+- [@DATE@] Good — résumé valide — officiel — https://good.example/a
+- [@DATE@] Good again — même URL, espaces autour — blog —  https://good.example/a 
+- [@DATE@] Old again — déjà dans l'inbox — forum — https://old.example/a
+

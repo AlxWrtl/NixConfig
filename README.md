@@ -114,8 +114,11 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   │                            #   + tui/, the same board in the terminal, in Go)
 │   ├── codex.nix                # Codex CLI entrypoint — imports codex/
 │   ├── codex/                   # hooks.json generator, activation, hook & merge scripts
-│   └── colima.nix               # Colima VMs: `ci` (k3s + ARC self-hosted CI runners),
-│                                #   `default` (dev containers, active Docker context)
+│   ├── colima.nix               # Colima VMs: `ci` (k3s + ARC self-hosted CI runners),
+│   │                            #   `default` (dev containers, active Docker context)
+│   ├── veille.nix               # Daily TTW watch: launchd agent `veille-ttw` (08:30)
+│   └── veille/                  # fetch.py (HN, Reddit, releases, arXiv), Haiku sort
+│                                #   prompt, daily script; offline parser tests + fixtures
 ├── checks/                      # Flake checks (see Quality Gates)
 │   ├── agent-instructions.nix
 │   ├── agent-pane.nix
@@ -136,7 +139,8 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── ttw-consistency.nix
 │   ├── ttw-health.nix
 │   ├── ttw-plan-provenance.nix
-│   └── ttw-tier.nix
+│   ├── ttw-tier.nix
+│   └── veille.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
 ├── wallpapers/                  # Desktop wallpaper
 ├── secrets.nix                  # 🔒 Encrypted (git-crypt) — emails, IPs, usernames
@@ -227,6 +231,7 @@ system.
 | `ttw-health` | The built `ttw-health` report against a fake `~/.claude` and a throwaway git repo, clock fixed: 6 TTW sessions each side (one transcript calling the pre-rename skill name still counts: past transcripts are not rewritten) with one correction round each is `VERDICT: ok` (exit 0), two rounds per AFTER session against none before is `DÉRIVE (rounds / run)` (exit 2), 2 AFTER sessions is `insuffisant`, a session under a `scratchpad` project dir changes nothing but the excluded count, a `fix:` touching the file of a `feat:` 2 days later scores fix-after 1/1, and one session with known usage (duplicate `message.id`, a subagent, a malformed line) prints the exact weighted mean. Canary M1 (the drift comparison returning False) must stop the drift case from saying `DÉRIVE`, proving that verdict rests on the comparison. On disk only `.claude/output/ttw` runs and `~/.claude/ttw-correction-budget` rounds count: a run or a round under the pre-rename dirs does not, while a transcript `Write` of a pre-rename `00-context.md` path still does. The package's `bin` holds `ttw-health` alone, and no `*health-report` launchd agent is declared any more |
 | `ttw-plan-provenance` | Every premise in a TTW plan carries `[M]` or `[I]` as its first token: the clause still stands in step-02-plan, and the line detector is run against two inline fixtures — one correctly tagged, one identical but for a stripped tag — so a detector that stopped detecting fails instead of passing. Presence is not truth: it proves the tag is THERE, never that it is earned; falsifying a tag is the examine reviewer's job and the Fable premises pass |
 | `ttw-tier` | The built `ttw-tier` classifier against throwaway git repos: a `matcher` added under `hooks.Notification` is direct, an entry added inside a `deny = [ ... ]` list is high, a `permissionDecision` branch in `hooks/x.js` is high, a 40-line README change is standard, a new `.env.example` is high. Canary M1 (the permission regex replaced by one that never matches) must turn the deny-list case away from high, proving that assertion rests on the permission class. The `bin` of `ttw-tier` and of `ttw-verify-external` each holds that one binary (no pre-rename alias), and its usage and `--help` name it |
+| `veille` | The daily watch collector (`home/veille/`), offline: `python3 -I -m unittest` runs the whole suite with no skip, on fixtures with fixed dates. `fetch.py` imports without side effect; `parse_hn` dedups by `objectID`, sorts by points and drops stories under the 3-point threshold; `parse_reddit` keeps sub, title and link of entries after `since`; `parse_arxiv` reports `fini` on a short page or on an entry older than `since`, not on a full recent page; `parse_releases` keeps releases published after `since`. Neither `fetch.py` nor `filter-prompt.md` keeps the X source (no `api.x.com`, `X_BEARER_TOKEN`, `social` type). Canary C1 (HN threshold lowered to 0) must fail `test_hn_threshold_3_points`; canaries C2/C3 append the forbidden text and must trip the X and `social` detectors |
 
 Run them before every commit that touches `.nix` files — `format-check` in
 particular fails on formatting alone.

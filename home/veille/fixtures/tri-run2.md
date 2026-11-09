@@ -1,0 +1,2 @@
+- [@DATE@] Good — résumé valide — officiel — https://good.example/a
+- [@DATE@] Second — nouveau du 2e run — blog — https://second.example/b

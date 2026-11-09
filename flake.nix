@@ -104,6 +104,7 @@
         ttw-health = import ./checks/ttw-health.nix { inherit pkgs; };
         ttw-plan-provenance = import ./checks/ttw-plan-provenance.nix { inherit pkgs; };
         ttw-tier = import ./checks/ttw-tier.nix { inherit pkgs; };
+        veille = import ./checks/veille.nix { inherit pkgs; };
       };
 
       # System configuration

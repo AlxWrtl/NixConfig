@@ -1,22 +1,15 @@
-# Collecte quotidienne : API -> bruts/, tri Haiku sans outils -> tris/ + inbox.md, dans le vault.
+# Collecte quotidienne : API -> bruts/, tri Haiku sans outils -> tris/ + inbox.md, dans ~/.local/share/veille-ttw.
 # Packagé par home/veille.nix (writeShellApplication : shebang, `set -euo pipefail`, PATH,
 # VEILLE_FETCH et VEILLE_PROMPT = chemins du store). Argument : fenêtre en heures (48).
-# Tout s'écrit d'abord dans $work ; le vault n'est touché qu'après un tri réussi, sans rien
+# Tout s'écrit d'abord dans $work ; la sortie n'est touchée qu'après un tri réussi, sans rien
 # écraser : bruts/ et tris/ prennent un suffixe -2, -3…, inbox.md n'est qu'étendu.
 # VEILLE_DIR et VEILLE_CLAUDE : surcharges des tests hors réseau (checks/veille.nix).
 fetch="${VEILLE_FETCH:?chemin de fetch.py}"
 prompt_file="${VEILLE_PROMPT:?chemin de filter-prompt.md}"
 claude="${VEILLE_CLAUDE:-/opt/homebrew/bin/claude}"
-if [ -n "${VEILLE_DIR:-}" ]; then
-  out="$VEILLE_DIR"
-else
-  vault="$HOME/Vaults/AlxVault"
-  if [ ! -d "$vault/.obsidian" ]; then
-    echo "vault introuvable ($vault/.obsidian absent) : rien écrit" >&2
-    exit 1
-  fi
-  out="$vault/02-Projets/nix-darwin/veille"
-fi
+# Texte web brut : gardé hors des notes indexées par graphify et enquire ; seule la
+# sélection hebdomadaire y entre.
+out="${VEILLE_DIR:-$HOME/.local/share/veille-ttw}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 today="$(date +%F)"

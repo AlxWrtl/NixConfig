@@ -1,6 +1,7 @@
 # Daily TTW watch: fetch.py reads HN, Reddit, GitHub releases and arXiv, a
-# tool-less Haiku sorts the candidates, results land in the vault (bruts/,
-# tris/, inbox.md). Parsers are tested offline by checks/veille.nix.
+# tool-less Haiku sorts the candidates, results land in
+# ~/.local/share/veille-ttw (bruts/, tris/, inbox.md). Parsers are tested
+# offline by checks/veille.nix.
 {
   config,
   lib,

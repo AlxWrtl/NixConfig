@@ -15,6 +15,7 @@
     ./claude-code.nix
     ./codex.nix
     ./colima.nix
+    ./veille.nix
   ];
 
   home = {

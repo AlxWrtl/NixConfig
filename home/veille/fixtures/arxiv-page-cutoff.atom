@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <link href="http://arxiv.org/api/query?search_query%3D%28cat%3Acs.SE%20OR%20cat%3Acs.AI%29%20AND%20abs%3A%22agentic%22%26id_list%3D%26start%3D0%26max_results%3D4" rel="self" type="application/atom+xml"/>
+  <title type="html">ArXiv Query: search_query=(cat:cs.SE OR cat:cs.AI) AND abs:"agentic"&amp;id_list=&amp;start=0&amp;max_results=4</title>
+  <id>http://arxiv.org/api/Vb7Kq2cR1sXw0uYtL3mPz8nHj5e</id>
+  <updated>2026-11-09T00:00:00-05:00</updated>
+  <opensearch:totalResults xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">96</opensearch:totalResults>
+  <opensearch:startIndex xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">0</opensearch:startIndex>
+  <opensearch:itemsPerPage xmlns:opensearch="http://a9.com/-/spec/opensearch/1.1/">4</opensearch:itemsPerPage>
+  <entry>
+    <id>http://arxiv.org/abs/2611.05744v1</id>
+    <updated>2026-11-08T16:00:01Z</updated>
+    <published>2026-11-08T16:00:01Z</published>
+    <title>Hook-Level Permission Policies for Autonomous Coding Agents</title>
+    <summary>  We formalise pre-execution hooks as a permission layer for agents.
+</summary>
+    <author>
+      <name>Priya Natarajan</name>
+    </author>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <link href="http://arxiv.org/abs/2611.05744v1" rel="alternate" type="text/html"/>
+    <link title="pdf" href="http://arxiv.org/pdf/2611.05744v1" rel="related" type="application/pdf"/>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.04820v1</id>
+    <updated>2026-11-07T03:12:09Z</updated>
+    <published>2026-11-07T03:12:09Z</published>
+    <title>Evaluating Subagent Delegation in Agentic Workflows</title>
+    <summary>  A benchmark of delegation strategies for orchestrator and subagent setups.
+</summary>
+    <author>
+      <name>Lukas Berg</name>
+    </author>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+    <link href="http://arxiv.org/abs/2611.04820v1" rel="alternate" type="text/html"/>
+    <link title="pdf" href="http://arxiv.org/pdf/2611.04820v1" rel="related" type="application/pdf"/>
+    <category term="cs.AI" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.04391v1</id>
+    <updated>2026-11-06T19:44:50Z</updated>
+    <published>2026-11-06T19:44:50Z</published>
+    <title>Outdated Survey of Agent Memory Architectures</title>
+    <summary>  A survey of file-based and vector memory for agents.
+</summary>
+    <author>
+      <name>Chen Wei</name>
+    </author>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+    <link href="http://arxiv.org/abs/2611.04391v1" rel="alternate" type="text/html"/>
+    <link title="pdf" href="http://arxiv.org/pdf/2611.04391v1" rel="related" type="application/pdf"/>
+    <category term="cs.CL" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+  <entry>
+    <id>http://arxiv.org/abs/2611.03268v1</id>
+    <updated>2026-11-05T11:02:33Z</updated>
+    <published>2026-11-05T11:02:33Z</published>
+    <title>Ancient Benchmark of Code Review Bots</title>
+    <summary>  An older comparison of automated code review bots.
+</summary>
+    <author>
+      <name>Sara Lindqvist</name>
+    </author>
+    <arxiv:primary_category xmlns:arxiv="http://arxiv.org/schemas/atom" term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+    <link href="http://arxiv.org/abs/2611.03268v1" rel="alternate" type="text/html"/>
+    <link title="pdf" href="http://arxiv.org/pdf/2611.03268v1" rel="related" type="application/pdf"/>
+    <category term="cs.SE" scheme="http://arxiv.org/schemas/atom"/>
+  </entry>
+</feed>

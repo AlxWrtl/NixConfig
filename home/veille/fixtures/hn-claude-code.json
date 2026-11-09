@@ -1,0 +1,50 @@
+{
+  "hits": [
+    {
+      "_tags": ["story", "author_tkuehne", "story_45871203"],
+      "author": "tkuehne",
+      "created_at": "2026-11-08T16:41:09Z",
+      "created_at_i": 1794156069,
+      "num_comments": 233,
+      "objectID": "45871203",
+      "points": 412,
+      "story_id": 45871203,
+      "title": "Claude Code now supports background subagents",
+      "updated_at": "2026-11-09T07:12:44Z",
+      "url": "https://www.anthropic.com/news/claude-code-background-subagents"
+    },
+    {
+      "_tags": ["story", "author_mpaulsen", "story_45869954", "show_hn"],
+      "author": "mpaulsen",
+      "created_at": "2026-11-08T11:02:37Z",
+      "created_at_i": 1794135757,
+      "num_comments": 31,
+      "objectID": "45869954",
+      "points": 57,
+      "story_id": 45869954,
+      "title": "Show HN: A hook-based permission firewall for coding agents",
+      "updated_at": "2026-11-09T02:40:10Z",
+      "url": "https://github.com/mpaulsen/agent-firewall"
+    },
+    {
+      "_tags": ["story", "author_rgarnier", "story_45872310", "ask_hn"],
+      "author": "rgarnier",
+      "created_at": "2026-11-08T19:20:55Z",
+      "created_at_i": 1794165655,
+      "num_comments": 0,
+      "objectID": "45872310",
+      "points": 2,
+      "story_id": 45872310,
+      "story_text": "<p>Is anyone caching system prompts across <i>coding agent</i> runs?</p>",
+      "title": "Ask HN: Best way to cache prompts with coding agents?",
+      "updated_at": "2026-11-08T19:20:55Z",
+      "url": null
+    }
+  ],
+  "nbHits": 3,
+  "page": 0,
+  "nbPages": 1,
+  "hitsPerPage": 50,
+  "query": "claude code",
+  "params": "query=claude+code&tags=story&numericFilters=created_at_i%3E1794009600&hitsPerPage=50"
+}

@@ -1,0 +1,50 @@
+{
+  "hits": [
+    {
+      "_tags": ["story", "author_mpaulsen", "story_45869954", "show_hn"],
+      "author": "mpaulsen",
+      "created_at": "2026-11-08T11:02:37Z",
+      "created_at_i": 1794135757,
+      "num_comments": 31,
+      "objectID": "45869954",
+      "points": 57,
+      "story_id": 45869954,
+      "title": "Show HN: A hook-based permission firewall for coding agents",
+      "updated_at": "2026-11-09T02:40:10Z",
+      "url": "https://github.com/mpaulsen/agent-firewall"
+    },
+    {
+      "_tags": ["story", "author_lbrandt", "story_45870777", "ask_hn"],
+      "author": "lbrandt",
+      "created_at": "2026-11-08T13:48:02Z",
+      "created_at_i": 1794145682,
+      "num_comments": 4,
+      "objectID": "45870777",
+      "points": 3,
+      "story_id": 45870777,
+      "story_text": "<p>We let an agent open PRs. How do you review &quot;agent-written&quot; diffs?</p>",
+      "title": "Ask HN: How do you review agent-written diffs?",
+      "updated_at": "2026-11-08T22:01:15Z",
+      "url": null
+    },
+    {
+      "_tags": ["story", "author_sholm", "story_45868001"],
+      "author": "sholm",
+      "created_at": "2026-11-08T06:15:30Z",
+      "created_at_i": 1794118530,
+      "num_comments": 76,
+      "objectID": "45868001",
+      "points": 128,
+      "story_id": 45868001,
+      "title": "Measuring the token cost of agentic coding loops",
+      "updated_at": "2026-11-09T05:33:48Z",
+      "url": "https://sholm.dev/blog/token-cost-agentic-loops"
+    }
+  ],
+  "nbHits": 3,
+  "page": 0,
+  "nbPages": 1,
+  "hitsPerPage": 50,
+  "query": "coding agent",
+  "params": "query=coding+agent&tags=story&numericFilters=created_at_i%3E1794009600&hitsPerPage=50"
+}

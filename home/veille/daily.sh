@@ -38,7 +38,7 @@ if [ "$rc" != 0 ] || [ "$erreur" != false ]; then
 fi
 
 # Ligne admise : `- [<jour>] titre — résumé — type — URL`, 4 champs exactement, type connu,
-# URL http(s) ; rien qui s'affiche ou se lie dans Obsidian (![, [[, `, <).
+# URL http(s) ; rien qui s'affiche ou se lie dans Obsidian (![, [[, <) ; backticks retirés.
 # Dédoublonnage sur l'URL normalisée (sans espaces ni <>), sans pipe grep (141).
 inbox="$out/inbox.md"
 url_re='^https?://[^ <>]+$'
@@ -67,7 +67,8 @@ while IFS= read -r l || [ -n "$l" ]; do
     rejet "préfixe"
     continue
   fi
-  if [[ "$l" == *'!['* || "$l" == *'[['* || "$l" == *'`'* || "$l" == *'<'* ]]; then
+  l="${l//\`/}" # Haiku met parfois chemins ou types entre backticks : retirés, pas rejetés
+  if [[ "$l" == *'!['* || "$l" == *'[['* || "$l" == *'<'* ]]; then
     rejet "caractère interdit"
     continue
   fi

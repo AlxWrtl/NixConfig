@@ -22,8 +22,8 @@
 # options) against stub claude/fetch (fixtures/stub-*), VEILLE_DIR = a scratch
 # vault whose inbox.md has no final newline.
 #   D1  run 1 (fixtures/tri-run1.md): "(rien)", a 5-field line, `![`, `[[`,
-#       a backtick, an unknown type, another day and a non-http URL are not
-#       appended; the valid line is, once; its duplicate (spaces around the
+#       an unknown type, another day and a non-http URL are not appended; a
+#       line with backticks is, once, backticks stripped; the valid line is, once; its duplicate (spaces around the
 #       URL) and a URL already in inbox.md are counted as duplicates; claude
 #       got --safe-mode, the raw file on stdin and not in argv
 #   D2  the inbox line without final newline stays whole, the new line follows
@@ -122,7 +122,8 @@ pkgs.runCommand "veille-check" { } ''
       bash -euo pipefail "$1" 48 > "$TMPDIR/$3.out" 2> "$TMPDIR/$3.err" || rc=$?
   }
   check_d1() { # $1 VEILLE_DIR after run 1 (tri-run1.md), $2 run name
-    for n in five.example img.example wiki.example tick.example social.example stale.example ftp.example '(rien)'; do
+    [ "$(grep -cxF -- "- [$day] Tick — résumé — blog — https://tick.example/" "$1/inbox.md")" = 1 ] || { echo "D1 backtick line not appended once, backticks stripped"; return 1; }
+    for n in five.example img.example wiki.example social.example stale.example ftp.example '(rien)'; do
       if grep -qF "$n" "$1/inbox.md"; then
         echo "D1 rejected line appended: $n"
         return 1
@@ -130,7 +131,7 @@ pkgs.runCommand "veille-check" { } ''
     done
     [ "$(grep -cF 'https://good.example/a' "$1/inbox.md")" = 1 ] || { echo "D1 valid line missing or appended twice"; return 1; }
     [ "$(grep -cF 'https://old.example/a' "$1/inbox.md")" = 1 ] || { echo "D1 URL already in inbox.md appended again"; return 1; }
-    grep -qxF 'inbox: 1 ajoutée(s), 2 doublon(s), 7 rejetée(s)' "$TMPDIR/$2.out" || { echo "D1 counters wrong"; return 1; }
+    grep -qxF 'inbox: 2 ajoutée(s), 2 doublon(s), 6 rejetée(s)' "$TMPDIR/$2.out" || { echo "D1 counters wrong"; return 1; }
   }
 
   v="$TMPDIR/vault"
@@ -146,8 +147,8 @@ pkgs.runCommand "veille-check" { } ''
   if grep -qF 'Candidats stub' "$TMPDIR/log-run1/args"; then fail "D1 raw file passed in argv"; fi
   echo "veille: D1 line filter + dedup OK — $(cat "$TMPDIR/run1.out" | sed -n 1p)"
 
-  { cat "$TMPDIR/seed.md"; printf '\n- [%s] Good — résumé valide — officiel — https://good.example/a\n' "$day"; } > "$TMPDIR/inbox1.want"
-  diff "$TMPDIR/inbox1.want" "$v/inbox.md" > "$TMPDIR/d2.out" || fail "D2 inbox.md after run 1 is not seed + newline + the valid line"
+  { cat "$TMPDIR/seed.md"; printf '\n- [%s] Tick — résumé — blog — https://tick.example/\n- [%s] Good — résumé valide — officiel — https://good.example/a\n' "$day" "$day"; } > "$TMPDIR/inbox1.want"
+  diff "$TMPDIR/inbox1.want" "$v/inbox.md" > "$TMPDIR/d2.out" || fail "D2 inbox.md after run 1 is not seed + newline + the valid lines"
   echo "veille: D2 inbox without final newline OK"
 
   cp "$v/bruts/$day.md" "$TMPDIR/brut1.keep"

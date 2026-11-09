@@ -31,8 +31,8 @@
 #       run 2 lands in <day>-2.md / <day>-2.json
 #   D4  a run whose claude fails (rc 3) exits non-zero, logs rc + subtype and
 #       leaves VEILLE_DIR byte-identical
-#   D5  VEILLE_DIR unset and no ~/Vaults/AlxVault/.obsidian: exit non-zero,
-#       nothing created under HOME, claude never called
+#   D5  VEILLE_DIR unset: exit 0, bruts/ tris/ inbox.md written under
+#       ~/.local/share/veille-ttw, nothing under ~/Vaults
 # Canary C4: daily.sh with the field-count test turned into `if false` must
 # fail D1 on the 5-field line (anchor guard as C1).
 { pkgs }:
@@ -168,16 +168,16 @@ pkgs.runCommand "veille-check" { } ''
   grep -qF 'claude rc=3 subtype=error_during_execution' "$TMPDIR/run3.err" || fail "D4 claude failure not logged with rc + subtype"
   echo "veille: D4 failed run leaves the vault untouched — $(cat "$TMPDIR/run3.err")"
 
-  mkdir -p "$TMPDIR/novault" "$TMPDIR/log-run5"
+  mkdir -p "$TMPDIR/home5" "$TMPDIR/log-run5"
   rc=0
-  env -u VEILLE_DIR HOME="$TMPDIR/novault" STUB_LOG="$TMPDIR/log-run5" STUB_RESULT="$dir/fixtures/tri-run2.md" \
+  env -u VEILLE_DIR HOME="$TMPDIR/home5" STUB_LOG="$TMPDIR/log-run5" STUB_TAG=run5 STUB_RESULT="$dir/fixtures/tri-run2.md" \
     VEILLE_CLAUDE="$TMPDIR/claude" VEILLE_FETCH="$dir/fixtures/stub-fetch.py" VEILLE_PROMPT="$dir/filter-prompt.md" \
     bash -euo pipefail "$dir/daily.sh" 48 > "$TMPDIR/run5.out" 2> "$TMPDIR/run5.err" || rc=$?
-  [ "$rc" != 0 ] || fail "D5 run without a vault exit 0"
-  [ -z "$(ls -A "$TMPDIR/novault")" ] || fail "D5 run without a vault created files under HOME"
-  [ ! -e "$TMPDIR/log-run5/args" ] || fail "D5 claude called without a vault"
-  grep -qF '.obsidian absent' "$TMPDIR/run5.err" || fail "D5 missing vault not reported"
-  echo "veille: D5 no vault, nothing created OK"
+  [ "$rc" = 0 ] || fail "D5 default run exit $rc"
+  d5="$TMPDIR/home5/.local/share/veille-ttw"
+  [ -f "$d5/inbox.md" ] && [ -d "$d5/bruts" ] && [ -d "$d5/tris" ] || fail "D5 default run did not write under ~/.local/share/veille-ttw"
+  [ ! -e "$TMPDIR/home5/Vaults" ] || fail "D5 default run wrote under ~/Vaults"
+  echo "veille: D5 default dir ~/.local/share/veille-ttw, nothing in the vault OK"
 
   anchor4='if [ "$tirets" != 3 ]; then'
   sed 's/if \[ "\$tirets" != 3 \]; then/if false; then/' "$dir/daily.sh" > "$TMPDIR/daily-c4.sh"

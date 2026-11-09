@@ -187,6 +187,22 @@ let
       )
     )
   );
+  # Same direction for the agent instructions: a stale AGENTS.md / CLAUDE.md
+  # costs every session and no success-only eval sees it (arXiv 2611.09802).
+  # Scoped to paths whose first segment is a repo top-level entry, which
+  # leaves out the GitHub remote, vault folders and live files under ~.
+  instructions = builtins.readFile ../AGENTS.md + builtins.readFile ../CLAUDE.md;
+  topLevel = builtins.attrNames (builtins.readDir ../.);
+  instructionPaths = nonEmpty "instruction paths" (
+    builtins.filter (p: builtins.elem (builtins.head (lib.splitString "/" p)) topLevel) (
+      lib.unique (
+        map builtins.head (
+          builtins.filter builtins.isList (builtins.split "`([A-Za-z0-9_.-]+/[A-Za-z0-9_./-]*)`" instructions)
+        )
+      )
+    )
+  );
+  staleInstructions = builtins.filter (p: !(builtins.pathExists (../. + "/${p}"))) instructionPaths;
   treeScripts = lib.unique (
     map (m: builtins.head m) (
       builtins.filter builtins.isList (builtins.split "── ([A-Za-z0-9_.-]+\\.(sh|md))" structureTree)
@@ -286,6 +302,9 @@ let
       lib.optional (danglingFiles != [ ])
         "the README points at file(s) that do not exist: ${builtins.concatStringsSep ", " danglingFiles}. They were renamed or deleted without updating the document."
     ++
+      lib.optional (staleInstructions != [ ])
+        "AGENTS.md / CLAUDE.md point at repo path(s) that do not exist: ${builtins.concatStringsSep ", " staleInstructions}. Every agent session loads these files; fix or drop the reference."
+    ++
       lib.optional (undeclaredAliases != [ ])
         "the README documents alias(es) declared in none of the four alias attrsets: ${builtins.concatStringsSep ", " undeclaredAliases}. Checked in modules/packages.nix, modules/system.nix, home/zsh.nix and home/claude-code/shell.nix — all four, because reading only one is how `rebuild` gets wrongly called missing."
     ++
@@ -299,7 +318,7 @@ pkgs.runCommand "readme-consistency-check" { } (
     ''
       echo "readme-consistency: ${toString (builtins.length readmePairs)} flags vs skill, ${toString (builtins.length invocationFlags)} example flags, ${toString (builtins.length inventoried)} modules, ${
         toString (builtins.length danglingFiles + builtins.length citedFiles)
-      } cited paths, ${toString (builtins.length aliasNames)} aliases — OK"
+      } cited paths, ${toString (builtins.length instructionPaths)} instruction paths, ${toString (builtins.length aliasNames)} aliases — OK"
       touch $out
     ''
 )

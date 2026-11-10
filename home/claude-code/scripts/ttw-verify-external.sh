@@ -172,12 +172,12 @@ no_envelope_exit() {
 # $TIMEOUT_S seconds earlier), so a sandboxed process may since have planted a
 # link at $OUT or swapped a directory under .claude/output/ for one. Hence:
 # re-check the physical directory before AND after `mkdir -p` (which follows a
-# planted link), refuse an $OUT that is a link or not a regular file, stage
-# beside it, re-check once more, then rename: rename(2) replaces the name and
-# never follows a link at the destination. Residual, accepted: the milliseconds
-# between the last re-check and the rename. Returns 1 on any refusal, having
-# written nothing at $OUT. Runs under `||`, so set -e is off: every step is
-# checked explicitly.
+# planted link), refuse an $OUT that is a link or not a regular file, then move
+# the rendered file in with ONE rename. Staging never touches a sandbox-writable
+# directory: <rendered-file> is already complete in $WORK (or $TMPDIR), which
+# the sandbox cannot write, so no staging name exists for it to swap. Returns 1
+# on any refusal, having written nothing at $OUT. Runs under `||`, so set -e is
+# off: every step is checked explicitly.
 place_envelope() {
   pe_src="$1"
   pe_dir="$(dirname "$OUT")"
@@ -207,31 +207,50 @@ place_envelope() {
       "$NAME" "$OUT" >&2
     return 1
   fi
-  # mktemp creates with O_EXCL, so the staging name cannot be a pre-planted link.
-  pe_tmp="$(mktemp "$pe_phys/.$pe_name.XXXXXX" 2>/dev/null)" || pe_tmp=""
-  if [ -z "$pe_tmp" ]; then
-    printf '%s: cannot stage the envelope in %s\n' "$NAME" "$pe_phys" >&2
-    return 1
-  fi
-  if ! cat -- "$pe_src" >"$pe_tmp" 2>/dev/null; then
-    rm -f "$pe_tmp" 2>/dev/null || true
-    printf '%s: cannot stage the envelope in %s\n' "$NAME" "$pe_phys" >&2
-    return 1
-  fi
-  pe_recheck="$(cd "$pe_dir" 2>/dev/null && pwd -P)" || pe_recheck=""
-  if [ "$pe_recheck" != "$pe_phys" ] || [ -L "$pe_out" ] \
-    || { [ -e "$pe_out" ] && [ ! -f "$pe_out" ]; }; then
-    rm -f "$pe_tmp" 2>/dev/null || true
-    printf '%s: refusing to write the envelope: %s changed while it was staged\n' \
-      "$NAME" "$OUT" >&2
-    return 1
-  fi
-  if ! mv -f "$pe_tmp" "$pe_out" 2>/dev/null; then
-    rm -f "$pe_tmp" 2>/dev/null || true
-    printf '%s: cannot rename the envelope onto %s\n' "$NAME" "$OUT" >&2
-    return 1
-  fi
-  return 0
+  # Re-checked and renamed by a RELATIVE name from a subshell whose working
+  # directory is $pe_phys: the cwd pins the directory inode, so swapping an
+  # intermediate directory for a link cannot redirect the checks or the rename.
+  # The source must sit on the same device as that directory: across devices mv
+  # falls back to a copy that opens the destination BY PATH, so it is refused
+  # rather than attempted. `-T` keeps a directory (or a link to one) at the
+  # final name from turning mv into "move into that directory". Residual,
+  # accepted: a link planted at the FINAL name between the check and the rename
+  # is replaced by rename(2), never followed, so nothing is written or read
+  # outside. The sandbox can still rename the output directory itself; that is
+  # outside our control and lands only where the sandbox can already write.
+  # Exit codes: 3 cwd, 4 device, 5 changed, 6 rename.
+  (
+    cd -P -- "$pe_phys" 2>/dev/null || exit 3
+    [ "$(pwd -P)" = "$pe_phys" ] || exit 3
+    if [ -L "$pe_name" ] || { [ -e "$pe_name" ] && [ ! -f "$pe_name" ]; }; then
+      exit 5
+    fi
+    case "$pe_src" in
+      /*) : ;;
+      *) exit 4 ;;
+    esac
+    pe_src_dev="$(stat -c %d -- "$pe_src" 2>/dev/null)" || exit 4
+    pe_dir_dev="$(stat -c %d -- . 2>/dev/null)" || exit 4
+    if [ -z "$pe_src_dev" ] || [ "$pe_src_dev" != "$pe_dir_dev" ]; then
+      exit 4
+    fi
+    mv -f -T -- "$pe_src" "$pe_name" 2>/dev/null || exit 6
+    exit 0
+  )
+  pe_rc=$?
+  case "$pe_rc" in
+    0) return 0 ;;
+    3 | 5)
+      printf '%s: refusing to write the envelope: %s changed before the rename\n' \
+        "$NAME" "$OUT" >&2
+      ;;
+    4)
+      printf '%s: refusing to write the envelope: %s is not on the same device as the private render (a copy by path is never attempted)\n' \
+        "$NAME" "$pe_phys" >&2
+      ;;
+    *) printf '%s: cannot rename the envelope onto %s\n' "$NAME" "$OUT" >&2 ;;
+  esac
+  return 1
 }
 
 # emit <verdict> <reason-slug-or-dash> <exit-code>

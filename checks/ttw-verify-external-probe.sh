@@ -166,6 +166,93 @@ rm() {
   fi
   return "$status"
 }
+
+# Appends every `.*` entry of $STAGE_RACE_DIR (a staging name in the
+# sandbox-writable output directory) to $STAGE_RACE_SEEN. Called by the mktemp,
+# cat and mv hooks, so a staging file that exists at any of those moments is
+# recorded even if it is gone by the end of the run.
+stage_race_record() {
+  local entry
+  [ -n "${STAGE_RACE_DIR:-}" ] && [ -n "${STAGE_RACE_SEEN:-}" ] || return 0
+  for entry in "$STAGE_RACE_DIR"/.*; do
+    case "${entry##*/}" in . | ..) continue ;; esac
+    if [ -e "$entry" ] || [ -L "$entry" ]; then
+      printf '%s\n' "$entry" >> "$STAGE_RACE_SEEN"
+    fi
+  done
+  return 0
+}
+
+# The sandboxed process racing the envelope staging: a staging file created in
+# $STAGE_RACE_DIR is swapped for a link to $STAGE_RACE_TARGET as soon as it
+# exists, before anything is written into it.
+mktemp() {
+  local out status
+  out="$(command mktemp "$@")"
+  status=$?
+  if [ "$status" = 0 ] && [ -n "${STAGE_RACE_TARGET:-}" ]; then
+    case "$out" in
+      "${STAGE_RACE_DIR:?}"/.*)
+        printf '%s\n' "$out" >> "${STAGE_RACE_SEEN:-/dev/null}"
+        command rm -f "$out"
+        command ln -s "$STAGE_RACE_TARGET" "$out"
+        ;;
+    esac
+  fi
+  printf '%s\n' "$out"
+  return "$status"
+}
+
+# Same race against an exclusive open: the redirect creates the staging file
+# before cat runs, so every `.*` entry of $STAGE_RACE_DIR existing when cat
+# starts is swapped for a link to $STAGE_RACE_TARGET. Only that directory is
+# touched: cat runs elsewhere too (acs copy, findings, the codex stub).
+cat() {
+  local entry
+  stage_race_record
+  if [ -n "${STAGE_RACE_TARGET:-}" ] && [ -n "${STAGE_RACE_DIR:-}" ]; then
+    for entry in "$STAGE_RACE_DIR"/.*; do
+      case "${entry##*/}" in . | ..) continue ;; esac
+      if [ -e "$entry" ] || [ -L "$entry" ]; then
+        command rm -f "$entry"
+        command ln -s "$STAGE_RACE_TARGET" "$entry"
+      fi
+    done
+  fi
+  command cat "$@"
+}
+
+# The rename onto --out: whatever the wrapper staged, it exists at this moment.
+mv() {
+  stage_race_record
+  command mv "$@"
+}
+
+# The sandboxed process swapping the output directory between validation and
+# the staging open: on the first `pwd` called straight from place_envelope,
+# $STAGE_DIRSWAP_DIR is replaced by a link to $STAGE_DIRSWAP_TARGET after the
+# answer is computed; on the next one it is put back before answering, so a
+# re-check that resolves the path again passes. State lives in files: every
+# call runs in a subshell.
+pwd() {
+  local status
+  if [ -n "${STAGE_DIRSWAP_DIR:-}" ] && [ "${FUNCNAME[1]:-}" = place_envelope ]; then
+    if [ -f "${STAGE_DIRSWAP_STATE:?}/swapped" ] && [ ! -f "$STAGE_DIRSWAP_STATE/restored" ]; then
+      command rm -f "$STAGE_DIRSWAP_DIR"
+      command mv "$STAGE_DIRSWAP_DIR.real" "$STAGE_DIRSWAP_DIR"
+      : > "$STAGE_DIRSWAP_STATE/restored"
+    fi
+    builtin pwd "$@"
+    status=$?
+    if [ ! -f "$STAGE_DIRSWAP_STATE/swapped" ]; then
+      command mv "$STAGE_DIRSWAP_DIR" "$STAGE_DIRSWAP_DIR.real"
+      command ln -s "${STAGE_DIRSWAP_TARGET:?}" "$STAGE_DIRSWAP_DIR"
+      : > "$STAGE_DIRSWAP_STATE/swapped"
+    fi
+    return "$status"
+  fi
+  builtin pwd "$@"
+}
 GIT_STUB
 
 cat > "$STUB_DIR/codex" <<'STUB'
@@ -636,6 +723,10 @@ run_wrapper() { # run_wrapper <label> <mode> <version> <repo> <use-stub 1|0> -- 
       STUB_SNAPSHOT_EXPECTED="${CASE_SNAPSHOT_EXPECTED:-}" \
       STUB_SNAPSHOT_FAILURE="$WORK/snapshot-$label.failure" \
       STUB_PLANT_AT="${CASE_PLANT_AT:-}" STUB_PLANT_TARGET="${CASE_PLANT_TARGET:-}" \
+      STAGE_RACE_DIR="${CASE_STAGE_RACE_DIR:-}" STAGE_RACE_TARGET="${CASE_STAGE_RACE_TARGET:-}" \
+      STAGE_RACE_SEEN="${CASE_STAGE_RACE_SEEN:-}" \
+      STAGE_DIRSWAP_DIR="${CASE_STAGE_DIRSWAP_DIR:-}" STAGE_DIRSWAP_TARGET="${CASE_STAGE_DIRSWAP_TARGET:-}" \
+      STAGE_DIRSWAP_STATE="${CASE_STAGE_DIRSWAP_STATE:-}" \
       "$BASH_BIN" -euo pipefail "$SUT" "$@" 2>"$WORK/stderr-$label.txt"
   )"
   CASE_STATUS=$?
@@ -808,6 +899,80 @@ if [ -z "$race_why" ]; then
   rm -f "$SWAP_DIR"
 fi
 if [ -n "$race_why" ]; then fail_case out-link-race "$race_why"; else ok_case out-link-race "planted link (file, dir) refused, outside intact, exit 9"; fi
+
+# --- staging file swapped for a link before it is filled ----------------------
+#
+# A staging file that is created, then reopened by its path to be filled, gives
+# a sandboxed process a window to replace it with a link: the unsandboxed write
+# then lands outside, or the link is renamed onto --out. The fake mktemp swaps
+# right after creation, the fake cat right after the exclusive open. The fix is
+# to stage nowhere the sandbox can write: the mktemp, cat and mv hooks record
+# every `.*` entry of the output directory, and the run must leave that record
+# empty. The victim must stay byte-identical, and --out must be a regular PASS
+# envelope with exit 0 (no staging means no swap to refuse).
+printf 'VICTIM-SENTINEL\n' > "$OUTSIDE_DIR/victim.json"
+STAGE_OUT="$DIRTY_OUT/stage.json"
+STAGE_SEEN="$WORK/stage-race-seen.txt"
+rm -f "$STAGE_OUT" "$STAGE_SEEN"
+: > "$STAGE_SEEN"
+STAGE_RACE_PHYS="$(cd "$DIRTY_OUT" && pwd -P)"
+stage_why=""
+stage_pre="$(find "$STAGE_RACE_PHYS" -mindepth 1 -maxdepth 1 -name '.*' -print)"
+[ -n "$stage_pre" ] \
+  && stage_why="precondition: $STAGE_RACE_PHYS already holds dot entries, the staging record would be meaningless: $stage_pre"
+if [ -z "$stage_why" ]; then
+  CASE_STAGE_RACE_DIR="$STAGE_RACE_PHYS" CASE_STAGE_RACE_TARGET="$OUTSIDE_DIR/victim.json" \
+    CASE_STAGE_RACE_SEEN="$STAGE_SEEN"
+  run_wrapper stage-race pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$STAGE_OUT"
+  unset CASE_STAGE_RACE_DIR CASE_STAGE_RACE_TARGET CASE_STAGE_RACE_SEEN
+  find "$STAGE_RACE_PHYS" -mindepth 1 -maxdepth 1 -name '.*' -print >> "$STAGE_SEEN"
+  [ "$(cat "$OUTSIDE_DIR/victim.json")" != "VICTIM-SENTINEL" ] \
+    && stage_why="the envelope was written THROUGH the swapped staging file into $OUTSIDE_DIR/victim.json"
+  [ -z "$stage_why" ] && [ -s "$STAGE_SEEN" ] \
+    && stage_why="a staging entry appeared in the sandbox-writable output directory: $(sort -u "$STAGE_SEEN" | tr '\n' ' ')"
+  [ -z "$stage_why" ] && [ -L "$STAGE_OUT" ] \
+    && stage_why="--out is a symlink after the run (exit $CASE_STATUS): the swapped staging link was renamed onto it"
+  [ -z "$stage_why" ] && [ "$CASE_STATUS" != 0 ] \
+    && stage_why="exit: expected 0 (PASS at --out), got $CASE_STATUS: $CASE_STDOUT"
+  if [ -z "$stage_why" ] \
+    && { [ ! -f "$STAGE_OUT" ] || ! jq -e '.verdict == "PASS"' "$STAGE_OUT" > /dev/null 2>&1; }; then
+    stage_why="exit 0 but --out does not hold a regular PASS envelope"
+  fi
+fi
+find "$STAGE_RACE_PHYS" -mindepth 1 -maxdepth 1 -name '.*' -exec rm -rf {} + || true
+rm -f "$STAGE_OUT"
+if [ -z "$stage_why" ]; then
+  # Dir swap: the output directory is swapped for a link after its physical
+  # path was resolved, and put back before the next resolution. An open by the
+  # absolute physical path follows the link and leaves a staging file outside.
+  DIRSWAP_TARGET="$WORK/outside-dirswap"
+  DIRSWAP_STATE="$WORK/dirswap-state"
+  DIRSWAP_PHYS="$(cd "$DIRTY_OUT" && pwd -P)"
+  rm -rf "$DIRSWAP_TARGET" "$DIRSWAP_STATE"
+  mkdir -p "$DIRSWAP_TARGET" "$DIRSWAP_STATE"
+  DIRSWAP_OUT="$DIRTY_OUT/dirswap.json"
+  rm -f "$DIRSWAP_OUT"
+  CASE_STAGE_DIRSWAP_DIR="$DIRSWAP_PHYS" CASE_STAGE_DIRSWAP_TARGET="$DIRSWAP_TARGET" \
+    CASE_STAGE_DIRSWAP_STATE="$DIRSWAP_STATE"
+  run_wrapper stage-race pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$DIRSWAP_OUT"
+  unset CASE_STAGE_DIRSWAP_DIR CASE_STAGE_DIRSWAP_TARGET CASE_STAGE_DIRSWAP_STATE
+  if [ -L "$DIRSWAP_PHYS" ] && [ -d "$DIRSWAP_PHYS.real" ]; then
+    rm -f "$DIRSWAP_PHYS"
+    mv "$DIRSWAP_PHYS.real" "$DIRSWAP_PHYS"
+  fi
+  { [ -f "$DIRSWAP_STATE/swapped" ] && [ -f "$DIRSWAP_STATE/restored" ]; } \
+    || stage_why="dir swap: the pwd hook did not swap and restore the directory (swapped/restored markers missing)"
+  [ -z "$stage_why" ] && [ -n "$(find "$DIRSWAP_TARGET" -mindepth 1 -print -quit)" ] \
+    && stage_why="dir swap: a file was created outside, in $DIRSWAP_TARGET: $(find "$DIRSWAP_TARGET" -mindepth 1 | tr '\n' ' ')"
+  [ -z "$stage_why" ] && [ -L "$DIRSWAP_OUT" ] && stage_why="dir swap: --out is a symlink after the run"
+  [ -z "$stage_why" ] && [ "$CASE_STATUS" != 9 ] && stage_why="dir swap: exit: expected 9, got $CASE_STATUS"
+  if [ -z "$stage_why" ]; then
+    printf '%s\n' "$CASE_STDOUT" | grep -qE '^EXTERNAL-VERIFY BLOCKED .*reason=envelope ' \
+      || stage_why="dir swap: stdout: expected BLOCKED reason=envelope, got: $CASE_STDOUT"
+  fi
+  rm -f "$DIRSWAP_OUT"
+fi
+if [ -n "$stage_why" ]; then fail_case stage-race "$stage_why"; else ok_case stage-race "staging/dir swap: victim intact, nothing outside, --out never a link"; fi
 
 # --- binary -------------------------------------------------------------------
 run_wrapper binary-absent pass 0.153.1 "$FIX_DIRTY" 0 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" binary-absent)"

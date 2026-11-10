@@ -77,7 +77,11 @@ process.stdin.on("end", () => {
       // send newline-joined compounds, and `^` is not multiline here.
       // Blanks after a separator are `[ \t]`, not `\s`: `\s` also eats
       // newlines, so 64 K of them was one `\n\s*` try per offset.
-      const AT_CMD = "(^|[\\n|;&][ \\t]*|\\$\\([ \\t]*|&&[ \\t]*|\\|\\|[ \\t]*)";
+      // The newline is guarded: a `\`+newline is a continuation, not a new
+      // command. The lookbehind is FIXED-width (one `\`): a variable one
+      // (`(?<!\\\n[ \t]*)`) was measured quadratic, 13 s on `&&` + 64 K
+      // spaces.
+      const AT_CMD = "(^|(?:(?<!\\\\)\\n|[|;&])[ \\t]*|\\$\\([ \\t]*|&&[ \\t]*|\\|\\|[ \\t]*)";
       const WRITES = [
         // `\w`, not `[a-zA-Z]`: `perl -0pi -e` puts a DIGIT before the
         // `i`, and the letter class let 21 recorded in-place edits through.
@@ -87,7 +91,20 @@ process.stdin.on("end", () => {
         // The argument class excludes separators, not just whitespace: once
         // a temp target is blanked the word is bare (`tee   && echo`), and
         // a plain \S would happily match the `&` of the next command.
-        new RegExp(AT_CMD + "(cp|mv|rsync|truncate|touch|tee|patch)\\s+[^\\s;&|)]"),
+        // A word spelled by its path (`/bin/cp`, `./bin/tee`, `tools/rsync`,
+        // `~/bin/cp`) is the same command as the bare word; Claude Code
+        // v2.1.321 gave `/bin/cp` the same path checks. The prefix starts at
+        // AT_CMD, so a path ARGUMENT (`ls docs/touch x`) does not fire,
+        // nor one on a `\`-continued line (`ls -l \` + newline + `/bin/cp`).
+        // Its class excludes blanks, separators and parentheses, so it
+        // cannot overlap the anchor or `$(`: one start per separator, one
+        // token per start. It also excludes `=` and `#`: `CP=/bin/cp` is an
+        // assignment and `#/bin/cp a b` a comment, and `\s+` then crossed
+        // the newline to take the next line's first char as the argument.
+        // A quoted spelling (`"/bin/cp"`) is blanked before matching and
+        // stays out of reach. Known miss: `\\` + newline + `cp` (an escaped
+        // backslash, then a real newline) reads as a continuation.
+        new RegExp(AT_CMD + "(?:[^\\s;&|()`=#]*/)?(cp|mv|rsync|truncate|touch|tee|patch)\\s+[^\\s;&|)]"),
         /\d?(>>?|>\||>&(?!\d))\s*[^\s>|&]/,
         /(?:^|[^<])<<-?\s*['"]?[A-Za-z_]/,
         /--(write|fix|in-place)\b/,

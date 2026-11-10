@@ -265,6 +265,13 @@ if [ -n "${STUB_SNAPSHOT_EXPECTED:-}" ]; then
   done < <(find "$STUB_SNAPSHOT_EXPECTED" -mindepth 1 -print0)
 fi
 verdict_pass='{"verdict":"PASS","summary":"no defects found","findings":[]}'
+# Mid-run tamper: the wrapper runs unsandboxed and validated --out BEFORE codex
+# ran, so this plays the sandboxed process that replaces a path under
+# .claude/output/ with a link to the outside while the review is in flight.
+if [ -n "${STUB_PLANT_AT:-}" ]; then
+  rm -rf "$STUB_PLANT_AT"
+  ln -s "${STUB_PLANT_TARGET:?}" "$STUB_PLANT_AT"
+fi
 case "${STUB_MODE:-pass}" in
   pass)
     printf '%s\n' "$verdict_pass" > "$out"
@@ -358,7 +365,8 @@ AC-2: every degraded path writes a BLOCKED envelope.
 EOF
 ACS_EMPTY="$WORK/acs-empty.txt"
 : > "$ACS_EMPTY"
-ACS_MISSING="$WORK/acs-does-not-exist.txt"
+# Inside the DIRTY fixture's output root, so it is "missing", not "outside".
+ACS_MISSING="$WORK/fix-dirty/.claude/output/acs/acs-does-not-exist.txt"
 
 # A criteria file that is really a plan. The reviewer must never be handed the
 # rationale, and the two files live side by side, so this is an easy slip.
@@ -370,6 +378,18 @@ The change is correct because the author reasoned carefully about it.
 ## 2. Tasks
 - [ ] do the thing
 EOF
+
+# --acs is confined like --out: the wrapper runs outside the sandbox, so it only
+# reads a regular file under the reviewed repo's own .claude/output/. Each case
+# therefore hands it a copy placed there; the files above stay the originals
+# (and, being outside every fixture, the inputs of the refusal cases).
+acs_in() { # acs_in <repo> <src-file> -> prints the path of the in-repo copy
+  local dst
+  dst="$1/.claude/output/acs/$(basename "$2")"
+  mkdir -p "$(dirname "$dst")"
+  cat "$2" > "$dst"
+  printf '%s\n' "$dst"
+}
 
 git_q() { git -c user.email=probe@local -c user.name=probe -c commit.gpgsign=false "$@"; }
 
@@ -615,6 +635,7 @@ run_wrapper() { # run_wrapper <label> <mode> <version> <repo> <use-stub 1|0> -- 
       STUB_SURVIVORS="$WORK/survivors-$label.txt" \
       STUB_SNAPSHOT_EXPECTED="${CASE_SNAPSHOT_EXPECTED:-}" \
       STUB_SNAPSHOT_FAILURE="$WORK/snapshot-$label.failure" \
+      STUB_PLANT_AT="${CASE_PLANT_AT:-}" STUB_PLANT_TARGET="${CASE_PLANT_TARGET:-}" \
       "$BASH_BIN" -euo pipefail "$SUT" "$@" 2>"$WORK/stderr-$label.txt"
   )"
   CASE_STATUS=$?
@@ -674,15 +695,15 @@ else
 fi
 
 # --- verdict paths ------------------------------------------------------------
-run_wrapper pass pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" pass)"
+run_wrapper pass pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" pass)"
 assert_case pass 0 '^EXTERNAL-VERIFY PASS ' '.verdict == "PASS" and (.findings | length) == 0' 1
 PASS_ARGV="$LAST_ARGV"
 
-run_wrapper fail fail 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" fail)"
+run_wrapper fail fail 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" fail)"
 assert_case fail 1 '^EXTERNAL-VERIFY FAIL ' '.verdict == "FAIL" and (.findings | length) == 1' 1
 
 # --- usage --------------------------------------------------------------------
-run_wrapper usage pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --out "$(case_out_for "$FIX_DIRTY" usage)" --bogus-flag
+run_wrapper usage pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --out "$(case_out_for "$FIX_DIRTY" usage)" --bogus-flag
 usage_why=""
 [ "$CASE_STATUS" = 2 ] || usage_why="exit: expected 2, got $CASE_STATUS"
 [ -z "$usage_why" ] && [ "$(stdout_line_count)" != "1" ] && usage_why="stdout: expected exactly 1 line, got $(stdout_line_count)"
@@ -699,12 +720,12 @@ ESCAPE_TARGET="$WORK/pretend-home/x.json"
 mkdir -p "$WORK/pretend-home"
 rm -f "$ESCAPE_TARGET"
 escape_why=""
-run_wrapper out-escape pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$ESCAPE_TARGET"
+run_wrapper out-escape pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$ESCAPE_TARGET"
 [ "$CASE_STATUS" = 2 ] || escape_why="absolute escape: expected exit 2, got $CASE_STATUS"
 [ -z "$escape_why" ] && [ -e "$ESCAPE_TARGET" ] && escape_why="absolute escape wrote an envelope at $ESCAPE_TARGET"
 [ -z "$escape_why" ] && [ "$CASE_CALLS" != "0" ] && escape_why="absolute escape still called codex $CASE_CALLS time(s)"
 if [ -z "$escape_why" ]; then
-  run_wrapper out-escape pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master \
+  run_wrapper out-escape pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master \
     --out "$FIX_DIRTY/.claude/output/ttw/../../../traversal.json"
   [ "$CASE_STATUS" = 2 ] || escape_why="traversal: expected exit 2, got $CASE_STATUS"
   [ -z "$escape_why" ] && [ -e "$FIX_DIRTY/traversal.json" ] && escape_why="traversal wrote an envelope at $FIX_DIRTY/traversal.json"
@@ -712,28 +733,104 @@ if [ -z "$escape_why" ]; then
 fi
 if [ -n "$escape_why" ]; then fail_case out-escape "$escape_why"; else ok_case out-escape "confined to <repo>/.claude/output, nothing written"; fi
 
+# --- --acs is confined the same way -------------------------------------------
+#
+# The wrapper runs outside the sandbox, so an unconfined --acs reads any file
+# the sandbox denies, and --print-brief prints it into the agent's context. Each
+# shape must be a usage error (exit 2) that prints nothing of the file: an
+# absolute path outside, a `..` traversal, a link to an outside file, and an
+# outside file reached through a linked directory.
+ACS_OUTSIDE_MARK='AC-1: the wrapper prints exactly one line'
+mkdir -p "$FIX_DIRTY/.claude/output/acs"
+cp "$ACS" "$FIX_DIRTY/acs-outside.txt"
+ln -sfn "$ACS" "$FIX_DIRTY/.claude/output/acs/outside-link.txt"
+ln -sfn "$WORK" "$FIX_DIRTY/.claude/output/acs-dir-link"
+acs_escape_why=""
+for acs_arg in \
+  "$ACS" \
+  "$FIX_DIRTY/.claude/output/acs/../../../acs-outside.txt" \
+  "$FIX_DIRTY/.claude/output/acs/outside-link.txt" \
+  "$FIX_DIRTY/.claude/output/acs-dir-link/acs.txt"; do
+  run_wrapper acs-escape pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$acs_arg" --base master --print-brief \
+    --out "$(case_out_for "$FIX_DIRTY" acs-escape)"
+  if [ "$CASE_STATUS" != 2 ]; then
+    acs_escape_why="$acs_arg: expected exit 2, got $CASE_STATUS"
+  elif printf '%s\n' "$CASE_STDOUT" | grep -qF "$ACS_OUTSIDE_MARK"; then
+    acs_escape_why="$acs_arg: the outside file's content reached stdout"
+  elif [ "$(stdout_line_count)" != "1" ]; then
+    acs_escape_why="$acs_arg: expected exactly 1 line on stdout, got $(stdout_line_count)"
+  elif [ "$CASE_CALLS" != "0" ]; then
+    acs_escape_why="$acs_arg: codex was called $CASE_CALLS time(s)"
+  fi
+  [ -z "$acs_escape_why" ] || break
+done
+rm -f "$FIX_DIRTY/acs-outside.txt" "$FIX_DIRTY/.claude/output/acs/outside-link.txt" "$FIX_DIRTY/.claude/output/acs-dir-link"
+if [ -n "$acs_escape_why" ]; then fail_case acs-escape "$acs_escape_why"; else ok_case acs-escape "4 outside shapes refused, exit 2, nothing printed"; fi
+
+# --- --out swapped for a link WHILE codex runs --------------------------------
+#
+# --out is validated before codex runs, the write happens up to --timeout later,
+# and the wrapper is unsandboxed. The stub plays the sandboxed process that, in
+# between, plants a link at --out (file case) or swaps the directory holding it
+# for a link (directory case). The outside target must stay byte-identical, no
+# envelope may land outside, and the PASS must degrade to exit 9 reason=envelope.
+OUTSIDE_DIR="$WORK/outside-victim"
+mkdir -p "$OUTSIDE_DIR" "$DIRTY_OUT"
+printf 'VICTIM-SENTINEL\n' > "$OUTSIDE_DIR/victim.json"
+RACE_OUT="$DIRTY_OUT/race.json"
+rm -f "$RACE_OUT"
+CASE_PLANT_AT="$RACE_OUT" CASE_PLANT_TARGET="$OUTSIDE_DIR/victim.json"
+run_wrapper out-link-race pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$RACE_OUT"
+unset CASE_PLANT_AT CASE_PLANT_TARGET
+race_why=""
+[ "$CASE_CALLS" = 1 ] || race_why="codex calls: expected 1 (the plant runs inside it), got $CASE_CALLS"
+[ -z "$race_why" ] && [ "$(cat "$OUTSIDE_DIR/victim.json")" != "VICTIM-SENTINEL" ] \
+  && race_why="the envelope was written THROUGH the planted link into $OUTSIDE_DIR/victim.json"
+[ -z "$race_why" ] && [ "$CASE_STATUS" != 9 ] && race_why="exit: expected 9, got $CASE_STATUS"
+if [ -z "$race_why" ]; then
+  printf '%s\n' "$CASE_STDOUT" | grep -qE '^EXTERNAL-VERIFY BLOCKED .*reason=envelope ' \
+    || race_why="stdout: expected BLOCKED reason=envelope, got: $CASE_STDOUT"
+fi
+rm -f "$RACE_OUT"
+if [ -z "$race_why" ]; then
+  SWAP_DIR="$FIX_DIRTY/.claude/output/swap"
+  rm -rf "$SWAP_DIR" "$OUTSIDE_DIR/verdict.json"
+  mkdir -p "$SWAP_DIR"
+  CASE_PLANT_AT="$SWAP_DIR" CASE_PLANT_TARGET="$OUTSIDE_DIR"
+  run_wrapper out-link-race pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$SWAP_DIR/verdict.json"
+  unset CASE_PLANT_AT CASE_PLANT_TARGET
+  [ "$CASE_CALLS" = 1 ] || race_why="dir swap: codex calls: expected 1, got $CASE_CALLS"
+  [ -z "$race_why" ] && [ -e "$OUTSIDE_DIR/verdict.json" ] \
+    && race_why="dir swap: an envelope was written outside, at $OUTSIDE_DIR/verdict.json"
+  [ -z "$race_why" ] && [ -n "$(find "$OUTSIDE_DIR" -mindepth 1 ! -name victim.json -print -quit)" ] \
+    && race_why="dir swap: a staging file was left outside, in $OUTSIDE_DIR"
+  [ -z "$race_why" ] && [ "$CASE_STATUS" != 9 ] && race_why="dir swap: exit: expected 9, got $CASE_STATUS"
+  rm -f "$SWAP_DIR"
+fi
+if [ -n "$race_why" ]; then fail_case out-link-race "$race_why"; else ok_case out-link-race "planted link (file, dir) refused, outside intact, exit 9"; fi
+
 # --- binary -------------------------------------------------------------------
-run_wrapper binary-absent pass 0.153.1 "$FIX_DIRTY" 0 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" binary-absent)"
+run_wrapper binary-absent pass 0.153.1 "$FIX_DIRTY" 0 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" binary-absent)"
 assert_case binary-absent 3 '^EXTERNAL-VERIFY BLOCKED ' '.verdict == "BLOCKED" and .reason == "binary"' 0
 
-run_wrapper binary-old pass 0.142.5 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" binary-old)"
+run_wrapper binary-old pass 0.142.5 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" binary-old)"
 assert_case binary-old 3 'reason=binary' '.verdict == "BLOCKED" and .reason == "binary"' 0
 
 # --- model chain --------------------------------------------------------------
 # The chain must STOP on an auth-shaped failure: models_tried length 1.
-run_wrapper auth auth 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" auth)"
+run_wrapper auth auth 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" auth)"
 assert_case auth 4 'reason=auth' '.verdict == "BLOCKED" and .reason == "auth" and (.models_tried | length) == 1' 1
 
 # THE REGRESSION TEST FOR THE WORST DEFECT IN THE REVIEW. The auth signal is on
 # line 1 of more than 64 KB of stderr. A classifier built on `printf | grep -q`
 # exits 141 under pipefail here and silently downgrades this to reason=model.
-run_wrapper auth-large bigauth 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" auth-large)"
+run_wrapper auth-large bigauth 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" auth-large)"
 assert_case auth-large 4 'reason=auth' '.verdict == "BLOCKED" and .reason == "auth" and (.models_tried | length) == 1' 1
 
 # The mirror image: a bare 401 inside a request id, with no HTTP context on the
 # line, must NOT be read as auth. Telling a user to log in again over a
 # connection reset sends them to fix the one thing that is not broken.
-run_wrapper auth-false-positive reset 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" auth-false-positive)"
+run_wrapper auth-false-positive reset 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" auth-false-positive)"
 assert_case auth-false-positive 5 'reason=model' '.verdict == "BLOCKED" and .reason == "model"' 1
 
 # The diff under review must not be able to decide how a failure is classified.
@@ -742,44 +839,44 @@ assert_case auth-false-positive 5 'reason=model' '.verdict == "BLOCKED" and .rea
 # account-scoped model refusal was reported as reason=auth — which stops the
 # chain, so the fallback model was never dialled. Three rungs, because a model
 # refusal must advance to the end of the chain.
-run_wrapper echoed-brief echoed-brief 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" echoed-brief)"
+run_wrapper echoed-brief echoed-brief 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" echoed-brief)"
 assert_case echoed-brief 5 'reason=model' '.verdict == "BLOCKED" and .reason == "model" and (.models_tried | length) == 3' 3
 
 # A model-shaped failure must ADVANCE through the whole chain. The last rung
 # passes no -m at all, so the chain is three rungs and ends at cli-default.
-run_wrapper model model 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" model)"
+run_wrapper model model 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" model)"
 assert_case model 5 'reason=model' '.verdict == "BLOCKED" and .reason == "model" and (.models_tried | length) == 3 and (.models_tried | last) == "cli-default"' 3
 
 # --- timeout, unparseable -----------------------------------------------------
 # The hang stub writes a VALID verdict after its sleep, so a wrapper that failed
 # to enforce the timeout would exit 0 rather than landing on 7 by accident.
-run_wrapper timeout hang 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --timeout 2 --out "$(case_out_for "$FIX_DIRTY" timeout)"
+run_wrapper timeout hang 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --timeout 2 --out "$(case_out_for "$FIX_DIRTY" timeout)"
 assert_case timeout 6 'reason=timeout' '.verdict == "BLOCKED" and .reason == "timeout" and .model == "none"' 1
 
-run_wrapper unparseable prose 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" unparseable)"
+run_wrapper unparseable prose 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" unparseable)"
 assert_case unparseable 7 'reason=unparseable' '.verdict == "BLOCKED" and .reason == "unparseable"' 1
 
 # --- input bounds -------------------------------------------------------------
 # Oversize must be caught BEFORE the subprocess: zero calls, no allowance spent.
-run_wrapper oversize pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --max-diff-bytes 5 --out "$(case_out_for "$FIX_DIRTY" oversize)"
+run_wrapper oversize pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --max-diff-bytes 5 --out "$(case_out_for "$FIX_DIRTY" oversize)"
 assert_case oversize 8 'reason=input' '.verdict == "BLOCKED" and .reason == "input"' 0
 
-run_wrapper empty-diff pass 0.153.1 "$FIX_EMPTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_EMPTY" empty-diff)"
+run_wrapper empty-diff pass 0.153.1 "$FIX_EMPTY" 1 -- --acs "$(acs_in "$FIX_EMPTY" "$ACS")" --base master --out "$(case_out_for "$FIX_EMPTY" empty-diff)"
 assert_case empty-diff 8 'reason=input' '.verdict == "BLOCKED" and .reason == "input"' 0
 
 run_wrapper acs-missing pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS_MISSING" --base master --out "$(case_out_for "$FIX_DIRTY" acs-missing)"
 assert_case acs-missing 8 'reason=input' '.verdict == "BLOCKED" and .reason == "input"' 0
 
-run_wrapper acs-empty pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS_EMPTY" --base master --out "$(case_out_for "$FIX_DIRTY" acs-empty)"
+run_wrapper acs-empty pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS_EMPTY")" --base master --out "$(case_out_for "$FIX_DIRTY" acs-empty)"
 assert_case acs-empty 8 'reason=input' '.verdict == "BLOCKED" and .reason == "input"' 0
 
 # Handing --acs the planning document quietly undoes the whole design: the
 # reviewer would be told why the author believes the change is right.
-run_wrapper acs-plan pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS_PLAN" --base master --out "$(case_out_for "$FIX_DIRTY" acs-plan)"
+run_wrapper acs-plan pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS_PLAN")" --base master --out "$(case_out_for "$FIX_DIRTY" acs-plan)"
 assert_case acs-plan 8 'reason=input' '.verdict == "BLOCKED" and .reason == "input"' 0
 
 CASE_SNAPSHOT_EXPECTED="$FIX_RAW_EXPECTED"
-run_wrapper snapshot-raw-bytes pass 0.153.1 "$FIX_RAW" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_RAW" snapshot-raw-bytes)"
+run_wrapper snapshot-raw-bytes pass 0.153.1 "$FIX_RAW" 1 -- --acs "$(acs_in "$FIX_RAW" "$ACS")" --base master --out "$(case_out_for "$FIX_RAW" snapshot-raw-bytes)"
 raw_why=""
 [ "$CASE_STATUS" = 0 ] || raw_why="exit: expected 0, got $CASE_STATUS"
 [ -z "$raw_why" ] && [ "$CASE_CALLS" != 1 ] && raw_why="codex calls: expected 1, got $CASE_CALLS"
@@ -792,7 +889,7 @@ unset CASE_SNAPSHOT_EXPECTED
 
 for fault in ls-tree cat-file; do
   CASE_GIT_FAULT_MODE="$fault"
-  run_wrapper "snapshot-$fault-failure" pass 0.153.1 "$FIX_RAW" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_RAW" "snapshot-$fault-failure")"
+  run_wrapper "snapshot-$fault-failure" pass 0.153.1 "$FIX_RAW" 1 -- --acs "$(acs_in "$FIX_RAW" "$ACS")" --base master --out "$(case_out_for "$FIX_RAW" "snapshot-$fault-failure")"
   fault_why=""
   [ -f "$WORK/git-fault-snapshot-$fault-failure.marker" ] || fault_why="BASH_ENV git function was not invoked"
   [ -z "$fault_why" ] && [ "$CASE_STATUS" != 8 ] && fault_why="exit: expected 8, got $CASE_STATUS"
@@ -808,7 +905,7 @@ for fault in mkdir find cp rm; do
   fault_repo="$FIX_RAW"
   case "$fault" in cp | rm) fault_repo="$FIX_DIRTY" ;; esac
   CASE_SNAPSHOT_FAULT_MODE="$fault"
-  run_wrapper "snapshot-$fault-failure" pass 0.153.1 "$fault_repo" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$fault_repo" "snapshot-$fault-failure")"
+  run_wrapper "snapshot-$fault-failure" pass 0.153.1 "$fault_repo" 1 -- --acs "$(acs_in "$fault_repo" "$ACS")" --base master --out "$(case_out_for "$fault_repo" "snapshot-$fault-failure")"
   fault_why=""
   [ -f "$WORK/snapshot-fault-snapshot-$fault-failure.marker" ] || fault_why="BASH_ENV $fault function was not invoked"
   [ -z "$fault_why" ] && [ "$CASE_STATUS" != 8 ] && fault_why="exit: expected 8, got $CASE_STATUS"
@@ -823,7 +920,7 @@ done
 # --- base fallback ------------------------------------------------------------
 # `master` was once hard-coded. A repository whose only sin is being called main
 # must still be reviewable without --base.
-run_wrapper base-fallback pass 0.153.1 "$FIX_MAIN" 1 -- --acs "$ACS" --out "$(case_out_for "$FIX_MAIN" base-fallback)"
+run_wrapper base-fallback pass 0.153.1 "$FIX_MAIN" 1 -- --acs "$(acs_in "$FIX_MAIN" "$ACS")" --out "$(case_out_for "$FIX_MAIN" base-fallback)"
 assert_case base-fallback 0 '^EXTERNAL-VERIFY PASS ' '.verdict == "PASS" and .base == "main"' 1
 
 # --- failures with nowhere to write -------------------------------------------
@@ -832,7 +929,7 @@ assert_case base-fallback 0 '^EXTERNAL-VERIFY PASS ' '.verdict == "PASS" and .ba
 MKTEMP_OUT="$(case_out_for "$FIX_DIRTY" mktemp-fail)"
 rm -f "$MKTEMP_OUT"
 CASE_TMPDIR="$WORK/no-such-tmpdir-$$"
-run_wrapper mktemp-fail pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$MKTEMP_OUT"
+run_wrapper mktemp-fail pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$MKTEMP_OUT"
 unset CASE_TMPDIR
 mktemp_why=""
 [ "$CASE_STATUS" = 8 ] || mktemp_why="exit: expected 8, got $CASE_STATUS"
@@ -868,7 +965,7 @@ if [ -n "$norepo_why" ]; then fail_case not-a-repo "$norepo_why"; else ok_case n
 mkdir -p "$DIRTY_OUT"
 rm -rf "$DIRTY_OUT/blocker"
 : > "$DIRTY_OUT/blocker"
-run_wrapper envelope pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$DIRTY_OUT/blocker/verdict.json"
+run_wrapper envelope pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$DIRTY_OUT/blocker/verdict.json"
 envelope_why=""
 [ "$CASE_STATUS" = "9" ] || envelope_why="exit: expected 9, got $CASE_STATUS"
 [ -z "$envelope_why" ] && [ "$(stdout_line_count)" != "1" ] && envelope_why="stdout: expected exactly 1 line, got $(stdout_line_count)"
@@ -896,7 +993,7 @@ rm -f "$DIRTY_OUT/blocker"
 STALE_OUT="$(case_out_for "$FIX_DIRTY" stale-envelope)"
 mkdir -p "$(dirname "$STALE_OUT")"
 printf '%s\n' '{"verdict":"PASS"}' > "$STALE_OUT"
-run_wrapper stale-envelope pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --print-brief --out "$STALE_OUT"
+run_wrapper stale-envelope pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --print-brief --out "$STALE_OUT"
 stale_why=""
 [ "$CASE_STATUS" = 0 ] || stale_why="exit: expected 0, got $CASE_STATUS"
 [ -z "$stale_why" ] && [ -e "$STALE_OUT" ] && stale_why="the previous run's envelope survived a --print-brief run"
@@ -905,7 +1002,7 @@ if [ -n "$stale_why" ]; then fail_case stale-envelope "$stale_why"; else ok_case
 # --- secrets never reach the envelope -----------------------------------------
 # A vendor error stream is the likeliest place in this tool for a credential to
 # surface, and the summary is read straight back into an agent's context.
-run_wrapper secrets leak 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" secrets)"
+run_wrapper secrets leak 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" secrets)"
 secrets_why=""
 [ "$CASE_STATUS" = 5 ] || secrets_why="exit: expected 5, got $CASE_STATUS"
 if [ -z "$secrets_why" ] && [ ! -s "$CASE_OUT" ]; then
@@ -930,7 +1027,7 @@ if [ -n "$secrets_why" ]; then fail_case secrets "$secrets_why"; else ok_case se
 # it — `config.json` — matched any other filter either. The reviewer could read
 # every byte of it. The stub reports back which protected paths it can still
 # see from --cd, so a regression names the survivor instead of only denying it.
-run_wrapper snapshot-env pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" snapshot-env)"
+run_wrapper snapshot-env pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" snapshot-env)"
 SURVIVORS="$WORK/survivors-snapshot-env.txt"
 envdir_why=""
 # `ls-files --error-unmatch` et non `-f` : la présence dans l'arbre de travail ne
@@ -1061,7 +1158,7 @@ for info in help version; do
 done
 
 # --- the brief carries criteria and diff, and nothing else --------------------
-run_wrapper print-brief pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --print-brief --out "$(case_out_for "$FIX_DIRTY" print-brief)"
+run_wrapper print-brief pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --print-brief --out "$(case_out_for "$FIX_DIRTY" print-brief)"
 BRIEF_TEXT="$WORK/brief-captured.txt"
 printf '%s\n' "$CASE_STDOUT" > "$BRIEF_TEXT"
 brief_why=""
@@ -1174,7 +1271,7 @@ fi
 if [ -n "$framing_why" ]; then fail_case brief-framing "$framing_why"; else ok_case brief-framing "nonce markers, rules restated after the diff"; fi
 
 # --- untracked synthesis ------------------------------------------------------
-run_wrapper untracked-included pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --print-brief --out "$(case_out_for "$FIX_DIRTY" untracked-included)"
+run_wrapper untracked-included pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --print-brief --out "$(case_out_for "$FIX_DIRTY" untracked-included)"
 UNTRACKED_BRIEF="$WORK/brief-untracked.txt"
 printf '%s\n' "$CASE_STDOUT" > "$UNTRACKED_BRIEF"
 if grep -q 'UNTRACKED-MARKER-TOKEN' "$UNTRACKED_BRIEF"; then
@@ -1190,7 +1287,7 @@ grep -q 'SPACE-NAME-MARKER'   "$UNTRACKED_BRIEF" || odd_why="the file whose name
 [ -z "$odd_why" ] && ! grep -q 'NEWLINE-NAME-MARKER' "$UNTRACKED_BRIEF" && odd_why="the file whose name contains a newline never reached the brief"
 if [ -n "$odd_why" ]; then fail_case odd-names "$odd_why"; else ok_case odd-names "space and newline filenames both reviewed"; fi
 
-run_wrapper untracked-excluded pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --print-brief --no-untracked --out "$(case_out_for "$FIX_DIRTY" untracked-excluded)"
+run_wrapper untracked-excluded pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --print-brief --no-untracked --out "$(case_out_for "$FIX_DIRTY" untracked-excluded)"
 if printf '%s\n' "$CASE_STDOUT" | grep -q 'UNTRACKED-MARKER-TOKEN'; then
   fail_case untracked-excluded "--no-untracked still included the untracked file"
 else
@@ -1199,7 +1296,7 @@ fi
 
 # A repository with only included untracked changes must still reach Codex: the
 # tracked patch is empty, but the synthesized untracked diff is reviewable.
-run_wrapper untracked-only pass 0.153.1 "$FIX_CLEAN" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_CLEAN" untracked-only)"
+run_wrapper untracked-only pass 0.153.1 "$FIX_CLEAN" 1 -- --acs "$(acs_in "$FIX_CLEAN" "$ACS")" --base master --out "$(case_out_for "$FIX_CLEAN" untracked-only)"
 if [ "$CASE_STATUS" = 0 ] && [ "$CASE_CALLS" = 1 ] \
   && [ -e "$WORK/untracked-only-untracked-only.marker" ] \
   && jq -e '.verdict == "PASS"' "$CASE_OUT" >/dev/null 2>&1; then
@@ -1211,7 +1308,7 @@ fi
 case "$SUT" in
   /etc/profiles/* | /nix/store/*)
     CASE_RUNTIME_PATH_CLEAN=1
-    run_wrapper runtime-clean-path pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$ACS" --base master --out "$(case_out_for "$FIX_DIRTY" runtime-clean-path)"
+    run_wrapper runtime-clean-path pass 0.153.1 "$FIX_DIRTY" 1 -- --acs "$(acs_in "$FIX_DIRTY" "$ACS")" --base master --out "$(case_out_for "$FIX_DIRTY" runtime-clean-path)"
     unset CASE_RUNTIME_PATH_CLEAN
     assert_case runtime-clean-path 0 '^EXTERNAL-VERIFY PASS ' '.verdict == "PASS"' 1
     ;;

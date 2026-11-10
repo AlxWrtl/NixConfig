@@ -88,6 +88,9 @@ Usage:
 Options:
   --acs <FILE>          REQUIRED. Acceptance criteria, plain text. Never the plan;
                         a plan-shaped file is rejected with reason=input.
+                        Must resolve, symlinks included, to a regular file
+                        under <repo>/.claude/output/ (this binary runs outside
+                        the sandbox); anything else is a usage error.
   --base <REF>          Diff = merge-base(REF, HEAD)..worktree, plus untracked
                         files synthesized read-only. Default: the first of
                         master, main, or origin/HEAD that resolves.
@@ -164,6 +167,73 @@ no_envelope_exit() {
   exit "$3"
 }
 
+# place_envelope <rendered-file>: the ONLY write at $OUT. This binary runs
+# outside the sandbox and --out was validated before codex ran (up to
+# $TIMEOUT_S seconds earlier), so a sandboxed process may since have planted a
+# link at $OUT or swapped a directory under .claude/output/ for one. Hence:
+# re-check the physical directory before AND after `mkdir -p` (which follows a
+# planted link), refuse an $OUT that is a link or not a regular file, stage
+# beside it, re-check once more, then rename: rename(2) replaces the name and
+# never follows a link at the destination. Residual, accepted: the milliseconds
+# between the last re-check and the rename. Returns 1 on any refusal, having
+# written nothing at $OUT. Runs under `||`, so set -e is off: every step is
+# checked explicitly.
+place_envelope() {
+  pe_src="$1"
+  pe_dir="$(dirname "$OUT")"
+  pe_name="$(basename "$OUT")"
+  if ! dir_confined "$pe_dir"; then
+    printf '%s: refusing to write the envelope: %s no longer resolves under %s/\n' \
+      "$NAME" "$pe_dir" "$OUT_ROOT" >&2
+    return 1
+  fi
+  mkdir -p "$pe_dir" 2>/dev/null || true
+  if [ ! -d "$pe_dir" ]; then
+    printf '%s: cannot create output directory %s\n' "$NAME" "$pe_dir" >&2
+    return 1
+  fi
+  pe_phys="$(cd "$pe_dir" 2>/dev/null && pwd -P)" || pe_phys=""
+  case "$pe_phys" in
+    "$OUT_ROOT" | "$OUT_ROOT"/*) : ;;
+    *)
+      printf '%s: refusing to write the envelope: %s resolves to %s, outside %s/\n' \
+        "$NAME" "$pe_dir" "${pe_phys:-?}" "$OUT_ROOT" >&2
+      return 1
+      ;;
+  esac
+  pe_out="$pe_phys/$pe_name"
+  if [ -L "$pe_out" ] || { [ -e "$pe_out" ] && [ ! -f "$pe_out" ]; }; then
+    printf '%s: refusing to write the envelope: %s exists and is a symlink or not a regular file\n' \
+      "$NAME" "$OUT" >&2
+    return 1
+  fi
+  # mktemp creates with O_EXCL, so the staging name cannot be a pre-planted link.
+  pe_tmp="$(mktemp "$pe_phys/.$pe_name.XXXXXX" 2>/dev/null)" || pe_tmp=""
+  if [ -z "$pe_tmp" ]; then
+    printf '%s: cannot stage the envelope in %s\n' "$NAME" "$pe_phys" >&2
+    return 1
+  fi
+  if ! cat -- "$pe_src" >"$pe_tmp" 2>/dev/null; then
+    rm -f "$pe_tmp" 2>/dev/null || true
+    printf '%s: cannot stage the envelope in %s\n' "$NAME" "$pe_phys" >&2
+    return 1
+  fi
+  pe_recheck="$(cd "$pe_dir" 2>/dev/null && pwd -P)" || pe_recheck=""
+  if [ "$pe_recheck" != "$pe_phys" ] || [ -L "$pe_out" ] \
+    || { [ -e "$pe_out" ] && [ ! -f "$pe_out" ]; }; then
+    rm -f "$pe_tmp" 2>/dev/null || true
+    printf '%s: refusing to write the envelope: %s changed while it was staged\n' \
+      "$NAME" "$OUT" >&2
+    return 1
+  fi
+  if ! mv -f "$pe_tmp" "$pe_out" 2>/dev/null; then
+    rm -f "$pe_tmp" 2>/dev/null || true
+    printf '%s: cannot rename the envelope onto %s\n' "$NAME" "$OUT" >&2
+    return 1
+  fi
+  return 0
+}
+
 # emit <verdict> <reason-slug-or-dash> <exit-code>
 # Writes the envelope, prints the single stdout line, exits. The only exit door
 # for every path that got far enough to have an --out.
@@ -184,12 +254,19 @@ emit() {
     emit_envelope_reason="$emit_reason"
   fi
 
-  emit_dir="$(dirname "$OUT")"
-  if ! mkdir -p "$emit_dir" 2>/dev/null; then
-    printf '%s: cannot create output directory %s\n' "$NAME" "$emit_dir" >&2
+  # The envelope is rendered into a private temp file first, never straight
+  # into $OUT: --out was validated up to $TIMEOUT_S seconds ago, and this
+  # binary runs outside the sandbox while sandboxed processes can still write
+  # the repository. place_envelope re-checks the path before the rename.
+  emit_body=""
+  if [ -n "$WORK" ] && [ -d "$WORK" ]; then
+    emit_body="$(mktemp "$WORK/envelope.XXXXXX" 2>/dev/null)" || emit_body=""
+  fi
+  if [ -z "$emit_body" ]; then
+    emit_body="$(mktemp "${TMPDIR:-/tmp}/ttw-envelope.XXXXXX" 2>/dev/null)" || emit_body=""
   fi
 
-  if ! jq -n \
+  if [ -z "$emit_body" ] || ! jq -n \
     --arg tool "$TOOL" \
     --arg verdict "$emit_verdict" \
     --arg reason "$emit_envelope_reason" \
@@ -220,10 +297,9 @@ emit() {
        duration_s: $duration,
        summary: ($summary[0:400]),
        findings: ($findings | .[0:10])
-     }' >"$OUT" 2>/dev/null; then
-    # A half-written envelope is worse than none: a reader cannot tell it apart
-    # from a complete one.
-    rm -f "$OUT" 2>/dev/null || true
+     }' >"$emit_body" 2>/dev/null || ! place_envelope "$emit_body"; then
+    # Nothing was written at $OUT: the rename is the only write there, so no
+    # half-written envelope can exist for a reader to mistake for a whole one.
     printf '%s: failed to write the verdict envelope to %s (original reason=%s)\n' \
       "$NAME" "$OUT" "$emit_reason" >&2
     # A green whose artefact does not exist is the one failure this tool must
@@ -237,6 +313,7 @@ emit() {
     fi
     emit_reason="envelope"
   fi
+  if [ -n "$emit_body" ]; then rm -f "$emit_body" 2>/dev/null || true; fi
 
   say_line "$emit_verdict" "$MODEL_USED" "$emit_count" "$emit_reason" "$OUT"
   exit "$emit_code"
@@ -404,6 +481,16 @@ if ! REPO_PHYS="$(abs_physical "$REPO")"; then
 fi
 OUT_ROOT="$REPO_PHYS/.claude/output"
 
+# dir_confined <dir>: 0 when the PHYSICAL form of <dir> (its deepest existing
+# ancestor resolved, the rest re-attached) is $OUT_ROOT or below it.
+dir_confined() {
+  dc_phys="$(abs_physical "$1")" || return 1
+  case "$dc_phys" in
+    "$OUT_ROOT" | "$OUT_ROOT"/*) return 0 ;;
+  esac
+  return 1
+}
+
 if [ -z "$OUT" ]; then
   OUT="$OUT_ROOT/ttw/external-verify.json"
 else
@@ -423,21 +510,58 @@ fi
 
 # A stale envelope is a lie waiting to be read: --print-brief exits 0 and writes
 # nothing, so a caller checking $? and then reading this path would be handed a
-# previous run's PASS. Clear it before any other work.
-rm -f "$OUT" 2>/dev/null || true
+# previous run's PASS. Clear it before any other work. Re-checked first: rm
+# follows a parent directory swapped for a link since the validation above.
+if dir_confined "$(dirname "$OUT")"; then
+  rm -f "$OUT" 2>/dev/null || true
+fi
 
 # --- acceptance criteria ------------------------------------------------------
+#
+# This binary runs OUTSIDE the sandbox (excludedCommands) and is auto-approved,
+# so an unconstrained --acs would read, and with --print-brief print, any file
+# the sandbox denies. Same confinement as --out, on the PHYSICAL path of the
+# file itself: every component, the last one included, is resolved, so a link
+# under .claude/output/ pointing outside is refused. The content is then copied
+# ONCE into $WORK and only that copy is read afterwards, so swapping the file
+# later changes nothing. Residual, accepted: the milliseconds between realpath
+# and the copy.
+case "$ACS" in
+  */../* | */.. | ../* | ..) usage_error "--acs may not contain a '..' segment: $ACS" ;;
+esac
+ACS_ABS="$ACS"
+case "$ACS_ABS" in
+  /*) : ;;
+  *) ACS_ABS="$PWD/$ACS_ABS" ;;
+esac
+if [ -e "$ACS_ABS" ] || [ -L "$ACS_ABS" ]; then
+  ACS_PHYS="$(realpath "$ACS_ABS" 2>/dev/null)" || ACS_PHYS=""
+  [ -n "$ACS_PHYS" ] || usage_error "--acs cannot be resolved to a physical path: $ACS"
+else
+  ACS_PHYS="$(abs_physical "$ACS_ABS")" || ACS_PHYS=""
+  [ -n "$ACS_PHYS" ] || usage_error "--acs has no existing parent directory: $ACS"
+fi
+case "$ACS_PHYS" in
+  "$OUT_ROOT"/*) : ;;
+  *) usage_error "--acs must resolve under $OUT_ROOT/ (got: $ACS_PHYS)" ;;
+esac
 
-if [ ! -f "$ACS" ]; then
+if [ ! -f "$ACS_PHYS" ]; then
   SUMMARY="acceptance-criteria file not found: $ACS"
   emit "BLOCKED" "input" 8
 fi
-if [ ! -s "$ACS" ]; then
+# `cat`, not `cp`: one read of the resolved path, no metadata, no link games.
+ACS_COPY="$WORK/acs.txt"
+if ! cat -- "$ACS_PHYS" >"$ACS_COPY" 2>/dev/null; then
+  SUMMARY="acceptance-criteria file could not be read: $ACS"
+  emit "BLOCKED" "input" 8
+fi
+if [ ! -s "$ACS_COPY" ]; then
   SUMMARY="acceptance-criteria file is empty: $ACS"
   emit "BLOCKED" "input" 8
 fi
 
-ACS_BYTES="$(wc -c <"$ACS" | tr -d ' ')"
+ACS_BYTES="$(wc -c <"$ACS_COPY" | tr -d ' ')"
 if [ "$ACS_BYTES" -gt "$MAX_DIFF_BYTES" ]; then
   SUMMARY="acceptance-criteria file is $ACS_BYTES bytes, over the --max-diff-bytes limit of $MAX_DIFF_BYTES"
   emit "BLOCKED" "input" 8
@@ -448,7 +572,7 @@ fi
 # quietly undoes that, and it is an easy slip: the two files live side by side.
 # TTW now writes a criteria-only artefact at .claude/output/ttw/{id}/02-acs.md,
 # so this guard enforces a rule that already exists on paper.
-if grep -qE 'Premises|Risks & Mitigations|## 2\. Tasks' "$ACS"; then
+if grep -qE 'Premises|Risks & Mitigations|## 2\. Tasks' "$ACS_COPY"; then
   SUMMARY="the --acs file looks like a plan, not acceptance criteria: it contains plan headings, and the reviewer must not be told the rationale"
   emit "BLOCKED" "input" 8
 fi
@@ -782,7 +906,7 @@ Your task:
 EOF
   printf '===== BEGIN DATA UNDER REVIEW [%s] =====\n' "$NONCE"
   printf '===== ACCEPTANCE CRITERIA [%s] =====\n' "$NONCE"
-  cat "$ACS"
+  cat "$ACS_COPY"
   printf '\n===== DIFF (base: %s, untracked files included: %s) [%s] =====\n' \
     "$BASE" "$UNTRACKED_COUNT" "$NONCE"
   cat "$DIFF_FILE"

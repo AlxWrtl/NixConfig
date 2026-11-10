@@ -160,7 +160,8 @@ in
       # An exclusion only applies when the Bash call is that command ALONE:
       # `cd … &&`, `$(…)`, heredoc or redirection keep the call sandboxed.
       # hooks/lone-excluded-bash.js denies those shapes for git push/commit/
-      # pull/fetch, gh, claude-dispatch and pnpm localdb:start/stop before they run.
+      # pull/fetch, gh, claude-dispatch, ttw-verify-external and pnpm
+      # localdb:start/stop before they run.
       # nix flake check: sandboxed it hits EPERM on the daemon socket
       # (/nix/var/nix/daemon-socket/socket) and on ~/.cache/nix sqlite.
       # Excluding the one command; the daemon socket is never in
@@ -174,6 +175,17 @@ in
         "sudo *"
         "darwin-rebuild *"
         "codex *"
+        # ttw-verify-external: sandboxed, its codex subprocess cannot reach the
+        # OpenAI API and waits out --timeout with no answer (measured 2026-11-10,
+        # same diff: sandboxed BLOCKED at 150 s; unsandboxed FAIL, 2 findings,
+        # 23 s). Same rights as "codex *" above, through a wrapper that pins
+        # `codex exec -s read-only`. --acs and --out are confined to
+        # <repo>/.claude/output/ (physical paths, --out re-checked just before
+        # the rename). Risk accepted (user decision 2026-11-10) for the
+        # remaining millisecond window and for codex reading under -s
+        # read-only. Lone call only; hooks/lone-excluded-bash.js denies the
+        # compound shapes.
+        "ttw-verify-external *"
         # claude-dispatch: sandboxed `abduco -n` → EPERM on create-session
         # (its socket, measured 2026-10-20), and a sandboxed abduco server would
         # pass its Seatbelt profile to the session. Wrapper, never

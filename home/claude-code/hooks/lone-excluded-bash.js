@@ -2,15 +2,16 @@
 "use strict";
 
 // The sandbox-excluded commands (settings.nix excludedCommands: git
-// push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start/stop,
-// pnpm run deploy/deploy:prod) leave
+// push/commit/pull/fetch, gh, claude-dispatch, ttw-verify-external,
+// pnpm localdb:start/stop, pnpm run deploy/deploy:prod) leave
 // the sandbox only when the Bash call is made of them alone. `cd x && git push`,
 // `git -C x push`, a pipe, `$(...)`, a heredoc or a file redirection keep the
 // WHOLE call sandboxed, where the keychain and ~/.ssh are denied: the network
 // or signing step fails (x509, no SSH key; EPERM on the abduco socket (create-session) for claude-dispatch;
 // EPERM on the colima docker socket for pnpm localdb:start/stop, and those two
 // are exact entries: an argument keeps them in; so are pnpm run deploy /
-// deploy:prod, which need the keychain for wrangler OAuth)
+// deploy:prod, which need the keychain for wrangler OAuth;
+// ttw-verify-external: no EPERM at all, its codex cannot reach the API and the call waits out its timeout)
 // and the retry turns into a permission prompt. Refusing that
 // shape up front, with the fix in the reason, costs one retry instead.
 //
@@ -55,9 +56,9 @@ const KEYWORDS = ["if", "then", "else", "elif", "do", "while", "until", "!", "{"
 const SHELLS = ["sh", "bash", "zsh", "dash", "ksh"];
 // git global options that take their value as the NEXT word.
 const GIT_ARG_OPTS = ["-C", "-c", "--git-dir", "--work-tree", "--namespace", "--config-env"];
-// Cheap gate: no `git`, `gh`, `claude-dispatch` or `pnpm` word anywhere,
+// Cheap gate: no `git`, `gh`, `claude-dispatch`, `ttw-verify-external` or `pnpm` word anywhere,
 // nothing to lex.
-const PREFILTER = /\bg(?:it|h)\b|\bclaude-dispatch\b|\bpnpm\b/;
+const PREFILTER = /\bg(?:it|h)\b|\bclaude-dispatch\b|\bttw-verify-external\b|\bpnpm\b/;
 const ASSIGN = /^[A-Za-z_][A-Za-z0-9_]*=/;
 
 const CAUSE = {
@@ -377,6 +378,7 @@ function segTargets(words, depth) {
   const cmd = base(words[k].val);
   if (cmd === "gh") return ["gh"];
   if (cmd === "claude-dispatch") return [cmd];
+  if (cmd === "ttw-verify-external") return [cmd];
   if (cmd === "pnpm") {
     let j = k + 1;
     let viaRun = false;
@@ -420,7 +422,7 @@ function targetsOf(r, depth) {
 }
 
 // Clean = what an excludedCommands entry matches: `git` then the verb, or
-// `gh` / `claude-dispatch`, literal words at the head of the
+// `gh` / `claude-dispatch` / `ttw-verify-external`, literal words at the head of the
 // segment; `pnpm` then a localdb script, or `pnpm run` then a deploy
 // script, and nothing after (exact entries).
 function isCleanTarget(words) {
@@ -428,6 +430,7 @@ function isCleanTarget(words) {
   const w1 = words[1];
   if (w0 === undefined || !w0.plain) return false;
   if (w0.val === "gh" || w0.val === "claude-dispatch") return true;
+  if (w0.val === "ttw-verify-external") return true;
   if (w0.val === "pnpm" && words.length === 3 && w1.plain && w1.val === "run" && words[2].plain && RUN_SCRIPTS.includes(words[2].val)) return true;
   if (w0.val === "pnpm") return words.length === 2 && w1.plain && PNPM_SCRIPTS.includes(w1.val);
   return w0.val === "git" && w1 !== undefined && w1.plain && VERBS.includes(w1.val);
@@ -475,7 +478,7 @@ function main() {
   let v;
   try { v = decide(cmd); } catch { allow(); return; }
   if (v === null) { allow(); return; }
-  deny("BLOCKED: `" + safe(v.target) + "` leaves the sandbox only when the Bash call is that command alone; here it runs " + v.cause + ", so the whole call stays sandboxed and its network, signing or docker-socket step fails. Run it ALONE in its own Bash call, from the project root: the cwd resets after each call, so neither cd nor git -C can help, and a repo outside the project root has no unsandboxed form (let the sandboxed call fail, then answer the permission prompt). Pass a message by file (git commit -F <file>, gh ... --body-file <file>), filter gh output with --jq instead of a pipe. Give claude-dispatch its brief inline as one quoted line, never through $(...) or a file. Run pnpm localdb:start / pnpm localdb:stop as exactly those two words: no argument, no pnpm option, no pnpm run; other pnpm scripts (dev:localdb, smoke:localdb) stay sandboxed by design. Run pnpm run deploy / pnpm run deploy:prod as exactly those three words, from the project root: no cd, no argument, no redirection. Lone git push/commit/pull/fetch, gh, claude-dispatch, pnpm localdb:start, pnpm localdb:stop, pnpm run deploy and pnpm run deploy:prod commands may still be joined with &&.");
+  deny("BLOCKED: `" + safe(v.target) + "` leaves the sandbox only when the Bash call is that command alone; here it runs " + v.cause + ", so the whole call stays sandboxed and its network, signing or docker-socket step fails. Run it ALONE in its own Bash call, from the project root: the cwd resets after each call, so neither cd nor git -C can help, and a repo outside the project root has no unsandboxed form (let the sandboxed call fail, then answer the permission prompt). Pass a message by file (git commit -F <file>, gh ... --body-file <file>), filter gh output with --jq instead of a pipe. Give claude-dispatch its brief inline as one quoted line, never through $(...) or a file. Run ttw-verify-external alone, from the project root: sandboxed it times out instead of failing. Run pnpm localdb:start / pnpm localdb:stop as exactly those two words: no argument, no pnpm option, no pnpm run; other pnpm scripts (dev:localdb, smoke:localdb) stay sandboxed by design. Run pnpm run deploy / pnpm run deploy:prod as exactly those three words, from the project root: no cd, no argument, no redirection. Lone git push/commit/pull/fetch, gh, claude-dispatch, ttw-verify-external, pnpm localdb:start, pnpm localdb:stop, pnpm run deploy and pnpm run deploy:prod commands may still be joined with &&.");
 }
 
 function start() {

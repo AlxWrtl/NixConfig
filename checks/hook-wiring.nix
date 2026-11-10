@@ -746,15 +746,27 @@ let
     };
     A-le-dispatch-prefilter = {
       hook = "lone-excluded-bash.js";
-      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bpnpm\\b/;";
+      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bttw-verify-external\\b|\\bpnpm\\b/;";
     };
     A-le-dispatch-clean = {
       hook = "lone-excluded-bash.js";
       text = "if (w0.val === \"gh\" || w0.val === \"claude-dispatch\") return true;";
     };
+    A-le-tve-target = {
+      hook = "lone-excluded-bash.js";
+      text = "if (cmd === \"ttw-verify-external\") return [cmd];";
+    };
+    A-le-tve-prefilter = {
+      hook = "lone-excluded-bash.js";
+      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bttw-verify-external\\b|\\bpnpm\\b/;";
+    };
+    A-le-tve-clean = {
+      hook = "lone-excluded-bash.js";
+      text = "if (w0.val === \"ttw-verify-external\") return true;";
+    };
     A-le-pnpm-prefilter = {
       hook = "lone-excluded-bash.js";
-      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bpnpm\\b/;";
+      text = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bttw-verify-external\\b|\\bpnpm\\b/;";
     };
     A-le-pnpm-target = {
       hook = "lone-excluded-bash.js";
@@ -2255,7 +2267,7 @@ let
       swaps = [
         {
           anchor = "A-le-dispatch-prefilter";
-          to = "const PREFILTER = /\\bg(?:it|h)\\b|\\bpnpm\\b/;";
+          to = "const PREFILTER = /\\bg(?:it|h)\\b|\\bttw-verify-external\\b|\\bpnpm\\b/;";
         }
       ];
     }
@@ -2269,6 +2281,45 @@ let
         {
           anchor = "A-le-dispatch-clean";
           to = "if (w0.val === \"gh\") return true;";
+        }
+      ];
+    }
+    # ttw-verify-external not a target: `cd /x && ttw-verify-external …` passes.
+    {
+      id = "M-le-tve-target";
+      hook = "lone-excluded-bash.js";
+      kills = "le-tve-cd-deny";
+      swaps = [
+        {
+          anchor = "A-le-tve-target";
+          to = "if (false) return [cmd];";
+        }
+      ];
+    }
+    # The prefilter blind to ttw-verify-external: a call with no
+    # git/gh/claude-dispatch/pnpm word is never lexed,
+    # `VAR=x ttw-verify-external …` passes.
+    {
+      id = "M-le-tve-prefilter";
+      hook = "lone-excluded-bash.js";
+      kills = "le-tve-env-deny";
+      swaps = [
+        {
+          anchor = "A-le-tve-prefilter";
+          to = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bpnpm\\b/;";
+        }
+      ];
+    }
+    # A lone ttw-verify-external not clean: the call it must let out is
+    # denied. Killed on an ALLOW case, as an over-block.
+    {
+      id = "M-le-tve-clean";
+      hook = "lone-excluded-bash.js";
+      kills = "le-tve-allow";
+      swaps = [
+        {
+          anchor = "A-le-tve-clean";
+          to = "if (false) return true;";
         }
       ];
     }
@@ -2293,7 +2344,7 @@ let
       swaps = [
         {
           anchor = "A-le-pnpm-prefilter";
-          to = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b/;";
+          to = "const PREFILTER = /\\bg(?:it|h)\\b|\\bclaude-dispatch\\b|\\bttw-verify-external\\b/;";
         }
       ];
     }
@@ -3277,6 +3328,9 @@ let
     "le-retired-bg-push-deny"
     "le-dispatch-env-deny"
     "le-dispatch-abs-deny"
+    "le-tve-cd-deny"
+    "le-tve-chain-deny"
+    "le-tve-env-deny"
     "le-pnpm-cd-deny"
     "le-pnpm-pipe-deny"
     "le-pnpm-args-deny"
@@ -3297,6 +3351,7 @@ let
     "le-status-diff-allow"
     "le-chain-targets-allow"
     "le-dispatch-allow"
+    "le-tve-allow"
     "le-pnpm-start-allow"
     "le-pnpm-stop-allow"
     "le-pnpm-chain-allow"
@@ -4812,6 +4867,14 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'CLAUDE_CONFIG_DIR=/x claude-dispatch fix-a "fix the typo"')"; is_deny "next to another command" ;;
         le-dispatch-abs-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in '/etc/profiles/per-user/alx/bin/claude-dispatch fix-a "fix the typo"')"; is_deny "next to another command" ;;
+        # ttw-verify-external sandboxed times out with no verdict: only a
+        # lone call leaves the sandbox.
+        le-tve-cd-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'cd /x && ttw-verify-external --acs a.md --base master --out .claude/output/ttw/r/v.json')"; is_deny "next to another command" ;;
+        le-tve-chain-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'ttw-verify-external --acs a.md --base master --out o.json; echo rc=$?')"; is_deny "next to another command" ;;
+        le-tve-env-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'TTW_CODEX_MODEL=x ttw-verify-external --acs a.md --base master --out o.json')"; is_deny "next to another command" ;;
         # pnpm localdb:start/stop are exact entries: any prefix, pipe,
         # argument or `pnpm run` keeps the call sandboxed.
         le-pnpm-cd-deny)
@@ -4858,6 +4921,8 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'git commit -F m.txt && git push')"; is_allow ;;
         le-dispatch-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'claude-dispatch fix-a "fix the typo"')"; is_allow ;;
+        le-tve-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'ttw-verify-external --acs a.md --base master --out .claude/output/ttw/r/v.json')"; is_allow ;;
         le-pnpm-start-allow)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(bb_in 'pnpm localdb:start')"; is_allow ;;
         le-pnpm-stop-allow)

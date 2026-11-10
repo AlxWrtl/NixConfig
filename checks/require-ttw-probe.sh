@@ -165,6 +165,8 @@
 #   m97 the codex door's repo check starts in its missing dir (no walk up).
 #   m98 the `ttw` needle never matches (no Skill call opens the gate).
 #   m99 the `ttw` needle loses its closing quote (`"skill":"ttwx"` opens).
+#   m100 the path prefix before cp|mv|… dropped (`/bin/cp` escapes again).
+#   m101 the path prefix class widened to \S* (quadratic again).
 #
 # THE EXACT COMMANDS THAT MAKE THIS PROBE GO RED:
 #
@@ -179,7 +181,7 @@
 #
 # usage: require-ttw-probe.sh [hook.js]
 #        require-ttw-probe.sh --mutants
-#        require-ttw-probe.sh --mutant m1..m99
+#        require-ttw-probe.sh --mutant m1..m101
 
 set -euo pipefail
 
@@ -193,7 +195,7 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="$REPO_ROOT/checks/$(basename "${BASH_SOURCE[0]}")"
 
-ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97 m98 m99"
+ALL_MUTANTS="m1 m2 m3 m4 m5 m6 m7 m8 m9 m10 m11 m12 m13 m14 m15 m16 m17 m18 m19 m20 m21 m22 m23 m24 m25 m26 m27 m28 m29 m30 m31 m32 m33 m34 m35 m36 m37 m38 m39 m40 m41 m42 m43 m44 m45 m46 m47 m48 m49 m50 m51 m52 m53 m54 m55 m56 m57 m58 m59 m60 m61 m62 m63 m64 m65 m66 m67 m68 m69 m70 m71 m72 m73 m74 m75 m76 m77 m78 m79 m80 m81 m82 m83 m84 m85 m86 m87 m88 m89 m90 m91 m92 m93 m94 m95 m96 m97 m98 m99 m100 m101"
 
 MODE="run"
 ONE_MUTANT=""
@@ -341,7 +343,7 @@ M7_EXPECT="cd-subdir-in-repo script-in-repo script-in-repo-via-symlink"
 M8_EXPECT="cd-relative-noname script-names-sibling-prefix script-out-of-repo-no-repo-path"
 M9_EXPECT="script-over-256k"
 M10_EXPECT="cd-quoted-temp-then-inline-write cd-temp-or-exit-then-inline-write cd-temp-then-inline-write"
-M11_EXPECT="assign-over-4096-env-unresolved bounded-64k-separators fast-64k-dollar-paren fast-64k-newlines script-same-command-var fast-64k-dq-subst"
+M11_EXPECT="assign-over-4096-env-unresolved bounded-64k-separators fast-64k-dollar-paren fast-64k-newlines script-same-command-var fast-64k-dq-subst fast-64k-semi-slash fast-64k-semi-slash-tee fast-64k-dp-slash"
 M12_EXPECT="flags-28-fast"
 M13_EXPECT="script-newline-var"
 M14_EXPECT="dollar-paren-node-64k-fast heredoc-after-newline-not-interp node-newlines-64k-fast"
@@ -364,7 +366,7 @@ M30_EXPECT="cd-temp-or-exit-then-inline-write"
 M31_EXPECT="inline-fstring-temp-write"
 M32_EXPECT="node-e-rmdirsync"
 M33_EXPECT="python-c-open-space"
-M34_EXPECT="fast-64k-claude-projects fast-64k-dollar-paren fast-64k-word fast-cap-claude-projects fast-expand-bomb"
+M34_EXPECT="fast-64k-claude-projects fast-64k-dollar-paren fast-64k-word fast-cap-claude-projects fast-expand-bomb fast-64k-slash fast-64k-a-slash fast-64k-dp-slash"
 M35_EXPECT="fast-cap-claude-projects"
 M36_EXPECT="fast-64k-newlines"
 M37_EXPECT="fast-64k-sed"
@@ -428,9 +430,12 @@ M94_EXPECT="queued-human-flag-notification-mode"
 M95_EXPECT="write-new-dir-in-repo"
 M96_EXPECT="write-new-dir-in-repo"
 M97_EXPECT="codex-cd-new-dir-in-repo-from-nogit codex-C-new-dir-in-repo-from-nogit"
-# Every case that passes only on a Skill call: MEASURED 2026-11-08 (20 red).
-M98_EXPECT="bash-mkdir-cd-new-dir-ttw codex-ttw compact-summary-after-ttw huge-command-ttw queued-human-flag-notification-mode queued-human-then-ttw queued-humanturn-string queued-meta-human queued-meta-top queued-peer-handback queued-task-notification sub-continued-under-ttw sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-before-ttw sub-spawned-under-ttw-later-user-turn ttw-already-ran ttw-already-ran-script write-existing-dir-ttw write-new-dir-in-repo-ttw"
+# Every case that passes only on a Skill call: MEASURED 2026-11-08 (21 red).
+M98_EXPECT="bash-mkdir-cd-new-dir-ttw codex-ttw compact-summary-after-ttw huge-command-ttw queued-human-flag-notification-mode queued-human-then-ttw queued-humanturn-string queued-meta-human queued-meta-top queued-peer-handback queued-task-notification sub-continued-under-ttw sub-sendmessage-other-agent sub-spawn-line-spaced sub-spawned-before-ttw sub-spawned-under-ttw-later-user-turn ttw-already-ran ttw-already-ran-script write-existing-dir-ttw write-new-dir-in-repo-ttw cp-path-bin-ttw"
 M99_EXPECT="ttw-prefix-not-the-skill"
+M100_EXPECT="cp-path-bin mv-path-usr-bin tee-path-dot tee-path-after-pipe touch-path-after-and cp-path-dollar-paren rsync-path-relative cp-path-tilde cp-path-after-newline path-after-real-newline-semi"
+# MEASURED 2026-11-10: \S* lets the prefix take `=`/`#` back (3 false positives) and backtrack (5 timeouts).
+M101_EXPECT="path-assign-then-cmd path-assign-var-cmd path-comment-after-cmd bounded-64k-separators fast-64k-dollar-paren fast-64k-semi-slash fast-64k-semi-slash-tee fast-64k-dp-slash"
 
 mutant_expect() { # mutant_expect <mN>
   local v
@@ -502,7 +507,7 @@ build_mutant() { # build_mutant <mN> <destination>
     m33) from='\bopen\s{0,8}\(' to='\bopen\(' ;;
     m34) from='(?<![^\s'"'"'"|;&)])[^\s'"'"'"|;&)]*(\$\{?TMPDIR' to='[^\s'"'"'"|;&)]*(\$\{?TMPDIR' ;;
     m35) from='\/\.claude\/projects\/[^\s'"'"'"|;&)/]*\/memory\/' to='\/\.claude\/projects\/[^\s'"'"'"|;&)]*\/memory\/' ;;
-    m36) from='"(^|[\\n|;&][ \\t]*|\\$\\([ \\t]*|&&[ \\t]*|\\|\\|[ \\t]*)"' to='"(^|[\\n|;&]\\s*|\\$\\(\\s*|&&\\s*|\\|\\|\\s*)"' ;;
+    m36) from='"(^|(?:(?<!\\\\)\\n|[|;&])[ \\t]*|\\$\\([ \\t]*|&&[ \\t]*|\\|\\|[ \\t]*)"' to='"(^|(?:(?<!\\\\)\\n|[|;&])\\s*|\\$\\(\\s*|&&\\s*|\\|\\|\\s*)"' ;;
     m37) from='[^|;&]{0,1024}\s-\w*i\b/' to='[^|;&]*\s-\w*i\b/' ;;
     m38) from='command.length > 262144' to='command.length > 1e12' ;;
     m39) from='if (n !== "TMPDIR" && process.env[n]' to='if (false && process.env[n]' ;;
@@ -573,6 +578,8 @@ build_mutant() { # build_mutant <mN> <destination>
     m97) from='              while (!isDir(p) && path.dirname(p) !== p) p = path.dirname(p);' to='' ;;
     m98) from='{\"skill\":\"ttw\""' to='{\"skill\":\"ttw-never\""' ;;
     m99) from='{\"skill\":\"ttw\""' to='{\"skill\":\"ttw"' ;;
+    m100) from='"(?:[^\\s;&|()`=#]*/)?(cp|mv|' to='"(cp|mv|' ;;
+    m101) from='(?:[^\\s;&|()`=#]*/)?(cp' to='(?:\\S*/)?(cp' ;;
   esac
   if [ "$which" != "m11" ] && [ "$which" != "m27" ] && [ "$which" != "m29" ] && [ "$which" != "m73" ]; then
     grep -qF -- "$from" "$ORIG" || {
@@ -930,6 +937,18 @@ LONG_HOME="HOME=$EXT$(printf '/.%.0s' $(seq 2500)); python3 \"\$HOME/edit.py\""
 W64="$(head -c 65536 /dev/zero | tr '\0' 'x')"
 NL64="$(printf x; head -c 65534 /dev/zero | tr '\0' '\n'; printf x)"
 DP64="$(head -c 32768 /dev/zero | tr '\0' 'x' | sed 's/x/$(/g')"
+SL64="$(head -c 65536 /dev/zero | tr '\0' '/')"
+ASL64="$(head -c 32768 /dev/zero | tr '\0' 'x' | sed 's|x|a/|g')"
+SSL64="$(head -c 32768 /dev/zero | tr '\0' 'x' | sed 's|x|;/|g')"
+SSLT64="$(head -c 13107 /dev/zero | tr '\0' 'x' | sed 's|x|;/tee|g')"
+DPSL64="$(head -c 21845 /dev/zero | tr '\0' 'x' | sed 's|x|$(/|g')"
+NL_CP="$(printf 'ls\n/bin/cp a.txt b.txt')"
+NL_TEE="$(printf 'ls\n./bin/tee f.txt')"
+CONT_LS="$(printf 'ls -l \\\n  /bin/cp /usr/bin/tee')"
+CONT_GIT="$(printf 'git diff --stat \\\n  home/x/patch \\\n  home/y')"
+ASSIGN_RSYNC="$(printf 'RSYNC=/x/bin/rsync\necho hi')"
+ASSIGN_CP="$(printf 'CP=/bin/cp\n$CP --version')"
+COMMENT_CP="$(printf 'echo done\n#/bin/cp a b')"
 CP64="$(printf '/.claude/projects/%.0s' $(seq 3641))"
 # The same word just under the cap: the memory-dir class admitting `/` is
 # quadratic on it, 0.4 s at 64 KB (under the bound) but 6 s here.
@@ -1096,6 +1115,17 @@ CMT_APOS="$(printf "# don't touch\npython3 %s/edit.py 'x'" "$EXT")"
 # --- MUST DENY: the shell door (control) -------------------------------------
 check ctl-redirect deny "$REPO" "$T_NOTTW" 'echo x > src/a.ts'
 check perl-0pi-in-place deny "$REPO" "$T_NOTTW" "perl -0pi -e 's/a\\nb/c/s' src/x.ts"
+check cp-bare deny "$REPO" "$T_NOTTW" 'cp a.txt b.txt'
+check cp-path-bin deny "$REPO" "$T_NOTTW" '/bin/cp a.txt b.txt'
+check mv-path-usr-bin deny "$REPO" "$T_NOTTW" '/usr/bin/mv a.txt b.txt'
+check tee-path-dot deny "$REPO" "$T_NOTTW" './bin/tee f.txt'
+check tee-path-after-pipe deny "$REPO" "$T_NOTTW" 'echo x | /usr/bin/tee f.txt'
+check touch-path-after-and deny "$REPO" "$T_NOTTW" 'true && /usr/bin/touch f.txt'
+check cp-path-dollar-paren deny "$REPO" "$T_NOTTW" 'x=$(/bin/cp a.txt b.txt)'
+check rsync-path-relative deny "$REPO" "$T_NOTTW" 'tools/rsync -a a/ b/'
+check cp-path-tilde deny "$REPO" "$T_NOTTW" '~/bin/cp a.txt b.txt'
+check cp-path-after-newline deny "$REPO" "$T_NOTTW" "$NL_CP"
+check path-after-real-newline-semi deny "$REPO" "$T_NOTTW" "$NL_TEE"
 # --- MUST DENY: interpreter inline code and heredoc --------------------------
 check heredoc-quoted-hash-body deny "$REPO" "$T_NOTTW" "$HD_HASH"
 check python-c-writes-package-json deny "$REPO" "$T_NOTTW" "python3 -c \"import json; open('package.json', 'w').write(json.dumps({}))\""
@@ -1137,6 +1167,22 @@ check script-tmpdir-empty deny "$REPO" "$T_NOTTW" "python3 \"\$TMPDIR/$SBX_REL/e
 TMPDIR_MODE=set
 check python-c-open-space deny "$REPO" "$T_NOTTW" "python3 -c \"open ('a', 'w').write('1')\""
 check node-e-rmdirsync deny "$REPO" "$T_NOTTW" "node -e \"require('fs').rmdirSync('build')\""
+# --- MUST PASS: a path-spelled write word out of command position ----------
+check cp-path-bin-ttw pass "$REPO" "$T_TTW" '/bin/cp a.txt b.txt'
+check cp-path-bin-nogit pass "$NOGIT" "$T_NOTTW" '/bin/cp a.txt b.txt'
+check path-word-in-arg-ls pass "$REPO" "$T_NOTTW" 'ls docs/touch x'
+check path-word-in-arg-cat pass "$REPO" "$T_NOTTW" 'cat a/cp b'
+check path-cmd-as-arg pass "$REPO" "$T_NOTTW" 'ls -l /bin/cp /usr/bin/tee'
+check path-longer-word-scp pass "$REPO" "$T_NOTTW" '/usr/bin/scp a.txt host:b'
+check path-longer-word-cpp pass "$REPO" "$T_NOTTW" '/usr/bin/cpp a.c'
+check path-tee-no-arg pass "$REPO" "$T_NOTTW" 'ls; /usr/bin/tee; echo'
+check path-arg-continuation pass "$REPO" "$T_NOTTW" "$CONT_LS"
+check path-arg-continuation-git pass "$REPO" "$T_NOTTW" "$CONT_GIT"
+check path-assign-then-cmd pass "$REPO" "$T_NOTTW" "$ASSIGN_RSYNC"
+check path-assign-var-cmd pass "$REPO" "$T_NOTTW" "$ASSIGN_CP"
+check path-comment-after-cmd pass "$REPO" "$T_NOTTW" "$COMMENT_CP"
+# Quotes are blanked before matching: a quoted command path is a known gap.
+check cp-path-quoted-known-gap pass "$REPO" "$T_NOTTW" '"/bin/cp" a.txt b.txt'
 # --- MUST PASS: read-only and module calls -----------------------------------
 check python-m-json-tool pass "$REPO" "$T_NOTTW" 'python3 -m json.tool package.json'
 check node-version pass "$REPO" "$T_NOTTW" 'node --version'
@@ -1320,6 +1366,11 @@ check assign-doubling-fast pass-fast "$REPO" "$T_NOTTW" "$DOUBLING"
 check fast-64k-word pass-fast "$REPO" "$T_NOTTW" "$W64"
 check fast-64k-newlines pass-fast "$REPO" "$T_NOTTW" "$NL64"
 check fast-64k-dollar-paren pass-fast "$REPO" "$T_NOTTW" "$DP64"
+check fast-64k-slash pass-fast "$REPO" "$T_NOTTW" "$SL64"
+check fast-64k-a-slash pass-fast "$REPO" "$T_NOTTW" "$ASL64"
+check fast-64k-semi-slash pass-fast "$REPO" "$T_NOTTW" "$SSL64"
+check fast-64k-semi-slash-tee pass-fast "$REPO" "$T_NOTTW" "$SSLT64"
+check fast-64k-dp-slash pass-fast "$REPO" "$T_NOTTW" "$DPSL64"
 check fast-64k-claude-projects pass-fast "$REPO" "$T_NOTTW" "$CP64"
 check fast-64k-sed pass-fast "$REPO" "$T_NOTTW" "$SED64"
 check fast-cap-claude-projects pass-fast "$REPO" "$T_NOTTW" "$CPCAP"

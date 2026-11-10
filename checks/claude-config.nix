@@ -301,6 +301,7 @@ let
     "sudo *"
     "darwin-rebuild *"
     "codex *"
+    "ttw-verify-external *"
     "claude-dispatch *"
     "gh *"
     "git push *"
@@ -883,7 +884,7 @@ let
       msg =
         "sandbox.excludedCommands is missing: "
         + builtins.concatStringsSep ", " missingExcluded
-        + " — codex/gh need the keychain, `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`abduco -n`) hits EPERM on create-session (its socket) and a sandboxed abduco server would pass its Seatbelt profile to the session; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
+        + " — codex/gh need the keychain, ttw-verify-external's codex cannot reach the OpenAI API sandboxed (it times out with no verdict), `git push`/`git pull`/`git fetch` the ~/.ssh key and `git commit` the signing key, all denied inside the sandbox, claude-dispatch (`abduco -n`) hits EPERM on create-session (its socket) and a sandboxed abduco server would pass its Seatbelt profile to the session; without the exclusion they fail with \"operation not permitted\" (or a proxy-denied remote) and step-09 cannot commit or ship the PR without a manual retry. sudo/darwin-rebuild must keep reaching the `ask` box instead of a hard failure";
     }
     {
       name = "A14b sandbox: bare nix flake check is excluded, no wildcard, unix sockets pinned to the measured tsx socket";

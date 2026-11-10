@@ -2007,7 +2007,8 @@ in
     output can exceed ~30 lines runs in the background or with its output cut to
     the tail, and the coordinator reads the exit code plus the last failing lines.
     A verdict with no exit code is an unrun check.
-    Sandbox-excluded commands (bare `nix flake check`, `git push`, `gh`, `codex`)
+    Sandbox-excluded commands (bare `nix flake check`, `git push`, `gh`, `codex`,
+    `ttw-verify-external`)
     stay standalone — no pipe — so run them with `run_in_background` and read
     the tail of the output file.
     A gate runner subagent (`model: sonnet`, never haiku) is reserved for
@@ -2472,13 +2473,15 @@ in
       do not ask again.
       Never hand the user a command to type, never a `! cmd`.
     - **Sandbox-excluded** — `git push`, `git commit`, `git pull`, `git fetch`,
-      `gh`, `codex`, `claude-dispatch` and bare `nix flake check` run OUTSIDE the sandbox only
+      `gh`, `codex`, `ttw-verify-external`, `claude-dispatch` and bare `nix flake check` run OUTSIDE the sandbox only
       when the Bash call is that command alone:
       run them as standalone commands — one per Bash call, from the repo cwd, no `cd … &&`, no
       `git -C`, no `&&` chain, no redirection, heredoc or `$(…)` (multi-line
       text: `git commit -F <file>`, `gh pr create --body-file <file>`). Any of
       those keeps the call sandboxed and it fails. If one fails on sandbox
-      evidence, fix the shape; do not escalate. Long ones run with
+      evidence, fix the shape; do not escalate. `ttw-verify-external` also runs
+      from the project root (its `--acs`/`--out` paths are relative to it);
+      sandboxed it gives no EPERM, it times out. Long ones run with
       `run_in_background`; read the tail of the output file.
     - **Read-only `.git/config`** — inside the sandbox, `.git/config` and
       `.git/hooks` are read-only in every repo: `git branch -d/-m/-u`,

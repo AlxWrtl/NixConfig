@@ -163,6 +163,21 @@
 #      to run mcp__graphify__query_graph; a recorded query, a status
 #      unavailable, a symlinked file and the retired `apex` root stay
 #      silent. One canary: OBSIDIAN_PATH on the `apex` root.
+#      Run 86 adds ttw-flags' stale-step line: at a TTW start, a step file
+#      whose last read in the transcript (a `cat`, by ~ or absolute path,
+#      or a Read) predates the home-manager activation, the mtime of the
+#      current-home link, and captured text the file no longer holds is
+#      named after `TTW steps changed since read: `; a file read in the
+#      same call and unchanged is not. A read still matching the file, an
+#      old read re-read after the activation, and another skill (fully
+#      silent) carry no stale line; every tf case exits 0, stderr empty.
+#      A post-activation read refreshes only when its capture holds the
+#      whole file: an `ls` or a failed Read after the switch still leaves
+#      the old read stale, and a partial read with no earlier one stays
+#      silent. A Bash error string is a capture (silent when current); an
+#      other root's steps dir and a `.md.bak` are not step files.
+#      Two canaries: M-tf-stale, the stale decision forced to false, and
+#      M-tf-gate, post-activation reads judged like pre-activation ones.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -634,6 +649,14 @@ let
     A-graph-obsidian-path = {
       hook = "ttw-metrics-probe.py";
       text = "OBSIDIAN_PATH = re.compile(r\"/\\.claude/output/ttw/[^/]+/01b-obsidian[^/]*\\.md$\")";
+    };
+    A-tf-stale = {
+      hook = "ttw-flags.js";
+      text = "const stale = r.capRead.kind === \"Read\" ? !now.includes(cap) : !cap.includes(now.trimEnd());";
+    };
+    A-tf-gate = {
+      hook = "ttw-flags.js";
+      text = "if (r.ts >= act) { if (r.cap !== null) s.post.push(r.cap); continue; }";
     };
     A-ac-failopen = {
       hook = "ttw-metrics-probe.py";
@@ -1893,6 +1916,30 @@ let
         {
           anchor = "A-graph-obsidian-path";
           to = "OBSIDIAN_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/01b-obsidian[^/]*\\.md$\")";
+        }
+      ];
+    }
+    # The stale decision forced to false: a changed step is never named.
+    {
+      id = "M-tf-stale";
+      hook = "ttw-flags.js";
+      kills = "tf-stale-bash-emits";
+      swaps = [
+        {
+          anchor = "A-tf-stale";
+          to = "const stale = false;";
+        }
+      ];
+    }
+    # No time gate: a read after the activation is judged like an earlier one.
+    {
+      id = "M-tf-gate";
+      hook = "ttw-flags.js";
+      kills = "tf-post-partial-silent";
+      swaps = [
+        {
+          anchor = "A-tf-gate";
+          to = "if (false) { if (r.cap !== null) s.post.push(r.cap); continue; }";
         }
       ];
     }
@@ -3615,6 +3662,16 @@ let
     "graph-unavailable-silent"
     "graph-symlink-silent"
     "graph-apex-root-silent"
+    "tf-stale-bash-emits"
+    "tf-stale-read-emits"
+    "tf-unchanged-silent"
+    "tf-reread-silent"
+    "tf-other-skill-silent"
+    "tf-check-after-switch-emits"
+    "tf-failed-reread-emits"
+    "tf-post-partial-silent"
+    "tf-bash-error-silent"
+    "tf-foreign-root-silent"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -3675,6 +3732,7 @@ let
     "worktree-in-use.js"
     "instagram-watch.js"
     "ttw-metrics-probe.py"
+    "ttw-flags.js"
   ];
   timeoutsOf =
     n:
@@ -4045,6 +4103,78 @@ let
         case "$ctx" in *"$x"*) why="context carries '$x': $ctx"; kind=mismatch; return 1 ;; esac
       done
       case "$ctx" in *"$must"*) ;; *) why="context lacks '$must': $ctx"; return 1 ;; esac
+    }
+
+    # ttw-flags: its HOME is $TMPDIR. The steps live in $TF_STEPS; the last
+    # home-manager activation is the mtime of the current-home link, pinned
+    # at TF_ACT (2026-11-11T18:21:00Z). Reads are stamped an hour before
+    # (TF_OLD) or after (TF_NEW) it. The switch rewrote DIRECT.md (an old
+    # read holds TF_DIRECT_OLD), not COMMANDS.md. One transcript per case.
+    TF_STEPS="$TMPDIR/.claude/skills/ttw/steps"
+    TF_GC="$TMPDIR/.local/state/home-manager/gcroots"
+    TF_ACT=1794421260
+    TF_OLD='2026-11-11T17:21:00.000Z'
+    TF_NEW='2026-11-11T19:21:00.000Z'
+    TF_DIRECT_OLD=$'# TTW: Direct tier\n\nInline, no subagent. Flags -o and -n are ignored in Direct.\n'
+    TF_DIRECT=$'# TTW: Direct tier\n\nInline, no subagent. -o runs step-01b first; -n is ignored.\n'
+    TF_COMMANDS=$'# TTW: commands\n\n`ttw-tier --base master` prints the tier of the real diff.\n'
+    tf_home() {
+      TFX="$root/tf/$lbl.jsonl"
+      rm -rf "$TF_STEPS" "$TF_GC" "$TFX"
+      {
+        mkdir -p "$TF_STEPS" "$TF_GC" "$root/tf" &&
+          printf '%s' "$TF_DIRECT" > "$TF_STEPS/DIRECT.md" &&
+          printf '%s' "$TF_COMMANDS" > "$TF_STEPS/COMMANDS.md" &&
+          ln -s "$NOREPO" "$TF_GC/current-home" &&
+          ${pkgs.coreutils}/bin/touch -h -d "@$TF_ACT" "$TF_GC/current-home"
+      } || { why="ttw-flags fixture could not be built"; return 1; }
+    }
+    # One step read appended to $TFX, in Claude's JSONL shape: the
+    # assistant's tool_use, then the user's tool_result. $1 tool_use id, $2
+    # timestamp, $3 tool (Bash / Read), $4 its command / file_path, $5 the
+    # text it returned (Bash stdout, Read file content).
+    tf_read() {
+      ${jq} -cn --arg id "$1" --arg ts "$2" --arg t "$3" --arg a "$4" '{type:"assistant",timestamp:$ts,message:{role:"assistant",content:[{type:"tool_use",id:$id,name:$t,input:(if $t == "Bash" then {command:$a,description:"probe"} else {file_path:$a} end)}],usage:{input_tokens:3,cache_read_input_tokens:41000,cache_creation_input_tokens:200,output_tokens:90}}}' >> "$TFX" &&
+        ${jq} -cn --arg id "$1" --arg ts "$2" --arg t "$3" --arg a "$4" --arg o "$5" '($o | rtrimstr("\n") | split("\n")) as $l | {type:"user",timestamp:$ts,message:{role:"user",content:[{type:"tool_result",tool_use_id:$id,content:(if $t == "Bash" then $o else ($l | to_entries | map("\(.key + 1)\t\(.value)") | join("\n")) end)}]},toolUseResult:(if $t == "Bash" then {stdout:$o,stderr:"",interrupted:false,isImage:false} else {type:"text",file:{filePath:$a,content:$o,numLines:($l | length),startLine:1,totalLines:($l | length)}} end)}' >> "$TFX" ||
+        { why="cannot write the ttw-flags transcript"; return 1; }
+    }
+    # A step read that errored, args as tf_read: its toolUseResult is the
+    # plain string $5, as Claude writes for a non-zero Bash exit or a failed
+    # Read; no stdout, no file.
+    tf_read_err() {
+      ${jq} -cn --arg id "$1" --arg ts "$2" --arg t "$3" --arg a "$4" '{type:"assistant",timestamp:$ts,message:{role:"assistant",content:[{type:"tool_use",id:$id,name:$t,input:(if $t == "Bash" then {command:$a,description:"probe"} else {file_path:$a} end)}],usage:{input_tokens:3,cache_read_input_tokens:41000,cache_creation_input_tokens:200,output_tokens:90}}}' >> "$TFX" &&
+        ${jq} -cn --arg id "$1" --arg ts "$2" --arg o "$5" '{type:"user",timestamp:$ts,message:{role:"user",content:[{type:"tool_result",tool_use_id:$id,is_error:true,content:$o}]},toolUseResult:$o}' >> "$TFX" ||
+        { why="cannot write the ttw-flags transcript"; return 1; }
+    }
+    # $1 the skill called.
+    tf_in() { ${jq} -cn --arg s "$1" --arg p "$TFX" --arg c "$NOREPO" '{hook_event_name:"PreToolUse",session_id:"probe",cwd:$c,transcript_path:$p,tool_name:"Skill",tool_input:{skill:$s}}'; }
+    tf_ctx() { ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "PreToolUse") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""; }
+    # $1 file the stale line must name, then files it must not: a missing
+    # stale line is the miss a canary causes.
+    tf_emits() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the TTW start line was due"; return 1; }
+      tf_ctx
+      case "$ctx" in "TTW start: context="*) ;; *) why="context does not start with 'TTW start: context=': $ctx"; return 1 ;; esac
+      case "$ctx" in *"TTW steps changed since read: "*) ;; *) why="no 'TTW steps changed since read: ' line: $1 was read before the activation and has changed since: $ctx"; kind=mismatch; return 1 ;; esac
+      tf_list="''${ctx#*TTW steps changed since read: }"
+      must="$1"
+      shift
+      for x in "$@"; do
+        case "$tf_list" in *"$x"*) why="stale line names $x, unchanged since its read: $ctx"; return 1 ;; esac
+      done
+      case "$tf_list" in *"$must"*) ;; *) why="stale line lacks $must: $ctx"; return 1 ;; esac
+    }
+    # The start line and no stale line, exit 0, stderr empty. A stale line
+    # where none was due is the over-report a canary may cause.
+    tf_quiet() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the TTW start line was due"; return 1; }
+      tf_ctx
+      case "$ctx" in "TTW start: context="*) ;; *) why="context does not start with 'TTW start: context=': $ctx"; return 1 ;; esac
+      case "$ctx" in *"TTW steps changed since read"*) why="stale line where every read is current: $ctx"; kind=mismatch; return 1 ;; esac
     }
 
     # research-model: $1 subagent_type, $2 model (absent when empty or unset).
@@ -4448,6 +4578,7 @@ let
         wh-*) tmo=${hostTimeout "worktree-in-use.js"} ;;
         iw-*) tmo=${hostTimeout "instagram-watch.js"} ;;
         ac-* | pr-* | graph-*) tmo=${hostTimeout "ttw-metrics-probe.py"} ;;
+        tf-*) tmo=${hostTimeout "ttw-flags.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -5862,6 +5993,64 @@ let
         graph-apex-root-silent)
           f="$ACR/.claude/output/apex/$lbl/01b-obsidian-context.md"; gr_put "$f" "$GR_SEC" "$GR_SKIP" "$GR_FRESH"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # ttw-flags on a Skill call: a step read before the activation whose
+        # text the file no longer holds is named; COMMANDS.md, read in the
+        # same call and unchanged, is not.
+        tf-stale-bash-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md ~/.claude/skills/ttw/steps/COMMANDS.md' "$(printf '%s%s' "$TF_DIRECT_OLD" "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        tf-stale-read-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Read "$TF_STEPS/DIRECT.md" "$TF_DIRECT_OLD" || return 1
+          tf_read toolu_tf2 "$TF_OLD" Read "$TF_STEPS/COMMANDS.md" "$TF_COMMANDS" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # Read before the activation, but stdout holds both files as they are now.
+        tf-unchanged-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash "cat $TF_STEPS/DIRECT.md $TF_STEPS/COMMANDS.md" "$(printf '%s%s' "$TF_DIRECT" "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # The old read is superseded by a Read after the activation: the last read counts.
+        tf-reread-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          tf_read toolu_tf2 "$TF_NEW" Read "$TF_STEPS/DIRECT.md" "$TF_DIRECT" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # The stale transcript of tf-stale-bash-emits, but another skill: no output at all.
+        tf-other-skill-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md ~/.claude/skills/ttw/steps/COMMANDS.md' "$(printf '%s%s' "$TF_DIRECT_OLD" "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in code-review)"; ac_silent ;;
+        # A post-activation `ls` names DIRECT.md but captures none of it: no
+        # refresh, the old cat is still judged.
+        tf-check-after-switch-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          tf_read toolu_tf2 "$TF_NEW" Bash 'ls -la ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s\n' "-rw-r--r--  1 alx  staff  70 Nov 11 18:21 $TF_STEPS/DIRECT.md")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # A post-activation Read that failed (string toolUseResult, no file): no refresh.
+        tf-failed-reread-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          tf_read_err toolu_tf2 "$TF_NEW" Read "$TF_STEPS/DIRECT.md" 'Error: something' || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # Only a partial read, after the activation: no pre-activation read, never
+        # stale. Judged without the time gate, its two lines would be flagged.
+        tf-post-partial-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_NEW" Bash 'sed -n 1,2p ~/.claude/skills/ttw/steps/DIRECT.md' $'# TTW: Direct tier\n\n' || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # A non-zero Bash exit: the string toolUseResult is the capture, and it
+        # holds COMMANDS.md as it is now.
+        tf-bash-error-silent)
+          tf_home || return 1
+          tf_read_err toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/COMMANDS.md; false' "$(printf 'Error: Exit code 1\n%s' "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # Another root's steps dir and a .bak sibling are not step files.
+        tf-foreign-root-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat /tmp/fx/.claude/skills/ttw/steps/COMMANDS.md ~/.claude/skills/ttw/steps/COMMANDS.md.bak' 'other' || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -5883,6 +6072,7 @@ let
         wh-*) echo ${hookFile "worktree-in-use.js"} ;;
         iw-*) echo ${hookFile "instagram-watch.js"} ;;
         ac-* | pr-* | graph-*) echo ${hookFile "ttw-metrics-probe.py"} ;;
+        tf-*) echo ${hookFile "ttw-flags.js"} ;;
       esac
     }
 

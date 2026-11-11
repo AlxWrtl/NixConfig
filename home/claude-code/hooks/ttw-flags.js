@@ -1,5 +1,16 @@
 #!/usr/bin/env node
-// PreToolUse on Skill: reports the context size at TTW start, nothing else.
+// PreToolUse on Skill: at TTW start, reports the context size and names the
+// TTW step files whose copy in context is stale. Nothing else.
+//
+// Stale steps: a step file under ~/.claude/skills/ttw/steps/ (spelled ~,
+// $HOME, ${HOME} or the absolute home) read earlier in this session (a Read,
+// or a Bash command naming it, e.g. `cat`) before the last home-manager
+// activation (mtime of the current-home gcroot link), whose latest such read
+// captured text the file no longer holds, and that no read after the
+// activation captured whole. A read after the activation with a partial or
+// no capture (`ls`, `sed -n`, a failed Read) is ignored. Such files are
+// listed after the start line so the run re-reads them instead of following
+// the old copy. A transcript over 64 MiB is not scanned.
 //
 // It used to classify risk from the BRIEF TEXT and rewrite the flags. Removed
 // on 2026-10-07: a 28-line Notification matcher change was forced to
@@ -8,10 +19,26 @@
 // the diff by `ttw-tier` (SKILL.md tier table). This hook never rewrites the
 // call and never decides a permission.
 //
-// FAIL-OPEN: every error exits 0 (no output, or context=unknown).
+// FAIL-OPEN: every error exits 0 (no output, context=unknown, or the start
+// line without the stale-step line).
 const fs = require("fs");
+const os = require("os");
 
 const TAIL = 256 * 1024;
+const SCAN_MAX = 64 * 1024 * 1024;
+let STEP_RE;
+try { STEP_RE = stepRe(os.homedir()); } catch (e) { STEP_RE = stepRe(""); }
+const RESULT_ID_RE = /"tool_use_id":\s*"([^"]+)"/g;
+
+// A step name under the home steps dir only: the home spelled ~, $HOME,
+// ${HOME} or literally, at a word start, and the name ending at `.md`.
+function stepRe(home) {
+  const alts = ["~", "\\$HOME", "\\$\\{HOME\\}"];
+  const h = typeof home === "string" ? home.replace(/\/+$/, "") : "";
+  if (h !== "") alts.push(h.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&"));
+  return new RegExp("(?<=^|[\\s'\"=(<;|&])(?:" + alts.join("|") + ")"
+    + "\\/\\.claude\\/skills\\/ttw\\/steps\\/([A-Za-z0-9][A-Za-z0-9._-]*\\.md)(?![A-Za-z0-9._-])", "g");
+}
 
 function contextTokens(path) {
   if (typeof path !== "string" || path === "") return null;
@@ -43,6 +70,118 @@ function contextTokens(path) {
   }
 }
 
+// Last home-manager activation (ms), or +Infinity when unknown.
+function activationMs(home) {
+  try {
+    const t = fs.lstatSync(home + "/.local/state/home-manager/gcroots/current-home").mtimeMs;
+    return Number.isFinite(t) ? t : Infinity;
+  } catch (e) {
+    return Infinity;
+  }
+}
+
+function contentArray(entry) {
+  const msg = entry && entry.message;
+  return msg && Array.isArray(msg.content) ? msg.content : [];
+}
+
+// Step reads in transcript order: { name, ts, id, kind, cap }.
+function stepReads(path) {
+  const reads = [];
+  const byId = new Map();
+  if (fs.statSync(path).size > SCAN_MAX) return reads;
+  const lines = fs.readFileSync(path, "utf8").split("\n");
+  for (const line of lines) {
+    let wanted = line.includes("skills/ttw/steps/");
+    if (!wanted && byId.size > 0 && line.includes('"tool_use_id"')) {
+      RESULT_ID_RE.lastIndex = 0;
+      let m;
+      while ((m = RESULT_ID_RE.exec(line)) !== null) {
+        if (byId.has(m[1])) { wanted = true; break; }
+      }
+    }
+    if (!wanted) continue;
+    let entry;
+    try { entry = JSON.parse(line); } catch (e) { continue; }
+    if (!entry || typeof entry !== "object") continue;
+    if (entry.type === "assistant") {
+      const ts = Date.parse(entry.timestamp);
+      if (!Number.isFinite(ts)) continue;
+      for (const c of contentArray(entry)) {
+        if (!c || c.type !== "tool_use" || typeof c.id !== "string") continue;
+        const inp = c.input || {};
+        let text;
+        if (c.name === "Read") text = inp.file_path;
+        else if (c.name === "Bash") text = inp.command;
+        if (typeof text !== "string") continue;
+        const names = new Set();
+        STEP_RE.lastIndex = 0;
+        let m;
+        while ((m = STEP_RE.exec(text)) !== null) names.add(m[1]);
+        if (names.size === 0) continue;
+        const group = [];
+        for (const name of names) {
+          const r = { name, ts, id: c.id, kind: c.name, cap: null };
+          reads.push(r);
+          group.push(r);
+        }
+        byId.set(c.id, group);
+      }
+    } else if (entry.type === "user") {
+      for (const c of contentArray(entry)) {
+        if (!c || c.type !== "tool_result" || !byId.has(c.tool_use_id)) continue;
+        const group = byId.get(c.tool_use_id);
+        const tur = entry.toolUseResult;
+        let cap = null;
+        if (typeof tur === "string") {
+          cap = tur;
+        } else if (tur && typeof tur === "object") {
+          if (group[0].kind === "Read" && tur.file && typeof tur.file.content === "string") {
+            cap = tur.file.content;
+          } else if (group[0].kind === "Bash" && typeof tur.stdout === "string") {
+            cap = tur.stdout;
+          }
+        }
+        for (const r of group) r.cap = cap;
+      }
+    }
+  }
+  return reads;
+}
+
+function staleSteps(path, home) {
+  if (typeof path !== "string" || path === "") return [];
+  const steps = home + "/.claude/skills/ttw/steps/";
+  const act = activationMs(home);
+  // Per name: the last pre-activation read, the latest non-null capture up
+  // to it, and the non-null captures of post-activation reads (refresh
+  // candidates, never judged).
+  const per = new Map();
+  for (const r of stepReads(path)) {
+    if (!per.has(r.name)) per.set(r.name, { pre: null, capRead: null, post: [] });
+    const s = per.get(r.name);
+    if (r.ts >= act) { if (r.cap !== null) s.post.push(r.cap); continue; }
+    s.pre = r;
+    if (r.cap !== null) s.capRead = r;
+  }
+  const out = [];
+  for (const name of Array.from(per.keys()).sort()) {
+    const r = per.get(name);
+    if (r.pre === null) continue;
+    let now;
+    try { now = fs.readFileSync(steps + name, "utf8"); } catch (e) { continue; }
+    if (r.post.some(c => c.includes(now.trimEnd()))) continue;
+    if (r.capRead === null) {
+      if (Number.isFinite(act)) out.push(name);
+      continue;
+    }
+    const cap = r.capRead.cap;
+    const stale = r.capRead.kind === "Read" ? !now.includes(cap) : !cap.includes(now.trimEnd());
+    if (stale) out.push(name);
+  }
+  return out;
+}
+
 let input = "";
 process.stdin.on("data", c => input += c);
 process.stdin.on("end", () => {
@@ -52,12 +191,20 @@ process.stdin.on("end", () => {
     if (ti.skill !== "ttw") process.exit(0);
     const n = contextTokens(data.transcript_path);
     const tp = typeof data.transcript_path === "string" ? data.transcript_path : "unknown";
+    let ctx = "TTW start: context=" + (n === null ? "unknown" : n)
+      + " tokens; transcript=" + tp
+      + ". Tier is decided on the diff (SKILL.md); ttw-tier re-checks it.";
+    let stale = [];
+    try { stale = staleSteps(data.transcript_path, os.homedir()); } catch (e) { stale = []; }
+    if (stale.length > 0) {
+      ctx += " TTW steps changed since read: " + stale.join(", ")
+        + ". Re-read them from ~/.claude/skills/ttw/steps/ before following them;"
+        + " the copy in context is stale.";
+    }
     process.stdout.write(JSON.stringify({
       hookSpecificOutput: {
         hookEventName: "PreToolUse",
-        additionalContext: "TTW start: context=" + (n === null ? "unknown" : n)
-          + " tokens; transcript=" + tp
-          + ". Tier is decided on the diff (SKILL.md); ttw-tier re-checks it."
+        additionalContext: ctx
       }
     }));
   } catch (e) { /* fail open */ }

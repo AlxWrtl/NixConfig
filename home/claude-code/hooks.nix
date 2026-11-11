@@ -296,6 +296,9 @@ in
   # PreToolUse on Skill: when TTW starts, injects the context size read from
   # the transcript tail (input + cache read + cache creation tokens of the last
   # assistant usage). Context only — no updatedInput, no permissionDecision.
+  # It also names the TTW step files read earlier in the session, before the
+  # last home-manager activation, whose text has changed since that read
+  # ("TTW steps changed since read: …"), so a stale copy is re-read.
   #
   # It used to rewrite the flags from regexes over the BRIEF TEXT. Retired on
   # 2026-10-07: a 28-line Notification matcher change was forced to

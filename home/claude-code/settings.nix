@@ -865,8 +865,10 @@ in
         }
         {
           # Reports the context size (tokens, from the transcript tail) when
-          # TTW starts. Context only: never rewrites the flags, never decides
-          # a permission. The tier is decided on the diff by `ttw-tier`.
+          # TTW starts, and the step files read before the last activation
+          # that have changed since. Context only: never rewrites the flags,
+          # never decides a permission. The tier is decided on the diff by
+          # `ttw-tier`.
           matcher = "Skill";
           hooks = [
             {

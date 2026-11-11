@@ -86,6 +86,10 @@ first match wins:
 contributed_rate = contributed / (contributed + nothing + skipped): the
 runs that could ask the graph. A query is recorded when a section line
 starts with `Query:` or `Requête :` (a bullet first is allowed).
+Citations: the run's project is the folder P of the first `[[02-Projets/P/`
+link on a `Project note:` line, as written. Each `[[02-Projets/X/` link in
+the section counts in cited_same when X equals P in any case, else in
+cited_other; a run with no such line counts its links in cited_unknown.
 
 B5 STEPS, per run dir. A run that ran a step and recorded nothing is
 unknown, never a yes or a no.
@@ -544,6 +548,77 @@ B7_FIXTURES = [
         "### Graph status: fresh\n")),
 ]
 
+# Real 01b Project note line + graph section, same tree as B7_FIXTURES
+# (leboisjean/, portfolio/, Preliz/ = ~/Projects/<name>).
+# (source, expected project, expected same, expected other, text)
+B7_CITE_FIXTURES = [
+    ("leboisjean/01-scaffold-astro", "leboisjean", 0, 2, (
+        "### Project note: [[02-Projets/leboisjean/leboisjean]]\n"
+        "### Graph relations (graphify)\n"
+        "- [[02-Projets/portfolio/decisions/2026-09-23 - stack-technique]] — Astro 7 (sorti "
+        "2026-06-22), `@astrojs/cloudflare` 14.x exige astro ^7.2 ; TypeScript reste en 6.0 "
+        "(`@astrojs/check` et `typescript-eslint` ne supportent pas TS 7).\n"
+        "- [[02-Projets/brasserie-les-ecrivains/references/2026-09-07 - "
+        "plan-geo-referencement-ia]] — `llms.txt` n'apporte rien (position Google) : ne pas "
+        "investir dessus (étape 3).\n"
+        "- Graph status: fresh\n")),
+    # The bare word Preliz in the second bullet is no wikilink: one citation.
+    ("ui-expert-skill", "nix-darwin", 0, 1, (
+        "### Project note: [[02-Projets/nix-darwin/nix-darwin]]\n"
+        "### Graph relations (graphify)\n"
+        "- [[02-Projets/Preliz/sessions/2026-09-03 - relachement-du-swipe-a-la-velocite]] — "
+        "Emil's apple-design §4 (`bounce` + `duration`) contradicts §5 (velocity handoff) on "
+        "Motion: motion-dom@12.43.0 spring.mjs:127-134 sets `velocity = 0` for time-defined "
+        "springs. Measured in Preliz.\n"
+        "- Preliz `apple-motion` was cut from emilkowalski/skills apple-design (graph node, "
+        "session 2026-09-02).\n"
+        "- Graph status: fresh\n")),
+    # The Project note line is itself a 02-Projets link, outside the section:
+    # counting the whole file would give same=4.
+    ("portfolio/35-refonte-design", "portfolio", 3, 0, (
+        "### Project note: [[02-Projets/portfolio/portfolio]]\n"
+        "### Graph relations (graphify)\n"
+        "- Query \"palette typographie direction artistique schéma\", depth 1: 4 nodes, no "
+        "truncation banner. Hits: `palette.ts` ([[02-Projets/portfolio/sessions/2026-09-28 - "
+        "mini-planete-style-abouti]], planète GLB, obsolète), \"Direction A / C · Galerie musée "
+        "de nuit (éliminée)\" ([[02-Projets/portfolio/portfolio]]), `Schema.astro / "
+        "SchemaDirect.astro` --calls--> `Route /api/trace` ([[02-Projets/portfolio/sessions/"
+        "2026-10-01 - refonte-schema-vivant]]). Nothing new beyond recency.\n"
+        "- enquire search also run (portfolio direction artistique): only portfolio notes above "
+        "relevant; rest Preliz email noise.\n"
+        "- Graph status: stale (2026-10-07 14:00); `graphify-reindex` fired in background "
+        "(completed exit 0).\n")),
+    # No Project note line: every citation counts in other.
+    ("Preliz/planning-lot1", None, 0, 3, (
+        "### Graph relations (graphify)\n"
+        "- [[02-Projets/Preliz/sessions/2026-06-27 - prefs-dashboard-atomique]] — écritures de "
+        "préférences JSON doivent être ATOMIQUES (upsert/opérateurs jsonb), pas "
+        "read-modify-write ; #18b ouvert sur auth/actions.server.ts:87,:129.\n"
+        "- [[02-Projets/Preliz/sessions/2026-09-25 - "
+        "le-calendrier-journaliste-et-le-goulot-de-l-oeil]] — la ligne de chiffres journaliste "
+        "comptait SES demandes (jamais la dispo) ; elle disparaît maintenant.\n"
+        "- [[02-Projets/Preliz/sessions/2026-09-24 - "
+        "les-compteurs-cliquables-et-ce-que-le-smoke-a-trouve]] — barColumnSpan / SwimLaneBar.\n"
+        "- Graph status: fresh (07:21 15/10), réponse TRUNCATED (20/22 nœuds), pas de "
+        "reformulation.\n")),
+    # Not real: no report spells a folder in another case. planning-lot1 with
+    # a template Project note line in lower case; a case-sensitive match
+    # would give same=0 other=3.
+    ("Preliz/planning-lot1 + lower-case project line", "preliz", 3, 0, (
+        "### Project note: [[02-Projets/preliz/preliz]]\n"
+        "### Graph relations (graphify)\n"
+        "- [[02-Projets/Preliz/sessions/2026-06-27 - prefs-dashboard-atomique]] — écritures de "
+        "préférences JSON doivent être ATOMIQUES (upsert/opérateurs jsonb), pas "
+        "read-modify-write ; #18b ouvert sur auth/actions.server.ts:87,:129.\n"
+        "- [[02-Projets/Preliz/sessions/2026-09-25 - "
+        "le-calendrier-journaliste-et-le-goulot-de-l-oeil]] — la ligne de chiffres journaliste "
+        "comptait SES demandes (jamais la dispo) ; elle disparaît maintenant.\n"
+        "- [[02-Projets/Preliz/sessions/2026-09-24 - "
+        "les-compteurs-cliquables-et-ce-que-le-smoke-a-trouve]] — barColumnSpan / SwimLaneBar.\n"
+        "- Graph status: fresh (07:21 15/10), réponse TRUNCATED (20/22 nœuds), pas de "
+        "reformulation.\n")),
+]
+
 
 def tally(text):
     """The confirmed count of the file's last tally line, None when it has none."""
@@ -618,6 +693,25 @@ def graph_section(text):
         if inside:
             found.append(line)
     return found
+
+
+PROJECT_FOLDER = re.compile(r"\[\[02-Projets/([^/\]|#]+)/")
+
+
+def graph_citations(text):
+    """(project, same, other) for an 01b-obsidian text (module docstring, B7)."""
+    project = None
+    for line in text.splitlines():
+        if "Project note:" in line:
+            m = PROJECT_FOLDER.search(line)
+            if m:
+                project = m.group(1)
+                break
+    cited = PROJECT_FOLDER.findall("\n".join(graph_section(text) or []))
+    if project is None:
+        return None, 0, len(cited)
+    same = sum(1 for x in cited if x.lower() == project.lower())
+    return project, same, len(cited) - same
 
 
 def graph_outcome(text):
@@ -869,6 +963,29 @@ def b7_self_test(failures):
     return len(B7_FIXTURES), len(GRAPH_OUTCOMES) - len(missing)
 
 
+def b7_cite_self_test(failures):
+    """Project and same/other graph citations on real 01b lines; a fixture
+    must cite its project in another case, or the case rule cannot fail."""
+    folder = re.compile(r"\[\[02-Projets/([^/\]|#]+)/")
+    case_cases = 0
+    for source, project, same, other, text in B7_CITE_FIXTURES:
+        got = graph_citations(text)
+        if got != (project, same, other):
+            failures.append(f"B7 cite {source}: {got}, expected {(project, same, other)}")
+        if project is not None and any(x != project and x.lower() == project.lower()
+                                       for x in folder.findall(text)):
+            case_cases += 1
+    if case_cases == 0:
+        failures.append("B7 cite fixtures cannot fail: none cites its project in another case")
+    if not any(f[2] > 0 for f in B7_CITE_FIXTURES):
+        failures.append("B7 cite table too thin: no fixture with same > 0")
+    if not any(f[3] > 0 and f[1] is not None for f in B7_CITE_FIXTURES):
+        failures.append("B7 cite table too thin: no fixture with other > 0 and a project")
+    if not any(f[1] is None and f[3] > 0 for f in B7_CITE_FIXTURES):
+        failures.append("B7 cite table too thin: no fixture without a project that cites")
+    return len(B7_CITE_FIXTURES)
+
+
 def b5_self_test(failures):
     outcomes = {"changed", "not changed", "unknown"}
     for run, name, expected, text in B5_TALLY_FIXTURES:
@@ -930,13 +1047,14 @@ def self_test():
     n_b5 = b5_self_test(failures)
     n_b6 = b6_self_test(failures)
     n_b7, b7_outcomes = b7_self_test(failures)
+    n_b7_cite = b7_cite_self_test(failures)
     for f in failures:
         print(f"FAIL {f}")
     print(f"self-test fixtures={len(FIXTURES)} command={n_cmd} prose={n_prose} "
           f"v0_mislabels={v0_wrong} class_fixtures={len(CLASS_FIXTURES)} "
           f"unmarked_mislabels={unmarked_wrong} b5_fixtures={n_b5} b6_fixtures={n_b6} "
           f"b7_fixtures={n_b7} b7_outcomes={b7_outcomes}/{len(GRAPH_OUTCOMES)} "
-          f"failures={len(failures)}")
+          f"b7_cite_fixtures={n_b7_cite} failures={len(failures)}")
     return 1 if failures else 0
 
 
@@ -1083,15 +1201,26 @@ def metrics(runs_roots, mem_root, since=B6_SINCE):
 
     # B7: did step-01b query the knowledge graph (see the module docstring)
     graph = []
+    cited_same = cited_other = cited_unknown = 0
     for r in runs:
         obs = [_guarded_text(p, None) for p in sorted(r.glob("01b-obsidian*.md"))]
         if obs:
-            graph.append(graph_outcome("\n".join(t for t in obs if t is not None)))
+            joined = "\n".join(t for t in obs if t is not None)
+            graph.append(graph_outcome(joined))
+            project, same, other = graph_citations(joined)
+            cited_same += same
+            if project is None:
+                cited_unknown += other
+            else:
+                cited_other += other
     out["B7.runs"] = len(graph)
     for o in GRAPH_OUTCOMES:
         out[f"B7.{o}"] = graph.count(o)
     asked = sum(graph.count(o) for o in ("contributed", "nothing", "skipped"))
     out["B7.contributed_rate"] = f"{graph.count('contributed') / asked:.1%}" if asked else "n/a"
+    out["B7.cited_same"] = cited_same
+    out["B7.cited_other"] = cited_other
+    out["B7.cited_unknown"] = cited_unknown
     return out
 
 

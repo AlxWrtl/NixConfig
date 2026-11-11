@@ -1,5 +1,6 @@
 # ESLint over every tracked JavaScript file of the repo: the Claude hooks under
-# home/claude-code/hooks/ and the Codex scripts under home/codex/scripts/.
+# home/claude-code/hooks/, the Codex scripts under home/codex/scripts/ and the
+# TTW replay home/ttw-replay/replay.js.
 #
 # eslint:recommended is rebuilt from eslint's own `builtinRules`
 # (`meta.docs.recommended`): pkgs.eslint ships `globals` but not `@eslint/js`,
@@ -21,7 +22,7 @@ let
 
   # Adding or removing a .js file changes this number on purpose: the count is
   # what proves the walk saw every file.
-  expectedFiles = 27;
+  expectedFiles = 28;
 
   eslintDir = "${eslint}/lib/node_modules/eslint";
 

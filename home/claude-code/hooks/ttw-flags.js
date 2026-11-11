@@ -8,7 +8,9 @@
 // activation (mtime of the current-home gcroot link), whose latest such read
 // captured text the file no longer holds, and that no read after the
 // activation captured whole. A read after the activation with a partial or
-// no capture (`ls`, `sed -n`, a failed Read) is ignored. Such files are
+// no capture (`ls`, `sed -n`, a failed Read) is ignored. A Bash capture
+// printing a line range (`head -N`, `head -n N`, `sed -n A,Bp`, anywhere in
+// the command) is current when it holds that slice of the file. Such files are
 // listed after the start line so the run re-reads them instead of following
 // the old copy. A transcript over 64 MiB is not scanned.
 //
@@ -29,6 +31,8 @@ const SCAN_MAX = 64 * 1024 * 1024;
 let STEP_RE;
 try { STEP_RE = stepRe(os.homedir()); } catch (e) { STEP_RE = stepRe(""); }
 const RESULT_ID_RE = /"tool_use_id":\s*"([^"]+)"/g;
+const HEAD_RE = /(?<![\w.-])head\s+-(?:n\s*)?(\d+)(?!\w)/g;
+const SED_RE = /(?<![\w.-])sed\s+-n\s+(['"]?)(\d+),(\d+)p\1(?!\w)/g;
 
 // A step name under the home steps dir only: the home spelled ~, $HOME,
 // ${HOME} or literally, at a word start, and the name ending at `.md`.
@@ -38,6 +42,26 @@ function stepRe(home) {
   if (h !== "") alts.push(h.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&"));
   return new RegExp("(?<=^|[\\s'\"=(<;|&])(?:" + alts.join("|") + ")"
     + "\\/\\.claude\\/skills\\/ttw\\/steps\\/([A-Za-z0-9][A-Za-z0-9._-]*\\.md)(?![A-Za-z0-9._-])", "g");
+}
+
+// True when the command prints a line range (1-based, inclusive) of `now`
+// whose non-blank slice is in `cap`.
+function rangeHit(cmd, now, cap) {
+  if (typeof cmd !== "string" || typeof cap !== "string") return false;
+  const ranges = [];
+  let m;
+  HEAD_RE.lastIndex = 0;
+  while ((m = HEAD_RE.exec(cmd)) !== null) ranges.push([1, Number(m[1])]);
+  SED_RE.lastIndex = 0;
+  while ((m = SED_RE.exec(cmd)) !== null) ranges.push([Number(m[2]), Number(m[3])]);
+  const lines = now.split("\n");
+  for (const [a, b] of ranges) {
+    if (!(a >= 1 && b >= a)) continue;
+    const slice = lines.slice(a - 1, b).join("\n").trimEnd();
+    if (slice.trim() === "") continue;
+    if (cap.includes(slice)) return true;
+  }
+  return false;
 }
 
 function contextTokens(path) {
@@ -85,7 +109,7 @@ function contentArray(entry) {
   return msg && Array.isArray(msg.content) ? msg.content : [];
 }
 
-// Step reads in transcript order: { name, ts, id, kind, cap }.
+// Step reads in transcript order: { name, ts, id, kind, cmd, cap }.
 function stepReads(path) {
   const reads = [];
   const byId = new Map();
@@ -121,7 +145,7 @@ function stepReads(path) {
         if (names.size === 0) continue;
         const group = [];
         for (const name of names) {
-          const r = { name, ts, id: c.id, kind: c.name, cap: null };
+          const r = { name, ts, id: c.id, kind: c.name, cmd: c.name === "Bash" ? text : null, cap: null };
           reads.push(r);
           group.push(r);
         }
@@ -176,6 +200,7 @@ function staleSteps(path, home) {
       continue;
     }
     const cap = r.capRead.cap;
+    if (r.capRead.kind === "Bash" && rangeHit(r.capRead.cmd, now, cap)) continue;
     const stale = r.capRead.kind === "Read" ? !now.includes(cap) : !cap.includes(now.trimEnd());
     if (stale) out.push(name);
   }

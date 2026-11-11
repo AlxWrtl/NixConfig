@@ -69,13 +69,13 @@
       this route still has to state.
 
     **DEBUG** (fix|bug|error|broken|failing|crash|why):
-    - Route: `Task(subagent_type=debugger)` with the full task description
+    - Route: `Task(subagent_type=debugger, model="sonnet")` with the full task description
     - Reason: "Detected debugging task"
     - Note: the debug skill is user-invocable only (disable-model-invocation) —
       never route to `/debug` from here, use the debugger agent.
 
     **AGENT** (where|how does|explain|quick|review):
-    - Route: `Task(subagent_type=codebase-navigator)` or specialized agent
+    - Route: `Task(subagent_type=codebase-navigator, model="haiku")` or specialized agent
     - Reason: "Detected exploration/navigation task"
 
     ## Steps
@@ -93,11 +93,11 @@
 
     Input: "fix database timeout"
     → Routed to debugger agent because detected "fix" keyword
-    → Execute: Task(subagent_type=debugger, prompt="fix database timeout")
+    → Execute: Task(subagent_type=debugger, model="sonnet", prompt="fix database timeout")
 
     Input: "where is auth logic"
     → Routed to codebase-navigator because detected "where" keyword
-    → Execute: Task with codebase-navigator agent
+    → Execute: Task with codebase-navigator agent (model: haiku)
   '';
 
   # -------------------------

@@ -980,9 +980,11 @@ in
           hooks = [
             {
               type = "command";
-              # Research agents on haiku: denies an Explore or
+              # Explicit subagent model: denies an Explore or
               # codebase-navigator spawn whose model is not "haiku" (absent
-              # included). NOT async — a deny must land before the spawn.
+              # included), and any other spawn with no model (never
+              # inherit); a fork is exempt, it always runs on the parent's
+              # model. NOT async — a deny must land before the spawn.
               # Fail-open on unreadable input.
               command = "${node} ~/.claude/hooks/research-model.js";
               timeout = 5;

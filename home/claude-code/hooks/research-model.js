@@ -54,6 +54,17 @@ let input = "";
 let overflow = false;
 let ran = false;
 
+// Every spawn names its model explicitly (CLAUDE.md, Model Allocation).
+// A fork always runs on the parent's model and ignores the field: let it be.
+// No model means absent, null or "" only; any other value is the harness's
+// enum to validate, not this hook's.
+function requireModel(ti, type) {
+  if (type === "fork") { allow(); return; }
+  if (ti.model !== undefined && ti.model !== null && ti.model !== "") { allow(); return; }
+  const label = typeof type === "string" && type !== "" ? safe(type.slice(0, 64)) : "untyped";
+  deny("BLOCKED: every subagent spawn names its model explicitly. This " + label + " spawn has no model; re-spawn it with an explicit model (\"haiku\" search, \"sonnet\" implementation, \"opus\" planning or review, \"fable\" verify). Only subagent_type: \"fork\" may omit it.");
+}
+
 function main() {
   let data;
   try { data = JSON.parse(input); } catch { allow(); return; }
@@ -62,7 +73,7 @@ function main() {
   const ti = data.tool_input;
   if (!ti || typeof ti !== "object" || Array.isArray(ti)) { allow(); return; }
   const type = ti.subagent_type;
-  if (!RESEARCH.includes(type)) { allow(); return; }
+  if (!RESEARCH.includes(type)) { requireModel(ti, type); return; }
   if (ti.model === "haiku") { allow(); return; }
   const absent = ti.model === undefined || ti.model === null || ti.model === "";
   const asked = absent ? "absent" : "\"" + safe(ti.model) + "\"";

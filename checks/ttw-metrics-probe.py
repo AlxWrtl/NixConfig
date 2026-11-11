@@ -17,17 +17,21 @@ harness change.
         with no known tier, those with a 02-acs.md, those owing a tally and
         those holding every tally they owe (below); the same keys again
         under B6.since.* for the runs dated on or after --since
+    B7  did step-01b query the knowledge graph: runs with an
+        01b-obsidian*.md, each graph outcome (below), and the contributed
+        rate
 
 The metrics stay a manual probe (the run dirs are git-ignored), while
 --self-test and --hook are run by checks/hook-wiring.nix:
 
-    python3 -I checks/ttw-metrics-probe.py [--runs DIR] [--memory DIR] [--since DATE]
+    python3 -I checks/ttw-metrics-probe.py [--runs DIR]... [--memory DIR] [--since DATE]
     python3 -I checks/ttw-metrics-probe.py --self-test
     python3 -I checks/ttw-metrics-probe.py --acs FILE
     python3 -I checks/ttw-metrics-probe.py --hook < event.json
 
-Output: one key=value line per metric, sorted. A missing directory or index
-exits 2 with a message on stderr.
+Output: one key=value line per metric, sorted. --runs repeats: the metrics
+cover every runs dir given. A missing directory or index exits 2 with a
+message on stderr.
 
 --acs FILE prints the class of each AC of one 02-acs.md, then the counts;
 exit 1 when one is unproven, 2 when the file is missing.
@@ -40,7 +44,10 @@ file or one over HOOK_MAX_BYTES is not read: DEFERRED backtracks
 quadratically on a line of unclosed brackets, 0.8 s at 64 KiB. One classifier for the
 plan-time gate and the B2 metric. A Write or Edit of a run's 04-validate.md
 instead names the passes that ran and left no tally (B5 below: e, x), same
-guards. A Write or Edit of a Claude memory note
+guards. A Write or Edit of a run's 01b-obsidian*.md whose graph outcome
+(B7 below) is not unavailable and that records no query line asks for
+`mcp__graphify__query_graph` and the `- Query:` line, same guards. A Write
+or Edit of a Claude memory note
 (.claude/projects/<project>/memory/<note>.md) names what B4 counts against
 it: each [[link]] that is no sibling's `name:` slug, with the slug when the
 link is a sibling's file stem (exact stem first, then `_` and `-` read as
@@ -64,6 +71,21 @@ and does not count as held. The hook's run: a non-symlink dir of
 whose first `Branch:` token is the branch, with no pr.md and no commit.txt;
 the newest 00-context.md wins. A run's date is its `Date:` line, else the
 mtime of its 00-context.md.
+
+B7 GRAPH, per run dir with an 01b-obsidian*.md (several are read as one).
+The section is the lines after a `#… Graph relations` heading up to the
+next heading; a `Graph status:` line anywhere is read with it. One outcome,
+first match wins:
+  - nosection: no such heading and no `Graph status:` line;
+  - unavailable: a status `absent` or `unavailable` (the graph could not
+    be asked; a reason given beside it changes nothing);
+  - skipped: the section says the graph was not queried (`not queried`,
+    `non interrog…`, `pas interrog…`, `skipp…`, any case);
+  - contributed: the section cites a [[wikilink]] (B5 rule);
+  - nothing: queried, nothing cited.
+contributed_rate = contributed / (contributed + nothing + skipped): the
+runs that could ask the graph. A query is recorded when a section line
+starts with `Query:` or `Requête :` (a bullet first is allowed).
 
 B5 STEPS, per run dir. A run that ran a step and recorded nothing is
 unknown, never a yes or a no.
@@ -117,7 +139,9 @@ then runs the v0 rule on the same table: if v0 mislabels nothing, the
 fixtures cannot fail and the self-test exits 1. The class table is graded
 the same way against the unmarked rule (command or unproven only). B5 is
 graded on real tally text (changed, not changed, unknown) and on small vault
-and analyze cases; the table must hold all three outcomes.
+and analyze cases; the table must hold all three outcomes. B7 is graded on
+real 01b lines: every outcome and both query states present, and the rule
+that reads the skip words before the status must mislabel one.
 """
 import argparse
 import datetime
@@ -149,6 +173,13 @@ DEFERRED = re.compile(r"\[[^\[\]\n]*\bdeferred to user\b[^\]\n]*\]")
 AC_DOCS = re.compile(r"^\s*(?:[-*]\s+)?\**AC-docs\b")
 ACS_PATH = re.compile(r"/\.claude/output/ttw/[^/]+/02-acs\.md$")
 VALIDATE_PATH = re.compile(r"/\.claude/output/ttw/[^/]+/04-validate\.md$")
+OBSIDIAN_PATH = re.compile(r"/\.claude/output/ttw/[^/]+/01b-obsidian[^/]*\.md$")
+GRAPH_HEADING = re.compile(r"^\s*#+\s*Graph relations\b", re.IGNORECASE)
+HEADING = re.compile(r"^\s*#")
+GRAPH_STATUS = re.compile(r"Graph status\s*:\s*[*`]*\s*([A-Za-z]+)", re.IGNORECASE)
+GRAPH_SKIP = re.compile(r"not queried|non interrog|pas interrog|skipp", re.IGNORECASE)
+GRAPH_QUERY = re.compile(r"^\s*(?:[-*]\s+)?[*`]*(?:Query|Requête)[*`]*\s*:", re.IGNORECASE)
+GRAPH_OUTCOMES = ("nosection", "unavailable", "skipped", "contributed", "nothing")
 # Run dirs, relative to the repo root.
 RUN_DIRS = (pathlib.Path(".claude/output/ttw"),)
 MEMORY_PATH = re.compile(r"/\.claude/projects/[^/]+/memory/[^/]+\.md$")
@@ -456,6 +487,63 @@ B6_FIXTURES = [
      "Date: 2026-10-07\nMode: Standard\nFlags: -t -pr -o -n\nBranch: feat/task-board-ui\n"),
 ]
 
+# Real 01b-obsidian lines, from <repo>/.claude/output/ttw/<run>/ (browser/ = ~/Projects/browser).
+# (source, expected outcome, expected query recorded, text)
+B7_FIXTURES = [
+    ("14-codex-external-verifier", "nosection", False, (
+        "## Requêtes graphe\n"
+        "1. `codex vérificateur externe diff read-only cross-vendor` (depth 1, budget 1200)\n"
+        "   → `[!] TRUNCATED`, 22/23 nœuds, **0 edge** → traitée comme requête ratée.\n")),
+    ("21-codex-git-autonomy", "unavailable", False, (
+        "### Graph relations (graphify)\n"
+        "- Graph status: unavailable (no MCP on this host)\n"
+        "\n"
+        "### Implications for current task\n")),
+    # Skip words beside an unavailable status: the status decides. The
+    # retired scope wording is elided (…): AC1 of run 85 greps it away.
+    ("browser/77-native-tab-id", "unavailable", False, (
+        "### Graph relations (graphify)\n"
+        "- Graph status: unavailable — hors scope (graphify couvre …, CLAUDE.md), non interrogé.\n")),
+    ("sandbox-network-shape", "skipped", False, (
+        "### Graph relations (graphify)\n"
+        "- Not queried (recency + grep sufficient for a bounded hook task).\n"
+        "- Graph status: fresh (graph.json 2026-10-11 10:06)\n")),
+    ("watch-instagram-skill", "skipped", False, (
+        "### Graph relations (graphify)\n"
+        "- Graph status: fresh (graph.json 2026-10-22 08:17). Not queried: recency + grep already "
+        "surfaced the sandbox-cache decisions; topic (video skill) has no prior notes (grep 0 hits "
+        "on instagram/yt-dlp in sessions besides generic sandbox ones).\n")),
+    ("75-apex-metrics-probe", "contributed", False, (
+        "### Graph relations (graphify)\n"
+        "- Graph status: fresh (graph.json 2026-10-23 20:49). Query truncated (23/32 nodes, no "
+        "edges); hits: [[02-Projets/nix-darwin/sessions/2026-10-10 - banc-modeles-effort]] (bench "
+        "method with control arm), [[02-Projets/nix-darwin/sessions/2026-10-22 - "
+        "apex-pr-record-runs-direct]] (Direct runs found by run-dir name). Not reformulated: "
+        "recency + memory already cover the constraint.\n"
+        "\n"
+        "### Implications for current task\n")),
+    ("85-graph-memory", "contributed", True, (
+        "### Graph relations (graphify)\n"
+        "- Query: `graphify reindex périmètre étape obsidian sonde métriques` (depth 1, budget "
+        "1200) — 14 nodes, complete.\n"
+        "- [[02-Projets/nix-darwin/sessions/2026-10-24 - apex-utilite-des-etapes]] — B5 o (vault) "
+        "metric: ran / recorded / changed; B7 sits beside it.\n"
+        "- Graph status: fresh (graph.json 2026-11-11 13:35)\n")),
+    ("browser/81-launcher-orphan-abandon", "nothing", False, (
+        "### Graph relations (graphify)\n"
+        "- rien de pertinent (requête « hôte orphelin SIGKILL groupe pid réutilisé » : nœuds "
+        "Preliz/nix-darwin/GOAT seulement).\n"
+        "- Graph status: stale (2026-11-08 13:54) — reindex lancé en arrière-plan.\n")),
+    # Lines 19-23 and 58: the status is a heading of its own, after the section.
+    ("brew-blender", "nothing", True, (
+        "## Graph relations (graphify)\n"
+        "\n"
+        "Query: `homebrew cask brew zap masApps conventions` (3-6 domain keywords)\n"
+        "Depth: 1 | Token budget: 1200\n"
+        "\n"
+        "### Graph status: fresh\n")),
+]
+
 
 def tally(text):
     """The confirmed count of the file's last tally line, None when it has none."""
@@ -514,6 +602,41 @@ def analyze_outcome(analyze, plan, context):
         return "unknown"
     found = (repo_paths(analyze) & repo_paths(planned)) - repo_paths(guessed)
     return "changed" if found else "not changed"
+
+
+def graph_section(text):
+    """The lines under each `#… Graph relations` heading, up to the next
+    heading; None when the file has no such heading."""
+    found = None
+    inside = False
+    for line in text.splitlines():
+        if HEADING.match(line):
+            inside = GRAPH_HEADING.match(line) is not None
+            if inside and found is None:
+                found = []
+            continue
+        if inside:
+            found.append(line)
+    return found
+
+
+def graph_outcome(text):
+    """One of GRAPH_OUTCOMES for an 01b-obsidian text (module docstring, B7)."""
+    section = graph_section(text)
+    status = [line for line in text.splitlines() if GRAPH_STATUS.search(line)]
+    if section is None and not status:
+        return "nosection"
+    if any(GRAPH_STATUS.search(line).group(1).lower() in ("absent", "unavailable") for line in status):
+        return "unavailable"
+    body = "\n".join((section or []) + status)
+    if GRAPH_SKIP.search(body):
+        return "skipped"
+    return "contributed" if wikilinks(body) else "nothing"
+
+
+def graph_query_recorded(text):
+    """A section line starts with `Query:` or `Requête :`."""
+    return any(GRAPH_QUERY.match(line) for line in graph_section(text) or [])
 
 
 def _guarded_text(p, cap):
@@ -723,6 +846,29 @@ def b6_self_test(failures):
     return len(B6_FIXTURES)
 
 
+def b7_self_test(failures):
+    """Graph outcome and query line on real 01b lines; the rule that reads
+    the skip words before the status must mislabel one, or the order cannot fail."""
+    skip_first_wrong = 0
+    for source, outcome, queried, text in B7_FIXTURES:
+        got = graph_outcome(text)
+        if got != outcome:
+            failures.append(f"B7 {source}: {got}, expected {outcome}")
+        if graph_query_recorded(text) != queried:
+            failures.append(f"B7 {source}: query recorded {graph_query_recorded(text)}, expected {queried}")
+        skip_first = "skipped" if GRAPH_SKIP.search(text) else got
+        if skip_first != outcome:
+            skip_first_wrong += 1
+    if skip_first_wrong == 0:
+        failures.append("B7 fixtures cannot fail: the skip-first rule mislabels none of them")
+    missing = [o for o in GRAPH_OUTCOMES if o not in {f[1] for f in B7_FIXTURES}]
+    if missing:
+        failures.append(f"B7 table too thin: no fixture for {', '.join(missing)}")
+    if {f[2] for f in B7_FIXTURES} != {True, False}:
+        failures.append("B7 table too thin: query recorded needs both outcomes")
+    return len(B7_FIXTURES), len(GRAPH_OUTCOMES) - len(missing)
+
+
 def b5_self_test(failures):
     outcomes = {"changed", "not changed", "unknown"}
     for run, name, expected, text in B5_TALLY_FIXTURES:
@@ -783,11 +929,13 @@ def self_test():
         failures.append("class fixtures cannot fail: the unmarked rule mislabels none of them")
     n_b5 = b5_self_test(failures)
     n_b6 = b6_self_test(failures)
+    n_b7, b7_outcomes = b7_self_test(failures)
     for f in failures:
         print(f"FAIL {f}")
     print(f"self-test fixtures={len(FIXTURES)} command={n_cmd} prose={n_prose} "
           f"v0_mislabels={v0_wrong} class_fixtures={len(CLASS_FIXTURES)} "
           f"unmarked_mislabels={unmarked_wrong} b5_fixtures={n_b5} b6_fixtures={n_b6} "
+          f"b7_fixtures={n_b7} b7_outcomes={b7_outcomes}/{len(GRAPH_OUTCOMES)} "
           f"failures={len(failures)}")
     return 1 if failures else 0
 
@@ -932,6 +1080,18 @@ def metrics(runs_roots, mem_root, since=B6_SINCE):
         out[f"{prefix}.tally_due"] = len(due)
         out[f"{prefix}.with_tally"] = held
         out[f"{prefix}.tally_rate"] = f"{held / len(due):.1%}" if due else "n/a"
+
+    # B7: did step-01b query the knowledge graph (see the module docstring)
+    graph = []
+    for r in runs:
+        obs = [_guarded_text(p, None) for p in sorted(r.glob("01b-obsidian*.md"))]
+        if obs:
+            graph.append(graph_outcome("\n".join(t for t in obs if t is not None)))
+    out["B7.runs"] = len(graph)
+    for o in GRAPH_OUTCOMES:
+        out[f"B7.{o}"] = graph.count(o)
+    asked = sum(graph.count(o) for o in ("contributed", "nothing", "skipped"))
+    out["B7.contributed_rate"] = f"{graph.count('contributed') / asked:.1%}" if asked else "n/a"
     return out
 
 
@@ -959,6 +1119,8 @@ def hook():
     path = data["tool_input"]["file_path"]
     if isinstance(path, str) and VALIDATE_PATH.search(path):
         return validate_hook(pathlib.Path(path))
+    if isinstance(path, str) and OBSIDIAN_PATH.search(path):
+        return graph_hook(pathlib.Path(path))
     if isinstance(path, str) and MEMORY_PATH.search(path):
         return memory_hook(pathlib.Path(path))
     if not isinstance(path, str) or not ACS_PATH.search(path):
@@ -990,6 +1152,22 @@ def validate_hook(p):
         return 0
     msg = (f"B5: {p.parent.name} records no confirmed/dismissed tally for: {', '.join(missing)} "
            "— add `confirmed=N unique=U dismissed=D` (step-04/step-05)")
+    print(json.dumps({"hookSpecificOutput": dict(hookEventName="PostToolUse", additionalContext=msg)}))
+    return 0
+
+
+def graph_hook(p):
+    """--hook on a run's 01b-obsidian*.md: ask for the graph query it does not record."""
+    if p.is_symlink() or not p.is_file() or p.stat().st_size > HOOK_MAX_BYTES:
+        return 0
+    text = _read(p)
+    outcome = graph_outcome(text)
+    if outcome == "unavailable" or graph_query_recorded(text):
+        return 0
+    msg = (f"B7: {p.parent.name}/{p.name} records no graph query (outcome: {outcome}). "
+           "Run `mcp__graphify__query_graph` (step-01b step 7) and record its `- Query:` line "
+           "under `### Graph relations`; recency covering the task is no reason to skip. Only a "
+           "graph that cannot be asked sets `Graph status: absent` or `unavailable` instead.")
     print(json.dumps({"hookSpecificOutput": dict(hookEventName="PostToolUse", additionalContext=msg)}))
     return 0
 
@@ -1042,9 +1220,9 @@ def memory_hook(p):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="TTW run metrics (B1-B6).")
-    ap.add_argument("--runs", type=pathlib.Path, default=None,
-                    help="one runs dir (default: .claude/output/ttw)")
+    ap = argparse.ArgumentParser(description="TTW run metrics (B1-B7).")
+    ap.add_argument("--runs", type=pathlib.Path, action="append", default=None,
+                    help="a runs dir, repeatable (default: .claude/output/ttw)")
     ap.add_argument(
         "--memory",
         type=pathlib.Path,
@@ -1069,7 +1247,7 @@ def main():
     if args.acs is not None:
         return acs_report(args.acs.expanduser())
     if args.runs is not None:
-        runs_roots = [args.runs.expanduser()]
+        runs_roots = [r.expanduser() for r in args.runs]
     else:
         runs_roots = [p for p in RUN_DIRS if p.is_dir()] or [RUN_DIRS[0]]
     mem_root = args.memory.expanduser()

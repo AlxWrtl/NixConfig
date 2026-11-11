@@ -486,6 +486,12 @@ in
        (b) already bans — so an undetected project changes nothing about it.
        When there is no project, this step IS the whole vault context.
 
+       ONLY a graph status `absent` or `unavailable` skips the query. "Recency
+       already covers it" is no reason to skip: recency cannot see what it did
+       not surface, which is exactly what this step is for. Record the query
+       on the `- Query:` line of the report; a 01b written without one, and
+       not absent/unavailable, draws a PostToolUse reminder.
+
        a. **Freshness probe** (cheap, no MCP): Bash
           `ls -l ~/GraphVault/graphify-out/graph.json` and compare its mtime
           to the newest note under `~/Vaults/AlxVault/02-Projets`.
@@ -584,6 +590,8 @@ in
     - [[02-Projets/{project}/decisions/slug]] — {one-liner}
 
     ### Graph relations (graphify)
+    - Query: `{keywords}` (depth 1, budget 1200) — {N nodes, complete | truncated → reformulated}
+      Mandatory unless the status is absent or unavailable.
     - [[02-Projets/{project}/...]] — {relation to the task, per the graph}
     - Graph status: fresh | stale ({graph date}) | absent | unavailable
       ALWAYS print this line, including when no project note was found — it is
@@ -2747,11 +2755,11 @@ in
       wikilink materializes. The default when the question is "how does X relate
       to Y" or "what clusters around X".
 
-    Scope limit, and it matters: graphify indexes `02-Projets` ONLY (Preliz +
-    nix-darwin). A miss there is not proof of absence — anything under
-    `00-Meta/`, `01-Inbox/`, `03-Areas/`, `04-Resources/` or the vault root is
-    invisible to it. Graph absent, stale or mute → fall back to enquire and say
-    so; never block a run on it.
+    Scope limit, and it matters: graphify indexes every project folder under
+    `02-Projets`, and nothing else of the vault. A miss there is not proof of
+    absence — anything under `00-Meta/`, `01-Inbox/`, `03-Areas/`,
+    `04-Resources/` or the vault root is invisible to it. Graph absent, stale
+    or mute → fall back to enquire and say so; never block a run on it.
 
     The graph is a POINTER, the note is the truth: graphify tells you which note
     to open, you still read the note in AlxVault for the substance.

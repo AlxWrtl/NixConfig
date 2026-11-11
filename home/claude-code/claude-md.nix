@@ -72,8 +72,8 @@ let
         - `mcp__graphify__*` = what the vault IMPLIES: LLM-extracted entities and
           relations across note CONTENTS, communities, hubs. Use for "how does X
           relate to Y", "what clusters around X".
-        - graphify covers `02-Projets` ONLY (Preliz + nix-darwin). Silence there is
-          not absence — outside that scope, or graph mute, fall back to enquire.
+        - graphify indexes every project folder under `02-Projets`, nothing else in
+          the vault. Silence ≠ absence — outside it, or graph mute, fall back to enquire.
       '';
     }
     {

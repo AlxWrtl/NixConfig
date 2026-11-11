@@ -704,7 +704,12 @@ owes a `02-acs.md`, an examine tally when `05-examine.md` exists or its
 flags hold `-x`/`+x`, an external tally when the external pass ran; B6
 counts the runs, the untiered ones, those with a `02-acs.md` and those
 holding every tally they owe, again under `B6.since.*` for the runs dated
-on or after `--since DATE`. It informs and never blocks. Its canary is `--self-test`: it grades that
+on or after `--since DATE`. On a run's `01b-obsidian*.md` with no `- Query:`
+line under `### Graph relations` and a graph status other than `absent` or
+`unavailable`, it asks for the graphify query. That is B7: per run with an
+`01b`, the graph outcome (`contributed` when a note is cited, `nothing`,
+`skipped`, `unavailable`, `nosection` for runs older than the graph step) and
+the contributed rate. It informs and never blocks. Its canary is `--self-test`: it grades that
 classifier on real criteria copied from run directories and exits non-zero
 unless the old rule (any backtick is a command) mislabels some of them, and
 grades the classes the same way. `hook-wiring` runs `--self-test` and the

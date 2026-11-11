@@ -179,9 +179,15 @@
 #      A partial Bash read (`head -N`, `head -n N`, `sed -n A,Bp`, found
 #      anywhere in the command) whose stdout holds the current slice of
 #      that range is current; one showing the old lines stays stale.
-#      Three canaries: M-tf-stale, the stale decision forced to false,
-#      M-tf-gate, post-activation reads judged like pre-activation ones, and
-#      M-tf-range, a printed line range never counted as current.
+#      A bare name after a `cd` into the home steps dir is a step read
+#      (`cd ~/.claude/skills/ttw/steps && cat DIRECT.md`); after a `cd` to
+#      another root, or with no `cd`, it is not. A `head`/`sed` range counts
+#      only for the file its own pipeline reads, never for a sibling `cat`.
+#      Five canaries: M-tf-stale, the stale decision forced to false,
+#      M-tf-gate, post-activation reads judged like pre-activation ones,
+#      M-tf-range, a printed line range never counted as current, M-tf-cd,
+#      bare names after a `cd` never resolved, and M-tf-scope, ranges taken
+#      from the whole command instead of the file's own pipeline.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -664,7 +670,15 @@ let
     };
     A-tf-range = {
       hook = "ttw-flags.js";
-      text = "if (r.capRead.kind === \"Bash\" && rangeHit(r.capRead.cmd, now, cap)) continue;";
+      text = "if (r.capRead.kind === \"Bash\" && rangeHit(r.capRead.cmd, name, now, cap)) continue;";
+    };
+    A-tf-cd = {
+      hook = "ttw-flags.js";
+      text = "else if (c.name === \"Bash\") text = resolveCd(inp.command);";
+    };
+    A-tf-scope = {
+      hook = "ttw-flags.js";
+      text = "const tail = stages.slice(i).join(\"|\");";
     };
     A-ac-failopen = {
       hook = "ttw-metrics-probe.py";
@@ -1960,6 +1974,30 @@ let
         {
           anchor = "A-tf-range";
           to = "if (false) continue;";
+        }
+      ];
+    }
+    # No `cd` resolution: a bare name after a `cd` into the steps dir is not a read.
+    {
+      id = "M-tf-cd";
+      hook = "ttw-flags.js";
+      kills = "tf-relative-cd-emits";
+      swaps = [
+        {
+          anchor = "A-tf-cd";
+          to = "else if (c.name === \"Bash\") text = inp.command;";
+        }
+      ];
+    }
+    # Ranges from the whole command: a sibling pipe's `head` makes a whole read current.
+    {
+      id = "M-tf-scope";
+      hook = "ttw-flags.js";
+      kills = "tf-range-other-file-emits";
+      swaps = [
+        {
+          anchor = "A-tf-scope";
+          to = "const tail = cmd;";
         }
       ];
     }
@@ -3695,6 +3733,13 @@ let
     "tf-partial-sed-silent"
     "tf-partial-head-pipe-silent"
     "tf-partial-sed-changed-emits"
+    "tf-relative-cd-emits"
+    "tf-relative-cd-silent"
+    "tf-relative-foreign-silent"
+    "tf-range-other-file-emits"
+    "tf-relative-cd-scope-silent"
+    "tf-relative-cd-quoted-emits"
+    "tf-range-before-file-emits"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -6094,6 +6139,55 @@ let
           tf_now12="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 1,2p)"
           case "$tf_old12" in *"$tf_now12"*) why="fixture: old lines 1-2 hold the current ones"; return 1 ;; esac
           tf_read toolu_tf1 "$TF_OLD" Bash 'sed -n 1,2p ~/.claude/skills/ttw/steps/DIRECT.md' "$tf_old12" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # A `cd` into the home steps dir, then bare names: both are step reads,
+        # and DIRECT.md's old text is named; COMMANDS.md, unchanged, is not.
+        tf-relative-cd-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd ~/.claude/skills/ttw/steps && cat DIRECT.md COMMANDS.md' "$(printf '%s%s' "$TF_DIRECT_OLD" "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # The same `cd` read, but its stdout holds both files as they are now.
+        tf-relative-cd-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd ~/.claude/skills/ttw/steps && cat DIRECT.md COMMANDS.md' "$(printf '%s%s' "$TF_DIRECT" "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # A bare name after a `cd` to another root's steps dir, and one with no
+        # `cd` at all: neither is a home step read, the old text is not judged.
+        tf-relative-foreign-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd /tmp/fx/.claude/skills/ttw/steps && cat DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          tf_read toolu_tf2 "$TF_OLD" Bash 'cat DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # The `head -1` filters COMMANDS.md's pipe only: DIRECT.md, cat whole
+        # with its old text, stays stale although its line 1 is unchanged.
+        tf-range-other-file-emits)
+          tf_home || return 1
+          tf_old1="$(printf '%s\n' "$TF_DIRECT_OLD" | ${pkgs.gnused}/bin/sed -n 1p)"
+          tf_now1="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 1p)"
+          [ "$tf_old1" = "$tf_now1" ] || { why="fixture: DIRECT.md's line 1 changed, the trap is gone"; return 1; }
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md; cat ~/.claude/skills/ttw/steps/COMMANDS.md | head -1' "$(printf '%s' "$TF_DIRECT_OLD"; printf '%s\n' "$TF_COMMANDS" | ${pkgs.gnused}/bin/sed -n 1p)" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # The second `cd` ends the steps scope: its bare DIRECT.md is not a step
+        # read, so DIRECT's old text is not judged; COMMANDS.md is current.
+        tf-relative-cd-scope-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd ~/.claude/skills/ttw/steps && cat COMMANDS.md; cd /tmp && cat DIRECT.md' "$(printf '%s%s' "$TF_COMMANDS" "$TF_DIRECT_OLD")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # The `cd` target is quoted, with $HOME literal in the command text and
+        # a trailing `/`: it is still the home steps dir, DIRECT.md is stale.
+        tf-relative-cd-quoted-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd "$HOME/.claude/skills/ttw/steps/" && cat DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # The `head -1` sits in a stage BEFORE the file: it filters nothing the
+        # file prints, so DIRECT.md, cat whole with its old text, stays stale
+        # although its line 1 is unchanged.
+        tf-range-before-file-emits)
+          tf_home || return 1
+          tf_old1="$(printf '%s\n' "$TF_DIRECT_OLD" | ${pkgs.gnused}/bin/sed -n 1p)"
+          tf_now1="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 1p)"
+          [ "$tf_old1" = "$tf_now1" ] || { why="fixture: DIRECT.md's line 1 changed, the trap is gone"; return 1; }
+          tf_read toolu_tf1 "$TF_OLD" Bash 'head -1 /dev/null | cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
         *)
           why="no such case"; return 2 ;;

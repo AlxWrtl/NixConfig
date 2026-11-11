@@ -531,12 +531,26 @@ in
             (~5-7k tokens of context). Accept it, do not try to shrink it.
        c. Optionally, at most TWO `mcp__graphify__get_neighbors` calls on the
           1-2 returned entities most central to the task.
-       d. Keep only what recency did NOT already surface: related notes
+       d. **Cascade, project first.** Each node in the reply carries
+          `src=<Project>/<path>`, relative to `02-Projets`.
+          - Keep the nodes whose `src=` starts with `<Project>/`, the project
+            folder found in step 3.
+          - A node from another project is kept only when an EDGE in the
+            reply links it to a kept node or to a task keyword. Cite its note
+            with the prefix `[autre projet]` and name that edge in the report.
+          - The reply holds no node of the project, or step 3 found no
+            project → use the whole reply. Same for a repo whose notes live
+            under another folder (`carpress-ai`, notes under `Preliz/`).
+          Why: measured 2026-11-11, 27 of 33 graph citations came from the
+          run's own project and 6 from another, 5 of them useful. A project
+          silo would lose those 6; keeping everything lets other projects'
+          nodes take most of the reply's budget.
+       e. Keep only what recency did NOT already surface: related notes
           outside {project note, 3 recent sessions, decisions read}. Read at
           most 3 of them from the vault (Read tool) — the graph is the
           pointer, the note is the truth. Cite them as `[[wikilinks]]` like
           every other note read.
-       e. Any MCP error, timeout, or empty/degraded response → ONE attempt
+       f. Any MCP error, timeout, or empty/degraded response → ONE attempt
           only: set status `unavailable` and continue with recency alone.
           This step NEVER blocks and NEVER fails the run — a missing graph
           degrades to exactly the pre-graphify behavior.
@@ -593,6 +607,7 @@ in
     - Query: `{keywords}` (depth 1, budget 1200) — {N nodes, complete | truncated → reformulated}
       Mandatory unless the status is absent or unavailable.
     - [[02-Projets/{project}/...]] — {relation to the task, per the graph}
+    - [autre projet] [[02-Projets/{other}/...]] — {edge that links it}
     - Graph status: fresh | stale ({graph date}) | absent | unavailable
       ALWAYS print this line, including when no project note was found — it is
       the only way to tell "the graph said nothing" from "the graph was skipped".

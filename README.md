@@ -709,7 +709,9 @@ line under `### Graph relations` and a graph status other than `absent` or
 `unavailable`, it asks for the graphify query. That is B7: per run with an
 `01b`, the graph outcome (`contributed` when a note is cited, `nothing`,
 `skipped`, `unavailable`, `nosection` for runs older than the graph step) and
-the contributed rate. It informs and never blocks. Its canary is `--self-test`: it grades that
+the contributed rate. B7 also counts the graph citations from the run's
+project (its `Project note:` folder) against those from another project, and
+those of runs with no project note. It informs and never blocks. Its canary is `--self-test`: it grades that
 classifier on real criteria copied from run directories and exits non-zero
 unless the old rule (any backtick is a command) mislabels some of them, and
 grades the classes the same way. `hook-wiring` runs `--self-test` and the

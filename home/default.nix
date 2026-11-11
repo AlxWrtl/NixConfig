@@ -16,6 +16,7 @@
     ./codex.nix
     ./colima.nix
     ./veille.nix
+    ./ttw-replay.nix
   ];
 
   home = {

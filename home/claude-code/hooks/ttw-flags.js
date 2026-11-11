@@ -3,16 +3,25 @@
 // TTW step files whose copy in context is stale. Nothing else.
 //
 // Stale steps: a step file under ~/.claude/skills/ttw/steps/ (spelled ~,
-// $HOME, ${HOME} or the absolute home) read earlier in this session (a Read,
-// or a Bash command naming it, e.g. `cat`) before the last home-manager
-// activation (mtime of the current-home gcroot link), whose latest such read
-// captured text the file no longer holds, and that no read after the
-// activation captured whole. A read after the activation with a partial or
-// no capture (`ls`, `sed -n`, a failed Read) is ignored. A Bash capture
-// printing a line range (`head -N`, `head -n N`, `sed -n A,Bp`, anywhere in
-// the command) is current when it holds that slice of the file. Such files are
-// listed after the start line so the run re-reads them instead of following
-// the old copy. A transcript over 64 MiB is not scanned.
+// $HOME, ${HOME} or the absolute home) read in this session: a Read, or a
+// Bash command naming it, or a bare `NAME.md` after a `cd` into that dir, up
+// to the next `cd`. Bash statements split on newline, `;`, `&&`, `||` (quotes
+// not parsed); a read is ignored for a file when, in every statement naming
+// it, its pipe stage or a later one shows no text (`ls`, `wc`, `stat`,
+// `grep -c/-l/-L/-q`...). A read is whole (a Read with no offset/limit; a
+// Bash statement with no head/tail/sed/grep/rg/awk/cut stage from the file's
+// on) or partial. Whole: current when the capture holds the file (Read: the
+// file holds the capture). Partial Bash: current when it holds the current
+// slice of a printed range (`head -N`, `head -n N`, `sed -n A,Bp`), or when
+// each shown line (as-is, or minus a `PATH.md:` and/or `N:` display prefix)
+// is a line of the file now and a printed range shows no fewer lines than it
+// holds now. Reads before the last home-manager activation (mtime of the
+// current-home gcroot link) are judged in order: a stale one marks the file,
+// a whole current one or any capture holding the whole file clears it, a
+// partial current one leaves it, one with no capture marks it when the
+// activation is known. A read after the activation clears it only when its
+// capture holds the whole file. Marked files are listed after the start line
+// so the run re-reads them. A transcript over 64 MiB is not scanned.
 //
 // It used to classify risk from the BRIEF TEXT and rewrite the flags. Removed
 // on 2026-10-07: a 28-line Notification matcher change was forced to
@@ -28,32 +37,137 @@ const os = require("os");
 
 const TAIL = 256 * 1024;
 const SCAN_MAX = 64 * 1024 * 1024;
-let STEP_RE;
-try { STEP_RE = stepRe(os.homedir()); } catch (e) { STEP_RE = stepRe(""); }
+let STEP_RE, CD_DIR_RE;
+try { STEP_RE = stepRe(os.homedir()); CD_DIR_RE = cdDirRe(os.homedir()); } catch (e) { STEP_RE = stepRe(""); CD_DIR_RE = cdDirRe(""); }
 const RESULT_ID_RE = /"tool_use_id":\s*"([^"]+)"/g;
 const HEAD_RE = /(?<![\w.-])head\s+-(?:n\s*)?(\d+)(?!\w)/g;
 const SED_RE = /(?<![\w.-])sed\s+-n\s+(['"]?)(\d+),(\d+)p\1(?!\w)/g;
+const CD_RE = /(?<![^\s;&|(])cd(?:[ \t]+([^\s;&|)]+))?(?![^\s;&|)])/g;
+const BARE_RE = /(?<=^|[\s'"=(<;|&])([A-Za-z0-9][A-Za-z0-9._-]*\.md)(?![A-Za-z0-9._-])/g;
+const STATEMENT_RE = /\n|;|&&|\|\|/;
+const LEAD = new Set(["rtk", "command", "sudo", "env", "time"]);
+const NO_SHOW = new Set(["ls", "wc", "stat", "readlink", "realpath", "file", "du", "test", "[", "md5", "shasum", "sha256sum", "cksum"]);
+const GREPS = new Set(["grep", "rg", "egrep"]);
+const FILTERS = new Set(["head", "tail", "sed", "grep", "rg", "egrep", "awk", "cut"]);
+const NOISE_RE = /^(?:Exit code \d+|Error: .*)$/;
 
-// A step name under the home steps dir only: the home spelled ~, $HOME,
-// ${HOME} or literally, at a word start, and the name ending at `.md`.
-function stepRe(home) {
+// The home spelled ~, $HOME, ${HOME} or literally, as a regex alternation.
+function homeAlt(home) {
   const alts = ["~", "\\$HOME", "\\$\\{HOME\\}"];
   const h = typeof home === "string" ? home.replace(/\/+$/, "") : "";
-  if (h !== "") alts.push(h.replace(/[.*+?^${}()|[\]\\\/]/g, "\\$&"));
-  return new RegExp("(?<=^|[\\s'\"=(<;|&])(?:" + alts.join("|") + ")"
+  if (h !== "") alts.push(h.replace(/[.*+?^${}()|[\]\\/]/g, "\\$&"));
+  return "(?:" + alts.join("|") + ")";
+}
+
+// A step name under the home steps dir only: the home at a word start, and
+// the name ending at `.md`.
+function stepRe(home) {
+  return new RegExp("(?<=^|[\\s'\"=(<;|&])" + homeAlt(home)
     + "\\/\\.claude\\/skills\\/ttw\\/steps\\/([A-Za-z0-9][A-Za-z0-9._-]*\\.md)(?![A-Za-z0-9._-])", "g");
 }
 
-// True when the command prints a line range (1-based, inclusive) of `now`
-// whose non-blank slice is in `cap`.
-function rangeHit(cmd, now, cap) {
-  if (typeof cmd !== "string" || typeof cap !== "string") return false;
-  const ranges = [];
+// A `cd` target that is the home steps dir, optionally quoted, optional `/`.
+function cdDirRe(home) {
+  return new RegExp("^(['\"]?)" + homeAlt(home) + "\\/\\.claude\\/skills\\/ttw\\/steps\\/?\\1$");
+}
+
+// The Bash text with each bare `NAME.md` after a `cd` into the home steps
+// dir, up to the next `cd`, spelled ~/.claude/skills/ttw/steps/NAME.md.
+function resolveCd(cmd) {
+  if (typeof cmd !== "string") return cmd;
+  const fix = (seg, on) => on ? seg.replace(BARE_RE, "~/.claude/skills/ttw/steps/$1") : seg;
+  let out = "";
+  let from = 0;
+  let on = false;
   let m;
-  HEAD_RE.lastIndex = 0;
-  while ((m = HEAD_RE.exec(cmd)) !== null) ranges.push([1, Number(m[1])]);
-  SED_RE.lastIndex = 0;
-  while ((m = SED_RE.exec(cmd)) !== null) ranges.push([Number(m[2]), Number(m[3])]);
+  CD_RE.lastIndex = 0;
+  while ((m = CD_RE.exec(cmd)) !== null) {
+    out += fix(cmd.slice(from, m.index), on) + m[0];
+    from = m.index + m[0].length;
+    on = m[1] !== undefined && CD_DIR_RE.test(m[1]);
+  }
+  return out + fix(cmd.slice(from), on);
+}
+
+function namesStep(text, name) {
+  STEP_RE.lastIndex = 0;
+  let m;
+  while ((m = STEP_RE.exec(text)) !== null) if (m[1] === name) return true;
+  return false;
+}
+
+// A pipe stage's words after leading `VAR=x` and wrapper commands.
+function stageWords(stage) {
+  const w = stage.trim().replace(/^[({]\s*/, "").split(/\s+/);
+  let k = 0;
+  while (k < w.length && (LEAD.has(w[k]) || /^[A-Za-z_]\w*=/.test(w[k]))) k++;
+  return w.slice(k);
+}
+
+function stageCmd(stage) {
+  const w = stageWords(stage);
+  return w.length > 0 ? w[0].replace(/^.*\//, "") : "";
+}
+
+// True when a pipe stage prints no text of its input file.
+function noShow(stage) {
+  const c = stageCmd(stage);
+  if (NO_SHOW.has(c)) return true;
+  if (!GREPS.has(c)) return false;
+  for (const a of stageWords(stage).slice(1)) {
+    if (a === "--") break;
+    if (/^-[A-Za-z]*[clLq]/.test(a)) return true;
+  }
+  return false;
+}
+
+// How Bash text `cmd` shows step `name`: null when no statement naming it
+// shows its text, else { full, ranges }. Each statement is judged from the
+// pipe stage naming the file on; ranges are 1-based, inclusive.
+function bashView(cmd, name) {
+  let shown = false;
+  let full = false;
+  const ranges = [];
+  for (const st of cmd.split(STATEMENT_RE)) {
+    const stages = st.split("|");
+    const i = stages.findIndex(s => namesStep(s, name));
+    if (i < 0) continue;
+    const tail = stages.slice(i).join("|");
+    const after = tail.split("|");
+    if (after.some(noShow)) continue;
+    shown = true;
+    if (!after.some(s => FILTERS.has(stageCmd(s)))) full = true;
+    let m;
+    HEAD_RE.lastIndex = 0;
+    while ((m = HEAD_RE.exec(tail)) !== null) ranges.push([1, Number(m[1])]);
+    SED_RE.lastIndex = 0;
+    while ((m = SED_RE.exec(tail)) !== null) ranges.push([Number(m[2]), Number(m[3])]);
+  }
+  return shown ? { full, ranges } : null;
+}
+
+// True when every non-blank line `cap` shows (as-is, or minus a `PATH.md:`
+// and/or `N:` / `N-` / `N<TAB>` prefix; `Exit code N` / `Error: ...` lines
+// aside) is a line of `now`, and, if `ranges` is not empty, one of them
+// holds no more non-blank lines of `now` than `cap` shows.
+function lineHit(ranges, now, cap) {
+  if (typeof cap !== "string") return false;
+  const lines = now.split("\n");
+  const have = new Set(lines);
+  const shown = cap.split("\n").filter(l => l.trim() !== "" && !NOISE_RE.test(l));
+  if (shown.length === 0) return false;
+  for (const l of shown) {
+    const p = l.replace(/^\S*?\.md[:-]/, "");
+    if (![l, p, l.replace(/^\s*\d+[:\t-]/, ""), p.replace(/^\s*\d+[:\t-]/, "")].some(x => have.has(x))) return false;
+  }
+  const need = ranges.filter(([a, b]) => a >= 1 && b >= a)
+    .map(([a, b]) => lines.slice(a - 1, b).filter(l => l.trim() !== "").length);
+  return need.length === 0 || need.some(n => n <= shown.length);
+}
+
+// True when `cap` holds the non-blank slice of `now` one of `ranges` prints.
+function rangeHit(ranges, now, cap) {
+  if (typeof cap !== "string") return false;
   const lines = now.split("\n");
   for (const [a, b] of ranges) {
     if (!(a >= 1 && b >= a)) continue;
@@ -109,14 +223,14 @@ function contentArray(entry) {
   return msg && Array.isArray(msg.content) ? msg.content : [];
 }
 
-// Step reads in transcript order: { name, ts, id, kind, cmd, cap }.
+// Step reads in transcript order: { name, ts, id, kind, full, ranges, cap }.
 function stepReads(path) {
   const reads = [];
   const byId = new Map();
   if (fs.statSync(path).size > SCAN_MAX) return reads;
   const lines = fs.readFileSync(path, "utf8").split("\n");
   for (const line of lines) {
-    let wanted = line.includes("skills/ttw/steps/");
+    let wanted = line.includes("skills/ttw/steps");
     if (!wanted && byId.size > 0 && line.includes('"tool_use_id"')) {
       RESULT_ID_RE.lastIndex = 0;
       let m;
@@ -136,7 +250,7 @@ function stepReads(path) {
         const inp = c.input || {};
         let text;
         if (c.name === "Read") text = inp.file_path;
-        else if (c.name === "Bash") text = inp.command;
+        else if (c.name === "Bash") text = resolveCd(inp.command);
         if (typeof text !== "string") continue;
         const names = new Set();
         STEP_RE.lastIndex = 0;
@@ -145,11 +259,14 @@ function stepReads(path) {
         if (names.size === 0) continue;
         const group = [];
         for (const name of names) {
-          const r = { name, ts, id: c.id, kind: c.name, cmd: c.name === "Bash" ? text : null, cap: null };
+          const view = c.name === "Bash" ? bashView(text, name)
+            : { full: inp.offset === undefined && inp.limit === undefined, ranges: [] };
+          if (view === null) continue;
+          const r = { name, ts, id: c.id, kind: c.name, full: view.full, ranges: view.ranges, cap: null };
           reads.push(r);
           group.push(r);
         }
-        byId.set(c.id, group);
+        if (group.length > 0) byId.set(c.id, group);
       }
     } else if (entry.type === "user") {
       for (const c of contentArray(entry)) {
@@ -177,31 +294,33 @@ function staleSteps(path, home) {
   if (typeof path !== "string" || path === "") return [];
   const steps = home + "/.claude/skills/ttw/steps/";
   const act = activationMs(home);
-  // Per name: the last pre-activation read, the latest non-null capture up
-  // to it, and the non-null captures of post-activation reads (refresh
-  // candidates, never judged).
+  // Per name: the pre-activation reads in order (judged), and the non-null
+  // captures of post-activation reads (refresh candidates, never judged).
   const per = new Map();
   for (const r of stepReads(path)) {
-    if (!per.has(r.name)) per.set(r.name, { pre: null, capRead: null, post: [] });
+    if (!per.has(r.name)) per.set(r.name, { pre: [], post: [] });
     const s = per.get(r.name);
     if (r.ts >= act) { if (r.cap !== null) s.post.push(r.cap); continue; }
-    s.pre = r;
-    if (r.cap !== null) s.capRead = r;
+    s.pre.push(r);
   }
   const out = [];
   for (const name of Array.from(per.keys()).sort()) {
     const r = per.get(name);
-    if (r.pre === null) continue;
+    if (r.pre.length === 0) continue;
     let now;
     try { now = fs.readFileSync(steps + name, "utf8"); } catch (e) { continue; }
     if (r.post.some(c => c.includes(now.trimEnd()))) continue;
-    if (r.capRead === null) {
-      if (Number.isFinite(act)) out.push(name);
-      continue;
+    let stale = false;
+    for (const p of r.pre) {
+      if (p.cap === null) { if (Number.isFinite(act)) stale = true; continue; }
+      if (p.cap.includes(now.trimEnd())) { stale = false; continue; }
+      let cur;
+      if (p.kind === "Read") cur = now.includes(p.cap);
+      else if (p.full) cur = p.cap.includes(now.trimEnd());
+      else cur = rangeHit(p.ranges, now, p.cap) || lineHit(p.ranges, now, p.cap);
+      if (!cur) stale = true;
+      else if (p.full) stale = false;
     }
-    const cap = r.capRead.cap;
-    if (r.capRead.kind === "Bash" && rangeHit(r.capRead.cmd, now, cap)) continue;
-    const stale = r.capRead.kind === "Read" ? !now.includes(cap) : !cap.includes(now.trimEnd());
     if (stale) out.push(name);
   }
   return out;

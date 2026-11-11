@@ -179,9 +179,24 @@
 #      A partial Bash read (`head -N`, `head -n N`, `sed -n A,Bp`, found
 #      anywhere in the command) whose stdout holds the current slice of
 #      that range is current; one showing the old lines stays stale.
-#      Three canaries: M-tf-stale, the stale decision forced to false,
-#      M-tf-gate, post-activation reads judged like pre-activation ones, and
-#      M-tf-range, a printed line range never counted as current.
+#      A bare name after a `cd` into the home steps dir is a step read
+#      (`cd ~/.claude/skills/ttw/steps && cat DIRECT.md`); after a `cd` to
+#      another root, or with no `cd`, it is not. A `head`/`sed` range counts
+#      only for the file its own pipeline reads, never for a sibling `cat`.
+#      Reads that show no file text (`wc`, `ls`, `stat`, `grep -c/-l/-q`…)
+#      are ignored; a partial display is current when each shown line is
+#      still a line of the file. Reads are judged in order: a stale one marks
+#      the file, a whole current one clears it, a partial current one leaves it.
+#      A range read whose capture holds the whole current file clears it too.
+#      Nine canaries: M-tf-stale, the stale decision forced to false,
+#      M-tf-gate, post-activation reads judged like pre-activation ones,
+#      M-tf-range, a printed line range never counted as current, M-tf-cd,
+#      bare names after a `cd` never resolved, M-tf-scope, ranges taken
+#      from the whole command instead of the file's own pipeline,
+#      M-tf-noshow, reads that show no text judged, M-tf-lines,
+#      line-presence applied to whole reads, M-tf-mask, only the latest
+#      capture judged, and M-tf-whole, a partial capture holding the whole
+#      file never clearing an earlier stale read.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -656,7 +671,7 @@ let
     };
     A-tf-stale = {
       hook = "ttw-flags.js";
-      text = "const stale = r.capRead.kind === \"Read\" ? !now.includes(cap) : !cap.includes(now.trimEnd());";
+      text = "if (!cur) stale = true;";
     };
     A-tf-gate = {
       hook = "ttw-flags.js";
@@ -664,7 +679,31 @@ let
     };
     A-tf-range = {
       hook = "ttw-flags.js";
-      text = "if (r.capRead.kind === \"Bash\" && rangeHit(r.capRead.cmd, now, cap)) continue;";
+      text = "else cur = rangeHit(p.ranges, now, p.cap) || lineHit(p.ranges, now, p.cap);";
+    };
+    A-tf-lines = {
+      hook = "ttw-flags.js";
+      text = "else if (p.full) cur = p.cap.includes(now.trimEnd());";
+    };
+    A-tf-noshow = {
+      hook = "ttw-flags.js";
+      text = "if (after.some(noShow)) continue;";
+    };
+    A-tf-mask = {
+      hook = "ttw-flags.js";
+      text = "for (const p of r.pre) {";
+    };
+    A-tf-whole = {
+      hook = "ttw-flags.js";
+      text = "if (p.cap.includes(now.trimEnd())) { stale = false; continue; }";
+    };
+    A-tf-cd = {
+      hook = "ttw-flags.js";
+      text = "else if (c.name === \"Bash\") text = resolveCd(inp.command);";
+    };
+    A-tf-scope = {
+      hook = "ttw-flags.js";
+      text = "const tail = stages.slice(i).join(\"|\");";
     };
     A-ac-failopen = {
       hook = "ttw-metrics-probe.py";
@@ -1935,7 +1974,7 @@ let
       swaps = [
         {
           anchor = "A-tf-stale";
-          to = "const stale = false;";
+          to = "if (false) stale = true;";
         }
       ];
     }
@@ -1951,15 +1990,89 @@ let
         }
       ];
     }
-    # No range check: a partial Bash read holding the current slice stays stale.
+    # No range check: a partial Bash read holding the current slice after
+    # other output (no line-presence) stays stale.
     {
       id = "M-tf-range";
       hook = "ttw-flags.js";
-      kills = "tf-partial-sed-silent";
+      kills = "tf-partial-head-pipe-silent";
       swaps = [
         {
           anchor = "A-tf-range";
+          to = "else cur = lineHit(p.ranges, now, p.cap);";
+        }
+      ];
+    }
+    # Line-presence on whole reads too: a truncated `cat` counts as current.
+    {
+      id = "M-tf-lines";
+      hook = "ttw-flags.js";
+      kills = "tf-cat-truncated-emits";
+      swaps = [
+        {
+          anchor = "A-tf-lines";
+          to = "else if (p.full) cur = p.cap.includes(now.trimEnd()) || lineHit(p.ranges, now, p.cap);";
+        }
+      ];
+    }
+    # No no-show rule: a `wc -c` naming the file is judged as a whole read.
+    {
+      id = "M-tf-noshow";
+      hook = "ttw-flags.js";
+      kills = "tf-wc-silent";
+      swaps = [
+        {
+          anchor = "A-tf-noshow";
           to = "if (false) continue;";
+        }
+      ];
+    }
+    # Only the latest capture judged: a current partial read masks a stale whole one.
+    {
+      id = "M-tf-mask";
+      hook = "ttw-flags.js";
+      kills = "tf-partial-masks-stale-emits";
+      swaps = [
+        {
+          anchor = "A-tf-mask";
+          to = "for (const p of r.pre.filter(q => q.cap !== null).slice(-1)) {";
+        }
+      ];
+    }
+    # No whole-capture clear: a partial read holding the whole current file
+    # leaves an earlier stale whole read in place.
+    {
+      id = "M-tf-whole";
+      hook = "ttw-flags.js";
+      kills = "tf-range-whole-file-clears-silent";
+      swaps = [
+        {
+          anchor = "A-tf-whole";
+          to = "if (false) { stale = false; continue; }";
+        }
+      ];
+    }
+    # No `cd` resolution: a bare name after a `cd` into the steps dir is not a read.
+    {
+      id = "M-tf-cd";
+      hook = "ttw-flags.js";
+      kills = "tf-relative-cd-emits";
+      swaps = [
+        {
+          anchor = "A-tf-cd";
+          to = "else if (c.name === \"Bash\") text = inp.command;";
+        }
+      ];
+    }
+    # Ranges from the whole command: a sibling pipe's `head` makes a whole read current.
+    {
+      id = "M-tf-scope";
+      hook = "ttw-flags.js";
+      kills = "tf-range-other-file-emits";
+      swaps = [
+        {
+          anchor = "A-tf-scope";
+          to = "const tail = cmd;";
         }
       ];
     }
@@ -3695,6 +3808,23 @@ let
     "tf-partial-sed-silent"
     "tf-partial-head-pipe-silent"
     "tf-partial-sed-changed-emits"
+    "tf-relative-cd-emits"
+    "tf-relative-cd-silent"
+    "tf-relative-foreign-silent"
+    "tf-range-other-file-emits"
+    "tf-relative-cd-scope-silent"
+    "tf-relative-cd-quoted-emits"
+    "tf-range-before-file-emits"
+    "tf-wc-silent"
+    "tf-ls-only-silent"
+    "tf-grep-count-silent"
+    "tf-grep-lines-silent"
+    "tf-grep-old-line-emits"
+    "tf-sed-shifted-silent"
+    "tf-partial-masks-stale-emits"
+    "tf-full-current-resets-silent"
+    "tf-cat-truncated-emits"
+    "tf-range-whole-file-clears-silent"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -6095,6 +6225,130 @@ let
           case "$tf_old12" in *"$tf_now12"*) why="fixture: old lines 1-2 hold the current ones"; return 1 ;; esac
           tf_read toolu_tf1 "$TF_OLD" Bash 'sed -n 1,2p ~/.claude/skills/ttw/steps/DIRECT.md' "$tf_old12" || return 1
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # A `cd` into the home steps dir, then bare names: both are step reads,
+        # and DIRECT.md's old text is named; COMMANDS.md, unchanged, is not.
+        tf-relative-cd-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd ~/.claude/skills/ttw/steps && cat DIRECT.md COMMANDS.md' "$(printf '%s%s' "$TF_DIRECT_OLD" "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # The same `cd` read, but its stdout holds both files as they are now.
+        tf-relative-cd-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd ~/.claude/skills/ttw/steps && cat DIRECT.md COMMANDS.md' "$(printf '%s%s' "$TF_DIRECT" "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # A bare name after a `cd` to another root's steps dir, and one with no
+        # `cd` at all: neither is a home step read, the old text is not judged.
+        tf-relative-foreign-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd /tmp/fx/.claude/skills/ttw/steps && cat DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          tf_read toolu_tf2 "$TF_OLD" Bash 'cat DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # The `head -1` filters COMMANDS.md's pipe only: DIRECT.md, cat whole
+        # with its old text, stays stale although its line 1 is unchanged.
+        tf-range-other-file-emits)
+          tf_home || return 1
+          tf_old1="$(printf '%s\n' "$TF_DIRECT_OLD" | ${pkgs.gnused}/bin/sed -n 1p)"
+          tf_now1="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 1p)"
+          [ "$tf_old1" = "$tf_now1" ] || { why="fixture: DIRECT.md's line 1 changed, the trap is gone"; return 1; }
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md; cat ~/.claude/skills/ttw/steps/COMMANDS.md | head -1' "$(printf '%s' "$TF_DIRECT_OLD"; printf '%s\n' "$TF_COMMANDS" | ${pkgs.gnused}/bin/sed -n 1p)" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # The second `cd` ends the steps scope: its bare DIRECT.md is not a step
+        # read, so DIRECT's old text is not judged; COMMANDS.md is current.
+        tf-relative-cd-scope-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd ~/.claude/skills/ttw/steps && cat COMMANDS.md; cd /tmp && cat DIRECT.md' "$(printf '%s%s' "$TF_COMMANDS" "$TF_DIRECT_OLD")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # The `cd` target is quoted, with $HOME literal in the command text and
+        # a trailing `/`: it is still the home steps dir, DIRECT.md is stale.
+        tf-relative-cd-quoted-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd "$HOME/.claude/skills/ttw/steps/" && cat DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # The `head -1` sits in a stage BEFORE the file: it filters nothing the
+        # file prints, so DIRECT.md, cat whole with its old text, stays stale
+        # although its line 1 is unchanged.
+        tf-range-before-file-emits)
+          tf_home || return 1
+          tf_old1="$(printf '%s\n' "$TF_DIRECT_OLD" | ${pkgs.gnused}/bin/sed -n 1p)"
+          tf_now1="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 1p)"
+          [ "$tf_old1" = "$tf_now1" ] || { why="fixture: DIRECT.md's line 1 changed, the trap is gone"; return 1; }
+          tf_read toolu_tf1 "$TF_OLD" Bash 'head -1 /dev/null | cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # `wc -c` names DIRECT.md but shows none of its text: not a read, so
+        # the byte counts are never judged; COMMANDS.md, cat whole, is current.
+        tf-wc-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cd ~/.claude/skills/ttw/steps; wc -c DIRECT.md COMMANDS.md; cat COMMANDS.md' "$(printf '%7d %s\n' "''${#TF_DIRECT_OLD}" DIRECT.md "''${#TF_COMMANDS}" COMMANDS.md "$((''${#TF_DIRECT_OLD} + ''${#TF_COMMANDS}))" total; printf '%s' "$TF_COMMANDS")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # An `ls -la` alone before the activation shows no file text: no read.
+        tf-ls-only-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'ls -la ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s\n' "-rw-r--r--  1 alx  staff  70 Nov 11 18:21 $TF_STEPS/DIRECT.md")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # `grep -c` prints a count, no line of the file: no read.
+        tf-grep-count-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'grep -c Inline ~/.claude/skills/ttw/steps/DIRECT.md' '1' || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # `grep -n` shows one line, prefix `2:` aside a line of the file now:
+        # a partial display that is current.
+        tf-grep-lines-silent)
+          tf_home || return 1
+          tf_now2="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 2p)"
+          [ "$tf_now2" = "Inline, no subagent." ] || { why="fixture: 'Inline, no subagent.' is no longer line 2 of DIRECT.md"; return 1; }
+          tf_read toolu_tf1 "$TF_OLD" Bash 'grep -n Inline ~/.claude/skills/ttw/steps/DIRECT.md' '2:Inline, no subagent.' || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # `grep -n` on the old file shows its line holding `Flags`, which the
+        # file no longer holds: the partial display is stale.
+        tf-grep-old-line-emits)
+          tf_home || return 1
+          tf_oldln="$(printf '%s\n' "$TF_DIRECT_OLD" | ${pkgs.gnused}/bin/sed -n '/Flags/{=;p}' | ${pkgs.gnused}/bin/sed 'N;s/\n/:/')"
+          case "$tf_oldln" in [0-9]*:*Flags*) ;; *) why="fixture: no single old line of DIRECT.md holds Flags: $tf_oldln"; return 1 ;; esac
+          case $'\n'"$TF_DIRECT" in *$'\n'"''${tf_oldln#*:}"$'\n'*) why="fixture: the old Flags line is still a line of DIRECT.md"; return 1 ;; esac
+          tf_read toolu_tf1 "$TF_OLD" Bash 'grep -n Flags ~/.claude/skills/ttw/steps/DIRECT.md' "$tf_oldln" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # `sed -n 3,3p` shows a line that is now line 2: not the current slice
+        # of its range, but each shown line is still a line of the file.
+        tf-sed-shifted-silent)
+          tf_home || return 1
+          tf_now2="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 2p)"
+          tf_now3="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 3p)"
+          [ "$tf_now2" = "Inline, no subagent." ] || { why="fixture: 'Inline, no subagent.' is no longer line 2 of DIRECT.md"; return 1; }
+          case "$tf_now2" in *"$tf_now3"*) why="fixture: DIRECT.md's line 3 is in line 2, the shift is gone"; return 1 ;; esac
+          tf_read toolu_tf1 "$TF_OLD" Bash 'sed -n 3,3p ~/.claude/skills/ttw/steps/DIRECT.md' "$tf_now2" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # The old text cat whole, then a current partial `sed -n 1,1p`: a
+        # partial current read does not clear the earlier stale one.
+        tf-partial-masks-stale-emits)
+          tf_home || return 1
+          tf_old1="$(printf '%s\n' "$TF_DIRECT_OLD" | ${pkgs.gnused}/bin/sed -n 1p)"
+          tf_now1="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 1p)"
+          [ "$tf_old1" = "$tf_now1" ] || { why="fixture: DIRECT.md's line 1 changed, the trap is gone"; return 1; }
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          tf_read toolu_tf2 "$TF_OLD" Bash 'sed -n 1,1p ~/.claude/skills/ttw/steps/DIRECT.md' "$tf_now1" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
+        # The old text cat whole, then the current text cat whole, both before
+        # the activation: the later whole current read clears the file.
+        tf-full-current-resets-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          tf_read toolu_tf2 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # A whole `cat` whose stdout is only COMMANDS.md's first line: every
+        # shown line is current, but a whole read must hold the whole file.
+        tf-cat-truncated-emits)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/COMMANDS.md' "$(printf '%s\n' "$TF_COMMANDS" | ${pkgs.gnused}/bin/sed -n 1p)" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits COMMANDS.md DIRECT.md ;;
+        # The old text cat whole, then `head -80` past the file's end: its
+        # capture holds the whole current file, which clears the stale copy.
+        tf-range-whole-file-clears-silent)
+          tf_home || return 1
+          tf_n="$(printf '%s' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n '$=')"
+          [ -n "$tf_n" ] && [ "$tf_n" -lt 80 ] || { why="fixture: DIRECT.md has $tf_n lines, head -80 no longer covers it"; return 1; }
+          tf_read toolu_tf1 "$TF_OLD" Bash 'cat ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT_OLD")" || return 1
+          tf_read toolu_tf2 "$TF_OLD" Bash 'head -80 ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s' "$TF_DIRECT")" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
         *)
           why="no such case"; return 2 ;;
       esac

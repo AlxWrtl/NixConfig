@@ -458,8 +458,9 @@ in
          missing project note does not make it mute.
          The cwd basename is NOT a reliable key for the graph. A code repo can
          carry a name that exists nowhere as a vault folder while its notes live
-         under another project: measured on `carpress-ai`, whose notes sit under
-         `Preliz/` — this early exit sent the run to step-02, and the graph,
+         under another project: measured on a repo still under a former code
+         name while its notes sat under the renamed project's folder — this
+         early exit sent the run to step-02, and the graph,
          which held the answer, was never asked.
        - 1 match → use it.
        - 2+ matches → use `AskUserQuestion` to let the user pick; do NOT silently pick a "closest match".
@@ -540,7 +541,8 @@ in
             with the prefix `[autre projet]` and name that edge in the report.
           - The reply holds no node of the project, or step 3 found no
             project → use the whole reply. Same for a repo whose notes live
-            under another folder (`carpress-ai`, notes under `Preliz/`).
+            under another folder (a former code name, notes under the
+            renamed project).
           Why: measured 2026-11-11, 27 of 33 graph citations came from the
           run's own project and 6 from another, 5 of them useful. A project
           silo would lose those 6; keeping everything lets other projects'

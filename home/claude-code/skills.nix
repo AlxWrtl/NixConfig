@@ -2386,6 +2386,11 @@ in
     Default flags: `-pr` only; -o and -n run only when typed — a vault
     read and a session note buy nothing on a one-line change. Typed `-t`,
     `-x` or `-e` are honoured: they run after step 6 as in Standard.
+    Typed `-o` runs before step 3: read
+    [step-01b-obsidian-context.md](step-01b-obsidian-context.md) and execute
+    it, writing `01b-obsidian.md` with its graph query and project-first
+    cascade. Never an inline vault read instead: it skips graphify, and B7
+    cannot count it.
 
     ## Steps (in order)
 

@@ -1947,7 +1947,8 @@ in
 
     The Analyze fan-out row is enforced by the research-model hook (PreToolUse
     on Agent): an Explore or codebase-navigator spawn whose `model` is not
-    `haiku`, absent included, is denied.
+    `haiku`, absent included, is denied, and so is any other spawn with no
+    `model` (`fork` exempt: it always runs on the parent's model).
 
     Haiku locates, maps and audits; it does not explain causes. A "why does X
     happen" question (root cause, tracing a library's internals, a fix

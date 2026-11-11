@@ -152,6 +152,10 @@
 #      and the metrics probe read ttw runs, never `ttwx`. No pre-rename
 #      hook file is installed (A1 flags one back as dead). One canary per
 #      name, per narrowing and per widening.
+#      Run 84 adds the model-required rule to research-model: any other
+#      spawn with no model, Agent or Task, is denied (a null or empty
+#      model counts as none); a fork, with or without one, allowed. One
+#      canary each.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -715,6 +719,18 @@ let
     A-rm-overflow = {
       hook = "research-model.js";
       text = "if (input.length + c.length > MAX_INPUT) { overflow = true; input = \"\"; return; }";
+    };
+    A-rm-required = {
+      hook = "research-model.js";
+      text = "if (!RESEARCH.includes(type)) { requireModel(ti, type); return; }";
+    };
+    A-rm-fork = {
+      hook = "research-model.js";
+      text = "if (type === \"fork\") { allow(); return; }";
+    };
+    A-rm-model = {
+      hook = "research-model.js";
+      text = "if (ti.model !== undefined && ti.model !== null && ti.model !== \"\") { allow(); return; }";
     };
     A-le-chain = {
       hook = "lone-excluded-bash.js";
@@ -2172,6 +2188,43 @@ let
         }
       ];
     }
+    # Run 84. The pre-run-84 hook: a spawn outside the research set goes
+    # through with no model and inherits the parent's.
+    {
+      id = "M-rm-required";
+      hook = "research-model.js";
+      kills = "rm-plan-nomodel-deny";
+      swaps = [
+        {
+          anchor = "A-rm-required";
+          to = "if (!RESEARCH.includes(type)) { allow(); return; }";
+        }
+      ];
+    }
+    # No fork exemption: a fork, which ignores `model`, is denied for lacking one.
+    {
+      id = "M-rm-fork";
+      hook = "research-model.js";
+      kills = "rm-fork-nomodel-allow";
+      swaps = [
+        {
+          anchor = "A-rm-fork";
+          to = "if (false) { allow(); return; }";
+        }
+      ];
+    }
+    # Run 84. Key presence only: a spawn carrying model: null or "" goes through.
+    {
+      id = "M-rm-presence";
+      hook = "research-model.js";
+      kills = "rm-plan-nullmodel-deny";
+      swaps = [
+        {
+          anchor = "A-rm-model";
+          to = "if (\"model\" in ti) { allow(); return; }";
+        }
+      ];
+    }
     # Sandbox-shape run. One clean segment enough: `git add . && git commit`
     # passes, and the whole chain stays sandboxed.
     {
@@ -3311,6 +3364,12 @@ let
     "rm-plan-opus-allow"
     "rm-malformed-allow"
     "rm-oversize-allow"
+    "rm-plan-nomodel-deny"
+    "rm-task-nomodel-deny"
+    "rm-fork-nomodel-allow"
+    "rm-fork-sonnet-allow"
+    "rm-plan-nullmodel-deny"
+    "rm-plan-emptymodel-deny"
     "le-cd-chain-deny"
     "le-git-C-deny"
     "le-git-c-deny"
@@ -4825,6 +4884,19 @@ let
         rm-oversize-allow)
           { rm_in Explore sonnet; ${pkgs.coreutils}/bin/head -c 4400000 /dev/zero | ${pkgs.coreutils}/bin/tr '\0' ' '; printf '}garbage'; } > "$d/$lbl.big"
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(${pkgs.coreutils}/bin/cat "$d/$lbl.big")"; is_allow ;;
+        # Run 84: every other spawn names its model; a fork never needs one.
+        rm-plan-nomodel-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Plan)"; is_deny 'This Plan spawn has no model; re-spawn it with an explicit model' ;;
+        rm-task-nomodel-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in general-purpose | ${jq} -c '.tool_name = "Task"')"; is_deny 'This general-purpose spawn has no model' ;;
+        rm-fork-nomodel-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in fork)"; is_allow ;;
+        rm-fork-sonnet-allow)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in fork sonnet)"; is_allow ;;
+        rm-plan-nullmodel-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Plan | ${jq} -c '.tool_input.model = null')"; is_deny 'This Plan spawn has no model; re-spawn it with an explicit model' ;;
+        rm-plan-emptymodel-deny)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Plan | ${jq} -c '.tool_input.model = ""')"; is_deny 'This Plan spawn has no model; re-spawn it with an explicit model' ;;
         # Sandbox-shape run: an excluded command leaves the sandbox only
         # alone, or chained with other lone excluded commands.
         le-cd-chain-deny)

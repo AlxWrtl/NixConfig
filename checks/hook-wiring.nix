@@ -176,8 +176,12 @@
 #      the old read stale, and a partial read with no earlier one stays
 #      silent. A Bash error string is a capture (silent when current); an
 #      other root's steps dir and a `.md.bak` are not step files.
-#      Two canaries: M-tf-stale, the stale decision forced to false, and
-#      M-tf-gate, post-activation reads judged like pre-activation ones.
+#      A partial Bash read (`head -N`, `head -n N`, `sed -n A,Bp`, found
+#      anywhere in the command) whose stdout holds the current slice of
+#      that range is current; one showing the old lines stays stale.
+#      Three canaries: M-tf-stale, the stale decision forced to false,
+#      M-tf-gate, post-activation reads judged like pre-activation ones, and
+#      M-tf-range, a printed line range never counted as current.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -657,6 +661,10 @@ let
     A-tf-gate = {
       hook = "ttw-flags.js";
       text = "if (r.ts >= act) { if (r.cap !== null) s.post.push(r.cap); continue; }";
+    };
+    A-tf-range = {
+      hook = "ttw-flags.js";
+      text = "if (r.capRead.kind === \"Bash\" && rangeHit(r.capRead.cmd, now, cap)) continue;";
     };
     A-ac-failopen = {
       hook = "ttw-metrics-probe.py";
@@ -1940,6 +1948,18 @@ let
         {
           anchor = "A-tf-gate";
           to = "if (false) { if (r.cap !== null) s.post.push(r.cap); continue; }";
+        }
+      ];
+    }
+    # No range check: a partial Bash read holding the current slice stays stale.
+    {
+      id = "M-tf-range";
+      hook = "ttw-flags.js";
+      kills = "tf-partial-sed-silent";
+      swaps = [
+        {
+          anchor = "A-tf-range";
+          to = "if (false) continue;";
         }
       ];
     }
@@ -3672,6 +3692,9 @@ let
     "tf-post-partial-silent"
     "tf-bash-error-silent"
     "tf-foreign-root-silent"
+    "tf-partial-sed-silent"
+    "tf-partial-head-pipe-silent"
+    "tf-partial-sed-changed-emits"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -4116,7 +4139,7 @@ let
     TF_OLD='2026-11-11T17:21:00.000Z'
     TF_NEW='2026-11-11T19:21:00.000Z'
     TF_DIRECT_OLD=$'# TTW: Direct tier\n\nInline, no subagent. Flags -o and -n are ignored in Direct.\n'
-    TF_DIRECT=$'# TTW: Direct tier\n\nInline, no subagent. -o runs step-01b first; -n is ignored.\n'
+    TF_DIRECT=$'# TTW: Direct tier\nInline, no subagent.\n-o runs step-01b first; -n is ignored.\n'
     TF_COMMANDS=$'# TTW: commands\n\n`ttw-tier --base master` prints the tier of the real diff.\n'
     tf_home() {
       TFX="$root/tf/$lbl.jsonl"
@@ -6051,6 +6074,27 @@ let
           tf_home || return 1
           tf_read toolu_tf1 "$TF_OLD" Bash 'cat /tmp/fx/.claude/skills/ttw/steps/COMMANDS.md ~/.claude/skills/ttw/steps/COMMANDS.md.bak' 'other' || return 1
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # A pre-activation `sed -n 2,3p` whose stdout is the current lines 2-3:
+        # the slice it shows is current, no stale line.
+        tf-partial-sed-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'sed -n 2,3p ~/.claude/skills/ttw/steps/DIRECT.md' "$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 2,3p)" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # A `head -2` at the end of a pipe, after other output: the range is
+        # found anywhere in the command, and stdout holds the current lines 1-2.
+        tf-partial-head-pipe-silent)
+          tf_home || return 1
+          tf_read toolu_tf1 "$TF_OLD" Bash 'echo x; cat ~/.claude/skills/ttw/steps/DIRECT.md | head -2' "$(printf 'x\n'; printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 1,2p)" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_quiet ;;
+        # The same `sed -n 1,2p` shape, but its stdout is the OLD file's lines
+        # 1-2, which differ from the current ones: still stale.
+        tf-partial-sed-changed-emits)
+          tf_home || return 1
+          tf_old12="$(printf '%s\n' "$TF_DIRECT_OLD" | ${pkgs.gnused}/bin/sed -n 1,2p)"
+          tf_now12="$(printf '%s\n' "$TF_DIRECT" | ${pkgs.gnused}/bin/sed -n 1,2p)"
+          case "$tf_old12" in *"$tf_now12"*) why="fixture: old lines 1-2 hold the current ones"; return 1 ;; esac
+          tf_read toolu_tf1 "$TF_OLD" Bash 'sed -n 1,2p ~/.claude/skills/ttw/steps/DIRECT.md' "$tf_old12" || return 1
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tf_in ttw)"; tf_emits DIRECT.md COMMANDS.md ;;
         *)
           why="no such case"; return 2 ;;
       esac

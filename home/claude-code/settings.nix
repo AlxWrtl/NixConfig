@@ -1042,15 +1042,18 @@ in
           ];
         }
         {
-          # Quatre déclencheurs (le corps EST checks/ttw-metrics-probe.py) :
+          # Cinq déclencheurs (le corps EST checks/ttw-metrics-probe.py) :
           # 1. un 02-acs.md de run TTW : liste les AC qui ne nomment aucune
           #    commande et ne portent ni `[lecture] — raison` ni
           #    `[deferred to user]` (même classifieur que la métrique B2) ;
           # 2. un 04-validate.md de run TTW : nomme les passes (e, x) qui ont
           #    tourné sans laisser de décompte (métrique B5) ;
-          # 3. une note mémoire Claude ou son MEMORY.md : nomme ce que B4
+          # 3. un 01b-obsidian*.md de run TTW : sans ligne `- Query:` et hors
+          #    statut absent/unavailable, demande `mcp__graphify__query_graph`
+          #    (métrique B7) ;
+          # 4. une note mémoire Claude ou son MEMORY.md : nomme ce que B4
           #    compte contre elle (lien mort, note absente de l'index) ;
-          # 4. un `gh pr create` réussi (groupe suivant, Bash) : nomme les
+          # 5. un `gh pr create` réussi (groupe suivant, Bash) : nomme les
           #    fichiers B6 que le run de la branche n'a pas encore écrits.
           # Synchrone : `async = true` livrerait le contexte un tour trop
           # tard, quand le plan est déjà passé. Muet ailleurs et à zéro

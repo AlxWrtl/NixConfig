@@ -156,6 +156,13 @@
 #      spawn with no model, Agent or Task, is denied (a null or empty
 #      model counts as none); a fork, with or without one, allowed. One
 #      canary each.
+#      Run 85 adds the probe's 01b-obsidian branch: a Write or Edit of a
+#      TTW run's 01b-obsidian*.md whose Graph relations section says the
+#      graph was not queried, that has neither that section nor a Graph
+#      status line, or whose section records no `- Query:` line is told
+#      to run mcp__graphify__query_graph; a recorded query, a status
+#      unavailable, a symlinked file and the retired `apex` root stay
+#      silent. One canary: OBSIDIAN_PATH on the `apex` root.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -623,6 +630,10 @@ let
     A-ac-validate-path = {
       hook = "ttw-metrics-probe.py";
       text = "VALIDATE_PATH = re.compile(r\"/\\.claude/output/ttw/[^/]+/04-validate\\.md$\")";
+    };
+    A-graph-obsidian-path = {
+      hook = "ttw-metrics-probe.py";
+      text = "OBSIDIAN_PATH = re.compile(r\"/\\.claude/output/ttw/[^/]+/01b-obsidian[^/]*\\.md$\")";
     };
     A-ac-failopen = {
       hook = "ttw-metrics-probe.py";
@@ -1870,6 +1881,18 @@ let
         {
           anchor = "A-ac-validate-path";
           to = "VALIDATE_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/04-validate\\.md$\")";
+        }
+      ];
+    }
+    # OBSIDIAN_PATH spelled with the retired root: a TTW run's 01b-obsidian*.md is never read.
+    {
+      id = "M-graph-obsidian-apex";
+      hook = "ttw-metrics-probe.py";
+      kills = "graph-skipped-emits";
+      swaps = [
+        {
+          anchor = "A-graph-obsidian-path";
+          to = "OBSIDIAN_PATH = re.compile(r\"/\\.claude/output/apex/[^/]+/01b-obsidian[^/]*\\.md$\")";
         }
       ];
     }
@@ -3585,6 +3608,13 @@ let
     "pr-external-untallied-emits"
     "pr-newest-incomplete-emits"
     "pr-newest-complete-silent"
+    "graph-skipped-emits"
+    "graph-nosection-emits"
+    "graph-noquery-emits"
+    "graph-query-silent"
+    "graph-unavailable-silent"
+    "graph-symlink-silent"
+    "graph-apex-root-silent"
   ];
 
   # The vault exemption is keyed on the path settings.nix bakes into both
@@ -3951,6 +3981,33 @@ let
         case "$ctx" in *"$x"*) why="context carries '$x': $ctx"; kind=mismatch; return 1 ;; esac
       done
       case "$ctx" in *"$must"*) ;; *) why="context lacks '$must': $ctx"; return 1 ;; esac
+    }
+    # 01b-obsidian branch: a run's step-01b output. Real lines: the
+    # watch-instagram-skill 01b (head, recent session, implications), the
+    # graphify-boucle note cited by graph, the 85 run's skip, the unavailable
+    # status of an MCP-less host.
+    GR_HEAD='## Obsidian Context — nix-darwin'
+    GR_NOTE='- [[02-Projets/nix-darwin/sessions/2026-10-14 - sandbox-caches-outils-dev]] — PR #256: allowWrite per-tool cache SUBfolder, never ~/.cache whole.'
+    GR_SEC='### Graph relations (graphify)'
+    GR_SKIP='- non interrogé : les deux notes ci-dessus portent le sujet exact.'
+    GR_FRESH='- Graph status: fresh (graph.json 2026-11-10 21:54)'
+    GR_QUERY='- Query: `graphify reindex périmètre` (depth 1, budget 1200) — 14 nodes, complete.'
+    GR_CITE='- [[02-Projets/x/sessions/2026-09-09 - a]] — origin'
+    GR_GRAPH_CITE='- [[02-Projets/nix-darwin/sessions/2026-08-24 - graphify-boucle-de-connaissance]] — remontée par le graphe, hors de la fenêtre de récence.'
+    GR_UNAV='- Graph status: unavailable (no MCP on this host)'
+    GR_IMPL='- One allowWrite entry for a dedicated subfolder (e.g. `~/.cache/watch`), never `~/.cache`.'
+    # $1 file, then the lines between the recent sessions and the implications.
+    gr_put() { gp_f="$1"; shift; ac_put "$gp_f" "$GR_HEAD" "" "### Recent sessions" "$GR_NOTE" "" "$@" "" "### Implications for current task" "$GR_IMPL"; }
+    # The context names the run ($lbl is its dir) and the way out: the query
+    # tool and the `- Query:` line to record.
+    graph_emits() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the graph query was due"; kind=mismatch; return 1; }
+      ctx=$(${jq} -r 'select(.hookSpecificOutput.hookEventName == "PostToolUse") | .hookSpecificOutput.additionalContext // ""' "$d/$lbl.out" 2> /dev/null) || ctx=""
+      for x in "$lbl" "mcp__graphify__query_graph" "- Query:"; do
+        case "$ctx" in *"$x"*) ;; *) why="context lacks '$x': $ctx"; return 1 ;; esac
+      done
     }
     # `gh pr create` branch (B6): one repo per case at $PR, on feat/p with an
     # empty commit, `.claude/` ignored, its runs under $PRO.
@@ -4390,7 +4447,7 @@ let
         apr-*) tmo=${hostTimeout "ttw-pr-record.js"} ;;
         wh-*) tmo=${hostTimeout "worktree-in-use.js"} ;;
         iw-*) tmo=${hostTimeout "instagram-watch.js"} ;;
-        ac-* | pr-*) tmo=${hostTimeout "ttw-metrics-probe.py"} ;;
+        ac-* | pr-* | graph-*) tmo=${hostTimeout "ttw-metrics-probe.py"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
       esac
       case "$1" in
@@ -5778,6 +5835,33 @@ let
           ${pkgs.coreutils}/bin/touch -t 200001010000 "$PRO/r1/00-context.md" || { why="cannot age r1"; return 1; }
           pr_run r2 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md
           run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # ttw-metrics-probe --hook on a run's 01b-obsidian*.md: a graph not
+        # queried, no graph section at all, or a section with no `- Query:`
+        # line asks for the query. A recorded query, an unavailable graph, a
+        # symlink and the retired apex root stay silent, exit 0.
+        graph-skipped-emits)
+          f="$ACO/$lbl/01b-obsidian-context.md"; gr_put "$f" "$GR_SEC" "$GR_SKIP" "$GR_FRESH"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; graph_emits ;;
+        graph-nosection-emits)
+          f="$ACO/$lbl/01b-obsidian-context.md"; gr_put "$f"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Edit "$f")"; graph_emits ;;
+        graph-noquery-emits)
+          f="$ACO/$lbl/01b-obsidian.md"; gr_put "$f" "$GR_SEC" "$GR_GRAPH_CITE" "$GR_FRESH"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; graph_emits ;;
+        graph-query-silent)
+          f="$ACO/$lbl/01b-obsidian-context.md"; gr_put "$f" "$GR_SEC" "$GR_QUERY" "$GR_CITE" "$GR_FRESH"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        graph-unavailable-silent)
+          f="$ACO/$lbl/01b-obsidian-context.md"; gr_put "$f" "$GR_SEC" "$GR_UNAV"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        # A symlinked 01b is not followed: its target's skip stays out.
+        graph-symlink-silent)
+          f="$ACO/$lbl/01b-obsidian-context.md"; gr_put "$ACR/$lbl-target.md" "$GR_SEC" "$GR_SKIP" "$GR_FRESH"
+          mkdir -p "''${f%/*}" && ln -s "$ACR/$lbl-target.md" "$f" || { why="cannot plant the 01b symlink"; return 1; }
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
+        graph-apex-root-silent)
+          f="$ACR/.claude/output/apex/$lbl/01b-obsidian-context.md"; gr_put "$f" "$GR_SEC" "$GR_SKIP" "$GR_FRESH"
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(ac_in Write "$f")"; ac_silent ;;
         *)
           why="no such case"; return 2 ;;
       esac
@@ -5798,7 +5882,7 @@ let
         apr-*) echo ${hookFile "ttw-pr-record.js"} ;;
         wh-*) echo ${hookFile "worktree-in-use.js"} ;;
         iw-*) echo ${hookFile "instagram-watch.js"} ;;
-        ac-* | pr-*) echo ${hookFile "ttw-metrics-probe.py"} ;;
+        ac-* | pr-* | graph-*) echo ${hookFile "ttw-metrics-probe.py"} ;;
       esac
     }
 

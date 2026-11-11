@@ -72,7 +72,12 @@ whose first `Branch:` token is the branch, with no pr.md and no commit.txt;
 the newest 00-context.md wins. A run's date is its `Date:` line, else the
 mtime of its 00-context.md.
 
-B7 GRAPH, per run dir with an 01b-obsidian*.md (several are read as one).
+B7 GRAPH, per run dir with an 01b-obsidian*.md (several are read as one);
+without one (any such run, mostly Direct), a `#… Obsidian` or `#… Vault`
+section of 00-context.md stands in: its lines labelled `Graph
+query|status|relations:` (optional bullet and `*`/backtick marks) form the
+section, `Graph query:` reads as `Query:`, and the first `[[02-Projets/P/P`
+hub link outside those graph lines is the Project note.
 The section is the lines after a `#… Graph relations` heading up to the
 next heading; a `Graph status:` line anywhere is read with it. One outcome,
 first match wins:
@@ -548,6 +553,17 @@ B7_FIXTURES = [
         "### Graph status: fresh\n")),
 ]
 
+# Real Direct-run section, leboisjean/redirections-wix/00-context.md (no 01b file).
+B7_INLINE_FIXTURE = (
+    "## ACs\n- Les 5 anciennes URL Wix répondent 301 vers leur page.\n\n"
+    "## Obsidian (-o)\n"
+    "- [[02-Projets/leboisjean/leboisjean]] — hébergement Workers, bascule V1 sur leboisjean.com.\n"
+    "- [[02-Projets/leboisjean/references/2026-10-29 - audit-site-wix]] — table des anciennes URL.\n"
+    "- Graph query: `redirections 301 Wix anciennes URL` (depth 1, budget 1200) — 12 nodes, "
+    "complete; [autre projet] [[02-Projets/brasserie-les-ecrivains/brasserie-les-ecrivains]] — "
+    "legacy-redirects.ts dans un Worker (edge references).\n"
+    "- Graph status: fresh\n\n## Progress\n- Graph status: absent\n")
+
 # Real 01b Project note line + graph section, same tree as B7_FIXTURES
 # (leboisjean/, portfolio/, Preliz/ = ~/Projects/<name>).
 # (source, expected project, expected same, expected other, text)
@@ -712,6 +728,40 @@ def graph_citations(text):
         return None, 0, len(cited)
     same = sum(1 for x in cited if x.lower() == project.lower())
     return project, same, len(cited) - same
+
+
+OBSIDIAN_HEADING = re.compile(r"^\s*#+\s*(?:Obsidian|Vault)\b", re.IGNORECASE)
+HUB_LINK = re.compile(r"\[\[02-Projets/([^/\]|#]+)/\1[\]|#]")
+GRAPH_LINE = re.compile(r"^(\s*(?:[-*]\s+)?[*`]*)Graph\s+(query|status|relations)([*`]*\s*:)", re.IGNORECASE)
+
+
+def _graph_line(line):
+    """A labelled graph line, `Graph query` relabelled `Query`; None otherwise."""
+    m = GRAPH_LINE.match(line)
+    if m is None:
+        return None
+    if m.group(2).lower() != "query":
+        return line
+    return m.group(1) + "Query" + m.group(3) + line[m.end():]
+
+
+def inline_obsidian(text):
+    """A run's `## Obsidian` or `## Vault` section of 00-context.md rewritten
+    as 01b text (module docstring, B7); None when there is no such section."""
+    lines, inside = None, False
+    for line in text.splitlines():
+        if HEADING.match(line):
+            inside = OBSIDIAN_HEADING.match(line) is not None
+            if inside and lines is None:
+                lines = []
+        elif inside:
+            lines.append(line)
+    if lines is None:
+        return None
+    graph = [g for g in map(_graph_line, lines) if g is not None]
+    hub = HUB_LINK.search("\n".join(x for x in lines if GRAPH_LINE.match(x) is None))
+    out = [f"Project note: [[02-Projets/{hub.group(1)}/]]"] if hub else []
+    return "\n".join(out + (["## Graph relations"] + graph if graph else []))
 
 
 def graph_outcome(text):
@@ -983,6 +1033,27 @@ def b7_cite_self_test(failures):
         failures.append("B7 cite table too thin: no fixture with other > 0 and a project")
     if not any(f[1] is None and f[3] > 0 for f in B7_CITE_FIXTURES):
         failures.append("B7 cite table too thin: no fixture without a project that cites")
+    t = inline_obsidian(B7_INLINE_FIXTURE)
+    got = (t and graph_outcome(t), t and graph_query_recorded(t), t and graph_citations(t))
+    if got != ("contributed", True, ("leboisjean", 0, 1)):
+        failures.append(f"B7 inline redirections-wix: {got}")
+    if inline_obsidian("# TTW: x\n## ACs\n- a\n") is not None:
+        failures.append("B7 inline: a 00-context without an Obsidian section is counted")
+    if graph_outcome(inline_obsidian("## Obsidian (-o)\n- [[02-Projets/a/a]]\n") or "") != "nosection":
+        failures.append("B7 inline: an Obsidian section without a graph line is not nosection")
+    t = inline_obsidian("## Obsidian (-o)\n- [[02-Projets/leboisjean/references/x]]\n"
+                        "- Graph query: `q` — [[02-Projets/brasserie/brasserie]]\n") or ""
+    if graph_citations(t) != (None, 0, 1):
+        failures.append(f"B7 inline: a hub link in a graph line is the project: {graph_citations(t)}")
+    t = inline_obsidian("## Obsidian\n- [[02-Projets/a/s]] — session on graph status drift\n") or ""
+    if graph_outcome(t) != "nosection":
+        failures.append(f"B7 inline: prose naming graph status is a graph line: {graph_outcome(t)}")
+    for line in ("- **Graph query**: `q` — 3 nodes", "- graph query: `q` — 3 nodes"):
+        if not graph_query_recorded(inline_obsidian(f"## Obsidian\n{line}\n") or ""):
+            failures.append(f"B7 inline: {line!r} is not read as Query:")
+    t = inline_obsidian("## Vault (-o)\n- Graph query: `q` — [[02-Projets/b/n]]\n")
+    if t is None or graph_outcome(t) != "contributed":
+        failures.append(f"B7 inline: a `## Vault` section is not read: {t!r}")
     return len(B7_CITE_FIXTURES)
 
 
@@ -1204,6 +1275,9 @@ def metrics(runs_roots, mem_root, since=B6_SINCE):
     cited_same = cited_other = cited_unknown = 0
     for r in runs:
         obs = [_guarded_text(p, None) for p in sorted(r.glob("01b-obsidian*.md"))]
+        if not obs:
+            inline = inline_obsidian(_guarded_text(r / "00-context.md", None) or "")
+            obs = [inline] if inline is not None else []
         if obs:
             joined = "\n".join(t for t in obs if t is not None)
             graph.append(graph_outcome(joined))

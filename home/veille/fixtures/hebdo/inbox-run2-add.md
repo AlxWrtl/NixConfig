@@ -1,0 +1,2 @@
+- [2026-11-13] Seconde — nouvelle entrée de la semaine — officiel — https://second.example/a
+- [2026-11-13] Retour KNOWNTOKEN — déjà écarté la première fois — blog — <https://drop.example/a>

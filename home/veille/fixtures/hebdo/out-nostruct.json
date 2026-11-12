@@ -1,0 +1,7 @@
+{
+  "type": "result",
+  "is_error": false,
+  "subtype": "success",
+  "total_cost_usd": 0.05,
+  "result": "Voici mon tri en texte libre."
+}

@@ -116,9 +116,12 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── codex/                   # hooks.json generator, activation, hook & merge scripts
 │   ├── colima.nix               # Colima VMs: `ci` (k3s + ARC self-hosted CI runners),
 │   │                            #   `default` (dev containers, active Docker context)
-│   ├── veille.nix               # Daily TTW watch: launchd agent `veille-ttw` (08:30)
+│   ├── veille.nix               # TTW watch: launchd agents `veille-ttw` (daily 08:30)
+│   │                            #   and `veille-hebdo` (Monday 10:00)
 │   ├── veille/                  # fetch.py (HN, Reddit, releases, arXiv), Haiku sort
-│   │                            #   prompt, daily script; offline parser tests + fixtures
+│   │                            #   prompt, daily script; weekly.sh (Opus + WebFetch
+│   │                            #   per domain), its prompt, schema and ledger seed;
+│   │                            #   offline parser tests + fixtures
 │   ├── ttw-replay.nix           # Weekly TTW stale-step replay: launchd agent
 │   │                            #   `ttw-replay` (Monday 09:30)
 │   └── ttw-replay/              # replay.js: ttw-flags.js on past transcripts vs an oracle
@@ -144,6 +147,7 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── ttw-plan-provenance.nix
 │   ├── ttw-replay.nix
 │   ├── ttw-tier.nix
+│   ├── veille-hebdo.nix
 │   └── veille.nix
 ├── backups/                     # 🔒 Encrypted app config exports (backup-apps.sh)
 ├── wallpapers/                  # Desktop wallpaper
@@ -237,6 +241,7 @@ system.
 | `ttw-replay` | The weekly stale-step replay (`home/ttw-replay/replay.js`), offline, on fixture step files and Claude transcripts (`checks/ttw-replay/`) with the repo `ttw-flags.js`: a `cat` of an old step text then Skill(ttw) scores one vp, no fp, no miss, writes `<date>.json` and `.md` with no example; a `cat` of the current text then `ls` scores one vn; a second run the same `REPLAY_DATE` lands in `<date>-2.*` and leaves the first report byte-identical; a hook without its `try { STEP_RE = stepRe(os.homedir());` line exits non-zero with `REPLAY_OUT` left empty; after every run the `REPLAY_PROJECTS` tree is unchanged (content, size, mtime to the ns, mode, no entry added) and the run's TMPDIR (fake HOME) is empty; a 30-day-old transcript counts in `all`, not in `recent`. Canaries R3 (stale decision forced off) must score a miss with a miss example on the step, R4 (stale list always the step) an fp with an fp example; both are guarded so a gone sed anchor fails the build instead of testing the source |
 | `ttw-tier` | The built `ttw-tier` classifier against throwaway git repos: a `matcher` added under `hooks.Notification` is direct, an entry added inside a `deny = [ ... ]` list is high, a `permissionDecision` branch in `hooks/x.js` is high, a 40-line README change is standard, a new `.env.example` is high. Canary M1 (the permission regex replaced by one that never matches) must turn the deny-list case away from high, proving that assertion rests on the permission class. The `bin` of `ttw-tier` and of `ttw-verify-external` each holds that one binary (no pre-rename alias), and its usage and `--help` name it |
 | `veille` | The daily watch collector (`home/veille/`), offline: `python3 -I -m unittest` runs the whole suite with no skip, on fixtures with fixed dates. `fetch.py` imports without side effect; `parse_hn` dedups by `objectID`, sorts by points and drops stories under the 3-point threshold; `parse_reddit` keeps sub, title and link of entries after `since`; `parse_arxiv` reports `fini` on a short page or on an entry older than `since`, not on a full recent page; `parse_releases` keeps releases published after `since`. Neither `fetch.py` nor `filter-prompt.md` keeps the X source (no `api.x.com`, `X_BEARER_TOKEN`, `social` type). Canary C1 (HN threshold lowered to 0) must fail `test_hn_threshold_3_points`; canaries C2/C3 append the forbidden text and must trip the X and `social` detectors. `home/veille/daily.sh` runs with stubbed `claude` and fetch: only valid 4-field lines are appended and deduplicated by URL, an inbox without final newline is not glued, a second run the same day overwrites nothing, a failed run leaves the output untouched, and with no `VEILLE_DIR` everything lands in `~/.local/share/veille-ttw`, never in the vault; canary C4 (field-count test removed) must let a 5-field line through |
+| `veille-hebdo` | The weekly watch step (`home/veille/weekly.sh`), offline, with stubbed `claude` and `gh` in a scratch HOME (repo copy, vault, inbox mixing real lines with synthetic ones): ShellCheck clean; only `retenue` entries reach `veille/hebdo/<week>.md`, under a front matter, while every valid verdict is appended to `ledger.tsv`; entries carrying `[[`, `![`, `<`, `](`, a backslash, `\|`, a non-http primary source, an unknown verdict, a field over its cap or a URL never sent are dropped from both and counted, backticks stripped; a second run the same week writes `<week>-2.md` and only appends to the ledger; URLs of the seed (`ledger-seed.tsv`) or the ledger never reach claude, every other inbox line does, verbatim; the claude argv holds `--safe-mode`, `--model opus`, `--setting-sources ''`, `--permission-prompts none`, `--tools WebFetch` and only `WebFetch(domain:…)` allow rules, no other tool name, no inbox line, and claude runs outside the repo and the vault; a failing claude or gh, a result without `structured_output` or a CLAUDE.md without the Settled anchor leaves HOME byte-identical; nothing new means no claude call and no write; defaults land in the vault and `~/.local/share/veille-ttw`. Canaries K1 (forbidden-char test), K2 (known-URL filter) and K3 (`--setting-sources ''` removed) must each fail their case |
 
 Run them before every commit that touches `.nix` files — `format-check` in
 particular fails on formatting alone.

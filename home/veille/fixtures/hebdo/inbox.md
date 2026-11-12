@@ -1,0 +1,38 @@
+- [2026-11-09] Secrets dans « Don't Ask Again » — Apiiro recense 1 122 fichiers .claude/settings.local.json publics contenant mots de passe et clés API, enregistrés tels quels par les règles de permission — blog — https://apiiro.com/blog/coding-agents-leaking-secrets-github-dont-ask-again
+- [2026-11-09] Transfert de l'agent SSH vers ChatGPT Desktop — l'agent distant peut s'authentifier avec les identifiants SSH locaux, donc pousser sur les dépôts privés — forum — https://news.ycombinator.com/item?id=50422628
+- [2026-11-09] Airlock — politique as code pour flottes d'agents de code, documentation d'un projet de standard ouvert de gestion d'agents autonomes — code — https://airlock.lunareng.com/docs
+- [2026-11-09] Conflux (arXiv 2611.08768) — défense contre l'escalade de privilèges : l'action n'est autorisée que si chaque principal ayant influencé l'agent l'autorise, appliquée hors du jugement du modèle — étude — http://arxiv.org/abs/2611.08768v1
+- [2026-11-09] Même travail, un tiers des tokens — réglage d'une flotte d'agents de code pour réduire la consommation de tokens — blog — https://alexmarquardt.com/ai-tools/agent-fleet-token-efficiency/
+- [2026-11-09] AutoRefine (arXiv 2611.09291) — réécriture automatique du prompt d'un juge de code calibré sur les issues de workflow (tests, merges abandonnés), sans annotation manuelle — étude — http://arxiv.org/abs/2611.09291v1
+- [2026-11-09] Parallel agent teams (arXiv 2611.09798) — échantillonnage de petites équipes d'agents en parallèle, meilleur résultat retenu, à budget de calcul égal — étude — http://arxiv.org/abs/2611.09798v1
+- [2026-11-09] Fichiers d'instructions périmés (arXiv 2611.09802) — un CLAUDE.md/AGENTS.md obsolète ajoute un coût à chaque session d'agent, invisible aux évaluations de succès seul — étude — http://arxiv.org/abs/2611.09802v1
+- [2026-11-09] Compaction vs RAG en mémoire conversationnelle (arXiv 2611.09807) — compacter chaque tour en faits atomiques bat le RAG sur LoCoMo (71,4 % contre 64,6 %), avec decay et renforcement — étude — http://arxiv.org/abs/2611.09807v1
+- [2026-11-10] Claude Code v2.1.321 — Ajout de Fable 5.2 (contexte 1M, cache à 0,20 $/Mtok) ; corrections de permissions Bash hors sandbox, règles deny sur cp/mv, hooks FileChanged, compaction et rapports de sous-agents — officiel — https://github.com/anthropics/claude-code/releases/tag/v2.1.321
+- [2026-11-10] System Optimizations for Cost-Efficient Agent Harnesses — Le même modèle sur la même tâche peut coûter jusqu'à 2,6 fois moins selon le harnais ; analyse de l'accumulation de coût par trace — étude — http://arxiv.org/abs/2611.12122v1
+- [2026-11-10] Keeping LLM Agents on Procedure — Machine à états exécutable hors du contexte, appliquée aux appels d'outils, aux transitions et à la fin de tour, pour tenir une procédure sur de longues exécutions — étude — http://arxiv.org/abs/2611.10884v1
+- [2026-11-10] Treating the Model as an Untrusted Component — Application déterministe de politiques hors modèle, approbation humaine et taint tracking contre l'injection de prompt, évalués sur modèles open-weights — étude — http://arxiv.org/abs/2611.11571v1
+- [2026-11-10] Secrets dans .claude/settings.local.json — 31 088 secrets trouvés dans des fichiers settings.local.json publiés sur GitHub public — blog — https://blog.gitguardian.com/claude-code-settings-local-json-secrets-docker-hub/
+- [2026-11-10] Can LLM Agents Organize Their Own Memory? — Un agent gère sa mémoire comme des documents liés : il décide quoi résumer, regrouper et réviser, chaque résumé restant relié à ses sources — étude — http://arxiv.org/abs/2611.11929v1
+- [2026-11-11] Attentry — Vérificateur local qui relit chaque modification faite par Claude Code — code — https://github.com/Aarv-1o/Attentry
+- [2026-11-11] aisync — Claims consultatifs sur fichiers pour éviter que deux agents modifient le même dépôt — code — https://github.com/MaxonT/aisync
+- [2026-11-11] Subagents considérés comme nuisibles — Argumentaire contre le recours systématique aux sous-agents — blog — https://nikvdp.com/notes/subagents-considered-harmful/
+- [2026-11-11] FlowPlan — Raisonnement d'agent de code au niveau abstrait pour réduire le coût en tokens, avec mesures — étude — http://arxiv.org/abs/2611.13241v1
+- [2026-11-11] Respect des instructions des fichiers de contexte — Mesure si les agents de code suivent les instructions explicites de leurs fichiers AGENTS.md — étude — http://arxiv.org/abs/2611.13709v1
+- [2026-11-12] Garde A — résumé valide — officiel — https://keep.example/a
+- [2026-11-12] Garde B — résumé avec code — blog — https://keep.example/b
+- [2026-11-12] Plafonds — champs au plafond — blog — https://cap-ok.example/a
+- [2026-11-12] Déjà vu — déjà couvert — forum — https://drop.example/a
+- [2026-11-12] Douteuse — source introuvable — blog — https://unsure.example/a
+- [2026-11-12] Wiki — lien interne — blog — https://wiki.example/a
+- [2026-11-12] Image — capture embarquée — blog — https://img.example/a
+- [2026-11-12] Balise — chevron — blog — https://lt.example/a
+- [2026-11-12] Lien — lien markdown — blog — https://link.example/a
+- [2026-11-12] Retour — barre oblique inverse — blog — https://nl.example/a
+- [2026-11-12] Tube — barre verticale — blog — https://pipe.example/a
+- [2026-11-12] Script — source javascript — blog — https://js.example/a
+- [2026-11-12] Verdict — verdict inconnu — blog — https://verdict.example/a
+- [2026-11-12] Long titre — titre trop long — blog — https://cap-titre.example/a
+- [2026-11-12] Longue vérif — vérification trop longue — blog — https://cap-verif.example/a
+- [2026-11-12] Long lien — lien TTW trop long — blog — https://cap-lien.example/a
+- [2026-11-12] Longue raison — raison trop longue — blog — https://cap-raison.example/a
+- [2026-11-12] Muette — aucun verdict rendu — blog — https://silent.example/a

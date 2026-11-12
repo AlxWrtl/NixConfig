@@ -1,0 +1,202 @@
+{
+  "type": "result",
+  "is_error": false,
+  "subtype": "success",
+  "total_cost_usd": 0.42,
+  "duration_ms": 61000,
+  "result": "",
+  "structured_output": {
+    "entries": [
+      {
+        "url": "https://keep.example/a",
+        "verdict": "retenue",
+        "titre": "Garde A vérifiée",
+        "type": "officiel",
+        "source_primaire": "https://github.com/example/garde-a",
+        "verification": "Fonction lue dans le dépôt, présente en v1.2.",
+        "lien_ttw": "PR #403",
+        "raison": "Applicable au hook de permission."
+      },
+      {
+        "url": "https://keep.example/b",
+        "verdict": "retenue",
+        "titre": "Le `flag` utile",
+        "type": "blog",
+        "source_primaire": "https://docs.claude.com/example-b",
+        "verification": "Option `--flag` lue dans la documentation.",
+        "lien_ttw": "run 2026-11-10-exemple",
+        "raison": "Réduit le coût du harnais."
+      },
+      {
+        "url": "https://cap-ok.example/a",
+        "verdict": "retenue",
+        "titre": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "type": "étude",
+        "source_primaire": "https://arxiv.org/abs/2611.00001",
+        "verification": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "lien_ttw": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        "raison": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+      },
+      {
+        "url": "https://drop.example/a",
+        "verdict": "écartée",
+        "titre": "Déjà vu",
+        "type": "forum",
+        "source_primaire": "https://github.com/example/drop",
+        "verification": "Sans objet.",
+        "lien_ttw": "PR #404",
+        "raison": "Déjà couvert par une décision Settled."
+      },
+      {
+        "url": "https://unsure.example/a",
+        "verdict": "invérifiable",
+        "titre": "Douteuse",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/unsure",
+        "verification": "Source primaire introuvable.",
+        "lien_ttw": "PR #404",
+        "raison": "Aucune source primaire lisible."
+      },
+      {
+        "url": "https://wiki.example/a",
+        "verdict": "retenue",
+        "titre": "Voir [[Note interne]]",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/primaire",
+        "verification": "Lu sur la source primaire.",
+        "lien_ttw": "PR #403",
+        "raison": "Utile au garde-fou."
+      },
+      {
+        "url": "https://img.example/a",
+        "verdict": "retenue",
+        "titre": "Image",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/img",
+        "verification": "Capture ![x](https://img.example/x.png)",
+        "lien_ttw": "PR #403",
+        "raison": "Utile."
+      },
+      {
+        "url": "https://lt.example/a",
+        "verdict": "retenue",
+        "titre": "Balise",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/lt",
+        "verification": "Lu.",
+        "lien_ttw": "PR #403",
+        "raison": "Contient <script>alert(1)</script>"
+      },
+      {
+        "url": "https://link.example/a",
+        "verdict": "retenue",
+        "titre": "Lien",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/link",
+        "verification": "Lu.",
+        "lien_ttw": "voir](https://evil.example/run)",
+        "raison": "Utile."
+      },
+      {
+        "url": "https://nl.example/a",
+        "verdict": "retenue",
+        "titre": "Ligne\\nsuite",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/primaire",
+        "verification": "Lu sur la source primaire.",
+        "lien_ttw": "PR #403",
+        "raison": "Utile au garde-fou."
+      },
+      {
+        "url": "https://pipe.example/a",
+        "verdict": "retenue",
+        "titre": "Tube",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/pipe",
+        "verification": "colonne | colonne",
+        "lien_ttw": "PR #403",
+        "raison": "Utile."
+      },
+      {
+        "url": "https://js.example/a",
+        "verdict": "retenue",
+        "titre": "Script",
+        "type": "blog",
+        "source_primaire": "javascript:alert(1)",
+        "verification": "Lu.",
+        "lien_ttw": "PR #403",
+        "raison": "Utile."
+      },
+      {
+        "url": "https://verdict.example/a",
+        "verdict": "peut-être",
+        "titre": "Verdict",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/verdict",
+        "verification": "Lu.",
+        "lien_ttw": "PR #403",
+        "raison": "Utile."
+      },
+      {
+        "url": "https://cap-titre.example/a",
+        "verdict": "retenue",
+        "titre": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/t",
+        "verification": "Lu.",
+        "lien_ttw": "PR #403",
+        "raison": "Utile."
+      },
+      {
+        "url": "https://cap-verif.example/a",
+        "verdict": "retenue",
+        "titre": "Longue vérif",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/v",
+        "verification": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "lien_ttw": "PR #403",
+        "raison": "Utile."
+      },
+      {
+        "url": "https://cap-lien.example/a",
+        "verdict": "retenue",
+        "titre": "Long lien",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/l",
+        "verification": "Lu.",
+        "lien_ttw": "ggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggggg",
+        "raison": "Utile."
+      },
+      {
+        "url": "https://cap-raison.example/a",
+        "verdict": "retenue",
+        "titre": "Longue raison",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/r",
+        "verification": "Lu.",
+        "lien_ttw": "PR #403",
+        "raison": "hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh"
+      },
+      {
+        "url": "https://ghost.example/a",
+        "verdict": "retenue",
+        "titre": "Fantôme jamais envoyé",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/primaire",
+        "verification": "Lu sur la source primaire.",
+        "lien_ttw": "PR #403",
+        "raison": "Utile au garde-fou."
+      },
+      {
+        "url": "http://arxiv.org/abs/2611.08768v1",
+        "verdict": "retenue",
+        "titre": "Conflux revenu du seed",
+        "type": "blog",
+        "source_primaire": "https://github.com/example/primaire",
+        "verification": "Lu sur la source primaire.",
+        "lien_ttw": "PR #403",
+        "raison": "Utile au garde-fou."
+      }
+    ]
+  }
+}

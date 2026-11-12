@@ -1,0 +1,22 @@
+{
+  "type": "result",
+  "is_error": false,
+  "subtype": "success",
+  "total_cost_usd": 0.11,
+  "duration_ms": 20000,
+  "result": "",
+  "structured_output": {
+    "entries": [
+      {
+        "url": "https://second.example/a",
+        "verdict": "retenue",
+        "titre": "Seconde vérifiée",
+        "type": "officiel",
+        "source_primaire": "https://github.com/example/second",
+        "verification": "Changelog lu sur le dépôt.",
+        "lien_ttw": "PR #404",
+        "raison": "Nouvelle option applicable."
+      }
+    ]
+  }
+}

@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["entries"],
+  "properties": {
+    "entries": {
+      "type": "array",
+      "description": "Une entrée par candidat jugé ; un candidat omis sera reproposé la semaine suivante.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "url",
+          "verdict",
+          "titre",
+          "type",
+          "source_primaire",
+          "verification",
+          "lien_ttw",
+          "raison"
+        ],
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "URL du candidat, recopiée exactement depuis la section Candidats, sans chevrons."
+          },
+          "verdict": {
+            "type": "string",
+            "enum": ["retenue", "écartée", "invérifiable"]
+          },
+          "titre": {
+            "type": "string",
+            "description": "Titre court en français, 120 caractères au plus."
+          },
+          "type": {
+            "type": "string",
+            "enum": ["officiel", "étude", "blog", "forum", "code"]
+          },
+          "source_primaire": {
+            "type": "string",
+            "description": "URL http(s) de la source primaire consultée."
+          },
+          "verification": {
+            "type": "string",
+            "description": "Ce qui a été lu, et où, 400 caractères au plus."
+          },
+          "lien_ttw": {
+            "type": "string",
+            "description": "Run TTW ou PR concerné, sinon aucun ; 300 caractères au plus."
+          },
+          "raison": {
+            "type": "string",
+            "description": "Motif du verdict en une phrase, 200 caractères au plus."
+          }
+        }
+      }
+    }
+  }
+}

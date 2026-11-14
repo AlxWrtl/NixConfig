@@ -43,7 +43,7 @@ later runs skip the app configs restore unless you pass `./bootstrap.sh --restor
 | 12 | Restore app configs | Plex, Logitech, Raycast, Ice, Finder sidebar, Wi-Fi/BT |
 
 Steps 4 and 8 block on a manual action; the rest are unattended. App logins
-(Discord, Figma, Teams, …) stay manual — see the checklist below.
+(Discord, Notion, Teams, …) stay manual — see the checklist below.
 
 <details>
 <summary>Manual step-by-step (if you prefer)</summary>
@@ -276,7 +276,7 @@ list, deliberately not duplicated here.
 | Layer | Tool | Contents |
 |-------|------|----------|
 | CLI tools | Nix (`modules/packages.nix`) | eza, bat, fd, ripgrep, fzf, atuin, zoxide, btop, jq/yq, git-crypt, gh, nodejs, pnpm, bun, python3, uv, ruff, sqlite, postgresql, redis, nixd/nil/nixfmt … |
-| GUI apps | Homebrew casks (`modules/brew.nix`) | 1Password, Arc, Ghostty, VS Code, Zed, Docker, Raycast, Obsidian, Figma, Jellyfin, Tailscale … apps without an auto-updater are marked `greedy` |
+| GUI apps | Homebrew casks (`modules/brew.nix`) | 1Password, Arc, Ghostty, VS Code, Zed, Docker, Raycast, Obsidian, Jellyfin … apps without an auto-updater are marked `greedy` |
 | Formulae & taps | Homebrew (`modules/brew.nix`) | cloudflared, ffmpeg, displayplacer, mas, postgresql@16, trash, `rtk-ai/tap/rtk` |
 | App Store | mas (`modules/brew.nix`) | DaisyDisk, Trello, iWork (Keynote/Numbers/Pages), Microsoft Office, Affinity Photo & Publisher |
 | Fonts | Nix (`modules/ui.nix`) | Nerd Fonts (JetBrains Mono, Meslo LG, Hack, Fira Code, Sauce Code Pro), Cascadia Code, Inconsolata, Noto (+ CJK, emoji) |
@@ -367,7 +367,7 @@ that one is un-approved or stale. Its silence is not proof of protection.
 - [ ] 1Password logged in + browser extension
 - [ ] iCloud signed in (Desktop & Documents sync)
 - [ ] Arc signed in (sync spaces)
-- [ ] App logins: Discord, WhatsApp, Spark, Teams, Figma
+- [ ] App logins: Discord, WhatsApp, Spark, Teams
 - [ ] Raycast settings imported (if backed up)
 - [ ] `nix flake check` green
 - [ ] `/watch` local engine set up, outside the sandbox: `HF_HOME=~/.cache/watch/huggingface TORCH_HOME=~/.cache/watch/torch python3 ~/.claude/skills/watch/scripts/setup.py --engine local --backend whisperx --detail balanced`

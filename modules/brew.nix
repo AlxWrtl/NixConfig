@@ -48,7 +48,6 @@ _:
       "claude-code@latest"
       "codex-app"
       "discord"
-      "figma"
       "google-chrome"
       "notion"
       "obsidian"
@@ -86,10 +85,6 @@ _:
       }
       {
         name = "ollama-app";
-        greedy = true;
-      }
-      {
-        name = "tailscale-app";
         greedy = true;
       }
       {

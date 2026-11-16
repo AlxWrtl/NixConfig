@@ -6,8 +6,9 @@
   sandbox-excluded when it is the whole Bash call.
 - Mods (`home/claude-code/mods/`): their code gate is `claude plugin validate
   --strict` + `claude plugin test` on the mod folder, run in the session (not
-  in the flake). `validate` does not typecheck: a type error passes it, run
-  `tsc` on a copy with the engine's types. Authoring: skill `plugin-authoring`.
+  in the flake). Since Claude Code 2.1.323 `validate` type-checks the hooks
+  module: a type error is a warning, so only `--strict` fails on it.
+  Authoring: skill `plugin-authoring`.
 - `compactWindow` / `contextFill` exist twice
   (`home/claude-code/mods/status-bar/hooks/format.ts`,
   `home/claude-code/mods/deck/hooks/core.ts`): change both.

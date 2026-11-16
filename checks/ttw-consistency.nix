@@ -722,6 +722,50 @@ let
       needle = "python3 -I ~/.claude/hooks/ttw-metrics-probe.py --acs";
       scope = skills.ttwStep04Validate;
     }
+    # CI parity (ttw-ci-gate). A needle per site: the baseline at init, the
+    # gate at validate and Direct's own gate. Losing any one leaves a repo's
+    # CI steps unrun on that path while a corpus-wide needle stays green.
+    {
+      name = "validate: the local CI steps run through ttw-ci-gate";
+      needle = "ttw-ci-gate --run";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      # Without it, a ci-only step is neither run nor reported: a silent green.
+      name = "validate: ci-only steps are listed, never counted green";
+      needle = "CI-only (not run locally)";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      name = "direct: the local CI steps run through ttw-ci-gate";
+      needle = "ttw-ci-gate --run";
+      scope = skills.ttwDirect;
+    }
+    {
+      # A FAIL at validate is this run's red only against a baseline PASS.
+      name = "init: the CI baseline runs through ttw-ci-gate";
+      needle = "ttw-ci-gate --run";
+      scope = skills.ttwStep00Init;
+    }
+    {
+      # Direct presents its own result (step 9): without this, its ci-only
+      # lines are dropped while validate's copy keeps the corpus needle green.
+      name = "direct: ci-only steps are listed, never counted green";
+      needle = "CI-only (not run locally)";
+      scope = skills.ttwDirect;
+    }
+    {
+      # The shared comparison rule. "was PASS" alone lets a step that is new
+      # since the baseline fail without being this run's red.
+      name = "validate: a CI FAIL whose key was PASS or absent at baseline is red";
+      needle = "was PASS or absent at baseline";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      name = "direct: a CI FAIL whose key was PASS or absent at baseline is red";
+      needle = "was PASS or absent at baseline";
+      scope = skills.ttwDirect;
+    }
     {
       # Coordinator context size is not cost; presenting it as cost is a lie.
       name = "save: the token table is context growth, not billing";

@@ -31,6 +31,7 @@ let
   scraplingShim = import ./claude-code/scrapling-shim.nix { inherit pkgs; };
   ttwVerifyExternal = import ./claude-code/ttw-verify-external.nix { inherit pkgs; };
   ttwTier = import ./claude-code/ttw-tier.nix { inherit pkgs; };
+  ttwCiGate = import ./claude-code/ttw-ci-gate.nix { inherit pkgs; };
   ttwHealth = import ./claude-code/ttw-health.nix { inherit pkgs; };
   jevLocate = import ./claude-code/jev-locate.nix { inherit pkgs; };
   ttwBoard = import ./claude-code/ttw-board.nix { inherit pkgs; };
@@ -51,6 +52,7 @@ let
   inherit (nixOptions) nixOptionsPkg;
   inherit (ttwVerifyExternal) ttwVerifyExternalPkg;
   inherit (ttwTier) ttwTierPkg;
+  inherit (ttwCiGate) ttwCiGatePkg;
   inherit (ttwHealth) ttwHealthPkg;
   inherit (jevLocate) jevLocatePkg;
   inherit (ttwBoard) ttwBoardPkg;
@@ -455,6 +457,7 @@ in
       nixOptionsPkg
       ttwVerifyExternalPkg
       ttwTierPkg
+      ttwCiGatePkg
       ttwHealthPkg
       jevLocatePkg
       ttwBoardPkg

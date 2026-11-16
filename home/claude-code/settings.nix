@@ -150,6 +150,10 @@ in
 
     sandbox = {
       enabled = true;
+      # Claude Code 2.1.325 made sandboxed Bash follow the normal permission flow
+      # (prompt or auto classifier); true restores running it without prompts.
+      # User decision 2026-09-27: sandbox residual risk accepted. Guarded by A14f.
+      autoAllowBashIfSandboxed = true;
       # Commands that run OUTSIDE the sandbox, then through the normal permission
       # rules (allow / ask / auto classifier) instead of failing with
       # "operation not permitted". sudo/darwin-rebuild: `ask` still shows a box.

@@ -39,7 +39,26 @@
 #                 decision statement (a notifier) is not escalated.
 #   destructive   --force, push -f, DROP, TRUNCATE, DELETE FROM, rm -rf,
 #                 migrat*, deploy.
-#   A comment that says "deny" also escalates: accepted false positive.
+#
+# Comments and prose are not targets (permission / destructive only). In
+# .nix .sh .bash .zsh .py .toml .yaml .yml a WHOLE line matching
+# HASH_COMMENT_RE (`#` run then blank or end) is a comment: it is never
+# scanned and never an ancestor. `#!`, `#define`, `#[...]` stay code. A
+# `#` line that may end a string stays code: an odd count of `'` or `"`, or
+# STRING_END_RE (`''`, `""`, `$(`, `${`, a backtick, or a quote later
+# followed by ; & |) — "don't" in a comment then escalates (accepted). A
+# trailing comment on a code line keeps the whole line code (accepted false
+# positive). Toggling the marker on a rule stays high: the +/- line holding
+# the rule is code on one side. Accepted misses of hash mode: `# `/`## `
+# Markdown headings inside nix strings, C `# define` (with a space) and `# `
+# heredoc data lines are dropped as comments. In Markdown (MD_EXT_RE), lines
+# inside a FENCE_RE fence are code; the fence closes only on the opener's
+# char repeated at least as long, indented <= 3, nothing after; fence lines,
+# inline backticks, 4-space indented code blocks and the rest are prose.
+# Agent-governing Markdown (CLAUDE.md, CLAUDE.local.md, AGENTS.md,
+# GEMINI.md, SKILL.md, or under .claude/ .codex/ steps/ skills/ rules/
+# agents/ commands/) is scanned whole: its prose IS the rule. Untracked
+# files go through the same filter. `//` and `/* */` are not stripped.
 #
 # --paths p... classifies PATHS ONLY (plan time, before any diff exists):
 # only secret-path and the files>4 rule apply; lines=0. Re-run without
@@ -117,6 +136,37 @@ PERM_RE='(^|[^a-z0-9_-])"?(permissions|sandbox|allow|deny|ask)"?[[:space:]]*[=:]
 HOOK_RE='permissiondecision|"deny"|'"'"'deny'"'"'|"block"|decision.*block|exit[[:space:]]+2([^0-9]|$)|process\.exit\([[:space:]]*2[[:space:]]*\)'
 DESTR_RE='--force|push[[:space:]]+-f([^a-z]|$)|rm[[:space:]]+-rf|migrat|deploy|delete[[:space:]]+from'
 SQL_RE='\b(DROP|TRUNCATE)\b'
+HASH_COMMENT_RE='^[ \t]*#+([ \t]|$)'
+STRING_END_RE="''|\"\"|[\$][({]|\`|['\"].*[;&|]"
+FENCE_RE='^[ \t]*(```|~~~)'
+MD_EXT_RE='\.(md|markdown)$'
+
+# Comment mode of a path: hash | md | none (none = every line is code).
+comment_mode() {
+  local lp lb
+  lp="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
+  lb="${lp##*/}"
+  if grep -Eq -- "$MD_EXT_RE" <<<"$lp"; then
+    case "$lb" in
+    claude.md | claude.local.md | agents.md | gemini.md | skill.md)
+      echo none
+      return 0
+      ;;
+    esac
+    case "/$lp" in
+    */.claude/* | */.codex/* | */steps/* | */skills/* | */rules/* | */agents/* | */commands/*)
+      echo none
+      return 0
+      ;;
+    esac
+    echo md
+    return 0
+  fi
+  case "$lb" in
+  *.nix | *.sh | *.bash | *.zsh | *.py | *.toml | *.yaml | *.yml) echo hash ;;
+  *) echo none ;;
+  esac
+}
 
 # Context text check: stdin = changed lines + their ancestors.
 classify_text() {
@@ -148,21 +198,47 @@ classify_hook_file() {
   return 0
 }
 
-# stdin = file content; $1 = space-separated line numbers. Prints each target
-# line and its indentation ancestors.
+# stdin = file content; mode = hash | md | none. C[NR] = 1 marks a comment or
+# prose line. filter=1: print every code line (untracked file, all added).
+# Else targets = space-separated line numbers: print each code target and its
+# code indentation ancestors.
 # shellcheck disable=SC2016 # awk program, not shell expansion
 ANCESTRY_AWK='
 function indent(s,   m) { match(s, /^[ \t]*/); return RLENGTH }
-{ L[NR] = $0 }
+function odd(s, q,   a) { return (split(s, a, q) - 1) % 2 }
+# run(s, ch): length of the run of ch at the start of s.
+function run(s, ch,   n) { n = 0; while (substr(s, n + 1, 1) == ch) n++; return n }
+{
+  L[NR] = $0
+  c = 0
+  if (mode == "hash")
+    c = ($0 ~ hre) && $0 !~ sre && !odd($0, "\047") && !odd($0, "\"")
+  else if (mode == "md") {
+    if (!fence) {
+      if ($0 ~ fre) {
+        c = 1; fence = 1
+        s = $0; sub(/^[ \t]*/, "", s)
+        fch = substr(s, 1, 1); flen = run(s, fch)
+      } else c = 1
+    } else {
+      d = indent($0); s = substr($0, d + 1); k = run(s, fch)
+      if (d <= 3 && k >= flen && substr(s, k + 1) ~ /^[ \t]*$/) { c = 1; fence = 0 }
+    }
+  }
+  C[NR] = c
+  if (filter && !c) print
+}
 END {
+  if (filter) exit
   n = split(targets, T, " ")
   for (k = 1; k <= n; k++) {
     t = T[k] + 0
-    if (t < 1 || t > NR) continue
+    if (t < 1 || t > NR || C[t]) continue
     print L[t]
     cur = indent(L[t])
     for (i = t - 1; i >= 1 && cur > 0; i--) {
       s = L[i]
+      if (C[i]) continue
       if (s ~ /^[ \t]*$/) continue
       if (s ~ /^[ \t\]\)\};,'"'"'"]*$/) continue
       d = indent(s)
@@ -171,8 +247,16 @@ END {
   }
 }'
 
+# ancestry MODE TARGETS | ancestry MODE all (filter: every code line).
 ancestry() {
-  awk -v targets="$1" "$ANCESTRY_AWK"
+  local filter=0 targets="$2"
+  if [ "$targets" = all ]; then
+    filter=1
+    targets=""
+  fi
+  awk -v mode="$1" -v filter="$filter" -v targets="$targets" \
+    -v hre="$HASH_COMMENT_RE" -v sre="$STRING_END_RE" -v fre="$FENCE_RE" \
+    "$ANCESTRY_AWK"
 }
 
 files=0
@@ -221,14 +305,15 @@ else
       }')"
     old_targets="$(printf '%s\n' "$hunks" | awk '$1 == "o" { printf "%s ", $2 }')"
     new_targets="$(printf '%s\n' "$hunks" | awk '$1 == "n" { printf "%s ", $2 }')"
+    mode="$(comment_mode "$file")"
     # Captured, then fed by here-string: a pipe INTO classify_text would run
     # it in a subshell and drop every reason it adds.
     ctx="$(
       if [ -n "$old_targets" ]; then
-        git show "$base:$file" 2>/dev/null | ancestry "$old_targets" || true
+        git show "$base:$file" 2>/dev/null | ancestry "$mode" "$old_targets" || true
       fi
       if [ -n "$new_targets" ] && [ -f "$file" ]; then
-        ancestry "$new_targets" <"$file" || true
+        ancestry "$mode" "$new_targets" <"$file" || true
       fi
     )"
     classify_text "$file" <<<"$ctx"
@@ -246,7 +331,8 @@ else
     fi
     n="$(wc -l <"$file" | tr -d '[:space:]')"
     lines=$((lines + n))
-    ctx="$(cat -- "$file")"
+    mode="$(comment_mode "$file")"
+    ctx="$(ancestry "$mode" all <"$file")"
     classify_text "$file" <<<"$ctx"
   done < <(git ls-files -z --others --exclude-standard -- . ':!.claude/output')
 fi

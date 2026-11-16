@@ -1003,6 +1003,13 @@ let
         + " — claude-bg tended jobs of Claude's background daemon, off since #299 (disableAgentView); the wrapper is gone, and an exclusion left for its name lets any binary called claude-bg on PATH run unsandboxed";
     }
     {
+      name = "A14f sandbox: autoAllowBashIfSandboxed is exactly true";
+      ok = (settingsAttrs.sandbox.autoAllowBashIfSandboxed or null) == true;
+      msg = "settings.nix sandbox.autoAllowBashIfSandboxed is ${
+        builtins.toJSON (settingsAttrs.sandbox.autoAllowBashIfSandboxed or null)
+      }, want true — since Claude Code 2.1.325 sandboxed Bash follows the normal permission flow by default, so every sandboxed command prompts (or goes to the auto classifier) again; user decision 2026-09-27 keeps the pre-2.1.325 behaviour (sandbox residual risk accepted)";
+    }
+    {
       name = "A15 settings: force-push, master-target push, remote-program override, gh/codex escape hatches stay denied";
       ok = missingDeny == [ ];
       msg =

@@ -1154,7 +1154,7 @@ in
           hooks = [
             {
               type = "command";
-              command = "bash ~/.claude/hooks/ttw-reminder.sh";
+              command = "${node} ~/.claude/hooks/ttw-reminder.js";
               timeout = 3;
             }
             {

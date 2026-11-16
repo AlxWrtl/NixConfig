@@ -398,15 +398,25 @@ in
       "${graphifyReindexPkg}";
 
   # UserPromptSubmit: stdout is injected into the turn's context. Kept to one
-  # short line because this cost is paid on EVERY prompt. Unconditional by
-  # design: keyword-matching the prompt would miss exactly the ambiguous cases
-  # where the reminder matters most, and a false negative is the failure mode
-  # that actually hurts (the rule silently not firing).
+  # short line because this cost is paid on EVERY prompt. Unconditional for
+  # any human prompt: keyword-matching the prompt would miss exactly the
+  # ambiguous cases where the reminder matters most, and a false negative is
+  # the failure mode that actually hurts (the rule silently not firing).
+  # Silent only when the prompt, after leading whitespace, OPENS on one of
+  # four harness envelopes (<agent-message, "Another Claude session sent a
+  # message", <cross-session-message, <task-notification): subagent hand-backs
+  # arrive as prompts, the reminder followed them and the model re-ran /ttw
+  # (4 times in one run). Prefix + closed list, because a human prompt
+  # silenced by mistake is the failure that hurts; narrower than WRAPPERS in
+  # correction-grant.js (substring match, includes <command-name>, so a typed
+  # slash command still gets the reminder). The UserPromptSubmit input has no
+  # origin field (binary 2.1.325), hence text. Fail-open: empty or malformed
+  # stdin, no prompt, overflow, a throw or the 2 s watchdog print the line.
   # NO TABLE HERE: it used to carry a hand-maintained copy of the mode table,
   # which drifted twice. It now only points at the single tier table in
   # SKILL.md (skillTtw in skills.nix), so there is nothing to keep in sync.
-  # File kept ≤ 200 bytes: this line is paid on every prompt.
-  hookTtwReminder = builtins.readFile ./hooks/ttw-reminder.sh;
+  # Emitted line kept ≤ 200 bytes: it is paid on every prompt.
+  hookTtwReminder = builtins.readFile ./hooks/ttw-reminder.js;
 
   # UserPromptSubmit: a pasted Instagram post/reel/tv link → one context line
   # asking for the `watch` skill (the user's standing wish, 2026-10-22).

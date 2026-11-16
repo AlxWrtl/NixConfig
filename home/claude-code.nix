@@ -339,7 +339,7 @@ let
       text = hookVaultSnapshot;
       executable = true;
     };
-    "${claudeDir}/hooks/ttw-reminder.sh" = {
+    "${claudeDir}/hooks/ttw-reminder.js" = {
       text = hookTtwReminder;
       executable = true;
     };

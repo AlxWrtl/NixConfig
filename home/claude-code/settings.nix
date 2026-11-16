@@ -974,7 +974,9 @@ in
               type = "command";
               # TTW correction-round budget: denies the 3rd marked round
               # (TTW-CORRECTION-ROUND) of a run, spawned or re-briefed
-              # by SendMessage, and a CronCreate or ScheduleWakeup prompt
+              # by SendMessage, unless its TTW-FAILING set shows progress
+              # (5 rounds at most) or it resends the latest brief (free
+              # once), and a CronCreate or ScheduleWakeup prompt
               # carrying the `ttw: +1 tour` grant line
               # (it would come back as a user turn). NOT async — a deny must
               # land before the spawn.

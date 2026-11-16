@@ -91,6 +91,26 @@ function stampedDir(dir, id, rounds, session) {
   return isDir(found) ? found : null;
 }
 
+// Rounds among `rounds` (absolute paths) that correction-budget.js stamped
+// via "progress": charged to its ceiling, not to the cap, so they spend no
+// budget here. A stamp that is no regular file, is oversized or does not
+// parse is a budget round, as correction-budget.js reads it.
+function progressOf(rounds) {
+  let n = 0;
+  for (const f of rounds) {
+    let v;
+    try {
+      const st = fs.lstatSync(f);
+      if (!st.isFile() || st.size > 64 * 1024) continue;
+      v = JSON.parse(fs.readFileSync(f, "utf8"));
+    } catch {
+      continue;
+    }
+    if (v && typeof v === "object" && !Array.isArray(v) && v.via === "progress") n++;
+  }
+  return n;
+}
+
 let input = "";
 let overflow = false;
 let ran = false;
@@ -146,7 +166,8 @@ function main() {
   }
 
   // The live run is the project's run with the newest round; it alone may be
-  // granted, and only once its budget, grants included, is spent. An older
+  // granted, and only once its budget, grants included, is spent by rounds
+  // other than those that went out on progress (progressOf). An older
   // spent run never is. An unreadable round, or a tie, is doubt: no grant.
   // A run whose dir is not under the cwd counts only through stampedDir.
   let target = null;
@@ -165,7 +186,7 @@ function main() {
       if (t > last) last = t;
     }
     if (target !== null && last === target.last) tie = true;
-    if (target === null || last > target.last) { target = { id, rounds: r.rounds.length, grants: r.grants, last, where }; tie = false; }
+    if (target === null || last > target.last) { target = { id, rounds: r.rounds.length - progressOf(r.rounds), grants: r.grants, last, where }; tie = false; }
   }
   if (target === null || tie || target.rounds < MAX_ROUNDS + target.grants) {
     say("correction-grant: `ttw: +1 tour` read, but this project has no latest correction run whose budget is spent; nothing was granted.");

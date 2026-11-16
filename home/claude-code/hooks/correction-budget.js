@@ -1,10 +1,18 @@
 #!/usr/bin/env node
 "use strict";
+const crypto = require("crypto");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 
 const MAX_ROUNDS = 2;
+// Rounds in all, grants aside, that progress alone can reach: the bound on
+// a review that keeps finding something new.
+const CEILING = 5;
+// The criteria the review still fails, one line per brief; self-declared,
+// so a guardrail on progress, never proof of it.
+const FAILING = /^[\s>*`-]*TTW-FAILING:(.*)$/;
+const FAIL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/#-]{0,79}$/;
 const BUDGET_MS = 3000;
 const RUN_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const TTW_OUT = path.join(".claude", "output", "ttw");
@@ -106,14 +114,61 @@ function grantsOf(dir, run) {
 
 // Rounds this run spent in the budget dir: their total is what the
 // cap bounds, their indices are the slots a new stamp may not reuse.
+// `rounds` holds what each stamp recorded, in round order.
 function roundsOf(dir, run) {
   const taken = new Set();
+  const rounds = [];
   let total = 0;
-  for (const { f } of budgetFiles(dir)) {
+  for (const { bd, f } of budgetFiles(dir)) {
     const m = ROUND.exec(f);
     if (m && m[1] === run) { total++; taken.add(Number(m[2])); }
+    if (m && m[1] === run) rounds.push(roundOf(Number(m[2]), stampOf(path.join(bd, f))));
   }
-  return { total, taken };
+  rounds.sort((a, b) => a.n - b.n);
+  return { total, taken, rounds };
+}
+
+// A TTW-FAILING line's ids, deduped and sorted, or null when it names none
+// or one is malformed: an unreadable set is no evidence of progress.
+function idsOf(text) {
+  const ids = String(text).split(",").map((s) => s.replace(/`/g, "").trim()).filter((s) => s !== "");
+  if (ids.length === 0 || ids.length > 64 || !ids.every((id) => FAIL_ID.test(id))) return null;
+  return [...new Set(ids)].sort();
+}
+
+// A round's stamp as a plain object; anything unreadable is {}, never a
+// throw: an old or damaged stamp reads as a budget round with no brief and
+// no set, which only ever allows fewer rounds.
+function stampOf(file) {
+  try {
+    const st = fs.lstatSync(file);
+    if (!st.isFile() || st.size > 64 * 1024) return {};
+    const v = JSON.parse(fs.readFileSync(file, "utf8"));
+    return v && typeof v === "object" && !Array.isArray(v) ? v : {};
+  } catch {
+    return {};
+  }
+}
+
+function roundOf(n, s) {
+  const brief = typeof s.brief_sha256 === "string" && /^[0-9a-f]{64}$/.test(s.brief_sha256) ? s.brief_sha256 : null;
+  const failing = Array.isArray(s.failing) && s.failing.every((id) => typeof id === "string") ? idsOf(s.failing.join(",")) : null;
+  return { n, brief, failing, progress: s.via === "progress" };
+}
+
+// Why a round past the cap may not go out on its own, or null when its
+// TTW-FAILING set shows progress: non-empty, equal to no earlier round's
+// set, and without at least one id the previous round still failed.
+function stopOf(cur, rounds) {
+  const ids = cur || [];
+  if (ids.length === 0) return "evidence";
+  const sets = rounds.map((r) => r.failing);
+  const key = ids.join(",");
+  const seen = sets.findIndex((s) => s !== null && s.join(",") === key);
+  if (seen !== -1) return seen === sets.length - 1 ? "repeat" : "oscillation:" + rounds[seen].n;
+  const prev = sets.length > 0 ? sets[sets.length - 1] : null;
+  if (!(prev || []).some((id) => !ids.includes(id))) return prev === null ? "noprev" : "nodrop";
+  return null;
 }
 
 let input = "";
@@ -141,7 +196,11 @@ function main() {
   if (prompt === "") { allow(); return; }
 
   let marker = null;
+  let failing = null;
+  let fails = 0;
   for (const line of prompt.split(/\r?\n/)) {
+    const f = FAILING.exec(line);
+    if (f) { fails++; failing = f[1]; }
     const m = MARKER.exec(line);
     if (!m) continue;
     if (marker !== null && marker !== m[1]) {
@@ -183,37 +242,91 @@ function main() {
 
   const home = process.env.HOME || os.homedir();
   const dir = path.join(home, ".claude", BUDGET_DIR);
-  const stamp = JSON.stringify({
+  // The brief's identity: the same text re-wrapped or re-indented hashes
+  // the same, so a plain resend is told apart from a new round.
+  const brief = crypto.createHash("sha256").update(prompt.trim().replace(/\s+/g, " "), "utf8").digest("hex");
+  // More than one TTW-FAILING line is no set: no evidence either way.
+  const cur = fails === 1 ? idsOf(failing) : null;
+  const stampFor = (via) => JSON.stringify({
     ts: new Date().toISOString(),
     tool: safe(data.tool_name),
     session: safe(data.session_id),
     description: safe(ti.description || ti.summary).slice(0, 200),
     // correction-grant.js grants a run outside the prompt's repo by it.
-    dir: runDir
+    dir: runDir,
+    brief_sha256: brief,
+    failing: cur,
+    via
   }) + "\n";
   try { fs.mkdirSync(dir, { recursive: true }); } catch { denyState("unwritable", dir); return; }
 
   // A round goes out while the run's total is under the cap.
   // Claim a slot by exclusive create at a free index: of two
-  // racing rounds, one wins, the loser counts the winner's round.
+  // racing rounds, one wins, the loser reads the winner's round.
   const cap = MAX_ROUNDS + grantsOf(dir, marker);
-  const spent = roundsOf(dir, marker);
-  const taken = spent.taken;
+  let spent = roundsOf(dir, marker);
+  // The latest round's brief sent again unchanged (a spawn that died, a
+  // reply lost) is no new round: free once per brief, its marker created
+  // exclusively; the same resend a second time is counted. An older
+  // round's brief is counted: going back is no retry.
+  const last = spent.rounds[spent.rounds.length - 1];
+  if (last && last.brief === brief) {
+    const retry = path.join(dir, marker + ".retry-" + brief);
+    let fresh = true;
+    try {
+      fs.writeFileSync(retry, stampFor("retry"), { flag: "wx" });
+    } catch (e) {
+      if (!e || e.code !== "EEXIST") { denyState("unwritable", retry); return; }
+      fresh = false;
+    }
+    if (fresh) { allow(); return; }
+  }
+  let taken = spent.taken;
   let total = spent.total;
-  for (let n = 1; total < cap; n++) {
+  // A round that went out on progress is charged to the ceiling, not to the
+  // cap: a user grant after any stop reopens exactly one round.
+  let free = spent.rounds.filter((r) => r.progress).length;
+  let stop = stopOf(cur, spent.rounds);
+  // After a lost claim, everything is read again: the winner's round, its
+  // set included, is evidence this brief must now face. A winner's stamp
+  // still being written reads as no set, so no progress: denied.
+  const recount = () => {
+    spent = roundsOf(dir, marker);
+    taken = spent.taken;
+    total = spent.total;
+    free = spent.rounds.filter((r) => r.progress).length;
+    stop = stopOf(cur, spent.rounds);
+  };
+  for (let n = 1; ; n++) {
+    const normal = total - free < cap;
+    // Past the cap, a round goes out on its own only on progress, and never
+    // past CEILING rounds in all (plus one per grant).
+    const auto = stop === null && total < cap - MAX_ROUNDS + CEILING;
+    if (!normal && !auto) break;
     if (taken.has(n)) continue;
     const slot = path.join(dir, marker + ".round" + n);
     try {
-      fs.writeFileSync(slot, stamp, { flag: "wx" });
+      fs.writeFileSync(slot, stampFor(normal ? "budget" : "progress"), { flag: "wx" });
     } catch (e) {
-      if (e && e.code === "EEXIST") { total++; continue; }
+      if (e && e.code === "EEXIST") { recount(); continue; }
       denyState("unwritable", slot);
       return;
     }
     allow();
     return;
   }
-  deny("budget de correction épuisé (" + cap + "/" + cap + ") pour le run " + marker + " : STOP. Livrer avec la liste des résiduels, ou demander à l'utilisateur de taper `ttw: +1 tour` seul sur une ligne (une ronde de plus, sur opus) ; un « continue » n'accorde rien. Ne jamais faire la ronde soi-même inline : le coordinateur ne corrige pas son propre travail.");
+  const said = {
+    evidence: "ce brief ne porte aucune ligne TTW-FAILING lisible",
+    noprev: "la ronde précédente n'a enregistré aucun ensemble TTW-FAILING",
+    repeat: "même ensemble TTW-FAILING que la ronde précédente",
+    nodrop: "aucun id de la ronde précédente n'a disparu"
+  };
+  const why = stop === null
+    ? "Plafond absolu atteint : " + total + " rondes, plafond " + (cap - MAX_ROUNDS + CEILING) + "."
+    : "Pas de ronde de plus sur progrès : " + (stop.startsWith("oscillation:") ? "oscillation, même ensemble TTW-FAILING que la ronde " + stop.slice("oscillation:".length) : said[stop]) + ".";
+  const setOf = (s) => (s === null ? "(aucun)" : "[" + s.join(", ") + "]");
+  const sets = "Ensembles TTW-FAILING : " + spent.rounds.map((r) => "r" + r.n + " " + setOf(r.failing)).concat(["ce brief " + setOf(cur)]).join(" ; ") + ".";
+  deny("budget de correction épuisé (" + (total - free) + "/" + cap + ") pour le run " + marker + " : STOP. " + why + " " + sets + " Livrer avec la liste des résiduels, ou demander à l'utilisateur de taper `ttw: +1 tour` seul sur une ligne (une ronde de plus, sur opus) ; un « continue » n'accorde rien. Ne jamais faire la ronde soi-même inline : le coordinateur ne corrige pas son propre travail.");
 }
 
 function start() {

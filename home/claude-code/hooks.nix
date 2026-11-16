@@ -60,6 +60,14 @@ in
   # A marked Agent brief must name model "opus" (absent denied), checked
   # before any slot is claimed; SendMessage carries no model. The cap is
   # MAX_ROUNDS plus one per <run-id>.grant<n> file correction-grant.js wrote.
+  # Run 96: each stamp records the brief's sha256 (trimmed, whitespace runs
+  # one space), its `TTW-FAILING:` set and `via` (budget or progress). The
+  # latest round's brief resent unchanged goes out uncounted, once
+  # (<run-id>.retry-<sha256>, created exclusively). Past the cap, a round
+  # goes out on progress (a non-empty set, no earlier round's set, one id
+  # of the previous set gone) up to CEILING rounds in all plus grants;
+  # progress rounds are not charged to the cap, so a grant after any stop
+  # reopens one round. The deny names the stop and lists the sets.
   # Also on CronCreate/ScheduleWakeup: a scheduled prompt comes back as a user
   # turn, so one with a `ttw: +1 tour` line is denied (same TOKEN line as
   # correction-grant.js); any other scheduler call passes, uncounted.

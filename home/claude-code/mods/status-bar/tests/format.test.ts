@@ -21,7 +21,7 @@ import {
   pillSvg,
   resolveGitdir,
   thousands,
-} from '../hooks/format.ts'
+} from '../hooks/format'
 import type { StatusData } from '../hooks/format.ts'
 
 const MIN = 60_000

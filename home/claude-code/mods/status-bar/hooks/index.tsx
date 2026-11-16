@@ -11,7 +11,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, TextProps, Timer } from 'claude-code'
 
 import type { StatusBarLimit, StatusBarStep, StatusBarUsage } from '../types'
-import { contextFill, gaugeSource, layout, parentDir, parseHead, pickModel, resolveGitdir } from './format.ts'
+import { contextFill, gaugeSource, layout, parentDir, parseHead, pickModel, resolveGitdir } from './format'
 import type { Seg } from './format.ts'
 
 // Reset countdowns move by the minute.

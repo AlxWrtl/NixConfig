@@ -2515,10 +2515,14 @@ in
       sandboxed it gives no EPERM, it times out. Long ones run with
       `run_in_background`; read the tail of the output file.
     - **Read-only `.git/config`** — inside the sandbox, `.git/config` and
-      `.git/hooks` are read-only in every repo: `git branch -d/-m/-u`,
+      `.git/hooks` are read-only in every repo: `git branch -m/-u`,
       `git checkout -b <x> origin/<y>`, `git remote`, `git config --local`,
       `git init` and `git clone` fail there — run them with
-      dangerouslyDisableSandbox (one retry, permission box).
+      dangerouslyDisableSandbox (one retry, permission box). These pass
+      sandboxed, so keep them in it: `git branch -d/-D` (a "could not lock
+      config file" warning is harmless, the branch is gone) and
+      `git checkout --no-track -b <x> origin/<y>` (`git push -u` sets the
+      upstream later).
     - **Sandbox-blocked** — docker, or any command that just failed with clear
       sandbox evidence (a refused local DB socket, permission denied on allowed
       work, socket/auth failure): retry ONCE with `dangerouslyDisableSandbox: true`.

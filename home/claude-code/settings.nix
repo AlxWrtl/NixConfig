@@ -151,7 +151,9 @@ in
     sandbox = {
       enabled = true;
       # Claude Code 2.1.325 made sandboxed Bash follow the normal permission flow
-      # (prompt or auto classifier); true restores running it without prompts.
+      # (prompt or auto classifier); true restores auto-approval for most
+      # sandboxed commands (env-prefixed, eval and critical-path rm still go
+      # through the normal flow; deny and content-scoped ask rules still apply).
       # User decision 2026-09-27: sandbox residual risk accepted. Guarded by A14f.
       autoAllowBashIfSandboxed = true;
       # Commands that run OUTSIDE the sandbox, then through the normal permission

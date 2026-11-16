@@ -110,6 +110,11 @@ let
       scope = skills.ttwOrchestration;
     }
     {
+      name = "verify: correction briefs carry the failing set";
+      needle = "`TTW-FAILING: <id>, <id>`";
+      scope = skills.ttwOrchestration;
+    }
+    {
       name = "verify: correction rounds run on opus";
       needle = "Correction rounds always run on `model: opus`";
       scope = skills.ttwOrchestration;

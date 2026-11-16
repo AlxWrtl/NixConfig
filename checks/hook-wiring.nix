@@ -197,6 +197,23 @@
 #      line-presence applied to whole reads, M-tf-mask, only the latest
 #      capture judged, and M-tf-whole, a partial capture holding the whole
 #      file never clearing an earlier stale read.
+#      Run 96 adds correction-budget's free retry and progress rule: the
+#      latest round's brief resent unchanged (trimmed, whitespace runs one
+#      space, sha256) goes out uncounted once, leaving
+#      <run>.retry-<sha256>; an older round's brief is counted. Past the
+#      cap, a brief whose one `TTW-FAILING:` set is non-empty, equal to no
+#      earlier round's set and without one id of the previous round's set
+#      goes out on its own, up to 5 rounds in all plus grants; otherwise
+#      the deny names the stop and lists the per-round sets. A grant after
+#      any stop reopens one round and raises the ceiling by one; two
+#      TTW-FAILING lines are no set; a brief that loses its slot claim
+#      reads the budget again and faces the winner's set (a preload
+#      creates the slot between read and claim). correction-grant ignores
+#      retry markers and charges no budget to a round stamped via
+#      progress. Fourteen canaries: M-cb-retry, M-cb-retry-latest,
+#      M-cb-retry-once, M-cb-retry-norm, M-cb-auto, M-cb-evidence,
+#      M-cb-seen, M-cb-drop, M-cb-ceiling, M-cb-free, M-cb-onefail,
+#      M-cb-ceiling-grant, M-cb-recount and M-cg-progress.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -600,6 +617,56 @@ let
     A-cb-conflict = {
       hook = "correction-budget.js";
       text = "if (marker !== null && marker !== m[1]) {";
+    };
+    # Run 96: a free resend of the latest round's brief, and rounds past the
+    # cap that go out on a shrinking TTW-FAILING set, up to a ceiling.
+    A-cb-retry = {
+      hook = "correction-budget.js";
+      text = "if (last && last.brief === brief) {";
+    };
+    A-cb-retry-once = {
+      hook = "correction-budget.js";
+      text = "fs.writeFileSync(retry, stampFor(\"retry\"), { flag: \"wx\" });";
+    };
+    A-cb-retry-norm = {
+      hook = "correction-budget.js";
+      text = "const brief = crypto.createHash(\"sha256\").update(prompt.trim().replace(/\\s+/g, \" \"), \"utf8\").digest(\"hex\");";
+    };
+    A-cb-auto = {
+      hook = "correction-budget.js";
+      text = "const auto = stop === null && total < cap - MAX_ROUNDS + CEILING;";
+    };
+    A-cb-evidence = {
+      hook = "correction-budget.js";
+      text = "if (ids.length === 0) return \"evidence\";";
+    };
+    A-cb-seen = {
+      hook = "correction-budget.js";
+      text = "const seen = sets.findIndex((s) => s !== null && s.join(\",\") === key);";
+    };
+    A-cb-drop = {
+      hook = "correction-budget.js";
+      text = "if (!(prev || []).some((id) => !ids.includes(id))) return prev === null ? \"noprev\" : \"nodrop\";";
+    };
+    A-cb-ceiling = {
+      hook = "correction-budget.js";
+      text = "const CEILING = 5;";
+    };
+    A-cb-free = {
+      hook = "correction-budget.js";
+      text = "const normal = total - free < cap;";
+    };
+    A-cb-onefail = {
+      hook = "correction-budget.js";
+      text = "const cur = fails === 1 ? idsOf(failing) : null;";
+    };
+    A-cb-recount = {
+      hook = "correction-budget.js";
+      text = "if (e && e.code === \"EEXIST\") { recount(); continue; }";
+    };
+    A-cg-progress = {
+      hook = "correction-grant.js";
+      text = "rounds: r.rounds.length - progressOf(r.rounds),";
     };
     A-cg-exhausted = {
       hook = "correction-grant.js";
@@ -1744,6 +1811,184 @@ let
         {
           anchor = "A-cb-budget-dir";
           to = "const BUDGET_DIR = \"apex-correction-budget\";";
+        }
+      ];
+    }
+    # Run 96. No free retry: a resend of the latest brief after a spent
+    # budget is denied like a new round.
+    {
+      id = "M-cb-retry";
+      hook = "correction-budget.js";
+      kills = "cb-retry-free-allow";
+      swaps = [
+        {
+          anchor = "A-cb-retry";
+          to = "if (false) {";
+        }
+      ];
+    }
+    # Retry widened to any earlier round: going back to an older brief is
+    # let through uncounted.
+    {
+      id = "M-cb-retry-latest";
+      hook = "correction-budget.js";
+      kills = "cb-retry-older-counted";
+      swaps = [
+        {
+          anchor = "A-cb-retry";
+          to = "if (spent.rounds.some((r) => r.brief === brief)) {";
+        }
+      ];
+    }
+    # Retry marker overwritten: the same brief resent forever, never counted.
+    {
+      id = "M-cb-retry-once";
+      hook = "correction-budget.js";
+      kills = "cb-retry-once-deny";
+      swaps = [
+        {
+          anchor = "A-cb-retry-once";
+          to = "fs.writeFileSync(retry, stampFor(\"retry\"), { flag: \"w\" });";
+        }
+      ];
+    }
+    # Hash of the raw brief: a re-indented resend is counted as a new round.
+    {
+      id = "M-cb-retry-norm";
+      hook = "correction-budget.js";
+      kills = "cb-retry-whitespace-allow";
+      swaps = [
+        {
+          anchor = "A-cb-retry-norm";
+          to = "const brief = crypto.createHash(\"sha256\").update(prompt, \"utf8\").digest(\"hex\");";
+        }
+      ];
+    }
+    # No progress rule: a round past the cap is denied however the
+    # TTW-FAILING set shrank.
+    {
+      id = "M-cb-auto";
+      hook = "correction-budget.js";
+      kills = "cb-progress-allow";
+      swaps = [
+        {
+          anchor = "A-cb-auto";
+          to = "const auto = false;";
+        }
+      ];
+    }
+    # No evidence required: a brief without a TTW-FAILING line goes out on
+    # progress.
+    {
+      id = "M-cb-evidence";
+      hook = "correction-budget.js";
+      kills = "cb-progress-evidence-deny";
+      swaps = [
+        {
+          anchor = "A-cb-evidence";
+          to = "if (false) return \"evidence\";";
+        }
+      ];
+    }
+    # Earlier sets unread: a set seen two rounds back counts as progress.
+    {
+      id = "M-cb-seen";
+      hook = "correction-budget.js";
+      kills = "cb-progress-oscillation-deny";
+      swaps = [
+        {
+          anchor = "A-cb-seen";
+          to = "const seen = -1;";
+        }
+      ];
+    }
+    # No drop required: a set that keeps every previous id and adds one
+    # counts as progress.
+    {
+      id = "M-cb-drop";
+      hook = "correction-budget.js";
+      kills = "cb-progress-nodrop-deny";
+      swaps = [
+        {
+          anchor = "A-cb-drop";
+          to = "if (false) return \"nodrop\";";
+        }
+      ];
+    }
+    # Ceiling one looser than stated: a sixth round on progress goes out.
+    {
+      id = "M-cb-ceiling";
+      hook = "correction-budget.js";
+      kills = "cb-progress-ceiling-deny";
+      swaps = [
+        {
+          anchor = "A-cb-ceiling";
+          to = "const CEILING = 6;";
+        }
+      ];
+    }
+    # Progress rounds charged to the cap: a grant after a no-progress stop
+    # reopens nothing.
+    {
+      id = "M-cb-free";
+      hook = "correction-budget.js";
+      kills = "cb-progress-grant-allow";
+      swaps = [
+        {
+          anchor = "A-cb-free";
+          to = "const normal = total < cap;";
+        }
+      ];
+    }
+    # Line count ignored: of two TTW-FAILING lines, the last one is read as
+    # the set and goes out on progress.
+    {
+      id = "M-cb-onefail";
+      hook = "correction-budget.js";
+      kills = "cb-progress-twolines-deny";
+      swaps = [
+        {
+          anchor = "A-cb-onefail";
+          to = "const cur = idsOf(failing);";
+        }
+      ];
+    }
+    # Ceiling without its grant term: a granted run's sixth round on
+    # progress is denied.
+    {
+      id = "M-cb-ceiling-grant";
+      hook = "correction-budget.js";
+      kills = "cb-progress-ceiling-grant-allow";
+      swaps = [
+        {
+          anchor = "A-cb-auto";
+          to = "const auto = stop === null && total < CEILING;";
+        }
+      ];
+    }
+    # No re-read after a lost claim: the loser keeps its stale progress
+    # verdict and goes out beside the winner on the same set.
+    {
+      id = "M-cb-recount";
+      hook = "correction-budget.js";
+      kills = "cb-claim-race-deny";
+      swaps = [
+        {
+          anchor = "A-cb-recount";
+          to = "if (e && e.code === \"EEXIST\") { total++; continue; }";
+        }
+      ];
+    }
+    # Progress rounds charged to the grant's spent test: a second grant is
+    # taken while the first one's round is still unused.
+    {
+      id = "M-cg-progress";
+      hook = "correction-grant.js";
+      kills = "cg-progress-not-spent";
+      swaps = [
+        {
+          anchor = "A-cg-progress";
+          to = "rounds: r.rounds.length,";
         }
       ];
     }
@@ -3538,6 +3783,21 @@ let
     "cb-old-root-abs"
     "cb-ttw-abs-bad-deny"
     "cb-budget-symlink-deny"
+    "cb-retry-free-allow"
+    "cb-retry-once-deny"
+    "cb-retry-whitespace-allow"
+    "cb-retry-older-counted"
+    "cb-progress-allow"
+    "cb-progress-evidence-deny"
+    "cb-progress-noprev-deny"
+    "cb-progress-repeat-deny"
+    "cb-progress-oscillation-deny"
+    "cb-progress-nodrop-deny"
+    "cb-progress-ceiling-deny"
+    "cb-progress-grant-allow"
+    "cb-progress-twolines-deny"
+    "cb-progress-ceiling-grant-allow"
+    "cb-claim-race-deny"
     "cg-token-grants"
     "cg-no-token"
     "cg-inline-token-ignored"
@@ -3560,6 +3820,8 @@ let
     "cg-old-token"
     "cg-ttwx-cross-repo-bad-dir"
     "cg-budget-symlink-refuse"
+    "cg-retry-marker-ignored"
+    "cg-progress-not-spent"
     "rm-explore-sonnet-deny"
     "rm-navigator-opus-deny"
     "rm-navigator-nomodel-deny"
@@ -4039,10 +4301,27 @@ let
     # Same brief as a SendMessage re-brief to a live agent ($2 required).
     cb_msg() { ${jq} -cn --arg p "$1" --arg m "$2" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"SendMessage",cwd:$c,session_id:"probe",tool_input:{to:"implementer",summary:"probe",message:($p + "\nTTW-CORRECTION-ROUND: " + $m)}}'; }
     # $1 body, $2 run-id, $3 round number: one marked round, due an allow.
+    # The round number is in the brief: an unchanged brief is a free retry.
     cb_round() {
-      run "$lbl" "$1" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." "$2")"
+      run "$lbl" "$1" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md (round $3)." "$2")"
       is_allow || { why="round $3 on $2: $why"; return 1; }
     }
+    # $1 brief, $2 run-id, $3 failing ids ("A-1, A-2"; empty or unset: no
+    # TTW-FAILING line), on opus.
+    cb_fail() {
+      if [ -z "''${3-}" ]; then
+        cb_raw "$(printf '%s\nTTW-CORRECTION-ROUND: %s' "$1" "$2")"
+      else
+        cb_raw "$(printf '%s\nTTW-FAILING: %s\nTTW-CORRECTION-ROUND: %s' "$1" "$3" "$2")"
+      fi
+    }
+    # $1 body, $2 brief, $3 run-id, $4 failing ids: one round, due an allow.
+    cb_fround() {
+      run "$lbl" "$1" "$CBREPO" "$root/emptybin" "$(cb_fail "$2" "$3" "''${4-}")"
+      is_allow || { why="'$2' [''${4-}] on $3: $why"; return 1; }
+    }
+    # $1 run-id: its free-retry markers in the ttw budget dir, counted.
+    cb_retries() { ${pkgs.findutils}/bin/find "$CBSTATE" -name "$1.retry-*" 2> /dev/null | ${pkgs.coreutils}/bin/wc -l | ${pkgs.coreutils}/bin/tr -d ' '; }
     # $1 run-id, $2 rounds, $3 mtime (epoch): rounds spent without the hook,
     # as the files correction-budget.js leaves.
     cb_spend() {
@@ -5020,10 +5299,10 @@ let
         cb-ttw-marker-counted)
           cb_reset
           for i in 1 2; do
-            run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes.\nTTW-CORRECTION-ROUND: 62-x')")"
+            run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes, pass %s.\nTTW-CORRECTION-ROUND: 62-x' "$i")")"
             is_allow || { why="TTW round $i on 62-x: $why"; return 1; }
           done
-          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes.\nTTW-CORRECTION-ROUND: 62-x')")"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes, pass 3.\nTTW-CORRECTION-ROUND: 62-x')")"; is_deny "budget de correction épuisé (2/2) pour le run 62-x" || return 1
           [ -e "$CBSTATE/62-x.round2" ] && [ ! -e "$CBSTATE/62-x.round3" ] \
             || { why="TTW rounds not counted as 62-x.round1..2"; return 1; } ;;
         # Two rounds already spent in ttw-correction-budget: the next is
@@ -5080,6 +5359,139 @@ let
           ln -s "$root/cbforeign" "$CBSTATE"
           run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md." 62-x)"; is_deny "BLOCKED" || return 1
           [ ! -e "$root/cbforeign/62-x.round3" ] || { why="a round was stamped through the symlink"; kind=pwned; return 1; } ;;
+        # Run 96: the latest round's brief resent unchanged is a free retry,
+        # once: no round counted, a <run>.retry-<sha256> marker left.
+        cb-retry-free-allow)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md (round 2)." 62-x)"; is_allow || return 1
+          [ "$(cb_rounds 62-x)" -eq 2 ] || { why="retry allowed, but $(cb_rounds 62-x) round(s) counted, expected 2"; return 1; }
+          [ "$(cb_retries 62-x)" -eq 1 ] || { why="$(cb_retries 62-x) retry marker(s), expected 1"; return 1; }
+          ${jq} -e '.brief_sha256 | test("^[0-9a-f]{64}$")' "$CBSTATE/62-x.round1" > /dev/null 2>&1 \
+            || { why="62-x.round1 stamps no 64-hex brief_sha256"; return 1; }
+          cbh=$(${jq} -r '.brief_sha256 // ""' "$CBSTATE/62-x.round2" 2> /dev/null) || cbh=""
+          [ -n "$cbh" ] && [ -e "$CBSTATE/62-x.retry-$cbh" ] \
+            || { why="no 62-x.retry-<round2 brief_sha256> marker"; return 1; } ;;
+        cb-retry-once-deny)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md (round 2)." 62-x)"; is_allow || { why="first retry: $why"; return 1; }
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md (round 2)." 62-x)"; is_deny "budget de correction épuisé (2/2)" ;;
+        # Normalized before hashing: trimmed, whitespace runs one space.
+        cb-retry-whitespace-allow)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf '\nApply  the  fixes  in  06-resolve.md  (round  2).   \nTTW-CORRECTION-ROUND: 62-x   ')")"; is_allow || return 1
+          [ "$(cb_rounds 62-x)" -eq 2 ] || { why="retry allowed, but $(cb_rounds 62-x) round(s) counted, expected 2"; return 1; } ;;
+        # Only the latest round's brief is free: an older one is counted.
+        cb-retry-older-counted)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_in "Apply the fixes in 06-resolve.md (round 1)." 62-x)"; is_deny "budget de correction épuisé (2/2)" || return 1
+          [ "$(cb_retries 62-x)" -eq 0 ] || { why="$(cb_retries 62-x) retry marker(s) for an older brief, expected 0"; return 1; } ;;
+        # Past the cap, a round goes out on its own while its TTW-FAILING set
+        # shrinks: new, non-empty, one id of the previous round dropped.
+        cb-progress-allow)
+          cb_reset
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 1)." 62-x "A-1, A-2, A-3" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 2)." 62-x "A-2, A-3" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 3)." 62-x "A-3" || return 1
+          ${jq} -e '.via == "progress" and .failing == ["A-3"]' "$CBSTATE/62-x.round3" > /dev/null 2>&1 \
+            || { why="62-x.round3 missing or not stamped via progress with failing [A-3]"; return 1; } ;;
+        cb-progress-evidence-deny)
+          cb_reset
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 1)." 62-x "A-1, A-2" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 2)." 62-x "A-2" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_fail "Apply the fixes in 06-resolve.md (round 3)." 62-x)"; is_deny "aucune ligne TTW-FAILING" ;;
+        cb-progress-noprev-deny)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_fail "Apply the fixes in 06-resolve.md (round 3)." 62-x "A-1")"; is_deny "la ronde précédente n'a enregistré aucun ensemble TTW-FAILING" ;;
+        cb-progress-repeat-deny)
+          cb_reset
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 1)." 62-x "A-1, A-2" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 2)." 62-x "A-2" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_fail "Apply the fixes in 06-resolve.md (round 3)." 62-x "A-2")"; is_deny "même ensemble TTW-FAILING que la ronde précédente" ;;
+        cb-progress-oscillation-deny)
+          cb_reset
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 1)." 62-x "A-1, A-2" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 2)." 62-x "A-2, A-3" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_fail "Apply the fixes in 06-resolve.md (round 3)." 62-x "A-1, A-2")"; is_deny "oscillation, même ensemble TTW-FAILING que la ronde 1" || return 1
+          is_deny "r2 [A-2, A-3]" ;;
+        cb-progress-nodrop-deny)
+          cb_reset
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 1)." 62-x "A-1" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 2)." 62-x "A-2" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_fail "Apply the fixes in 06-resolve.md (round 3)." 62-x "A-2, A-3")"; is_deny "aucun id de la ronde précédente n'a disparu" ;;
+        # Five rounds in all, progress or not: the sixth is denied.
+        cb-progress-ceiling-deny)
+          cb_reset
+          # Not $i: run() sets it to the interpreter path.
+          cbn=0
+          for cbs in "A-1, A-2, A-3, A-4, A-5, A-6" "A-2, A-3, A-4, A-5, A-6" "A-3, A-4, A-5, A-6" "A-4, A-5, A-6" "A-5, A-6"; do
+            cbn=$((cbn + 1))
+            cb_fround "$2" "Apply the fixes in 06-resolve.md (round $cbn)." 62-x "$cbs" || return 1
+          done
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_fail "Apply the fixes in 06-resolve.md (round 6)." 62-x "A-6")"; is_deny "Plafond absolu atteint : 5 rondes, plafond 5" ;;
+        # A user grant after a no-progress stop reopens one round.
+        cb-progress-grant-allow)
+          cb_reset
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 1)." 62-x "A-1, A-2, A-3" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 2)." 62-x "A-2, A-3" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 3)." 62-x "A-3" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_fail "Apply the fixes in 06-resolve.md (round 4)." 62-x "A-3")"; is_deny "même ensemble TTW-FAILING que la ronde précédente" || return 1
+          : > "$CBSTATE/62-x.grant1"
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 4, granted)." 62-x "A-3" || return 1
+          ${jq} -e '.via == "budget"' "$CBSTATE/62-x.round4" > /dev/null 2>&1 \
+            || { why="62-x.round4 missing or not stamped via budget"; return 1; } ;;
+        # Two TTW-FAILING lines are no set, even when each alone would show
+        # progress: no evidence, denied, nothing counted.
+        cb-progress-twolines-deny)
+          cb_reset
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 1)." 62-x "A-1, A-2, A-3" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 2)." 62-x "A-2, A-3" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_raw "$(printf 'Apply the fixes in 06-resolve.md (round 3).\nTTW-FAILING: A-3\nTTW-FAILING: A-2\nTTW-CORRECTION-ROUND: 62-x')")"; is_deny "aucune ligne TTW-FAILING lisible" || return 1
+          [ "$(cb_rounds 62-x)" -eq 2 ] || { why="denied, but $(cb_rounds 62-x) round(s) counted, expected 2"; return 1; } ;;
+        # Each grant raises the ceiling by one: with one grant, a sixth round
+        # on progress goes out (rounds 1-3 on the budget, 4-6 on progress).
+        cb-progress-ceiling-grant-allow)
+          cb_reset
+          mkdir -p "$CBSTATE"
+          : > "$CBSTATE/62-x.grant1"
+          cbn=0
+          for cbs in "A-1, A-2, A-3, A-4, A-5, A-6" "A-2, A-3, A-4, A-5, A-6" "A-3, A-4, A-5, A-6" "A-4, A-5, A-6" "A-5, A-6" "A-6"; do
+            cbn=$((cbn + 1))
+            cb_fround "$2" "Apply the fixes in 06-resolve.md (round $cbn)." 62-x "$cbs" || return 1
+          done
+          ${jq} -e '.via == "progress" and .failing == ["A-6"]' "$CBSTATE/62-x.round6" > /dev/null 2>&1 \
+            || { why="62-x.round6 missing or not stamped via progress with failing [A-6]"; return 1; } ;;
+        # Two briefs on one set race for the same slot: the loser reads the
+        # budget again, finds the winner's round with its own set and is
+        # denied. A preload creates the slot, stamped with that set, between
+        # the hook's read and its exclusive create, so the claim collides
+        # every time.
+        cb-claim-race-deny)
+          cb_reset
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 1)." 62-x "A-1, A-2, A-3" || return 1
+          cb_fround "$2" "Apply the fixes in 06-resolve.md (round 2)." 62-x "A-2, A-3" || return 1
+          cbhk=$(${jq} -n --arg h "$2" '$h')
+          printf '%s\n' '"use strict";' 'const fs = require("fs");' 'const write = fs.writeFileSync;' 'let raced = false;' \
+            'fs.writeFileSync = function (file, data, opts) {' \
+            '  if (!raced && /\.round[1-9][0-9]*$/.test(String(file)) && opts && opts.flag === "wx") {' \
+            '    raced = true;' \
+            '    write.call(fs, file, JSON.stringify({ via: "progress", failing: ["A-3"] }) + "\n", { flag: "wx" });' \
+            '  }' \
+            '  return write.apply(fs, arguments);' \
+            '};' "require($cbhk);" > "$root/cbrace.js"
+          run "$lbl" "$root/cbrace.js" "$CBREPO" "$root/emptybin" "$(cb_fail "Apply the fixes in 06-resolve.md (round 3)." 62-x "A-3")"; is_deny "même ensemble TTW-FAILING que la ronde précédente" || return 1
+          ${jq} -e '.via == "progress" and .failing == ["A-3"]' "$CBSTATE/62-x.round3" > /dev/null 2>&1 \
+            || { why="62-x.round3 is not the racing round the preload stamped"; return 1; }
+          [ "$(cb_rounds 62-x)" -eq 3 ] || { why="$(cb_rounds 62-x) round(s) after the lost claim, expected 3"; return 1; } ;;
         # correction-grant: only the user's token, as the first non-empty
         # line, only for the project's live run once spent.
         cg-token-grants)
@@ -5207,6 +5619,26 @@ let
           # Silent or told, either way: what counts is that nothing was granted.
           [ "$rc" -eq 0 ] && [ ! -s "$d/$lbl.err" ] || { why="exit $rc or stderr: $(head -c 200 "$d/$lbl.err")"; return 1; }
           [ -z "$(${pkgs.findutils}/bin/find "$root/cbforeign" -name '*.grant*')" ] || { why="a grant was written through the symlink"; kind=pwned; return 1; } ;;
+        # A free-retry marker is no round: one round spent and a marker
+        # leave the run unspent, so nothing is granted.
+        cg-retry-marker-ignored)
+          cb_reset
+          cb_spend 62-x 1
+          : > "$CBSTATE/62-x.retry-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_not_granted 0 "nothing was granted" || return 1
+          [ ! -e "$CBSTATE/62-x.grant1" ] || { why="62-x.grant1 written for a run with one round spent"; kind=mismatch; return 1; } ;;
+        # A round stamped via progress spends no budget: rounds 1-2 on the
+        # budget, round 3 on progress and one grant leave the grant unused,
+        # so a second token grants nothing.
+        cg-progress-not-spent)
+          cb_reset
+          mkdir -p "$CBSTATE"
+          ${jq} -cn '{via:"budget",failing:["A-1","A-2","A-3"]}' > "$CBSTATE/62-x.round1"
+          ${jq} -cn '{via:"budget",failing:["A-2","A-3"]}' > "$CBSTATE/62-x.round2"
+          ${jq} -cn '{via:"progress",failing:["A-3"]}' > "$CBSTATE/62-x.round3"
+          : > "$CBSTATE/62-x.grant1"
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cg_in "ttw: +1 tour")"; is_not_granted 1 "nothing was granted" || return 1
+          [ ! -e "$CBSTATE/62-x.grant2" ] || { why="62-x.grant2 written while 62-x.grant1 is unused"; kind=mismatch; return 1; } ;;
         # Run 66: research agents on haiku, the model named explicitly.
         rm-explore-sonnet-deny)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(rm_in Explore sonnet)"; is_deny 'model "sonnet"' ;;

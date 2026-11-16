@@ -122,7 +122,8 @@ in
   # unless the newest Bash result batch in the transcript shows sandbox
   # evidence (EPERM, Operation not permitted, sandbox_violations…), the
   # newest user prompt asks to leave the sandbox, or the command is on a
-  # known-unsandboxable allowlist (git branch -d/-m/-u, nix build, docker…).
+  # known-unsandboxable allowlist (git branch -m/-u, nix build, docker…;
+  # `git branch -d/-D` passes sandboxed, the skill says so).
   # Measured over 14 days: 91 % of escapes had no sandbox error before them.
   # Fail-open: a workflow hook, not a barrier.
   hookSandboxEscapeEvidence = builtins.readFile ./hooks/sandbox-escape-evidence.js;

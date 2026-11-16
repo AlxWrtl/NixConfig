@@ -214,6 +214,23 @@
 #      M-cb-retry-once, M-cb-retry-norm, M-cb-auto, M-cb-evidence,
 #      M-cb-seen, M-cb-drop, M-cb-ceiling, M-cb-free, M-cb-onefail,
 #      M-cb-ceiling-grant, M-cb-recount and M-cg-progress.
+#      The ttw-reminder run adds ttw-reminder.js, the UserPromptSubmit
+#      reminder now read from stdin: a human prompt, a slash command, an
+#      envelope named mid-text, empty stdin, malformed JSON, a missing or
+#      non-string prompt and an envelope input over 4 MiB in bytes (but not
+#      in characters) each print exactly the one reminder line (exit 0,
+#      stderr empty, stdout compared byte for byte); a prompt that opens,
+#      after leading whitespace, on <agent-message, `Another Claude session
+#      sent a message`, <cross-session-message or <task-notification prints
+#      nothing. D9 holds the three envelopes it shares with
+#      correction-grant's WRAPPERS in both anchors. Its watchdog is still not
+#      exercised: the harness always closes stdin. Canaries: M-tr-env-agent,
+#      M-tr-env-another, M-tr-env-cross and M-tr-env-task, one envelope
+#      dropped each, M-tr-prefix, a match anywhere for a match at the start,
+#      M-tr-trim, no whitespace trim, M-tr-failopen, malformed JSON made
+#      silent, M-tr-overflow, an oversized input made silent, M-tr-typeof, a
+#      non-string prompt coerced to text, and M-tr-bytes, the size limit
+#      counted in characters.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -695,6 +712,32 @@ let
     A-iw-json = {
       hook = "instagram-watch.js";
       text = "try { data = JSON.parse(input); } catch { quiet(); return; }";
+    };
+    # ttw-reminder: silence only on a prompt that OPENS on a harness
+    # envelope, after leading whitespace; any doubt prints the reminder.
+    A-tr-envelopes = {
+      hook = "ttw-reminder.js";
+      text = "const ENVELOPES = [\"<agent-message\", \"Another Claude session sent a message\", \"<cross-session-message\", \"<task-notification\"];";
+    };
+    A-tr-trim = {
+      hook = "ttw-reminder.js";
+      text = "const p = data && typeof data.prompt === \"string\" ? data.prompt.replace(/^\\s+/, \"\") : \"\";";
+    };
+    A-tr-prefix = {
+      hook = "ttw-reminder.js";
+      text = "if (ENVELOPES.some((e) => p.startsWith(e))) { quiet(); return; }";
+    };
+    A-tr-json = {
+      hook = "ttw-reminder.js";
+      text = "try { data = JSON.parse(input); } catch { remind(); return; }";
+    };
+    A-tr-overflow = {
+      hook = "ttw-reminder.js";
+      text = "if (overflow) { remind(); return; }";
+    };
+    A-tr-bytes = {
+      hook = "ttw-reminder.js";
+      text = "size += chunk.length;";
     };
     A-ac-flag = {
       hook = "ttw-metrics-probe.py";
@@ -2075,6 +2118,123 @@ let
         {
           anchor = "A-iw-json";
           to = "try { data = JSON.parse(input); } catch { process.exit(2); }";
+        }
+      ];
+    }
+    # One envelope dropped each: that harness turn gets the reminder.
+    {
+      id = "M-tr-env-agent";
+      hook = "ttw-reminder.js";
+      kills = "tr-agent-message-silent";
+      swaps = [
+        {
+          anchor = "A-tr-envelopes";
+          to = "const ENVELOPES = [\"Another Claude session sent a message\", \"<cross-session-message\", \"<task-notification\"];";
+        }
+      ];
+    }
+    {
+      id = "M-tr-env-another";
+      hook = "ttw-reminder.js";
+      kills = "tr-another-session-silent";
+      swaps = [
+        {
+          anchor = "A-tr-envelopes";
+          to = "const ENVELOPES = [\"<agent-message\", \"<cross-session-message\", \"<task-notification\"];";
+        }
+      ];
+    }
+    {
+      id = "M-tr-env-cross";
+      hook = "ttw-reminder.js";
+      kills = "tr-cross-session-silent";
+      swaps = [
+        {
+          anchor = "A-tr-envelopes";
+          to = "const ENVELOPES = [\"<agent-message\", \"Another Claude session sent a message\", \"<task-notification\"];";
+        }
+      ];
+    }
+    {
+      id = "M-tr-env-task";
+      hook = "ttw-reminder.js";
+      kills = "tr-task-notification-silent";
+      swaps = [
+        {
+          anchor = "A-tr-envelopes";
+          to = "const ENVELOPES = [\"<agent-message\", \"Another Claude session sent a message\", \"<cross-session-message\"];";
+        }
+      ];
+    }
+    # An envelope named anywhere silences: a human quoting one loses the reminder.
+    {
+      id = "M-tr-prefix";
+      hook = "ttw-reminder.js";
+      kills = "tr-mid-text-emits";
+      swaps = [
+        {
+          anchor = "A-tr-prefix";
+          to = "if (ENVELOPES.some((e) => p.includes(e))) { quiet(); return; }";
+        }
+      ];
+    }
+    # No trim: an envelope behind a newline gets the reminder.
+    {
+      id = "M-tr-trim";
+      hook = "ttw-reminder.js";
+      kills = "tr-leading-space-silent";
+      swaps = [
+        {
+          anchor = "A-tr-trim";
+          to = "const p = data && typeof data.prompt === \"string\" ? data.prompt : \"\";";
+        }
+      ];
+    }
+    # Malformed input made silent: the doubt drops the reminder.
+    {
+      id = "M-tr-failopen";
+      hook = "ttw-reminder.js";
+      kills = "tr-malformed-emits";
+      swaps = [
+        {
+          anchor = "A-tr-json";
+          to = "try { data = JSON.parse(input); } catch { quiet(); return; }";
+        }
+      ];
+    }
+    # Oversized input made silent: the doubt drops the reminder.
+    {
+      id = "M-tr-overflow";
+      hook = "ttw-reminder.js";
+      kills = "tr-overflow-emits";
+      swaps = [
+        {
+          anchor = "A-tr-overflow";
+          to = "if (overflow) { quiet(); return; }";
+        }
+      ];
+    }
+    # A non-string prompt coerced to text: an array holding an envelope silences.
+    {
+      id = "M-tr-typeof";
+      hook = "ttw-reminder.js";
+      kills = "tr-prompt-array-emits";
+      swaps = [
+        {
+          anchor = "A-tr-trim";
+          to = "const p = data && data.prompt != null ? String(data.prompt).replace(/^\\s+/, \"\") : \"\";";
+        }
+      ];
+    }
+    # The limit counted in characters: 2 MiB of two-byte text slips under 4 MiB.
+    {
+      id = "M-tr-bytes";
+      hook = "ttw-reminder.js";
+      kills = "tr-overflow-emits";
+      swaps = [
+        {
+          anchor = "A-tr-bytes";
+          to = "size += String(chunk).length;";
         }
       ];
     }
@@ -4002,6 +4162,19 @@ let
     "iw-subagent-silent"
     "iw-malformed-silent"
     "iw-no-prompt-silent"
+    "tr-human-emits"
+    "tr-agent-message-silent"
+    "tr-another-session-silent"
+    "tr-cross-session-silent"
+    "tr-task-notification-silent"
+    "tr-leading-space-silent"
+    "tr-mid-text-emits"
+    "tr-slash-command-emits"
+    "tr-empty-emits"
+    "tr-malformed-emits"
+    "tr-no-prompt-emits"
+    "tr-prompt-array-emits"
+    "tr-overflow-emits"
     "ac-prose-emits"
     "ac-edit-emits"
     "ac-cap-emits"
@@ -4146,6 +4319,7 @@ let
     "ttw-pr-record.js"
     "worktree-in-use.js"
     "instagram-watch.js"
+    "ttw-reminder.js"
     "ttw-metrics-probe.py"
     "ttw-flags.js"
   ];
@@ -4397,6 +4571,22 @@ let
       [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
       [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
       [ ! -s "$d/$lbl.out" ] || { why="context emitted where silence was due"; kind=mismatch; return 1; }
+    }
+
+    # ttw-reminder: $1 prompt. Its watchdog (stdin never closed) is not run:
+    # run() always feeds stdin from a file, so EOF comes at once.
+    tr_in() { ${jq} -cn --arg p "$1" '{hook_event_name:"UserPromptSubmit",cwd:"/probe/cwd",session_id:"probe",prompt:$p}'; }
+    tr_emits() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ -s "$d/$lbl.out" ] || { why="no output: the reminder was due"; kind=mismatch; return 1; }
+      printf '%s\n' 'file change → /ttw (tier table: SKILL.md); question → answer directly.' > "$d/$lbl.want"
+      ${pkgs.diffutils}/bin/cmp -s "$d/$lbl.want" "$d/$lbl.out" || { why="stdout is not the exact reminder line"; kind=mismatch; return 1; }
+    }
+    tr_silent() {
+      [ "$rc" -eq 0 ] || { why="exit $rc, expected 0"; return 1; }
+      [ ! -s "$d/$lbl.err" ] || { why="stderr not empty"; return 1; }
+      [ ! -s "$d/$lbl.out" ] || { why="reminder printed on a harness envelope"; kind=mismatch; return 1; }
     }
 
     # ttw-metrics-probe: a TTW run tree under $ACO, a plain one under $ACR.
@@ -5009,6 +5199,7 @@ let
         apr-*) tmo=${hostTimeout "ttw-pr-record.js"} ;;
         wh-*) tmo=${hostTimeout "worktree-in-use.js"} ;;
         iw-*) tmo=${hostTimeout "instagram-watch.js"} ;;
+        tr-*) tmo=${hostTimeout "ttw-reminder.js"} ;;
         ac-* | pr-* | graph-*) tmo=${hostTimeout "ttw-metrics-probe.py"} ;;
         tf-*) tmo=${hostTimeout "ttw-flags.js"} ;;
         *) tmo=${hostTimeout "format-typescript.js"} ;;
@@ -6335,6 +6526,43 @@ let
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit","prompt":"https://www.instagram.com/reel/Derra61CUhb/'; iw_silent ;;
         iw-no-prompt-silent)
           run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit"}'; iw_silent ;;
+        # ttw-reminder: the reminder line on every prompt but one that opens,
+        # after leading whitespace, on a harness envelope; any doubt prints it.
+        tr-human-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tr_in "change the statusline colour")"; tr_emits ;;
+        tr-agent-message-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tr_in "$(printf '<agent-message from="a1">\n[Subagent hand-back] done\n</agent-message>')")"; tr_silent ;;
+        # The real peer form: a header line, then the agent-message block.
+        tr-another-session-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tr_in "$(printf 'Another Claude session sent a message:\n<agent-message from="a1">\n[Subagent hand-back] done\n</agent-message>')")"; tr_silent ;;
+        tr-cross-session-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tr_in "$(printf '<cross-session-message from="s2">\nstatus?\n</cross-session-message>')")"; tr_silent ;;
+        tr-task-notification-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tr_in "$(printf '<task-notification>\n<task-id>b1</task-id>\n<status>completed</status>\n</task-notification>')")"; tr_silent ;;
+        tr-leading-space-silent)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tr_in "$(printf ' \n\t<agent-message from="a1">\n[Subagent hand-back] done\n</agent-message>')")"; tr_silent ;;
+        # A human quoting an envelope is still a human prompt.
+        tr-mid-text-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tr_in "$(printf 'why did <agent-message from="a1"> reach the hook?')")"; tr_emits ;;
+        tr-slash-command-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" "$(tr_in "$(printf '<command-message>ttw</command-message>\n<command-name>/ttw</command-name>\n<command-args>fix the hook</command-args>')")"; tr_emits ;;
+        tr-empty-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" ""; tr_emits ;;
+        tr-malformed-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit","prompt":"<agent-message from='; tr_emits ;;
+        tr-no-prompt-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit"}'; tr_emits ;;
+        tr-prompt-array-emits)
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit","prompt":["<agent-message from=\"a1\">"]}'; tr_emits ;;
+        # 2^21 two-byte "é" = 4 MiB of bytes, 2 Mi characters: over the limit
+        # in bytes only. Built in-shell, never an exec argument (ARG_MAX).
+        tr-overflow-emits)
+          printf -v tr_big '\303\251'
+          tr_n=0
+          while [ "$tr_n" -lt 21 ]; do tr_big="$tr_big$tr_big"; tr_n=$((tr_n + 1)); done
+          run "$lbl" "$2" "$NOREPO" "$root/emptybin" '{"hook_event_name":"UserPromptSubmit","prompt":"<agent-message from=\"a1\">'"$tr_big"'"}'
+          tr_big=""
+          tr_emits ;;
         # ttw-metrics-probe --hook: a Write or Edit of a run's 02-acs.md lists
         # the ACs with no command and no lecture/deferred marker, count first,
         # capped; anything else is silence, exit 0. --self-test exits 0.
@@ -6801,6 +7029,7 @@ let
         apr-*) echo ${hookFile "ttw-pr-record.js"} ;;
         wh-*) echo ${hookFile "worktree-in-use.js"} ;;
         iw-*) echo ${hookFile "instagram-watch.js"} ;;
+        tr-*) echo ${hookFile "ttw-reminder.js"} ;;
         ac-* | pr-* | graph-*) echo ${hookFile "ttw-metrics-probe.py"} ;;
         tf-*) echo ${hookFile "ttw-flags.js"} ;;
       esac
@@ -6955,7 +7184,23 @@ let
       ok = prProbeGroups != [ ] && builtins.all prProbeGated prProbeGroups;
       msg = "PostToolUse group(s) with matcher Bash running ttw-metrics-probe.py: ${toString (builtins.length prProbeGroups)}; each must carry no group-level `if` and `\"if\" = \"${prProbeIf}\"` on every handler. `if` is a handler field (hooks reference, common fields): on the group it is ignored without a word and python runs after every Bash call";
     }
+    {
+      name = "D9 envelopes: ttw-reminder and correction-grant spell their shared envelopes alike";
+      ok = trSharedDrift == [ ];
+      msg = "envelope literal(s) not in both A-cg-wrappers and A-tr-envelopes: ${show trSharedDrift}. Both hooks stand down on the same harness turns; a spelling drift in one lets that turn through it alone, and D0 then pins the drift into the hook";
+    }
   ];
+
+  # The envelopes correction-grant's WRAPPERS and ttw-reminder's ENVELOPES
+  # both list, quoted as the JS literal (D9).
+  trShared = [
+    "\"<agent-message\""
+    "\"Another Claude session sent a message\""
+    "\"<task-notification\""
+  ];
+  trSharedDrift = builtins.filter (
+    l: !(hasInfix l anchors.A-cg-wrappers.text && hasInfix l anchors.A-tr-envelopes.text)
+  ) trShared;
 
   failures = builtins.filter (a: !a.ok) assertions;
 in

@@ -16,7 +16,7 @@
 #     nothing else under ~/.config/secrets.
 #
 # Two layers, all offline:
-#   B. eval-time asserts on settings.json (B1-B8);
+#   B. eval-time asserts on settings.json (B1-B9);
 #   C. runtime suite: the BUILT binary runs against a stub curl that records
 #      argv, stdin and every `@/dev/fd/N` payload per call (p01-p16), plus the
 #      PATH line of the built wrapper (p17).
@@ -211,6 +211,7 @@ let
     (secretDir + "scaleway-tem-secret-key")
     (secretDir + "neon-api-key")
     (secretDir + "typesafe-api-key")
+    (secretDir + "gsc-ecrivains.json")
   ];
   secretReads = builtins.filter (e: builtins.isString e && hasInfix ".config/secrets" e) allowRead;
   strayReads = builtins.filter (e: !(builtins.elem e allowedSecretReads)) secretReads;
@@ -256,7 +257,7 @@ let
         + builtins.toJSON missingReads
         + ", not allowed "
         + builtins.toJSON strayReads
-        + " — exactly: trello-api-key, trello-token, cf-access-client-id/secret, scaleway-tem-access/secret-key, neon-api-key, typesafe-api-key (exact files) and ONE glob preliz-preprod-*-password; no directory, no other glob";
+        + " — exactly: trello-api-key, trello-token, cf-access-client-id/secret, scaleway-tem-access/secret-key, neon-api-key, typesafe-api-key, gsc-ecrivains.json (exact files) and ONE glob preliz-preprod-*-password; no directory, no other glob";
     }
     {
       name = "B8 the only glob under .config/secrets is preliz-preprod-*-password, inside one path component";
@@ -268,6 +269,11 @@ let
         + builtins.toJSON [ passwordGlob ]
         + "; crossing a path component: "
         + builtins.toJSON wideGlobs;
+    }
+    {
+      name = "B9 allowRead opens gsc-ecrivains.json as one exact file";
+      ok = builtins.elem (secretDir + "gsc-ecrivains.json") allowRead;
+      msg = "sandbox.filesystem.allowRead lost ${secretDir}gsc-ecrivains.json — the Google Search Console credential (exact file, no wrapper)";
     }
     {
       name = "B5 autoMode.environment: $defaults first + preprod host via `preprod-curl`";

@@ -370,6 +370,8 @@ in
           "${homeDirectory}/.config/secrets/neon-api-key"
           # TypeSafe Jev : clé API pour le banc de sélection de blocs (sans wrapper, comme Neon ; api.typesafe.ai passe par allowed_domains, commande par commande).
           "${homeDirectory}/.config/secrets/typesafe-api-key"
+          # Google Search Console : identifiant JSON, sans wrapper comme Neon, toute commande sandboxée peut le lire.
+          "${homeDirectory}/.config/secrets/gsc-ecrivains.json"
         ];
         # graphify-reindex (fired in BACKGROUND by TTW steps 01b/09b) writes
         # the knowledge graph to ~/GraphVault — outside the session cwd, so the

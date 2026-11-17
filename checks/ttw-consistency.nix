@@ -120,6 +120,11 @@ let
       scope = skills.ttwOrchestration;
     }
     {
+      name = "verify: a correction round is sent only once ttw has run since the user's last message";
+      needle = "denied uncounted: invoke the ttw skill";
+      scope = skills.ttwOrchestration;
+    }
+    {
       name = "verify: a spent budget is extended by the user's grant token only";
       needle = "ask the user to type `ttw: +1 tour`";
       scope = skills.ttwOrchestration;

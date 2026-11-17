@@ -980,8 +980,10 @@ in
               # (5 rounds at most) or it resends the latest brief (free
               # once), and a CronCreate or ScheduleWakeup prompt
               # carrying the `ttw: +1 tour` grant line
-              # (it would come back as a user turn). NOT async — a deny must
-              # land before the spawn.
+              # (it would come back as a user turn). Also denies, uncounted,
+              # a marked round sent while require-ttw is re-armed (no Skill
+              # ttw since the last user turn in transcript_path; subagents
+              # exempt). NOT async — a deny must land before the spawn.
               command = "${node} ~/.claude/hooks/correction-budget.js";
               timeout = 5;
             }

@@ -68,6 +68,14 @@ in
   # of the previous set gone) up to CEILING rounds in all plus grants;
   # progress rounds are not charged to the cap, so a grant after any stop
   # reopens one round. The deny names the stop and lists the sets.
+  # A counted brief with no agent_id is denied, uncounted, when its
+  # transcript_path shows no Skill ttw call since the last user turn:
+  # require-ttw would deny every write of that round. The walk is
+  # require-ttw's openAt, copied verbatim between `// BEGIN shared openAt`
+  # and `// END shared openAt` (hook-wiring D10); checked after the opus
+  # check, before the free retry and any slot. A missing or non-file
+  # transcript gives no verdict: counted as before. A subagent's call
+  # carries the parent's transcript: not gated.
   # Also on CronCreate/ScheduleWakeup: a scheduled prompt comes back as a user
   # turn, so one with a `ttw: +1 tour` line is denied (same TOKEN line as
   # correction-grant.js); any other scheduler call passes, uncounted.
@@ -142,6 +150,11 @@ in
   # "Real user turn" excludes tool_result blocks (138 of the 164 user-typed
   # lines in a measured 937-line transcript) and `! command` lines, which are
   # user input but not a new request.
+  #
+  # That walk (TTW + openAt, between `// BEGIN shared openAt` and
+  # `// END shared openAt`) is copied verbatim into correction-budget.js,
+  # which denies a counted correction round this hook would block; edit
+  # both copies alike (hook-wiring D10).
   #
   # Cost of the change: one deny -> ttw -> retry round trip per modifying
   # task, instead of one per session. That is the point.

@@ -171,6 +171,85 @@ function stopOf(cur, rounds) {
   return null;
 }
 
+// Whether TTW ran since the session's last user turn, read from transcript
+// `t` by require-ttw.js's own walk, kept verbatim (D10): true, false, or
+// null for no verdict (no path, not a regular file, a read error). Never
+// throws: null leaves the round counted as before.
+function ttwGate(t) {
+  try {
+    if (typeof t !== "string" || t === "") return null;
+    if (!fs.statSync(t).isFile()) return null;
+    const lines = fs.readFileSync(t, "utf8").split("\n");
+    // BEGIN shared openAt (require-ttw.js, D10)
+    const TTW = "\"name\":\"Skill\",\"input\":{\"skill\":\"ttw\"";
+
+    // Walk backwards from line `from`: whichever comes first decides. An
+    // TTW call before any user turn means TTW ran for THIS task -> pass.
+    // A user turn first means this is a new request with no TTW yet -> deny.
+    const openAt = from => {
+    for (let i = from; i >= 0; i--) {
+      const line = lines[i];
+      if (!line) continue;
+
+      if (line.indexOf(TTW) !== -1) return true;
+
+      // A prompt typed while the model works is often recorded only as an
+      // attachment, never as a user line: a queued_command marked human
+      // (humanTurn, or origin.kind on the older shape). Task notifications
+      // and subagent hand-backs share the attachment type and stay out.
+      if (line.indexOf("\"queued_command\"") !== -1) {
+        let q;
+        try { q = JSON.parse(line); } catch { q = null; }
+        // isMeta sits on the attachment in the real lines, never on top.
+        const a = q && q.type === "attachment" && q.isMeta !== true ? q.attachment : null;
+        if (a && a.type === "queued_command" && a.isMeta !== true && a.commandMode === "prompt"
+          && (a.humanTurn === true || (a.origin && a.origin.kind === "human"))) return false;
+      }
+
+      // Cheap reject before the JSON.parse cost.
+      if (line.indexOf("\"type\":\"user\"") === -1) continue;
+
+      let msg;
+      try { msg = JSON.parse(line); } catch { continue; }
+      if (msg.type !== "user") continue;
+
+      // Harness-injected content, written with the user role but never
+      // typed by anyone. This one is load-bearing: invoking a Skill writes
+      // the skill's own body back as an isMeta user line, AFTER the Skill
+      // marker. Without this skip the backwards walk hits that line first
+      // and denies forever — ttw plants a fresh one on every retry.
+      // Replayed over 4 real transcripts: 161/161 historical edits denied.
+      if (msg.isMeta === true) continue;
+
+      // The compaction summary, written as a user line with its own flag
+      // and no isMeta: /compact, or the window running out mid-task, is not
+      // a new request. The walk goes on above it, where the lines from
+      // before the compaction still decide; in a file that starts at the
+      // compaction, nothing does: the walk reaches the top and denies.
+      if (msg.isCompactSummary === true) continue;
+
+      const c = msg.message && msg.message.content;
+
+      // Tool results are recorded as user messages. They are not turns.
+      if (Array.isArray(c) && c.some(b => b && b.type === "tool_result")) continue;
+
+      // Harness envelopes that carry no isMeta flag: `! command` lines,
+      // background-task completions, and slash-command markers. All are
+      // user-role lines, none is a new request.
+      const text = typeof c === "string"
+        ? c
+        : (Array.isArray(c) ? c.filter(b => b && b.type === "text").map(b => b.text || "").join("") : "");
+      if (/^\s*<(bash-(input|stdout|stderr)|task-notification|command-name|local-command-)/.test(text)) continue;
+
+      return false; // a real user turn, reached before any TTW call
+    }
+    return false;
+    };
+    // END shared openAt
+    return openAt(lines.length - 1);
+  } catch { return null; }
+}
+
 let input = "";
 let ran = false;
 
@@ -239,6 +318,15 @@ function main() {
   // A correction round runs on opus, checked before any slot is claimed:
   // a denied brief spends nothing. SendMessage carries no model.
   if (data.tool_name !== "SendMessage" && ti.model !== "opus") { const asked = ti.model === undefined || ti.model === null || ti.model === "" ? "absent" : "\"" + safe(ti.model) + "\""; deny("BLOCKED: correction rounds run on opus. This correction brief for run " + marker + " has model " + asked + "; re-spawn it with model: \"opus\". No round was counted."); return; }
+
+  // A user turn after the last Skill ttw call re-arms require-ttw, which
+  // then denies every write of the round: refused here, before the free
+  // retry and any slot, so nothing is spent. A subagent's call carries the
+  // parent's transcript: not gated. No verdict (null): counted as before.
+  if (data.agent_id === undefined && ttwGate(data.transcript_path) === false) {
+    deny("BLOCKED: TTW has not run since the user's last message, so require-ttw would deny every write of this correction round for run " + safe(marker) + ". Invoke the ttw skill first (Skill ttw), then resend this brief. No round was counted.");
+    return;
+  }
 
   const home = process.env.HOME || os.homedir();
   const dir = path.join(home, ".claude", BUDGET_DIR);

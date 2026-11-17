@@ -231,6 +231,19 @@
 #      silent, M-tr-overflow, an oversized input made silent, M-tr-typeof, a
 #      non-string prompt coerced to text, and M-tr-bytes, the size limit
 #      counted in characters.
+#      The budget-gate-burn run gates correction-budget's counted rounds on
+#      require-ttw's verdict: a marked Agent or SendMessage brief with no
+#      agent_id whose transcript_path walk (require-ttw's openAt, copied
+#      verbatim between `// BEGIN shared openAt` and `// END shared openAt`,
+#      D10) finds a user turn before any Skill ttw call is denied before the
+#      free retry and any slot, nothing written; the grant token and a
+#      queued human prompt are turns, an isMeta line, a tool result and a
+#      compaction summary are not; an empty transcript denies, as in
+#      require-ttw; a missing or non-file transcript gives no verdict and
+#      counts as before, as does any subagent call. Canaries: M-cb-gate,
+#      the gate dropped, M-cb-gate-subagent, subagents gated too,
+#      M-cb-gate-meta, the isMeta skip dropped from the copy, and
+#      M-cb-gate-failopen, an unreadable transcript read as closed.
 #      Every other case is run and graded, with
 #      no mutant to show it bites.
 #
@@ -680,6 +693,19 @@ let
     A-cb-recount = {
       hook = "correction-budget.js";
       text = "if (e && e.code === \"EEXIST\") { recount(); continue; }";
+    };
+    A-cb-gate = {
+      hook = "correction-budget.js";
+      text = "if (data.agent_id === undefined && ttwGate(data.transcript_path) === false) {";
+    };
+    # In correction-budget's copy of openAt; require-ttw's own is D10's.
+    A-cb-gate-meta = {
+      hook = "correction-budget.js";
+      text = "if (msg.isMeta === true) continue;";
+    };
+    A-cb-gate-read = {
+      hook = "correction-budget.js";
+      text = "} catch { return null; }";
     };
     A-cg-progress = {
       hook = "correction-grant.js";
@@ -2019,6 +2045,58 @@ let
         {
           anchor = "A-cb-recount";
           to = "if (e && e.code === \"EEXIST\") { total++; continue; }";
+        }
+      ];
+    }
+    # No gate: a round sent while require-ttw is re-armed is counted, then
+    # every write of it denied.
+    {
+      id = "M-cb-gate";
+      hook = "correction-budget.js";
+      kills = "cb-gate-closed-deny";
+      swaps = [
+        {
+          anchor = "A-cb-gate";
+          to = "if (false) {";
+        }
+      ];
+    }
+    # Subagents gated too: the parent's transcript, re-armed after the
+    # spawn, denies the round a subagent sends.
+    {
+      id = "M-cb-gate-subagent";
+      hook = "correction-budget.js";
+      kills = "cb-gate-subagent-allow";
+      swaps = [
+        {
+          anchor = "A-cb-gate";
+          to = "if (ttwGate(data.transcript_path) === false) {";
+        }
+      ];
+    }
+    # The isMeta skip dropped from the copy: the skill body written back
+    # after Skill ttw reads as a user turn and closes the gate.
+    {
+      id = "M-cb-gate-meta";
+      hook = "correction-budget.js";
+      kills = "cb-gate-meta-open";
+      swaps = [
+        {
+          anchor = "A-cb-gate-meta";
+          to = ";";
+        }
+      ];
+    }
+    # Fail-closed reads: a missing transcript is a closed gate, and a round
+    # with no verdict is denied.
+    {
+      id = "M-cb-gate-failopen";
+      hook = "correction-budget.js";
+      kills = "cb-gate-missing-allow";
+      swaps = [
+        {
+          anchor = "A-cb-gate-read";
+          to = "} catch { return false; }";
         }
       ];
     }
@@ -3958,6 +4036,19 @@ let
     "cb-progress-twolines-deny"
     "cb-progress-ceiling-grant-allow"
     "cb-claim-race-deny"
+    "cb-gate-closed-deny"
+    "cb-gate-open-allow"
+    "cb-gate-grant-deny"
+    "cb-gate-meta-open"
+    "cb-gate-toolresult-open"
+    "cb-gate-compact-open"
+    "cb-gate-queued-deny"
+    "cb-gate-missing-allow"
+    "cb-gate-none-allow"
+    "cb-gate-sendmessage-deny"
+    "cb-gate-retry-deny"
+    "cb-gate-subagent-allow"
+    "cb-gate-empty-deny"
     "cg-token-grants"
     "cg-no-token"
     "cg-inline-token-ignored"
@@ -4521,6 +4612,44 @@ let
       for i in $(${pkgs.coreutils}/bin/seq 1 "$2"); do
         ${jq} -cn --arg d "$3" --arg s "$4" '{ts:"2026-01-01T00:00:00.000Z",tool:"Agent",session:$s,description:"probe",dir:$d}' > "$CBSTATE/$1.round$i"
       done
+    }
+    # Gate cases: the brief also carries the session transcript, whose walk
+    # (require-ttw's openAt) says whether TTW ran since the last user turn.
+    # $1 brief, $2 marker, $3 transcript_path, $4 agent_id (absent when
+    # empty or unset), on opus.
+    cb_tin() { ${jq} -cn --arg p "$1" --arg m "$2" --arg t "$3" --arg a "''${4-}" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"Agent",cwd:$c,session_id:"probe",transcript_path:$t,tool_input:{description:"probe",subagent_type:"general-purpose",prompt:($p + "\nTTW-CORRECTION-ROUND: " + $m),model:"opus"}} + (if $a == "" then {} else {agent_id:$a} end)'; }
+    # The same as a SendMessage re-brief: $1 brief, $2 marker, $3 transcript_path.
+    cb_tmsg() { ${jq} -cn --arg p "$1" --arg m "$2" --arg t "$3" --arg c "$CBREPO" '{hook_event_name:"PreToolUse",tool_name:"SendMessage",cwd:$c,session_id:"probe",transcript_path:$t,tool_input:{to:"implementer",summary:"probe",message:($p + "\nTTW-CORRECTION-ROUND: " + $m)}}'; }
+    # $1 fixture file, then one key per transcript line, oldest first:
+    # SK the Skill ttw call, U a typed user turn, G the user's grant token,
+    # META the skill body written back as an isMeta user line, TR a tool
+    # result, CS a compaction summary, Q a prompt queued by the human.
+    cb_tx() {
+      cbf="$1"
+      shift
+      mkdir -p "$(dirname "$cbf")"
+      : > "$cbf"
+      for cbl in "$@"; do
+        case "$cbl" in
+          SK) ${jq} -cn '{type:"assistant",message:{role:"assistant",content:[{type:"tool_use",id:"toolu_cbsk",name:"Skill",input:{skill:"ttw"}}]}}' ;;
+          U) ${jq} -cn '{type:"user",message:{role:"user",content:"Fix the remaining findings."}}' ;;
+          G) ${jq} -cn '{type:"user",message:{role:"user",content:"ttw: +1 tour"}}' ;;
+          META) ${jq} -cn '{type:"user",isMeta:true,message:{role:"user",content:[{type:"text",text:"Base directory for this skill: ttw"}]}}' ;;
+          TR) ${jq} -cn '{type:"user",message:{role:"user",content:[{type:"tool_result",tool_use_id:"toolu_cbsk",content:"Launching skill: ttw"}]}}' ;;
+          CS) ${jq} -cn '{type:"user",isCompactSummary:true,message:{role:"user",content:"This session is being continued from a previous conversation."}}' ;;
+          Q) ${jq} -cn '{type:"attachment",attachment:{type:"queued_command",commandMode:"prompt",humanTurn:true,prompt:"Also check the README."}}' ;;
+          *)
+            why="cb_tx: unknown line key $cbl"
+            return 1
+            ;;
+        esac >> "$cbf" || return 1
+      done
+    }
+    CBTX="$root/cbtx"
+    # Denied by the gate, the reason saying what to do and that it was free.
+    cb_gated() {
+      is_deny "Invoke the ttw skill first" || return 1
+      is_deny "No round was counted."
     }
 
     # A scheduler call ($1 tool) whose prompt ($2) comes back as a user turn.
@@ -5683,6 +5812,100 @@ let
           ${jq} -e '.via == "progress" and .failing == ["A-3"]' "$CBSTATE/62-x.round3" > /dev/null 2>&1 \
             || { why="62-x.round3 is not the racing round the preload stamped"; return 1; }
           [ "$(cb_rounds 62-x)" -eq 3 ] || { why="$(cb_rounds 62-x) round(s) after the lost claim, expected 3"; return 1; } ;;
+        # Gate: a counted round sent while require-ttw is re-armed (a user
+        # turn after the last Skill ttw call) would be blocked on its first
+        # write. Denied before any slot or retry marker: nothing counted, no
+        # budget state created.
+        cb-gate-closed-deny)
+          cb_reset
+          cb_tx "$CBTX/closed.jsonl" U SK U || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md." 62-x "$CBTX/closed.jsonl")"; cb_gated || return 1
+          [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
+        # Skill ttw after the last user turn: counted as before.
+        cb-gate-open-allow)
+          cb_reset
+          cb_tx "$CBTX/open.jsonl" U SK || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md." 62-x "$CBTX/open.jsonl")"; is_allow || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] || { why="allowed, but $(cb_rounds 62-x) round(s) counted, expected 1"; return 1; } ;;
+        # The grant token is itself a user turn: the granted round sent
+        # before ttw runs again is denied, and the grant stays unspent.
+        cb-gate-grant-deny)
+          cb_reset
+          cb_spend 62-x 2
+          : > "$CBSTATE/62-x.grant1"
+          cb_tx "$CBTX/grant.jsonl" U SK G || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md (round 3)." 62-x "$CBTX/grant.jsonl")"; cb_gated || return 1
+          [ "$(cb_rounds 62-x)" -eq 2 ] || { why="denied, but $(cb_rounds 62-x) round(s) on 62-x, expected 2: the grant was spent"; return 1; }
+          [ -e "$CBSTATE/62-x.grant1" ] || { why="the grant file is gone"; return 1; } ;;
+        # The skill body written back as an isMeta user line is no turn.
+        cb-gate-meta-open)
+          cb_reset
+          cb_tx "$CBTX/meta.jsonl" U SK META || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md." 62-x "$CBTX/meta.jsonl")"; is_allow || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] || { why="allowed, but $(cb_rounds 62-x) round(s) counted, expected 1"; return 1; } ;;
+        # A tool result is a user-role line, not a turn.
+        cb-gate-toolresult-open)
+          cb_reset
+          cb_tx "$CBTX/tr.jsonl" U SK TR || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md." 62-x "$CBTX/tr.jsonl")"; is_allow || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] || { why="allowed, but $(cb_rounds 62-x) round(s) counted, expected 1"; return 1; } ;;
+        # A compaction summary is no new request: the walk goes on above it.
+        cb-gate-compact-open)
+          cb_reset
+          cb_tx "$CBTX/cs.jsonl" U SK CS || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md." 62-x "$CBTX/cs.jsonl")"; is_allow || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] || { why="allowed, but $(cb_rounds 62-x) round(s) counted, expected 1"; return 1; } ;;
+        # A prompt the human queued while the model worked is a user turn.
+        cb-gate-queued-deny)
+          cb_reset
+          cb_tx "$CBTX/q.jsonl" U SK Q || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md." 62-x "$CBTX/q.jsonl")"; cb_gated || return 1
+          [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
+        # No transcript to read (missing, or a directory): no verdict, so
+        # counted as before.
+        cb-gate-missing-allow)
+          cb_reset
+          rm -rf "$CBTX/absent.jsonl"
+          mkdir -p "$CBTX/adir.jsonl"
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md (round 1)." 62-x "$CBTX/absent.jsonl")"; is_allow || { why="missing transcript: $why"; return 1; }
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md (round 2)." 62-x "$CBTX/adir.jsonl")"; is_allow || { why="directory transcript: $why"; return 1; }
+          [ "$(cb_rounds 62-x)" -eq 2 ] || { why="allowed, but $(cb_rounds 62-x) round(s) counted, expected 2"; return 1; } ;;
+        # An uncounted brief is never gated, closed transcript or not.
+        cb-gate-none-allow)
+          cb_reset
+          cb_tx "$CBTX/none.jsonl" U SK U || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Check what the last correction round changed." none "$CBTX/none.jsonl")"; is_allow || return 1
+          [ ! -e "$CBSTATE" ] || { why="a none brief touched the budget state"; return 1; } ;;
+        # A SendMessage re-brief is gated the same.
+        cb-gate-sendmessage-deny)
+          cb_reset
+          cb_tx "$CBTX/sm.jsonl" U SK U || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tmsg "Apply the fixes in 06-resolve.md." 62-x "$CBTX/sm.jsonl")"; cb_gated || return 1
+          [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
+        # The gate comes before the free retry: a resend while closed leaves
+        # no retry marker, so the retry stays free for after ttw runs.
+        cb-gate-retry-deny)
+          cb_reset
+          cb_round "$2" 62-x 1 || return 1
+          cb_round "$2" 62-x 2 || return 1
+          cb_tx "$CBTX/retry.jsonl" U SK U || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md (round 2)." 62-x "$CBTX/retry.jsonl")"; cb_gated || return 1
+          [ "$(cb_retries 62-x)" -eq 0 ] || { why="denied, but $(cb_retries 62-x) retry marker(s) written, expected 0"; return 1; }
+          [ "$(cb_rounds 62-x)" -eq 2 ] || { why="denied, but $(cb_rounds 62-x) round(s) counted, expected 2"; return 1; } ;;
+        # A subagent's call carries agent_id and the parent's transcript: not
+        # gated, counted as before.
+        cb-gate-subagent-allow)
+          cb_reset
+          cb_tx "$CBTX/sub.jsonl" U SK U || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md." 62-x "$CBTX/sub.jsonl" a1b2c3d4)"; is_allow || return 1
+          [ "$(cb_rounds 62-x)" -eq 1 ] || { why="allowed, but $(cb_rounds 62-x) round(s) counted, expected 1"; return 1; } ;;
+        # An empty transcript is a regular file with no Skill ttw call:
+        # closed, as require-ttw reads it.
+        cb-gate-empty-deny)
+          cb_reset
+          cb_tx "$CBTX/empty.jsonl" || return 1
+          run "$lbl" "$2" "$CBREPO" "$root/emptybin" "$(cb_tin "Apply the fixes in 06-resolve.md." 62-x "$CBTX/empty.jsonl")"; cb_gated || return 1
+          [ ! -e "$CBSTATE" ] || { why="denied, but the budget state was touched"; return 1; } ;;
         # correction-grant: only the user's token, as the first non-empty
         # line, only for the project's live run once spent.
         cg-token-grants)
@@ -7189,7 +7412,35 @@ let
       ok = trSharedDrift == [ ];
       msg = "envelope literal(s) not in both A-cg-wrappers and A-tr-envelopes: ${show trSharedDrift}. Both hooks stand down on the same harness turns; a spelling drift in one lets that turn through it alone, and D0 then pins the drift into the hook";
     }
+    {
+      name = "D10 shared openAt: correction-budget.js carries require-ttw's transcript walk verbatim";
+      ok =
+        sharedWalk "require-ttw.js" != null
+        && hasInfix "const openAt = " (builtins.concatStringsSep "\n" (sharedWalk "require-ttw.js"))
+        && sharedWalk "require-ttw.js" == sharedWalk "correction-budget.js";
+      msg = "the lines between `${sharedBegin}` and `${sharedEnd}` (leading blanks aside) differ between require-ttw.js and correction-budget.js, or a marker is not in exactly one place in each (require-ttw.js: ${toString (occurrences sharedBegin (bodyText "require-ttw.js"))}/${toString (occurrences sharedEnd (bodyText "require-ttw.js"))}, correction-budget.js: ${toString (occurrences sharedBegin (bodyText "correction-budget.js"))}/${toString (occurrences sharedEnd (bodyText "correction-budget.js"))}). correction-budget denies a counted round on the verdict require-ttw would give its writes; a drift denies a round require-ttw would let through, or counts one whose every write it then denies. Edit both copies alike";
+    }
   ];
+
+  # require-ttw's openAt as correction-budget.js carries it (D10): the lines
+  # after the BEGIN line up to the END marker, leading blanks dropped, or
+  # null unless each marker is in the body exactly once.
+  sharedBegin = "// BEGIN shared openAt";
+  sharedEnd = "// END shared openAt";
+  sharedWalk =
+    n:
+    let
+      t = bodyText n;
+      after = builtins.concatStringsSep "\n" (
+        builtins.tail (splitString "\n" (builtins.elemAt (splitString sharedBegin t) 1))
+      );
+    in
+    if occurrences sharedBegin t == 1 && occurrences sharedEnd t == 1 then
+      map (l: builtins.head (builtins.match "[ \t]*(.*)" l)) (
+        splitString "\n" (builtins.head (splitString sharedEnd after))
+      )
+    else
+      null;
 
   # The envelopes correction-grant's WRAPPERS and ttw-reminder's ENVELOPES
   # both list, quoted as the JS literal (D9).

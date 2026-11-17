@@ -650,8 +650,9 @@ process.stdin.on("end", () => {
     const t = data.transcript_path;
     if (!t || !fs.existsSync(t)) process.exit(0);
 
-    const TTW = "\"name\":\"Skill\",\"input\":{\"skill\":\"ttw\"";
     const lines = fs.readFileSync(t, "utf8").split("\n");
+    // BEGIN shared openAt (correction-budget.js, D10)
+    const TTW = "\"name\":\"Skill\",\"input\":{\"skill\":\"ttw\"";
 
     // Walk backwards from line `from`: whichever comes first decides. An
     // TTW call before any user turn means TTW ran for THIS task -> pass.
@@ -715,6 +716,7 @@ process.stdin.on("end", () => {
     }
     return false;
     };
+    // END shared openAt
     if (openAt(lines.length - 1)) process.exit(0);
 
     // A subagent's tool calls carry agent_id and the PARENT's transcript, so

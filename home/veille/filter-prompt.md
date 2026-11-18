@@ -15,7 +15,7 @@ Types, choisis strictement :
 - `officiel` : release, doc ou blog de l'éditeur de l'outil concerné (Anthropic, OpenAI, GitHub…)
 - `étude` : papier académique ou étude avec méthode et mesures publiées (arXiv, conférence). Un billet d'entreprise, même chiffré, n'en est PAS une.
 - `blog` : billet d'entreprise, d'éditeur tiers ou de praticien
-- `forum` : discussion HN ou Reddit sans lien externe de fond
+- `forum` : discussion HN sans lien externe de fond
 - `code` : dépôt ou outil
 Si rien : `- [{{DATE}}] (rien)`.
 

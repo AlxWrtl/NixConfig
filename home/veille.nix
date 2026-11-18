@@ -1,5 +1,5 @@
 # TTW watch, two launchd agents.
-# Daily (`veille-ttw`): fetch.py reads HN, Reddit, GitHub releases and arXiv, a
+# Daily (`veille-ttw`): fetch.py reads HN, GitHub releases and arXiv, a
 # tool-less Haiku sorts the candidates, results land in
 # ~/.local/share/veille-ttw (bruts/, tris/, inbox.md). Parsers are tested
 # offline by checks/veille.nix.

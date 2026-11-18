@@ -1098,6 +1098,16 @@ in
     B5 (did the pass change the run); a hook recalls a missing one when
     04-validate.md is written.
 
+    Tally confirmed > 0 → the round that fixes those findings changes the
+    diff the verdict describes, so after that round re-run
+    `ttw-verify-external` ONCE with the same --base and --acs and
+    `--out .claude/output/ttw/{task-id}/04-external-verify-2.json`.
+    Triage that pass into `04-external-triage-2.md`, same line format and
+    tally; its confirmed findings go through the normal correction budget.
+    Never a third pass. A BLOCKED re-run follows the Fable-fallback rule
+    below. After `gh pr create`, the ttw-metrics-probe hook names a missing
+    04-external-verify-2.json.
+
     No usable external verdict on high-stakes (BLOCKED, or -E typed) → spawn the Fable fallback
     (ORCHESTRATION.md) and record its cause in 04-validate.md.
 
@@ -2278,7 +2288,7 @@ in
     The coordinator surfaces BLOCKED as an UNRUN check — never as green, and
     never as a reason to stop the run: the machine gate, and on high-stakes, the
     Fable fallback it triggers, decide the run's colour.
-    External verify runs one pass; triage correctness against the ACs only — style findings dismissed by category.
+    External verify runs one pass, plus one re-run after the fix of confirmed findings (step-04), never a third; triage correctness against the ACs only — style findings dismissed by category.
 
     ## Worktree isolation — for a different problem than collisions
 

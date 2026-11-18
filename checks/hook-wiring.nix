@@ -4314,6 +4314,10 @@ let
     "pr-external-untallied-emits"
     "pr-newest-incomplete-emits"
     "pr-newest-complete-silent"
+    "pr-e2-missing-emits"
+    "pr-e2-present-silent"
+    "pr-e2-unconfirmed-silent"
+    "pr-e2-symlink-silent"
     "graph-skipped-emits"
     "graph-nosection-emits"
     "graph-noquery-emits"
@@ -4765,6 +4769,8 @@ let
     AC_VPASS='{"schema_version":1,"tool":"ttw-verify-external","verdict":"PASS","reason":"","model":"gpt-6-astra"}'
     AC_VBLOCK='{"schema_version":1,"tool":"ttw-verify-external","verdict":"BLOCKED","reason":"timeout","model":"none"}'
     AC_TALLY='confirmed=0 unique=0 dismissed=0'
+    # A triage that confirmed one external finding: the re-run is owed.
+    AC_TALLY1='confirmed=1 unique=1 dismissed=0'
     AC_EXAM='PHASE: examine (opus Plan, read-only) + external (codex gpt-5.6-terra, FAIL 1 finding)'
     # $1 the passes the B5 line must name, after "for: ".
     ac_b5_emits() {
@@ -7001,6 +7007,37 @@ let
           pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p
           ${pkgs.coreutils}/bin/touch -t 200001010000 "$PRO/r1/00-context.md" || { why="cannot age r1"; return 1; }
           pr_run r2 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # B6 e2: the external pass ran (PASS verify) and its triage confirmed
+        # a finding, so one re-run over the corrected diff is owed as
+        # 04-external-verify-2.json. Every other B6 file is present.
+        pr-e2-missing-emits)
+          pr_repo || return 1; pr_run r1 "Tier: High-stakes" "Flags: -t -f -x -pr -o -n -e" feat/p 02-acs.md 05-examine.md
+          ac_put "$PRO/r1/04-external-triage.md" "# External triage" "" "$AC_TALLY1"
+          ac_put "$PRO/r1/04-external-verify.json" "$AC_VPASS"
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; pr_emits r1 "04-external-verify-2.json" "02-acs.md (" "05-examine" "tally in 04-external-triage.md" ;;
+        # The re-run is on disk, a regular file with a PASS verdict (a BLOCKED
+        # one would be the newest verify and unrun the pass): silent.
+        pr-e2-present-silent)
+          pr_repo || return 1; pr_run r1 "Tier: High-stakes" "Flags: -t -f -x -pr -o -n -e" feat/p 02-acs.md 05-examine.md
+          ac_put "$PRO/r1/04-external-triage.md" "# External triage" "" "$AC_TALLY1"
+          ac_put "$PRO/r1/04-external-verify.json" "$AC_VPASS"
+          ac_put "$PRO/r1/04-external-verify-2.json" "$AC_VPASS"
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # confirmed=0: nothing was corrected, no re-run is owed.
+        pr-e2-unconfirmed-silent)
+          pr_repo || return 1; pr_run r1 "Tier: High-stakes" "Flags: -t -f -x -pr -o -n -e" feat/p 02-acs.md 05-examine.md
+          ac_put "$PRO/r1/04-external-triage.md" "# External triage" "" "$AC_TALLY"
+          ac_put "$PRO/r1/04-external-verify.json" "$AC_VPASS"
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # A symlinked 04-external-verify-2.json is unreadable to the guards:
+        # never counted present, never named (as the other B6 items).
+        pr-e2-symlink-silent)
+          pr_repo || return 1; pr_run r1 "Tier: High-stakes" "Flags: -t -f -x -pr -o -n -e" feat/p 02-acs.md 05-examine.md
+          ac_put "$PRO/r1/04-external-triage.md" "# External triage" "" "$AC_TALLY1"
+          ac_put "$PRO/r1/04-external-verify.json" "$AC_VPASS"
+          ac_put "$PR/v2.json" "$AC_VPASS"
+          ln -s "$PR/v2.json" "$PRO/r1/04-external-verify-2.json" || { why="cannot plant the 04-external-verify-2.json symlink"; return 1; }
           run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
         # ttw-metrics-probe --hook on a run's 01b-obsidian*.md: a graph not
         # queried, no graph section at all, or a section with no `- Query:`

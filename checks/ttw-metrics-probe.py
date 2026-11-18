@@ -66,7 +66,12 @@ escalation counts); Direct owes nothing, no or an unknown tier is untiered.
 Every other tier owes a 02-acs.md; an examine tally when 05-examine.md
 exists or a `Flags:` line holds `-x` or `+x`; an external tally when the
 external pass ran (B5 rule). A tally file the guards refuse is never named
-and does not count as held. The hook's run: a non-symlink dir of
+and does not count as held. When that external tally confirmed > 0, the
+run also owes 04-external-verify-2.json, the one re-run over the corrected
+diff: held as a regular non-symlink file, a symlink or other kind is
+unreadable (never named); a BLOCKED re-run is the newest verify, so the
+external pass reads as not run and neither tally nor re-run is due (the
+BLOCKED rule of step-04 then applies). The hook's run: a non-symlink dir of
 <toplevel>/.claude/output/ttw/ whose 00-context.md passes the guards and
 whose first `Branch:` token is the branch, with no pr.md and no commit.txt;
 the newest 00-context.md wins. A run's date is its `Date:` line, else the
@@ -213,6 +218,7 @@ B6_ITEMS = (
     ("acs", "02-acs.md (the ACs, each with its proving command)"),
     ("x", "the confirmed=N unique=U dismissed=D tally in 05-examine.md"),
     ("e", "the confirmed=N unique=U dismissed=D tally in 04-external-triage.md"),
+    ("e2", "04-external-verify-2.json (one ttw-verify-external re-run over the corrected diff, step-04)"),
 )
 B5_STEPS = ("analyze", "e", "o", "x")
 CLASSES = ("command", "deferred", "docs", "lecture", "unproven")
@@ -889,6 +895,8 @@ def run_gaps(run, cap):
         got = tallied[step]
         if got != "not run":
             out[step] = {"unknown": "missing", "unreadable": "unreadable"}.get(got, "ok")
+    if tallied["e"] == "changed":
+        out["e2"] = _file_state(run / "04-external-verify-2.json")
     return out
 
 

@@ -396,6 +396,18 @@ let
       scope = skills.ttwStep04Validate;
     }
     {
+      # B6 e2 of checks/ttw-metrics-probe.py looks for this exact file name.
+      name = "validate: confirmed external findings get one re-run into 04-external-verify-2.json";
+      needle = "04-external-verify-2.json";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      # The re-run is bounded: without the cap, each correction buys another pass.
+      name = "high-stakes: external verify re-runs once after corrections, never a third";
+      needle = "never a third";
+      scope = skills.ttwHighStakes;
+    }
+    {
       # The fallback has to be reachable from the step that sees the BLOCKED
       # verdict; an orchestration-only copy leaves validate without the trigger.
       name = "validate: no usable external verdict spawns the Fable fallback";

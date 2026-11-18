@@ -1,4 +1,4 @@
-"""Collecte déterministe de la veille TTW : HN, Reddit, releases GitHub, arXiv -> markdown sur stdout.
+"""Collecte déterministe de la veille TTW : HN, releases GitHub, arXiv -> markdown sur stdout.
 
 Les parseurs (`parse_*`) sont purs et testés hors réseau (test_fetch.py) ; le réseau et
 la boucle des sources ne tournent que sous `__main__`.
@@ -13,13 +13,11 @@ import sys
 import time
 import urllib.parse
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
 
 UA = "macos:veille-ttw:0.2 (lecture seule, 1 run/jour)"
 ATOM = {"a": "http://www.w3.org/2005/Atom"}
 
 HN_QUERIES = ["claude code", "coding agent", "llm agent", "codex", "subagent", "agentic", "mcp server", "anthropic"]
-REDDIT_SUBS = ["ClaudeAI", "ClaudeCode", "ChatGPTCoding", "LocalLLaMA"]
 GH_REPOS = ["anthropics/claude-code", "openai/codex"]
 ARXIV_QUERY = (
     '(cat:cs.SE OR cat:cs.AI OR cat:cs.CL) AND '
@@ -57,25 +55,6 @@ def parse_hn(hits: list[dict]) -> list[str]:
             f"- {h['title']} | {h.get('points')}pts {h.get('num_comments') or 0}com | {link} "
             f"| hn: https://news.ycombinator.com/item?id={h['objectID']}" + (f" | {text}" if text else "")
         )
-    return out
-
-
-def parse_reddit(xml: bytes, since: float) -> list[str]:
-    """Flux Atom Reddit -> une ligne par entrée mise à jour après `since`."""
-    out = []
-    for e in ET.fromstring(xml).findall("a:entry", ATOM):
-        updated = e.findtext("a:updated", default="", namespaces=ATOM)
-        if updated:
-            d = datetime.fromisoformat(updated)  # garde le décalage (+00:00, -07:00…)
-            if (d if d.tzinfo else d.replace(tzinfo=timezone.utc)).timestamp() < since:
-                continue
-        title = e.findtext("a:title", default="", namespaces=ATOM)
-        cat = e.find("a:category", ATOM)
-        sub = cat.get("label", "") if cat is not None else ""
-        link_el = e.find("a:link", ATOM)
-        link = link_el.get("href", "") if link_el is not None else ""
-        body = strip_html(e.findtext("a:content", default="", namespaces=ATOM), 300)
-        out.append(f"- {sub} | {title} | {link} | {body}")
     return out
 
 
@@ -120,7 +99,7 @@ def get(url: str, retries: int = 3, timeout: int = 30) -> bytes:
         body, _, code = res.stdout.rpartition(b"\n")
         status = int(code or 0)
         if status == 429 and attempt < retries - 1:
-            time.sleep(15 * (attempt + 1))  # Reddit limite les lectures anonymes rapprochées
+            time.sleep(15 * (attempt + 1))  # les API limitent les lectures anonymes rapprochées
             continue
         if status != 200:
             raise RuntimeError(f"HTTP {status} sur {url.split('?')[0]}")
@@ -139,13 +118,6 @@ def hn(since: float) -> list[str]:
         })
         hits += json.loads(get(f"https://hn.algolia.com/api/v1/search_by_date?{params}"))["hits"]
     return parse_hn(hits)
-
-
-def reddit(since: float) -> list[str]:
-    # L'API JSON anonyme renvoie 403 ; le flux Atom public répond, mais limite vite les appels
-    # rapprochés (429 dès le 3e) : un seul flux multi-sous-forums r/A+B+C.
-    subs = "+".join(REDDIT_SUBS)
-    return parse_reddit(get(f"https://www.reddit.com/r/{subs}/top/.rss?t=day&limit=60"), since)
 
 
 def gh_releases(since: float) -> list[str]:
@@ -177,7 +149,7 @@ def arxiv(since: float) -> list[str]:
     return out
 
 
-SOURCES = [("Hacker News", hn), ("Reddit", reddit), ("Releases GitHub", gh_releases), ("arXiv", arxiv)]
+SOURCES = [("Hacker News", hn), ("Releases GitHub", gh_releases), ("arXiv", arxiv)]
 
 
 def section(name: str, fn, since: float, failed: list[str]) -> str:

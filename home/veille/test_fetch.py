@@ -48,7 +48,7 @@ class TestImport(unittest.TestCase):
         self.assertEqual(_import_err.getvalue(), "", "import printed to stderr")
 
     def test_parsers_exist(self):
-        for name in ("parse_hn", "parse_reddit", "parse_arxiv", "parse_releases"):
+        for name in ("parse_hn", "parse_arxiv", "parse_releases"):
             self.assertTrue(callable(getattr(fetch, name, None)), f"fetch.{name} missing")
 
 
@@ -71,6 +71,23 @@ class TestNoX(unittest.TestCase):
         sources = getattr(fetch, "SOURCES", [])
         names = [s[0] if isinstance(s, tuple) else s for s in sources]
         self.assertNotIn("X", names)
+
+
+class TestNoReddit(unittest.TestCase):
+    def test_no_reddit_names(self):
+        bad = [n for n in dir(fetch) if "reddit" in n.lower()]
+        self.assertEqual(bad, [], "fetch exposes Reddit names")
+
+    def test_no_reddit_source(self):
+        with open(fetch.__file__, encoding="utf-8") as fh:
+            src = fh.read()
+        for needle in ("reddit.com", "REDDIT_"):
+            self.assertNotIn(needle, src, f"fetch.py still mentions {needle!r}")
+
+    def test_no_reddit_source_entry(self):
+        sources = getattr(fetch, "SOURCES", [])
+        names = [s[0] if isinstance(s, tuple) else s for s in sources]
+        self.assertNotIn("Reddit", names)
 
 
 class TestHN(unittest.TestCase):
@@ -110,31 +127,6 @@ class TestHN(unittest.TestCase):
     def test_hn_one_line_per_hit(self):
         for line in self.lines:
             self.assertNotIn("\n", line)
-
-
-class TestReddit(unittest.TestCase):
-    def setUp(self):
-        self.lines = fetch.parse_reddit(fixture("reddit-top.atom"), SINCE)
-
-    def test_reddit_keeps_recent_with_sub_title_link(self):
-        self.assertEqual(len(self.lines), 2, self.lines)
-        line = lines_with(self.lines, "Compaction halved my token bill on long sessions")
-        self.assertEqual(len(line), 1)
-        self.assertIn("r/ClaudeAI", line[0])
-        self.assertIn("https://www.reddit.com/r/ClaudeAI/comments/1oqk7zd/compaction_halved_my_token_bill/", line[0])
-        hook = lines_with(self.lines, "PreToolUse hooks that saved me from myself")
-        self.assertEqual(len(hook), 1)
-        self.assertIn("r/ClaudeCode", hook[0])
-
-    def test_reddit_drops_old_entry(self):
-        self.assertEqual(lines_with(self.lines, "Stale quantization thread"), [])
-        self.assertEqual(lines_with(self.lines, "r/LocalLLaMA"), [])
-
-    def test_reddit_since_is_honoured(self):
-        later = float(calendar.timegm((2026, 11, 8, 12, 0, 0)))
-        lines = fetch.parse_reddit(fixture("reddit-top.atom"), later)
-        self.assertEqual(len(lines), 1, lines)
-        self.assertIn("Compaction halved my token bill", lines[0])
 
 
 class TestArxiv(unittest.TestCase):

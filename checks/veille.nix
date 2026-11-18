@@ -3,10 +3,9 @@
 #   V1  `python3 -I -m unittest` on a copy of home/veille/ exits 0 and runs
 #       the whole suite (no skip, at least MIN_TESTS tests): fetch.py imports
 #       without side effect and its parsers hold on the fixtures (HN JSON
-#       dedup by objectID + sort by points + 3-point threshold, Reddit Atom
-#       sub/title/link + date filter, arXiv Atom paging `fini` on a full recent
-#       page vs a page crossing `since`, GitHub releases date filter), and
-#       fetch exposes nothing of X
+#       dedup by objectID + sort by points + 3-point threshold, arXiv Atom paging `fini` on a full
+#       recent page vs a page crossing `since`, GitHub releases date filter), and
+#       fetch exposes nothing of X nor Reddit
 #   V2  fetch.py contains neither `api.x.com` nor `X_BEARER_TOKEN`
 #   V3  filter-prompt.md still lists the entry types and no longer lists the
 #       `social` type (X source removed)

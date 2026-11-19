@@ -5178,4 +5178,1351 @@ in
             print(xhr.url, xhr.status, xhr.body)
     ```
   '';
+
+  # =========================================================================
+  # prospection — prospection B2B et suivi client d'un fondateur seul, CRM
+  # HubSpot gratuit piloté par son serveur MCP officiel. Générique : aucun
+  # projet nommé ici ; l'offre, la cible et le ton sont lus dans le vault du
+  # projet courant à l'usage. Contenu tiré d'une synthèse de recherche datée
+  # du 2026-11-19 (MESURÉ / OPINION / éditeur d'outil distingués, sources en
+  # references/sources.md). SKILL.md court = routeur ; references/ chargées
+  # seulement quand la tâche les demande.
+  # =========================================================================
+  skillProspection = ''
+    ---
+    name: prospection
+    description: "Prospection B2B et suivi client d'un fondateur seul, avec le CRM HubSpot gratuit piloté par son serveur MCP officiel : méthode, cadence de relance, qualification, rituels, indicateurs, RGPD. Se déclenche sur prospection, prospect, CRM, HubSpot, relance, suivi client, pipeline, « point du matin », « point du vendredi », revue mensuelle, préparation de rendez-vous, compte rendu d'appel, démo, qualification, mail de premier contact."
+    ---
+
+    # Prospection B2B et suivi client (fondateur seul)
+
+    Rôle : bras droit commercial d'un fondateur qui vend seul en B2B. Ce skill
+    tient la méthode, la cadence et le CRM ; l'utilisateur garde la décision,
+    l'envoi et la relation.
+
+    ## Règles non négociables
+    1. **Aucun e-mail envoyé et aucune écriture en masse dans le CRM sans
+       accord explicite de l'utilisateur.** Montrer les brouillons et la liste
+       numérotée des écritures (objet, enregistrement, champ, valeur actuelle
+       et nouvelle), puis attendre son accord. Une écriture unique qu'il a
+       demandée lui-même vaut accord pour celle-là seulement.
+    2. **Un prospect actif a toujours une prochaine tâche datée** dans le CRM.
+       Sans tâche datée, il est perdu ou disqualifié, jamais « en cours ».
+    3. **Un modèle générique n'est jamais envoyé tel quel** : chaque champ
+       entre crochets est rempli avec un fait vérifié sur le prospect, sinon
+       le brouillon n'est pas prêt.
+    4. Jamais de suppression dans le CRM ; jamais de recontact d'une personne
+       qui s'est opposée (`references/rgpd.md`).
+    5. Tout chiffre dit d'où il vient (MESURÉ, OPINION, éditeur d'outil,
+       convention). Ne jamais présenter une opinion comme une mesure ni
+       inventer un chiffre (`references/sources.md`).
+
+    ## Charger le contexte du projet (à chaque usage)
+    Ce skill est générique : offre, cible, prix, apporteurs et ton viennent du
+    projet en cours, jamais de ce fichier.
+    1. Trouver le dossier du projet dans le vault Obsidian (chemin donné par
+       le skill `obsidian`) : `02-Projets/<Projet>/`, via le MCP enquire
+       (`mcp__enquire__*`) ou Glob. Le projet = le dépôt courant, ou celui
+       que nomme l'utilisateur.
+    2. Lire dans `02-Projets/<Projet>/decisions/` et
+       `02-Projets/<Projet>/references/` les notes qui portent sur l'offre, la
+       cible, les prix, les apporteurs d'affaires et les arguments.
+    3. Lire les mémoires Claude du projet sur le ton :
+       `~/.claude/projects/<dossier-du-projet>/memory/`, fichiers dont le nom
+       ou la description parle de ton, copy, e-mail ou wording.
+    4. Les appliquer ; ne jamais les recopier dans ce skill ni dans le CRM.
+    5. Rien trouvé : demander à l'utilisateur l'offre, la cible et le ton
+       avant d'écrire quoi que ce soit.
+
+    ## Routage : lire seulement le fichier utile
+    Chemins relatifs à `~/.claude/skills/prospection/`.
+
+    | Situation | Lire |
+    |---|---|
+    | Cible (ICP), première liste, étapes du pipeline, perte, recontact | `references/methodologie.md` |
+    | Planifier les relances d'un prospect, canal, jour, lead entrant | `references/enchainement.md` |
+    | Questions de rendez-vous, qualification, tri des leads, notes CRM | `references/qualification.md` |
+    | Premier contact, relance, rupture, suivi de démo, recontact | `references/modeles-messages.md` |
+    | Point du matin, préparation de rendez-vous, compte rendu, point du vendredi, revue mensuelle | `references/rituels.md` |
+    | Mesurer la semaine, juger un taux | `references/indicateurs.md` |
+    | Mentions légales, opposition, conservation, purge, LinkedIn, apporteurs | `references/rgpd.md` |
+    | Configurer HubSpot, connecter le MCP, règles d'écriture | `references/hubspot.md` |
+    | Vérifier une source ou un chiffre | `references/sources.md` |
+
+    ## Outils
+    - **HubSpot** par son serveur MCP officiel : lire avant d'écrire. Non
+      connecté : `references/hubspot.md` (installation, à faire par
+      l'utilisateur) ; en attendant, travailler sur des listes affichées.
+    - **Mails et agenda** : skill `use-spark`, en lecture ; l'envoi reste à
+      l'utilisateur ou attend son accord explicite.
+    - **Prose française** : skill `ecriture-fr` pour relire un brouillon
+      avant de le montrer.
+    - **Vault** : skill `obsidian` ou MCP enquire pour le contexte projet.
+
+    ## Ce que disent les données (à garder en tête)
+    - Réponse réaliste à froid : de l'ordre du pourcent par e-mail envoyé,
+      pas 10 % (MESURÉ, éditeurs d'outils et une agence).
+    - Les relances font une grosse part des réponses ; 3 à 5 étapes
+      suffisent (mesures d'éditeurs, nombre d'étapes = OPINION).
+    - Jour et heure d'envoi comptent peu, hors week-end et soir.
+    - Le levier d'un fondateur est donc le ciblage, la qualification et la
+      discipline de suivi (`references/indicateurs.md`,
+      `references/enchainement.md`).
+    ${contract {
+      expects = "une demande de prospection ou de suivi client (prospect, relance, rituel, rendez-vous, pipeline, CRM) ; le contexte du projet lu dans le vault.";
+      produces = "brouillons d'e-mails, listes numérotées d'écritures CRM proposées, plans de relance datés, fiches de rendez-vous, comptes rendus, revues de pipeline ; chaque repère chiffré sourcé ou marqué convention.";
+      sideEffects = "lectures HubSpot (MCP), mails et agenda (use-spark) et vault ; écritures CRM et envois seulement après accord explicite de l'utilisateur.";
+    }}
+    ${scope {
+      useWhen = "Prospection B2B, relances, suivi client, pipeline et CRM HubSpot d'un fondateur seul ; rituels commerciaux ; préparation et compte rendu de rendez-vous ou de démo.";
+      notFor = "Envoi de masse ou achat de fichiers, prospection de consommateurs (B2C), avis juridique définitif (renvoyer à un juriste), marketing de contenu.";
+    }}
+    ${handoffs [
+      "Polir un brouillon en français → ecriture-fr."
+      "Lire mails, fils ou agenda → use-spark."
+      "Consigner une décision commerciale ou un compte rendu dans le vault → obsidian."
+      "Cas juridique limite (entrepreneur individuel, mobile personnel, apporteur d'affaires) → le signaler et renvoyer à un juriste."
+    ]}
+  '';
+
+  # prospection/references/methodologie.md — ICP, première liste, pipeline
+  # projeté sur le pipeline unique de HubSpot gratuit, seuils de stagnation,
+  # perte et recontact.
+  prospectionMethodologie = ''
+    # Méthodologie : cible, liste, pipeline, perte, recontact
+
+    Légende. MESURÉ = chiffre tiré de données avec échantillon ou méthode.
+    OPINION = règle de praticien. Éditeur d'outil = la source vend un outil
+    de prospection, d'e-mailing ou de CRM (intérêt commercial). Convention =
+    choix de ce skill, non mesuré. Les livres de vente cités n'ont été lus
+    qu'en résumés ou en chapitres en ligne.
+
+    ## La règle : un prospect actif a toujours une prochaine tâche datée
+    - Kazanjy demande une prochaine action datée pour chaque deal, à chaque
+      étape (OPINION, https://foundingsales.com/8-closing).
+    - Corrélation à l'appui : sur 8 382 deals, 5 % de closing sans
+      discussion des prochaines étapes contre 20 % avec (MESURÉ mais
+      corrélationnel, éditeur d'outil, équipes de vente et non fondateurs
+      seuls : https://www.gong.io/blog/driving-next-steps-isnt-enough-this-is-what-really-moves-deals-forward).
+    - En pratique : à chaque fin d'échange, proposer la tâche suivante datée
+      dans HubSpot ; l'écrire après accord. Un prospect sans tâche datée est
+      soit perdu, soit disqualifié (§5).
+
+    ## 1. ICP : critères observables, exclusions écrites
+    - Décrire la cible en caractéristiques observables de l'extérieur, pas en
+      intentions (OPINION, Kazanjy ch. 4 :
+      https://foundingsales.com/4-prospecting ; Ross, Predictable Revenue,
+      ICP explicite avec critères d'exclusion :
+      https://grahammann.net/book-notes/predictable-revenue-aaron-ross-marylou-tyler).
+    - Gabarit à remplir avec le contexte du projet (vault, `decisions/` et
+      `references/`), jamais inventé :
+      - Inclus si : [critère observable 1], [critère 2], [critère 3].
+      - Exclu si : [critère d'exclusion], [critère d'exclusion].
+      - Interlocuteur visé : [fonction] ; à défaut : [fonction].
+      - Déclencheurs observables : [événement visible et datable].
+    - Un ICP étroit et explicite est un point de convergence des auteurs,
+      mais d'opinion, pas de mesure.
+
+    ## 2. Première liste : 50 à 100 comptes montés à la main
+    - Premier passage de 50 à 100 comptes, montés à la main, avec une seule
+      source principale (OPINION, Kazanjy ch. 4).
+    - Pour chaque compte : société, interlocuteur, fonction, source des
+      coordonnées (nécessaire à l'information RGPD, `references/rgpd.md`),
+      déclencheur observé, date d'ajout.
+    - Avant l'accroche, préparer un tableau problème / impact / cause racine
+      (Gap Selling, page lue chez un éditeur d'outil :
+      https://www.gong.io/blog/gap-selling) et un constat utile au
+      destinataire (Challenger « Teach », OPINION :
+      https://tomtunguz.com/challenger-sales-process/).
+    - Dans le premier message, une question de redirection (« qui est la
+      bonne personne ? ») vaut mieux qu'un pitch (OPINION, Ross).
+    - Séparer prospection et vente dans le temps, par un bloc dédié, et non
+      par une embauche (OPINION, Ross, transposé à un solo).
+    - Volume quotidien : aucune source pour un solo. Close propose de
+      démarrer à 25-50 e-mails froids par jour (OPINION, éditeur d'outil :
+      https://close.com/resources/startup-guide-to-outbound-sales/). Les
+      petites campagnes répondent mieux : 5,8 % pour 50 destinataires ou
+      moins contre 2,1 % pour 1 000 et plus (MESURÉ, corrélationnel, éditeur
+      d'outil : https://hunter.io/the-state-of-cold-email-2025) ; la taille se
+      confond avec la qualité du ciblage.
+
+    ## 3. Pipeline d'un fondateur seul, projeté sur HubSpot gratuit
+    Un compte HubSpot gratuit ne peut pas créer de pipeline personnalisé ; le
+    pipeline par défaut reste, avec 7 étapes
+    (https://knowledge.hubspot.com/object-settings/set-up-and-customize-pipelines).
+    Renommer ses étapes en version gratuite n'est pas confirmé par HubSpot :
+    garder les noms d'origine et leur donner le sens ci-dessous. Ignorer les
+    probabilités par défaut (20 %, 40 %…), qui ne viennent pas de vos
+    données. Critères d'entrée et de sortie : convention de ce skill, d'après
+    Kazanjy (étapes sur mesure, chacune avec critère et prochaine action
+    datée, OPINION, https://foundingsales.com/8-closing).
+
+    | Étape HubSpot | Sens ici | Entrée | Sortie |
+    |---|---|---|---|
+    | (contact sans deal) | En prospection | dans la liste, ICP vérifié, source notée | rendez-vous accepté ; ou fin de cadence → perdu |
+    | Appointment scheduled | Découverte fixée | date acceptée par le prospect | découverte faite |
+    | Qualified to buy | Qualifié | douleur décrite par des faits passés, décideur et alternative actuelle connus (`references/qualification.md`) | démo fixée |
+    | Presentation scheduled | Démo fixée | date de démo acceptée | démo faite et prochaine étape acceptée |
+    | Decision maker bought-in | Accord du décideur | le décideur dit oui sur le principe ; critères et processus connus | proposition envoyée |
+    | Contract sent | Proposition envoyée | devis ou contrat envoyé, date de décision connue | signé, ou refus |
+    | Closed won | Gagné | signé | passe en suivi client |
+    | Closed lost | Perdu ou disqualifié | voir §5 | tâche de recontact datée (perdu seulement) |
+
+    ## 4. Seuils de stagnation
+    - 7 jours sans activité en bas de funnel (Decision maker bought-in,
+      Contract sent) : alerte (OPINION, Kazanjy ch. 8, à adapter au cycle).
+    - Environ 14 jours dans la même étape : alerte (Kazanjy « environ 2
+      semaines » ; le skill `crm-hygiene-check` d'Anthropic retient 14 jours,
+      choix de conception non mesuré :
+      https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/sales/skills/crm-hygiene-check/SKILL.md).
+    - Autres contrôles du même skill (Apache-2.0) : montant vide, date de
+      clôture passée, prochaine étape vide ou inchangée depuis 14 jours,
+      étape plus de 2 fois la médiane, un seul contact sur le deal.
+    - Une alerte n'est pas une perte : elle déclenche une relance ou une
+      décision au point du vendredi (`references/rituels.md`).
+
+    ## 5. Déclarer un prospect perdu
+    - Fin de cadence sans réponse (`references/enchainement.md`) → e-mail de
+      rupture → sans réponse 7 jours plus tard (convention), passer en
+      Closed lost.
+    - Toujours noter : motif de perte (propriété « Motif de perte »), date de
+      recontact (propriété « Date de recontact ») et la tâche de recontact
+      datée (`references/hubspot.md`).
+    - Perdu et disqualifié ne se confondent pas (convention) :
+      - **Perdu** : dans l'ICP, mais pas maintenant (silence, timing,
+        budget, concurrent choisi, statu quo). Recontact prévu.
+      - **Disqualifié** : hors ICP, ou opposition exprimée. Aucun recontact ;
+        une opposition va sur la liste d'opposition (`references/rgpd.md`).
+        HubSpot n'a pas d'étape dédiée : Closed lost avec le motif
+        « Disqualifié » ou « Opposition ».
+    - « Je vous envoie un mail plus tard » est à traiter comme un refus poli
+      (Jen Abel, OPINION :
+      https://www.lennysnewsletter.com/p/master-founder-led-sales-jen-abel).
+    - Efti conseille de noter dernière interaction, prochaine étape,
+      responsable et date, avec un nombre fini de relances (OPINION, éditeur
+      d'outil : https://close.com/resources-and-guides/follow-up-formula).
+
+    ## 6. Quand recontacter un perdu
+    - Aucune donnée mesurée de réactivation n'a été trouvée.
+    - Close conseille de ressortir les prospects ayant eu une démo il y a
+      environ 3, 6 ou 9 mois, en disant ce qui a changé dans le produit
+      (OPINION, éditeur d'outil : https://www.close.com/blog/lost-prospects).
+    - Gong déclenche une relance automatique 180 jours après la perte, sans
+      statistique de succès publiée (éditeur d'outil :
+      https://help.gong.io/docs/re-engage-closed-lost-deals-with-agents).
+    - Convention de ce skill : 3 mois si le motif est le timing, 6 mois
+      sinon, 9 mois en dernier essai ; ensuite plus rien sauf signal entrant.
+      Sans nouveauté réelle à annoncer, ne pas recontacter. La durée de
+      conservation de 3 ans s'applique (`references/rgpd.md`).
+
+    ## Points ouverts (aucune source)
+    - Volume quotidien adapté à un solo.
+    - Part du temps hebdomadaire à consacrer à la prospection : le chiffre de
+      8 à 10 heures d'un guide en ligne n'est pas vérifié.
+    - Tutoiement ou vouvoiement en France : ce skill vouvoie par défaut
+      (convention), les mémoires de ton du projet priment.
+  '';
+
+  # prospection/references/enchainement.md — cadence de relance jour par jour,
+  # justifiée par les mesures d'éditeurs et leurs limites.
+  prospectionEnchainement = ''
+    # Enchaînement des relances : cadence jour par jour
+
+    **Aucune étude indépendante ne fixe l'espacement optimal des relances.**
+    Les intervalles ci-dessous sont de l'OPINION de praticiens ou
+    d'éditeurs ; les seules mesures portent sur le rendement par étape, et
+    elles sont publiées par des éditeurs d'outils ou une agence.
+
+    ## Règles
+    - 3 à 5 étapes e-mail au total (OPINION, Belkins, agence de prospection :
+      https://belkins.io/blog/sales-follow-up-statistics).
+    - 7 touches au plus, tous canaux confondus (Instantly recommande 4 à 7
+      points de contact, OPINION, éditeur d'outil :
+      https://instantly.ai/cold-email-benchmark-report-2026).
+    - Arrêt dès la première réponse, même négative : la suite devient une
+      conversation, et un « non » ou un « stop » se traite selon
+      `references/rgpd.md` (convention).
+    - Un seul argument nouveau par message ; jamais « je reviens vers vous »
+      sans apport (OPINION, marketingskills, MIT, cité et non copié :
+      https://raw.githubusercontent.com/coreyhaines31/marketingskills/main/skills/cold-email/references/follow-up-sequences.md).
+    - L'e-mail de rupture est toujours le dernier.
+    - Ni week-end ni soirée (voir « Jour et heure »).
+    - Chaque étape est une tâche HubSpot datée : le CRM gratuit n'a pas de
+      séquences (`references/hubspot.md`). Une échéance qui tombe un samedi
+      ou un dimanche glisse au lundi.
+
+    ## Cadence par défaut (convention de ce skill, environ 3 semaines)
+    Mélange de la cadence courte de Kazanjy et du gabarit J0/J3/J7-8/J14/
+    J21-28 de marketingskills. Une touche = un message ou un appel qui
+    atteint le prospect.
+
+    | Jour | Canal | Contenu | Touche |
+    |---|---|---|---|
+    | J0 | E-mail 1 | premier contact : déclencheur observé, problème, question douce ; mentions légales | 1 |
+    | J2 | Appel | numéro professionnel connu seulement ; message vocal court si absent | 2 |
+    | J3 | E-mail 2 | relance 1 : nouvel angle (autre problème ou autre bénéfice) | 3 |
+    | J7 | E-mail 3 | relance 2 : une preuve (cas client, chiffre vérifié, démonstration courte) | 4 |
+    | J9 | LinkedIn ou appel | note courte, sans pitch | 5 |
+    | J14 | E-mail 4 | relance 3 : question simple ou ressource utile (facultatif) | 6 |
+    | J21 | E-mail 5 | rupture | 7 |
+    | J28 | CRM | sans réponse : Closed lost, motif « Pas de réponse », date de recontact (`references/methodologie.md` §5-6) | - |
+
+    Modèles : `references/modeles-messages.md`. Version à 3 e-mails :
+    J0, J3 ou J7, puis rupture à J14.
+
+    Variante courte de Kazanjy, sur environ 7 jours et plus téléphonique :
+    J1 e-mail et appel, J2 appel, J3 appel et message vocal, J5 e-mail, J7
+    e-mail de clôture (OPINION : https://foundingsales.com/5-outreach).
+
+    ## Pourquoi ces intervalles, et leurs limites
+    - **Insister jusqu'à 3-5 étapes.** Chez Belkins (agence, données 2025),
+      l'étape 1 donne 0,59 % de réponse (41,4 % de toutes les réponses),
+      l'étape 3 0,30 %, l'étape 4 0,34 %, l'étape 6 0,28 % ; l'étape 3 seule
+      produit 35,6 % des réunions issues de l'e-mail et les étapes 3 à 5 en
+      produisent 53,5 %, sur plus de 1 200 rendez-vous (MESURÉ, agence :
+      https://belkins.io/blog/sales-follow-up-statistics). Belkins ne donne
+      aucun intervalle en jours.
+    - **Ne pas dépasser 5 e-mails.** Woodpecker observe une décroissance par
+      étape sur des campagnes de 4 à 6 e-mails : 1,0 %, 0,9 %, 0,6 %, 0,5 %,
+      0,3 %, 0,3 % (MESURÉ, éditeur d'outil :
+      https://woodpecker.co/cold-email-benchmark/).
+    - **Les relances comptent.** Instantly attribue 42 % des réponses aux
+      relances (éditeur d'outil) ; Hunter trouve 4,9 % de réponse avec
+      relances contre 3 % sans, de façon corrélationnelle (éditeur d'outil :
+      https://hunter.io/the-state-of-cold-email-2025).
+    - **J3, J7, J14, J21.** J3 (nouvel angle), J7-8 (preuve), J14 et J21-28
+      (rupture) viennent du gabarit de marketingskills (OPINION d'auteur,
+      MIT) ; Instantly suggère « jour 3 et jour 7 » ou un intervalle de 3-4
+      jours (OPINION, éditeur d'outil).
+    - **Le 2e e-mail.** Kazanjy cite une étude Outreach où le 2e e-mail est le
+      meilleur, à 18 % de réponse : chiffre relayé, non relu à la source, à
+      ne pas citer comme repère.
+    - **Le téléphone.** Belkins (agence, plus de 175 000 appels en 2025) :
+      9,9 % de connexion, 58 % des connexions deviennent des conversations,
+      4,6 % des conversations mènent à une réunion, soit environ 1 réunion
+      pour 370 appels (https://belkins.io/blog/cold-calling-benchmarks).
+    - **Le multicanal.** Aucune mesure contrôlée « multicanal contre e-mail
+      seul » n'a été trouvée ; les gains de +60 % à +287 % annoncés par des
+      éditeurs sont auto-déclarés, sans méthode : ne pas les citer. Cognism
+      recommande 55 % d'appels, 30 % de LinkedIn, 15 % d'e-mails et 3 à 5
+      touches par prospect, sur les données de ses propres commerciaux
+      (OPINION, éditeur d'outil :
+      https://www.cognism.com/reports/state-of-outbound-2026).
+
+    ## Jour et heure
+    - Belkins : mercredi et jeudi à 0,48 % ; 0,54 % pour 8h-12h contre
+      0,40 % pour 20h-23h (MESURÉ, agence :
+      https://belkins.io/blog/cold-email-response-rates).
+    - Woodpecker : 1,17 à 1,19 % du lundi au vendredi, environ 38 % de moins
+      le week-end (MESURÉ, éditeur d'outil).
+    - Hunter : aucun effet du moment d'envoi (éditeur d'outil).
+    - Avec 100 à 500 envois, l'écart entre deux matinées de semaine est sous
+      le bruit statistique (inférence). Envoyer en matinée d'un jour ouvré
+      suffit ; ne pas optimiser plus finement.
+
+    ## Lead entrant : répondre en minutes
+    - Un lead entrant (demande de démo, formulaire, réponse spontanée) passe
+      avant toute relance : réponse personnelle dans les minutes qui suivent,
+      aux heures ouvrées (tier P0, `references/qualification.md`).
+    - Workato (éditeur d'outil, 114 entreprises B2B, demande de démo test,
+      2026) : 1 entreprise sur 114 répond par e-mail personnalisé en moins de
+      5 minutes ; délai moyen 11 h 54 (la synthèse source parle aussi de
+      médiane : statistique exacte à vérifier). Répondre en minutes bat donc
+      le marché ; le gain de conversion n'est pas mesuré
+      (https://workato.com/the-connector/lead-response-time-study).
+    - Études plus anciennes, de seconde main, sur de l'entrant : MIT /
+      InsideSales 2007 (appeler à 5 minutes plutôt qu'à 30 : environ 100 fois
+      plus de contacts, 21 fois plus de qualifications) et HBR 2011 (1,25 M
+      de leads, 42 entreprises ; 37 % des entreprises répondent dans l'heure,
+      23 % jamais). Non lues à la source, relayées par des éditeurs,
+      observations de volumes et non essais randomisés, qui mesurent le
+      contact et la qualification, pas la vente
+      (https://hbr.org/2011/03/the-short-life-of-online-sales-leads ;
+      https://ainora.lt/blog/lead-response-time-statistics-every-study-2026).
+    - Efti conseille d'appeler un inscrit entrant dans les 5 minutes
+      (OPINION, éditeur d'outil :
+      https://close.com/resources/startup-guide-to-outbound-sales/).
+
+    ## Points ouverts (aucune source)
+    - Espacement optimal en jours.
+    - Part de l'appel dans une cadence de fondateur seul.
+    - Efficacité du multicanal contre l'e-mail seul.
+  '';
+
+  # prospection/references/qualification.md — questions (SPIN, Mom Test,
+  # MEDDIC allégé), test Advance/Continuation, tri P0-DQ, notes CRM.
+  prospectionQualification = ''
+    # Qualification : questions, tri des leads, ce qui va dans le CRM
+
+    Petit ticket, petite organisation en face : version allégée. SPIN complet
+    ou MEDDPICC complet sont jugés trop lourds pour un petit deal ; la
+    version allégée garde Metrics, Pain et une vérification brève du
+    processus (OPINION : https://umbrex.com/?p=242683).
+
+    ## Principes de conversation (The Mom Test)
+    - Parler de la vie du client, pas de votre idée ; questionner sur des
+      faits passés ; écarter compliments, généralités et promesses futures
+      (OPINION, résumé : https://mtlynch.io/book-reports/the-mom-test/).
+    - Juger une réunion à ce que le client cède : du temps, de la réputation
+      ou de l'argent (**engagement**), ou le passage à l'étape suivante
+      (**avancement**).
+    - Les premiers appels sont de la recherche ; réserver l'appel suivant
+      avant de raccrocher (Jen Abel, OPINION :
+      https://www.lennysnewsletter.com/p/master-founder-led-sales-jen-abel).
+
+    ## Questions (en choisir 3 à 5 par rendez-vous, adaptées au projet)
+    **SPIN, version courte.** SPIN Selling repose sur l'observation codée
+    d'appels réels, la base empirique la plus large du domaine, mais les
+    sources divergent sur le nombre de vendeurs étudiés, et Huthwaite
+    attribue l'effet au coaching complet, pas aux seules questions
+    (https://www.huthwaiteinternational.com/blog/neil-rackham-research-spin).
+    On garde Problème, Implication, Need-payoff :
+    - Problème : « Comment gérez-vous [tâche] aujourd'hui ? La dernière fois
+      que [situation] s'est produite, qu'avez-vous fait ? »
+    - Implication : « Combien de temps ou d'argent cela vous a-t-il coûté le
+      mois dernier ? Qui d'autre en subit les effets ? »
+    - Need-payoff : « Si [problème] était réglé, qu'est-ce que cela
+      changerait pour vous ? »
+
+    **Mom Test : faits passés et engagement.**
+    - « Qu'avez-vous déjà essayé pour régler ça ? Pourquoi avoir arrêté ? »
+    - « Combien dépensez-vous aujourd'hui pour [alternative actuelle] ? »
+    - Demande d'engagement : « Seriez-vous d'accord pour [essai, démo avec
+      le décideur, envoi d'un exemple réel] ? »
+
+    **MEDDIC allégé.** Cadre né chez PTC en 1996 selon un vendeur de
+    formation ; aucune donnée de performance indépendante (éditeur d'outil :
+    https://meddicc.com/resources/who-created-meddic).
+
+    | Point | Ce qu'il faut savoir | Question type |
+    |---|---|---|
+    | Metrics | gain chiffrable | « Combien d'heures ou d'euros ce problème vous coûte-t-il par mois ? » |
+    | Economic buyer | qui signe | « Qui, à part vous, décide d'un achat de ce montant ? » |
+    | Decision criteria | sur quoi on choisit | « Qu'est-ce qui vous ferait choisir une solution plutôt qu'une autre ? » |
+    | Decision process | étapes et délai | « Comment se passe un achat de ce type chez vous, et en combien de temps ? » |
+    | Pain | douleur prouvée par des faits | questions Problème et Implication ci-dessus |
+    | Champion | qui porte le sujet en interne | « Qui, chez vous, a le plus à gagner si cela change ? » |
+    | Alternative actuelle | y compris ne rien faire | « Que se passe-t-il si vous ne changez rien cette année ? » |
+
+    ## Test de fin de rendez-vous : Advance ou Continuation
+    - **Advance** : le prospect accepte une étape concrète et datée qui lui
+      coûte quelque chose (démo avec le décideur, essai, envoi de données,
+      rendez-vous fixé). **Continuation** : la réunion finit sans étape
+      engageante (« envoyez-moi une doc », « on se rappelle »).
+    - Définition issue de résumés tiers de SPIN, non vérifiée dans le livre
+      (https://resources.rework.com/libraries/history-of-sales/history-of-spin-selling).
+    - Corrélation : 20 % de closing quand les prochaines étapes sont
+      discutées contre 5 % sinon ; parler longuement du produit fait chuter
+      le taux de victoire de 26 % à 5 % (MESURÉ, corrélationnel, éditeur
+      d'outil, équipes de vente :
+      https://www.gong.io/blog/driving-next-steps-isnt-enough-this-is-what-really-moves-deals-forward).
+    - Toujours demander la prochaine étape avant la fin. Une Continuation est
+      notée comme telle dans le CRM, et la tâche suivante la rattrape.
+
+    ## Tri des leads : P0, P1, P2, DQ
+    Inspiré du skill `lead-triage` du plugin `sales` d'Anthropic
+    (anthropics/knowledge-work-plugins, licence Apache-2.0 ; tiers et délais
+    repris, critères réécrits pour un fondateur seul :
+    https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/sales/skills/lead-triage/SKILL.md).
+    Les délais sont des choix de conception d'Anthropic, non des mesures ;
+    les critères sont une convention de ce skill.
+
+    | Tier | Délai | Critère |
+    |---|---|---|
+    | P0 | même jour (entrant : en minutes) | lead entrant, ou dans l'ICP avec douleur exprimée et décideur joignable |
+    | P1 | 48 h | dans l'ICP, déclencheur observé, douleur pas encore exprimée |
+    | P2 | dans la semaine | dans l'ICP, sans déclencheur |
+    | DQ | aucun | hors ICP, ou opposition exprimée |
+
+    ## Ce qui va dans le CRM après chaque conversation
+    Proposé sous forme de liste numérotée, écrit après accord
+    (`references/hubspot.md`) :
+    1. Note datée sur le contact et le deal : contexte, faits rapportés par le
+       prospect (courtes citations), douleur, chiffres, alternative actuelle,
+       objections, résultat Advance ou Continuation.
+    2. Champs : étape du deal si le critère de sortie est atteint
+       (`references/methodologie.md` §3), montant estimé et date de clôture
+       estimée s'ils sont connus, contact du décideur associé au deal,
+       champion, « Date du dernier contact émanant du prospect », « Source des
+       coordonnées » pour un contact nouveau.
+    3. Tâche suivante datée, toujours.
+    4. Rien d'autre : ni jugement sur la personne, ni donnée sensible
+       (minimisation, `references/rgpd.md`).
+
+    ## Repères
+    - Taux de victoire : 10-20 % typique sur un marché nouveau, 30 % = fort,
+      15-30 % comme seuil sain avant d'embaucher (OPINION, Kazanjy :
+      https://foundingsales.com/10-early-sales-management).
+    - Points ouverts : seuil de score d'adéquation à l'ICP ; conversion par
+      étape pour un petit ticket ; durée de cycle d'un SaaS en France (un
+      cycle B2B médian de 92 jours circule sans source primaire : ne pas le
+      citer comme repère).
+  '';
+
+  # prospection/references/modeles-messages.md — modèles écrits pour ce skill
+  # (aucun texte tiers copié), vouvoiement, champs à personnaliser.
+  prospectionModelesMessages = ''
+    # Modèles de messages
+
+    Ces modèles sont des squelettes. **Aucun n'est envoyé tel quel** : chaque
+    champ entre crochets est remplacé par un fait vérifié sur le prospect,
+    puis le brouillon est montré à l'utilisateur, qui l'envoie ou donne son
+    accord explicite. Le ton du projet (mémoires Claude du projet, vault)
+    prime sur ces formulations ; relire avec le skill `ecriture-fr`.
+
+    ## Règles de forme
+    - Texte brut, sans image ni mise en forme ; 80 à 125 mots pour le corps
+      (fourchette des recommandations, toutes d'OPINION : moins de 120 mots
+      pour le skill `draft-outreach` d'Anthropic, 100 mots ou moins pour Gong,
+      moins de 80 pour Instantly). L'effet mesuré de la longueur est quasi
+      nul : corrélation de -0,09 entre nombre de mots et réponse sur 11 M
+      d'e-mails (MESURÉ, éditeur d'outil :
+      https://hunter.io/the-state-of-cold-email-2025). Pas de dogme.
+    - Objet de 4 à 7 mots (OPINION, Anthropic :
+      https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/sales/skills/draft-outreach/SKILL.md) ;
+      Woodpecker mesure le meilleur taux de réponse vers 20-29 caractères et
+      4 mots (MESURÉ, éditeur d'outil :
+      https://woodpecker.co/cold-email-benchmark/).
+    - Structure en 4 parties : pertinence pour le destinataire, pont vers la
+      valeur, demande douce, signature (OPINION, Anthropic `draft-outreach`).
+      Cadres équivalents dans marketingskills (MIT) : Observation > Problème
+      > Preuve > Demande ; Déclencheur > Constat > Demande ; Question >
+      Valeur > Demande
+      (https://raw.githubusercontent.com/coreyhaines31/marketingskills/main/skills/cold-email/SKILL.md).
+    - Vouvoiement par défaut : convention, aucune mesure en France.
+    - Aucune source primaire ne quantifie l'effet de la personnalisation ;
+      elle reste obligatoire ici par convention : le message doit être en
+      rapport avec la profession du destinataire (condition de l'intérêt
+      légitime selon la CNIL, `references/rgpd.md`) et lui apporter un
+      argument qui lui est propre.
+    - Chaque message porte une ligne d'opposition ; le premier porte les
+      mentions complètes (`references/rgpd.md`).
+
+    ## À personnaliser obligatoirement (cocher avant de montrer)
+    - [ ] [Prénom], [Nom] et [Société] vérifiés, orthographe comprise.
+    - [ ] [Déclencheur observé] = un fait daté et vérifiable, source notée.
+    - [ ] [Problème constaté] dit avec les mots du métier du destinataire.
+    - [ ] [Preuve] réelle et citable (client d'accord, chiffre vérifié,
+      démonstration) ; sinon, supprimer la phrase.
+    - [ ] [Créneau 1] et [Créneau 2] précis, en jours ouvrés, ou question
+      ouverte.
+    - [ ] Mentions légales présentes (premier message) ou ligne d'opposition
+      (messages suivants).
+    - [ ] Ton aligné sur les mémoires du projet.
+    - [ ] Plus aucun crochet ; corps de 80 à 125 mots ; objet de 4 à 7 mots.
+    - [ ] Brouillon validé par l'utilisateur.
+
+    ## 1. Premier contact (J0)
+    Objet : [Problème constaté] chez [Société] ?
+
+    > Bonjour [Prénom],
+    >
+    > J'ai vu que [Déclencheur observé]. Chez les [type d'organisation]
+    > comparables, cela s'accompagne souvent de [Problème constaté], qui
+    > coûte [conséquence concrète : temps, argent, risque].
+    >
+    > [Offre en une phrase : ce que fait le produit contre ce problème
+    > précis.] [Preuve : un résultat réel, ou supprimer.]
+    >
+    > Est-ce un sujet chez vous en ce moment ? Si oui, je peux vous montrer
+    > en 20 minutes comment [résultat attendu] : [Créneau 1] ou [Créneau 2] ?
+    > Sinon, pourriez-vous m'indiquer la bonne personne ?
+    >
+    > Bien cordialement,
+    > [Prénom Nom], [fonction], [Entreprise émettrice] — [téléphone]
+    >
+    > [Mentions légales : phrase type de `references/rgpd.md`]
+
+    ## 2. Relance 1 (J3) : un nouvel angle
+    Objet : [Autre angle] pour [Société]
+
+    > Bonjour [Prénom],
+    >
+    > Un autre point que celui de mon premier message : [second problème ou
+    > second bénéfice, différent du premier]. [Une phrase qui le relie à ce
+    > que vous avez observé chez eux.]
+    >
+    > [Question simple, à laquelle on répond en un mot : « Est-ce que
+    > [situation] vous arrive aussi ? »]
+    >
+    > Bien cordialement,
+    > [Signature]
+    >
+    > Pour ne plus recevoir mes messages, répondez simplement « stop ».
+
+    ## 3. Relance 2 (J7) : une preuve
+    Objet : Comment [type de client] a [résultat]
+
+    > Bonjour [Prénom],
+    >
+    > [Preuve : ce qu'un client comparable a obtenu, avec un chiffre vérifié
+    > et son accord pour le citer ; ou une démonstration décrite en deux
+    > phrases.] [Pourquoi c'est transposable à [Société].]
+    >
+    > Voulez-vous que je vous envoie [ressource courte : exemple, capture,
+    > vidéo de deux minutes] ?
+    >
+    > Bien cordialement,
+    > [Signature]
+    >
+    > Pour ne plus recevoir mes messages, répondez simplement « stop ».
+
+    ## 4. Relance 3 ou e-mail de rupture (dernier message)
+    Objet : Je clos ce sujet
+
+    > Bonjour [Prénom],
+    >
+    > Sans retour de votre part, je suppose que [problème] n'est pas une
+    > priorité pour [Société] en ce moment. Je ne vous relancerai donc plus
+    > sur ce sujet.
+    >
+    > Si la situation change, il suffit de répondre à ce message : je vous
+    > montrerai volontiers [résultat attendu].
+    >
+    > Bonne continuation,
+    > [Signature]
+
+    ## 5. Après une démo (le jour même ou le lendemain)
+    Objet : Suite de notre échange du [date]
+
+    > Bonjour [Prénom],
+    >
+    > Merci pour votre temps [jour]. Ce que j'ai retenu :
+    > - [problème, dans les mots du prospect] ;
+    > - [chiffre ou conséquence qu'il a cité] ;
+    > - [critère de décision évoqué].
+    >
+    > Comme convenu, [prochaine étape acceptée et datée : essai, démo avec le
+    > décideur, proposition]. [Ce qui est joint, si promis.]
+    >
+    > Si j'ai mal compris un point, corrigez-moi.
+    >
+    > Bien cordialement,
+    > [Signature]
+
+    Sans prochaine étape convenue (Continuation) : remplacer « Comme
+    convenu » par une proposition d'étape avec [Créneau 1] ou [Créneau 2].
+
+    ## 6. Recontact d'un perdu (vers 3 mois)
+    Objet : Du nouveau depuis [mois]
+
+    > Bonjour [Prénom],
+    >
+    > Nous avions échangé en [mois] sur [problème] ; vous aviez préféré
+    > [motif de perte noté : attendre, garder l'outil actuel…].
+    >
+    > Depuis, [ce qui a réellement changé : fonctionnalité, prix, cas client].
+    > [Lien entre ce changement et le motif de perte.]
+    >
+    > Est-ce le bon moment pour en reparler, ou préférez-vous que je revienne
+    > vers vous en [mois] ?
+    >
+    > Bien cordialement,
+    > [Signature]
+    >
+    > Pour ne plus recevoir mes messages, répondez simplement « stop ».
+
+    Dire ce qui a changé suit le conseil de Close (OPINION, éditeur d'outil :
+    https://www.close.com/blog/lost-prospects). Rien de nouveau : pas de
+    recontact.
+
+    ## 7. Message vocal et note LinkedIn
+    Message vocal (moins de 30 secondes) :
+
+    > Bonjour [Prénom], [Prénom Nom] de [Entreprise émettrice]. Je vous
+    > appelle au sujet de [problème constaté] chez [Société] ; je vous ai
+    > écrit à ce propos le [date]. Vous pouvez me rappeler au [numéro] ; je
+    > vous renvoie un mot par e-mail. Bonne journée.
+
+    Note LinkedIn (deux phrases, sans pitch) :
+
+    > Bonjour [Prénom], je travaille sur [problème] avec des [type
+    > d'organisation], et [déclencheur observé] m'a donné envie d'échanger
+    > avec vous. Au plaisir de vous lire.
+
+    LinkedIn reste soumis à l'information et à l'opposition ; ne jamais
+    aspirer de coordonnées (`references/rgpd.md`).
+  '';
+
+  # prospection/references/rituels.md — procédures pas à pas : point du matin,
+  # préparation de rendez-vous, compte rendu, point du vendredi, revue
+  # mensuelle.
+  prospectionRituels = ''
+    # Rituels : procédures pas à pas
+
+    > **RÈGLE : aucun mail envoyé et aucune écriture en masse dans le CRM
+    > sans accord explicite de l'utilisateur.** Chaque rituel lit, prépare,
+    > puis montre : brouillons d'une part, liste numérotée des écritures CRM
+    > d'autre part (objet, enregistrement, champ, valeur actuelle → nouvelle).
+    > Écrire seulement ce qui est accepté, puis relire les enregistrements
+    > pour confirmer. Jamais de suppression.
+
+    Les rituels sont de l'OPINION convergente, sans mesure : un à deux blocs
+    quotidiens protégés, une revue hebdomadaire d'une à deux heures, une
+    prochaine action datée sur chaque deal. Kazanjy bloque le temps (« you
+    need to block the time to do the work, or it won't get done ») et tenait
+    une revue de pipeline de 2 heures par semaine (OPINION :
+    https://holloway.com/g/founding-sales/sections/pipeline-management). Les
+    plages horaires idéales divergent selon les résumés de Blount (golden
+    hours) : pas de source fiable sur l'heure.
+
+    Outils : MCP HubSpot (contacts, sociétés, deals, notes, tâches ;
+    `references/hubspot.md`), skill `use-spark` (mails, fils, agenda), vault
+    du projet (SKILL.md, « Charger le contexte du projet »), skill
+    `ecriture-fr` (relecture des brouillons).
+
+    ## 1. Point du matin (bloc quotidien)
+    1. **Mails.** Avec `use-spark`, lister les mails reçus et envoyés depuis
+       le dernier point ; garder ceux qui viennent d'un prospect, d'un client
+       ou d'un apporteur, ou qui leur sont adressés.
+    2. **Rattachement au CRM.** Pour chacun, chercher dans HubSpot le contact
+       (par adresse e-mail), la société (par domaine) et le deal ouvert.
+       Proposer :
+       - la note ou l'activité e-mail à associer ;
+       - « Date du dernier contact émanant du prospect » si le mail vient de
+         lui ;
+       - l'arrêt de la cadence (tâches de relance à annuler) s'il a répondu
+         (`references/enchainement.md`) ;
+       - le changement d'étape si un critère de sortie est atteint
+         (`references/methodologie.md` §3) ;
+       - en cas d'opposition (« stop », « ne plus me contacter ») :
+         propriété Opposition, annulation des tâches, liste d'opposition
+         (`references/rgpd.md`) ;
+       - un expéditeur sans fiche : création proposée du contact, avec sa
+         source des coordonnées.
+    3. **Leads entrants** en tête : tri P0 et brouillon de réponse immédiat
+       (`references/qualification.md`).
+    4. **Relances dues.** Lister les tâches HubSpot échues aujourd'hui et en
+       retard : date, contact, deal, étape de la cadence.
+    5. **Brouillons.** Un brouillon par relance due, tiré de
+       `references/modeles-messages.md`, nourri par l'historique du CRM, le
+       fil de mails et le contexte du projet ; relu avec `ecriture-fr`.
+    6. **Agenda du jour** (`use-spark`) : pour chaque rendez-vous commercial,
+       proposer la préparation (§2).
+    7. **Montrer tout, ne rien écrire** : (a) mails rattachés et écritures
+       CRM proposées, (b) relances dues ou en retard avec leurs brouillons,
+       (c) rendez-vous du jour. Attendre l'accord.
+    8. **Après accord** : écrire les seules écritures acceptées, relire,
+       puis créer la tâche suivante datée pour chaque relance envoyée par
+       l'utilisateur. Aucun envoi de mail sans accord explicite pour ce mail.
+
+    ## 2. Préparation de rendez-vous
+    1. Lire la fiche HubSpot : contact, société, deal, étape, notes, e-mails
+       et tâches passés.
+    2. Lire le fil d'échanges avec `use-spark`.
+    3. Lire le contexte du projet utile à ce prospect : offre, prix, preuves
+       disponibles.
+    4. Lister les trous de qualification d'après la grille MEDDIC allégée
+       (`references/qualification.md`) : ce qui est su, ce qui manque.
+    5. Préparer un tableau problème / impact / cause racine supposés, à
+       vérifier en séance (Gap Selling, page d'éditeur d'outil :
+       https://www.gong.io/blog/gap-selling).
+    6. Écrire 3 à 5 questions, faits passés d'abord.
+    7. Fixer la prochaine étape à demander (Advance) et une étape de repli.
+    8. Rendre une fiche d'une page. Aucune écriture CRM.
+
+    ## 3. Compte rendu après un appel ou une démo
+    1. Partir des notes de l'utilisateur ou d'une transcription fournie.
+    2. Récapitulatif structuré : contexte, problème dans les mots du
+       prospect, chiffres cités, décideur et processus, critères, objections,
+       alternative actuelle, résultat Advance ou Continuation, prochaine
+       étape.
+    3. Liste numérotée des écritures CRM proposées : note datée, champs de
+       qualification, étape, « Date du dernier contact émanant du
+       prospect », tâche suivante datée (`references/qualification.md`).
+    4. Brouillon d'e-mail de suivi (modèle « Après une démo »).
+    5. Attendre l'accord, écrire, relire.
+    Délai de saisie après un appel : aucune source ; convention, le jour même.
+
+    ## 4. Point du vendredi (revue hebdomadaire, 1 à 2 heures)
+    1. **Près de l'argent d'abord** : Contract sent, puis Decision maker
+       bought-in, puis remonter le pipeline (OPINION, Kazanjy, même source).
+    2. **Deals sans prochaine tâche datée** : pour chacun, proposer une tâche
+       ou la perte (`references/methodologie.md` §5).
+    3. **Deals qui stagnent** : 7 jours sans activité en bas de funnel,
+       environ 14 jours dans la même étape (`references/methodologie.md` §4)
+       → action proposée.
+    4. **Changements d'étape** à valider selon les critères d'entrée et de
+       sortie.
+    5. **Indicateurs de la semaine** avec leurs dénominateurs
+       (`references/indicateurs.md`) ; comparer à la semaine précédente sans
+       conclure sur de petits volumes.
+    6. **Semaine suivante** : blocs de prospection à poser dans l'agenda
+       (proposés, posés par l'utilisateur ou après accord) ; comptes à
+       ajouter à la liste, dans la limite de ce qui peut être suivi (Kazanjy
+       limite les nouveaux leads à la capacité réelle, OPINION).
+    7. Sortie : synthèse courte et liste d'écritures proposées.
+
+    ## 5. Revue mensuelle
+    Convention de ce skill : la seule source structurée décrit une revue de
+    pipeline d'équipe en cinq questions (Seth DeHart, Point Nine, OPINION de
+    praticien : https://writing.pointnine.com/p/sales-forecasts-and-pipeline-reviews) ;
+    on en garde quatre.
+    1. **Conversion par étape** du mois, et en cumul depuis le début.
+    2. **Motifs de perte** : regrouper, sortir les trois premiers.
+    3. **ICP** : quels critères se retrouvent dans les deals qui avancent,
+       lesquels dans les pertes ; proposer des ajustements d'inclusion ou
+       d'exclusion. L'utilisateur décide ; la décision peut être consignée
+       dans le vault du projet (skill `obsidian`).
+    4. **Recontacts dus** : perdus dont la « Date de recontact » tombe avant
+       la prochaine revue (repères 3, 6, 9 mois ; `references/methodologie.md`
+       §6) → tâches proposées.
+    5. **Purge RGPD** : contacts non clients dont la collecte, ou le dernier
+       contact émanant du prospect, date de plus de 3 ans
+       (`references/rgpd.md`) → liste à anonymiser ou supprimer par
+       l'utilisateur dans HubSpot ; le skill ne supprime jamais (et le MCP
+       ne documente aucun outil de suppression).
+    6. Questions adaptées de DeHart : les étapes sont-elles tenues ? La
+       création de leads suffit-elle ? Les deals progressent-ils assez vite ?
+       La prévision du mois écoulé était-elle juste ?
+  '';
+
+  # prospection/references/indicateurs.md — indicateurs hebdomadaires avec
+  # dénominateurs, repères chiffrés et leur origine, avertissement sur le
+  # bruit des petits volumes.
+  prospectionIndicateurs = ''
+    # Indicateurs : quoi compter, sur quoi diviser
+
+    ## Avertissement
+    Les volumes d'un fondateur seul sont petits : à 1 % de réponse, 200
+    e-mails donnent environ 2 réponses, et 3 réponses contre 5 ne prouvent
+    rien (ordre de grandeur, inférence). Cumuler sur 4 semaines avant de
+    conclure, et toujours écrire le dénominateur à côté du taux. Ne pas
+    suivre le taux d'ouverture : il est faussé par la protection de la vie
+    privée d'Apple Mail (Woodpecker, https://woodpecker.co/cold-email-benchmark/).
+
+    ## Indicateurs de la semaine (point du vendredi)
+    | Indicateur | Définition | Dénominateur |
+    |---|---|---|
+    | Touches envoyées | e-mails, appels, messages LinkedIn de la semaine | aucun (compte) |
+    | Taux de réponse | réponses uniques humaines, auto-réponses exclues | e-mails envoyés |
+    | Conversations | échanges réels : réponse humaine sur le fond, appel décroché | prospects contactés |
+    | Rendez-vous fixés | découvertes acceptées et datées | conversations |
+    | Opportunités | deals entrés en Qualified to buy | rendez-vous tenus |
+    | Conversion par étape | deals sortis vers l'étape suivante | deals entrés dans l'étape (même cohorte) |
+    | Âge moyen des deals | jours depuis la création, deals ouverts | deals ouverts |
+    | Deals sans prochaine étape | deals ouverts sans tâche datée à venir | deals ouverts (cible : 0) |
+    | Taux de victoire | Closed won | Closed won + Closed lost hors disqualifiés |
+
+    Définitions et cible « 0 deal sans prochaine étape » : convention de ce
+    skill (`references/methodologie.md`).
+
+    ## Repères chiffrés et leur origine
+    **Réponse à l'e-mail froid : l'ordre du pourcent.** Un facteur 8 sépare
+    les sources, et il tient surtout au dénominateur. Aucune étude
+    indépendante : tout est MESURÉ mais publié par des éditeurs d'outils ou
+    une agence.
+    - Belkins (agence) : 0,45 % de réponses uniques par e-mail envoyé, sur
+      7 530 489 e-mails en 2025, auto-réponses exclues
+      (https://belkins.io/blog/cold-email-response-rates).
+    - Woodpecker (éditeur d'outil) : médiane de 1,5 % sur 56 614 campagnes
+      (https://woodpecker.co/cold-email-benchmark/).
+    - Instantly (éditeur d'outil) : 3,43 % en moyenne 2025, réponses aux
+      relances comprises, par e-mail envoyé ; 5,5 % pour le top 25 %,
+      environ 10 % pour le top 10 %
+      (https://instantly.ai/cold-email-benchmark-report-2026).
+    - Hunter (éditeur d'outil) : 4,1 % en 2024 sur 11 M d'e-mails
+      (https://hunter.io/the-state-of-cold-email-2025).
+    - Les « 8-12 % » de Predictable Revenue sont des chiffres d'auteur de
+      2011 sans étude citée ; les « 10-15 % » sont des seuils de top décile.
+    - Diagnostic : Efti tient un taux sous 5 % pour le signe d'un problème
+      de ciblage ou de message (OPINION, éditeur d'outil :
+      https://close.com/resources/startup-guide-to-outbound-sales/). À manier
+      avec prudence : les moyennes mesurées vont de 0,45 % à 3,43 %.
+
+    **Taille et cible.** Petites campagnes, meilleures réponses (MESURÉ,
+    corrélationnel, éditeurs) : Hunter 5,8 % pour 50 destinataires ou moins
+    contre 2,1 % pour 1 000 et plus ; Woodpecker 2,7 % pour 0-50 prospects
+    contre 1,2 % pour 1 001-5 000. Belkins : fondateurs et dirigeants
+    propriétaires répondent à 0,57 %, structures de 0 à 10 salariés à
+    0,72 %, contre 0,22 % pour 10 000 salariés et plus.
+
+    **Appel à froid.** Belkins (agence, plus de 175 000 appels, 2025) : 9,9 %
+    de connexion ; 58 % des connexions deviennent des conversations ; 4,6 %
+    des conversations mènent à une réunion, soit environ 1 réunion pour 370
+    appels (https://belkins.io/blog/cold-calling-benchmarks).
+
+    **Taux de victoire.** 10-20 % typique sur un marché nouveau, 30 % = fort,
+    15-30 % comme seuil sain avant d'embaucher (OPINION, Kazanjy :
+    https://foundingsales.com/10-early-sales-management).
+
+    **Prochaine étape.** 5 % de closing sans discussion des prochaines étapes
+    contre 20 % avec, sur 8 382 deals (MESURÉ, corrélationnel, éditeur
+    d'outil, équipes de vente et non fondateurs seuls :
+    https://www.gong.io/blog/driving-next-steps-isnt-enough-this-is-what-really-moves-deals-forward).
+
+    **France.** Aucune mesure fiable de taux de réponse pour la France n'a
+    été trouvée (la France est absente du classement par pays de Belkins) ;
+    les chiffres « France » qui circulent sans méthode ne sont pas à citer.
+
+    ## Points ouverts (aucune source)
+    - Valeur cible pour un fondateur en France.
+    - Conversion par étape pour un petit ticket.
+    - Seuil d'arrêt d'une campagne.
+  '';
+
+  # prospection/references/rgpd.md — cadre français de la prospection B2B
+  # (e-mail, téléphone, LinkedIn), mentions, opposition, conservation,
+  # sanctions et points à soumettre à un juriste.
+  prospectionRgpd = ''
+    # RGPD et prospection B2B en France
+
+    Ce fichier résume des textes et la doctrine de la CNIL lus le
+    2026-11-19 ; ce n'est pas un avis juridique. Tout cas limite (liste en
+    fin de fichier) va à un juriste.
+
+    ## E-mail vers des professionnels : intérêt légitime, à conditions
+    - L'art. L.34-5 du CPCE interdit la prospection par e-mail utilisant
+      « les coordonnées d'une personne physique » sans consentement
+      préalable, sans distinguer B2C et B2B. Dans tous les cas, il interdit
+      de dissimuler l'identité de l'émetteur et d'utiliser un objet sans
+      rapport avec le service proposé, et il impose des coordonnées valables
+      pour demander l'arrêt sans frais (officiel :
+      https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042155961).
+    - C'est la **CNIL** qui admet, pour les professionnels, l'intérêt
+      légitime sans consentement préalable lorsque l'objet du message est en
+      rapport avec la profession du destinataire (exemple : un logiciel
+      présenté au directeur informatique), avec information et possibilité
+      simple de s'opposer (doctrine administrative, non loi :
+      https://www.cnil.fr/fr/la-prospection-commerciale-par-courrier-electronique).
+    - Les adresses génériques (info@, contact@) ne relèvent pas de ces
+      principes, car elles concernent des personnes morales (même page).
+    - Base légale : art. 6.1.f du RGPD, intérêt légitime
+      (https://www.cnil.fr/fr/reglement-europeen-protection-donnees/chapitre2).
+
+    ## Information et opposition dès le premier message
+    - Art. 14.3 : quand les données ne viennent pas de la personne, l'informer
+      dans un délai raisonnable d'un mois au plus, et **au plus tard à la
+      première communication**. Art. 21.2 à 21.4 : droit de s'opposer à la
+      prospection « à tout moment », porté explicitement et séparément à
+      son attention au plus tard à la première communication
+      (https://www.cnil.fr/fr/reglement-europeen-protection-donnees/chapitre3).
+    - Le premier message contient donc : identité de l'émetteur, origine des
+      coordonnées, finalité, droit d'opposition mis en évidence, moyen
+      gratuit de s'y opposer (adresse ou réponse « stop ») ; le reste de
+      l'information de l'art. 14 peut figurer sur une page de politique de
+      confidentialité liée (convention, à faire valider par un juriste).
+    - Phrase type, à adapter (séparée du corps du message) :
+
+      > Vous recevez ce message parce que votre fonction de [fonction] est en
+      > rapport avec [objet du message]. [Entreprise émettrice] a trouvé vos
+      > coordonnées professionnelles sur [source des coordonnées]. Vous
+      > pouvez vous opposer à tout moment et gratuitement à recevoir nos
+      > messages : répondez « stop » ou écrivez à [adresse d'opposition].
+      > Vos données et vos droits : [lien vers la politique de
+      > confidentialité].
+
+    - Messages suivants : une ligne d'opposition suffit (« Pour ne plus
+      recevoir mes messages, répondez simplement « stop ». »), puisque L.34-5
+      impose des coordonnées valables pour demander l'arrêt dans tous les
+      cas.
+
+    ## Liste d'opposition interne
+    - Toute opposition, quelle que soit sa forme, est enregistrée le jour même
+      (propriété Opposition et date dans HubSpot, `references/hubspot.md`),
+      les tâches de relance sont annulées, et la personne n'est plus jamais
+      recontactée, sur aucun canal (convention d'application de l'art. 21).
+    - Garder seulement ce qu'il faut pour respecter l'opposition (adresse,
+      date) : minimisation, convention.
+
+    ## Conservation : 3 ans
+    - Référentiel CNIL « gestion des activités commerciales » (délibération
+      n° 2021-131 du 23 septembre 2021) : pour un prospect non client, **3 ans
+      à compter de la collecte ou du dernier contact émanant du prospect**
+      (officiel :
+      https://www.legifrance.gouv.fr/cnil/id/CNILTEXT000045543374).
+    - La CNIL donne le clic sur un lien comme exemple de contact et précise
+      que les référentiels ne sont pas contraignants
+      (https://www.cnil.fr/fr/questions-reponses-sur-les-referentiels-relatifs-la-gestion-des-activites-commerciales-et-des).
+    - « La simple ouverture d'un e-mail n'est pas un contact » : source
+      secondaire seulement, non retrouvée sur la page CNIL lue
+      (https://open.lefebvre-dalloz.fr/droit-affaires/protection-donnees-personnelles/definir-durees-conservation-donnees-personnelles_a93003).
+    - En pratique : le champ « Date du dernier contact émanant du prospect »
+      n'est alimenté que par ses actions (réponse, clic, rendez-vous, appel
+      qu'il passe). La revue mensuelle sort les fiches qui dépassent 3 ans
+      (`references/rituels.md` §5).
+
+    ## Registre des traitements
+    L'art. 30 impose un registre, avec une dispense sous 250 salariés qui ne
+    joue pas si le traitement n'est pas occasionnel
+    (https://www.cnil.fr/fr/reglement-europeen-protection-donnees/chapitre4).
+    « Une prospection régulière n'est pas occasionnelle, donc registre » est
+    une inférence : tenir un registre par prudence, et le faire confirmer.
+
+    ## Téléphone : l'opt-in vise les consommateurs
+    - L'art. L.223-1 du Code de la consommation, réécrit par la loi
+      n° 2025-594 du 30 juin 2025 et en vigueur depuis le 11 août 2026,
+      interdit de démarcher par téléphone **un consommateur** sans
+      consentement préalable ; le B2B n'y figure pas (officiel :
+      https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042155931).
+    - La CNIL indique que l'appel vers des professionnels « peut être fondé
+      sur l'intérêt légitime » si l'offre est en rapport avec leur
+      profession, avec possibilité de s'opposer (https://cnil.fr/fr/node/168599).
+      Information et opposition s'appliquent donc aussi à l'appel.
+    - Non lus : le décret n° 2026-662 du 23 juillet 2026, et la fiche DGCCRF
+      sur le démarchage entre professionnels. Le statut de Bloctel en B2B
+      n'est pas confirmé.
+
+    ## LinkedIn et données publiques
+    - Les données publiques restent personnelles : information art. 14 au
+      plus tard au premier contact, minimisation, respect des conditions
+      d'utilisation du site source
+      (https://www.cnil.fr/fr/la-reutilisation-des-donnees-publiquement-accessibles-en-ligne-des-fins-de-demarchage-commercial).
+    - La CNIL a sanctionné KASPR de 240 000 EUR (décembre 2024) pour avoir
+      aspiré sur LinkedIn des coordonnées dont la visibilité était
+      restreinte, et les avoir gardées 5 ans
+      (https://www.cnil.fr/fr/aspiration-de-donnees-sanction-de-240-000-euros-lencontre-de-la-societe-kaspr).
+    - Aucune page officielle lue ne traite du B2B sur LinkedIn hors ce cas.
+      Dire qu'une liste montée à la main depuis des profils publics est moins
+      exposée qu'une aspiration de masse est une **inférence**, pas une
+      position de la CNIL. Jamais d'outil d'aspiration.
+
+    ## Apporteurs d'affaires
+    Aucune source CNIL lue ne traite de l'apporteur d'affaires. La voie la
+    plus sûre, par **inférence** : la mise en relation, où le prospect
+    transmet lui-même ses coordonnées (ou accepte la présentation). Noter
+    l'apporteur dans « Apporté par » et la source dans « Source des
+    coordonnées », et informer le prospect au premier message comme pour
+    tout autre contact.
+
+    ## Sanctions
+    - L.34-5 fixe l'amende administrative à **75 000 EUR pour une personne
+      physique et 375 000 EUR pour une personne morale** (Légifrance, lien
+      ci-dessus). Les montants de 3 000 / 15 000 EUR d'une page d'avocats sont
+      obsolètes.
+    - **Réserve QPC** : la décision n° 2026-1210 QPC du 25 juin 2026 a
+      déclaré contraires à la Constitution trois alinéas de L.34-5 (cumul de
+      sanctions possibles par la CNIL, la DGCCRF et l'ARCEP), abrogation
+      reportée au 31 octobre 2027, sans poursuites cumulées d'ici là.
+      Information tirée de la note Légifrance ; décision non lue
+      (https://www.conseil-constitutionnel.fr/decision/2026/20261210QPC.htm).
+      Alinéas exacts et effet sur les montants : non vérifiés.
+
+    ## Points ouverts → juriste
+    - Ouverture d'e-mail comme contact (source secondaire seulement).
+    - Entrepreneur individuel, TPE sans salarié, mobile personnel : non
+      tranchés par les sources lues.
+    - LinkedIn en B2B hors le cas KASPR.
+    - Rôle et obligations de l'apporteur d'affaires.
+    - Décret n° 2026-662 et fiche DGCCRF sur le B2B.
+    - Effet de la QPC 2026-1210 sur les amendes.
+  '';
+
+  # prospection/references/hubspot.md — configuration du CRM gratuit, serveur
+  # MCP officiel, ajout dans Claude Code (commande non testée), règles
+  # d'écriture sûres.
+  prospectionHubspot = ''
+    # HubSpot gratuit et son serveur MCP
+
+    ## Ce que permet la version gratuite
+    - Limites officielles : 2 utilisateurs, 1 000 contacts, 1 000
+      enregistrements pour les autres objets standard, 3 modèles d'e-mail,
+      1 lien de réunion, 10 tableaux de bord, branding HubSpot
+      (https://www.hubspot.com/pricing/crm).
+    - Pas de pipeline personnalisé ; le pipeline par défaut reste, en 7
+      étapes : Appointment scheduled (20 %), Qualified to buy (40 %),
+      Presentation scheduled (60 %), Decision maker bought-in (80 %),
+      Contract sent (90 %), Closed won, Closed lost
+      (https://knowledge.hubspot.com/object-settings/set-up-and-customize-pipelines).
+    - Pas de séquences : elles exigent Sales Hub ou Service Hub
+      Professional ou Enterprise avec siège
+      (https://knowledge.hubspot.com/sequences/create-and-edit-sequences).
+      **Les relances se font par tâches datées.**
+    - Limites d'API des comptes Free et Starter : 100 appels par 10 secondes
+      et 250 000 par jour
+      (https://legal.hubspot.com/hubspot-product-and-services-catalog/technical-limits) ;
+      rien ne prouve que le MCP les partage.
+    - Non confirmés par une source officielle : nombre de propriétés
+      personnalisées en Free, limites de tâches et de workflows, possibilité
+      de renommer les étapes du pipeline par défaut en Free.
+
+    ## Configuration recommandée
+    **Pipeline.** Garder le pipeline par défaut et lui donner le sens et les
+    critères de `references/methodologie.md` §3 ; ne pas se fier aux
+    probabilités par défaut. Le MCP permet de modifier ce pipeline, mais
+    renommer les étapes en Free n'est pas confirmé : ne pas le tenter sans
+    accord.
+
+    **Propriétés personnalisées** (convention de ce skill ; si une propriété
+    native équivalente existe dans le compte, l'utiliser plutôt que d'en
+    créer une) :
+
+    | Objet | Propriété | Type | Usage |
+    |---|---|---|---|
+    | Contact | Source des coordonnées | liste déroulante ou texte | information RGPD au premier message |
+    | Contact | Date du dernier contact émanant du prospect | date | point de départ des 3 ans de conservation |
+    | Contact | Opposition, Date d'opposition | case à cocher, date | liste d'opposition interne |
+    | Contact | Apporté par | liste déroulante ou texte | apporteur d'affaires |
+    | Deal | Motif de perte | liste déroulante | revue mensuelle |
+    | Deal | Date de recontact | date | recontact des perdus |
+    | Deal | Résultat du dernier rendez-vous | liste : Advance, Continuation | test de fin de réunion |
+
+    « Apporté par » : HubSpot n'a pas de type de propriété « référence de
+    contact », donc liste déroulante ou texte ; les étiquettes d'association
+    sont réservées aux éditions Pro et Enterprise (inférence d'après la page
+    des limites ;
+    https://knowledge.hubspot.com/properties/property-field-types-in-hubspot).
+
+    Valeurs proposées pour « Motif de perte » (convention) : Pas de réponse,
+    Timing, Budget, Concurrent choisi, Statu quo, Disqualifié (hors ICP),
+    Opposition.
+
+    **Modèles d'e-mail.** Trois seulement en Free : les modèles vivent dans
+    `references/modeles-messages.md` ; les trois places HubSpot peuvent
+    servir au premier contact, à la relance et à la rupture (convention).
+
+    **1 000 contacts.** La purge des 3 ans (`references/rgpd.md`) et une
+    liste montée à la main tiennent sous ce plafond (convention).
+
+    ## Serveur MCP officiel
+    - Serveur distant `https://mcp.hubspot.com`, en disponibilité générale
+      depuis le **13 avril 2026**
+      (https://developers.hubspot.com/changelog/remote-hubspot-mcp-server-is-now-generally-available).
+    - Authentification OAuth 2.1 avec PKCE, par une app créée dans HubSpot ;
+      le serveur applique les permissions de l'utilisateur
+      (https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server).
+      Le menu de création s'appelle Development > MCP Auth Apps dans le
+      changelog et MCP Connectors dans le guide : renommage probable, non
+      confirmé.
+    - Couverture : lecture et écriture des contacts, sociétés, deals,
+      tickets, activités (appels, e-mails, réunions, notes, tâches) et
+      propriétés personnalisées.
+    - Si l'option « Sensitive Data » est activée dans le compte, les
+      activités sont bloquées.
+    - Aucun outil de suppression dans la liste publiée (inférence : la
+      suppression n'est probablement pas possible par le MCP). Aucun débit
+      propre au MCP n'est documenté.
+
+    ## Ajouter le serveur à Claude Code (à faire par l'utilisateur)
+    - Documentation générique : `claude mcp add --transport http <nom> <url>`,
+      puis `/mcp` ou `claude mcp login` pour l'authentification ; options
+      `--client-id`, `--client-secret` et `--callback-port` pour un serveur
+      qui exige des identifiants pré-enregistrés
+      (https://code.claude.com/docs/en/mcp).
+    - **Aucune page officielle ne relie Claude Code et HubSpot.** Commande
+      déduite, **non testée** :
+
+      ```
+      claude mcp add --transport http --client-id <ID> --client-secret --callback-port 8080 hubspot https://mcp.hubspot.com
+      ```
+
+      avec `http://localhost:8080/callback` déclaré comme URL de redirection
+      dans l'app HubSpot.
+    - Points ouverts : chemin de rappel exact attendu par HubSpot (non
+      documenté) ; nom du menu de création de l'app. Le secret client ne
+      s'affiche jamais et ne s'écrit dans aucun fichier du dépôt.
+    - L'installation et la connexion OAuth (navigateur) sont faites par
+      l'utilisateur ; ne pas les lancer sans son accord.
+
+    ## Règles d'utilisation sûres
+    1. **Lire avant d'écrire** : chercher le contact (adresse e-mail), la
+       société (domaine) et le deal existants avant toute création, pour
+       éviter les doublons.
+    2. **Écritures groupées** : liste numérotée (objet, enregistrement,
+       champ, valeur actuelle → nouvelle), accord explicite, écriture, puis
+       relecture pour vérifier. La validation des écritures CRM reprend le
+       motif du plugin `sales` d'Anthropic
+       (https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/sales/README.md).
+    3. **Jamais de suppression**, même si un outil le permettait un jour ; la
+       purge RGPD est faite par l'utilisateur dans l'interface.
+    4. **Opposition d'abord** : avant de créer une tâche de relance, vérifier
+       la propriété Opposition.
+    5. **Minimisation** : aucune donnée sensible ni jugement personnel dans
+       les notes.
+    6. **Erreur d'API ou de droits** : s'arrêter et la rapporter, sans
+       contourner.
+  '';
+
+  # prospection/references/sources.md — bibliographie complète de la synthèse
+  # de recherche, par thème, chaque entrée étiquetée.
+  prospectionSources = ''
+    # Sources
+
+    Pages lues le 2026-11-19 sauf mention contraire ; « n.d. » = date non
+    indiquée. Lecture par un outil qui résume : valeurs rendues par l'outil,
+    non relues dans le HTML brut. Aucun livre lu en texte intégral.
+
+    Étiquettes. **MESURÉ** = données avec échantillon ou méthode. **OPINION**
+    = recommandation de praticien. **Éditeur d'outil** = la source vend un
+    outil de prospection, d'e-mailing, de CRM ou d'automatisation. **Agence**
+    = vend de la prospection externalisée. **Officiel** = texte légal,
+    autorité ou documentation de l'éditeur sur son propre produit.
+    **Secondaire** = relais, résumé ou page non lue en entier.
+
+    ## Livres et cadres de vente
+    - OPINION — Graham Mann, notes sur Predictable Revenue, maj nov. 2025 :
+      https://grahammann.net/book-notes/predictable-revenue-aaron-ross-marylou-tyler
+    - OPINION — Antoine Buteau, résumé de Predictable Revenue, 17 juin 2026 :
+      https://www.antoinebuteau.com/predictable-revenue-book-summary.md
+    - OPINION — Pete Kazanjy, Founding Sales, © 2020, n.d. :
+      https://www.foundingsales.com/ ; ch. 4
+      https://foundingsales.com/4-prospecting ; ch. 5
+      https://foundingsales.com/5-outreach ; ch. 8
+      https://foundingsales.com/8-closing ; ch. 10
+      https://foundingsales.com/10-early-sales-management ; ch. 11
+      https://foundingsales.com/11-sales-hiring
+    - OPINION — Founding Sales, Pipeline Management (Holloway), n.d. :
+      https://holloway.com/g/founding-sales/sections/pipeline-management
+    - OPINION — mtlynch.io, notes sur The Mom Test, n.d. :
+      https://mtlynch.io/book-reports/the-mom-test/
+    - MESURÉ (observation d'appels, chiffres divergents selon les sources) —
+      Rework, histoire de SPIN Selling, 24 oct. 2026 :
+      https://resources.rework.com/libraries/history-of-sales/history-of-spin-selling
+    - MESURÉ (effet attribué au coaching complet) — Huthwaite, Neil Rackham,
+      23 avr. 2026 :
+      https://www.huthwaiteinternational.com/blog/neil-rackham-research-spin
+    - OPINION, éditeur d'outil — 11x.ai, Fanatical Prospecting, 21 août
+      2026 : https://www.11x.ai/guides/fanatical-prospecting-review
+    - OPINION, éditeur d'outil — Gong, Gap Selling, 1er août 2022 (maj
+      4 mars 2026) : https://www.gong.io/blog/gap-selling
+    - MESURÉ (profils notés par des managers) — Tom Tunguz, The Challenger
+      Sale, 13 fév. 2015 : https://tomtunguz.com/challenger-sales-process/
+    - MESURÉ, gains clients auto-déclarés — Challenger Inc., 16 janv. 2024 :
+      https://challengerinc.com/what-is-challenger-sales-methodology/
+    - OPINION, éditeur d'outil — MEDDICC.com, origine de MEDDIC, 9 nov.
+      2026 : https://meddicc.com/resources/who-created-meddic
+    - OPINION — Umbrex, MEDDIC, n.d. : https://umbrex.com/?p=242683
+    - OPINION, éditeur d'outil — Close, guide de la vente sortante (Steli
+      Efti), n.d. : https://close.com/resources/startup-guide-to-outbound-sales/
+    - OPINION, éditeur d'outil — Close, Follow-Up Formula, n.d. :
+      https://close.com/resources-and-guides/follow-up-formula ; extrait de
+      recherche : https://www.close.com/resources/followup
+
+    ## Études chiffrées 2024-2026
+    - MESURÉ, agence — Belkins, taux de réponse, maj 26 juin 2026 :
+      https://belkins.io/blog/cold-email-response-rates
+    - MESURÉ, agence — Belkins, relances, maj 26 juin 2026 :
+      https://belkins.io/blog/sales-follow-up-statistics
+    - MESURÉ, agence — Belkins, appel à froid, 26 juin 2026 :
+      https://belkins.io/blog/cold-calling-benchmarks
+    - MESURÉ, éditeur d'outil — Instantly, benchmark 2026, maj 12 janv.
+      2026 : https://instantly.ai/cold-email-benchmark-report-2026
+    - MESURÉ, éditeur d'outil — Hunter, State of Cold Email (données 2024),
+      n.d. : https://hunter.io/the-state-of-cold-email-2025
+    - MESURÉ, éditeur d'outil — Woodpecker, benchmark, maj 5 août 2026 :
+      https://woodpecker.co/cold-email-benchmark/
+    - MESURÉ (méthode dite « directionnelle »), éditeur d'outil — Cognism,
+      State of Outbound 2026 :
+      https://www.cognism.com/reports/state-of-outbound-2026
+    - MESURÉ sans détail de méthode, éditeur d'outil — Gong Labs, cold
+      email, 24 juil. 2025 (modifié 27 mai 2026) :
+      https://www.gong.io/resources/labs/does-cold-email-even-work-any-more-heres-what-the-data-says/
+    - MESURÉ, corrélationnel, éditeur d'outil — Gong, prochaines étapes,
+      15 juil. 2021 (modifié 6 mars 2026) :
+      https://www.gong.io/blog/driving-next-steps-isnt-enough-this-is-what-really-moves-deals-forward
+    - Éditeur d'outil, non fiable (sans source ni méthode, écarté) —
+      Overloop, statistiques cold email, 2026 :
+      https://overloop.com/fr/blog/statistiques-cold-email
+    - MESURÉ, éditeur d'outil — Workato, délai de réponse, 19 mars 2026 :
+      https://workato.com/the-connector/lead-response-time-study
+    - Secondaire, éditeur d'outil — Callingly, speed to lead, n.d. :
+      https://callingly.com/blog/state-of-speed-to-lead
+    - Secondaire — ainora.lt, délai de réponse, 2026 :
+      https://ainora.lt/blog/lead-response-time-statistics-every-study-2026
+    - MESURÉ, non lu (corps payant) — HBR, The Short Life of Online Sales
+      Leads, mars 2011 :
+      https://hbr.org/2011/03/the-short-life-of-online-sales-leads
+    - Déclaratif, éditeur d'outil — Salesforce, State of Sales 6e éd.,
+      25 juil. 2024 : https://www.salesforce.com/news/stories/sales-ai-statistics-2024/
+    - Secondaire — Diginomica, relais Salesforce :
+      https://diginomica.com/state-sales-ai-incoming-there-are-caveats-according-salesforce-data
+    - Déclaratif, éditeur d'outil — HubSpot, State of Sales 2025, n.d. :
+      https://blog.hubspot.com/sales/hubspot-sales-strategy-report
+    - MESURÉ, ancien, éditeur d'outil — Sidetrade, ebook (données 2018, éd.
+      2021) :
+      https://sidetrade.com/wp-content/uploads/2021/10/Sidetrade-ebook-1.5m-demandes-de-rdv-b2b.pdf
+    - Secondaire, éditeur d'outil — Zeliq, cycles de vente :
+      https://www.zeliq.com/fr/blog/cycles-de-vente
+
+    ## Cadre juridique
+    - Officiel — Légifrance, L.34-5 CPCE :
+      https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042155961
+    - Officiel — Légifrance, L.223-1 Code de la consommation :
+      https://www.legifrance.gouv.fr/codes/article_lc/LEGIARTI000042155931
+    - Officiel — Légifrance, délibération CNIL 2021-131 du 23 sept. 2021 :
+      https://www.legifrance.gouv.fr/cnil/id/CNILTEXT000045543374
+    - Officiel, non lu (erreur 503) — Conseil constitutionnel, décision
+      2026-1210 QPC du 25 juin 2026 :
+      https://www.conseil-constitutionnel.fr/decision/2026/20261210QPC.htm
+    - Officiel — CNIL, prospection par e-mail, 10 juin 2026 :
+      https://www.cnil.fr/fr/la-prospection-commerciale-par-courrier-electronique
+    - Officiel — CNIL, prospection par téléphone, 10 juin 2026 :
+      https://cnil.fr/fr/node/168599
+    - Officiel — CNIL, données publiquement accessibles, 30 avril 2020 :
+      https://www.cnil.fr/fr/la-reutilisation-des-donnees-publiquement-accessibles-en-ligne-des-fins-de-demarchage-commercial
+    - Officiel, page non relue en entier — CNIL, sanction KASPR, déc. 2024 :
+      https://www.cnil.fr/fr/aspiration-de-donnees-sanction-de-240-000-euros-lencontre-de-la-societe-kaspr
+    - Officiel — CNIL, Q&R sur les référentiels commerciaux, 28 janv. 2022 :
+      https://www.cnil.fr/fr/questions-reponses-sur-les-referentiels-relatifs-la-gestion-des-activites-commerciales-et-des
+    - Officiel, PDF illisible — CNIL, référentiel activités commerciales :
+      https://www.cnil.fr/sites/cnil/files/atoms/files/referentiel_traitements-donnees-caractere-personnel_gestion-activites-commerciales.pdf
+    - Officiel — CNIL, RGPD chapitres II, III, IV :
+      https://www.cnil.fr/fr/reglement-europeen-protection-donnees/chapitre2 ;
+      https://www.cnil.fr/fr/reglement-europeen-protection-donnees/chapitre3 ;
+      https://www.cnil.fr/fr/reglement-europeen-protection-donnees/chapitre4
+    - Secondaire (montants obsolètes) — Baumann Avocats, L.34-5 :
+      https://www.baumann-avocats.com/CPCE/article-l34-5-du-code-des-postes-et-des-communications-electroniques.php
+    - Secondaire — Lefebvre Dalloz, durées de conservation :
+      https://open.lefebvre-dalloz.fr/droit-affaires/protection-donnees-personnelles/definir-durees-conservation-donnees-personnelles_a93003
+    - Secondaire — Actu-Juridique, démarchage téléphonique :
+      https://www.actu-juridique.fr/affaires/droit-economique/reforme-du-demarchage-telephonique-mise-en-pratique-depuis-le-11-aout-2026/
+    - Officiel, non lu (erreur 403) — DGCCRF, démarchage téléphonique entre
+      professionnels :
+      https://www.economie.gouv.fr/dgccrf/les-fiches-pratiques/demarchage-telephonique-professionnels-mettez-vous-en-conformite-avec-la-reglementation
+
+    ## Dépôts ouverts et outils
+    - OPINION (choix de conception), Apache-2.0 —
+      anthropics/knowledge-work-plugins, push 2026-11-19 :
+      https://github.com/anthropics/knowledge-work-plugins ; README sales
+      https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/sales/README.md ;
+      skills lus :
+      https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/sales/skills/draft-outreach/SKILL.md ;
+      https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/sales/skills/lead-triage/SKILL.md ;
+      https://raw.githubusercontent.com/anthropics/knowledge-work-plugins/main/sales/skills/crm-hygiene-check/SKILL.md
+    - OPINION, MIT — coreyhaines31/marketingskills, push 2026-11-18 :
+      https://github.com/coreyhaines31/marketingskills ;
+      https://raw.githubusercontent.com/coreyhaines31/marketingskills/main/skills/cold-email/SKILL.md ;
+      https://raw.githubusercontent.com/coreyhaines31/marketingskills/main/skills/cold-email/references/follow-up-sequences.md
+    - Secondaire, MIT — growthenginenowoslawski/coldoutboundskills :
+      https://github.com/growthenginenowoslawski/coldoutboundskills
+    - Secondaire, MIT — alirezarezvani/claude-skills :
+      https://github.com/alirezarezvani/claude-skills
+    - Secondaire, CC0-1.0 — vladar107/awesome-sales-engineer :
+      https://github.com/vladar107/awesome-sales-engineer
+    - Sans licence (idées seulement, pas de texte) —
+      sachacoldiq/ColdIQ-s-GTM-Skills :
+      https://github.com/sachacoldiq/ColdIQ-s-GTM-Skills
+    - Sans licence (idées seulement) — ComposioHQ/awesome-claude-skills :
+      https://github.com/ComposioHQ/awesome-claude-skills
+    - Licence à vérifier skill par skill — sickn33 :
+      https://github.com/sickn33/antigravity-awesome-skills
+    - Officiel — HubSpot, tarifs CRM : https://www.hubspot.com/pricing/crm
+    - Officiel — HubSpot, pipelines (maj 22 oct. 2026) :
+      https://knowledge.hubspot.com/object-settings/set-up-and-customize-pipelines
+    - Officiel — HubSpot, séquences :
+      https://knowledge.hubspot.com/sequences/create-and-edit-sequences
+    - Officiel — HubSpot, limites techniques :
+      https://legal.hubspot.com/hubspot-product-and-services-catalog/technical-limits
+    - Officiel — HubSpot, types de champ :
+      https://knowledge.hubspot.com/properties/property-field-types-in-hubspot
+    - Officiel — HubSpot, changelog GA du MCP distant (13 avr. 2026, maj
+      15 avr. 2026) :
+      https://developers.hubspot.com/changelog/remote-hubspot-mcp-server-is-now-generally-available
+    - Officiel — HubSpot, guide d'intégration du MCP distant, n.d. :
+      https://developers.hubspot.com/docs/apps/developer-platform/build-apps/integrate-with-the-remote-hubspot-mcp-server
+    - Officiel — Claude Code, documentation MCP, n.d. :
+      https://code.claude.com/docs/en/mcp
+
+    ## Organisation du fondateur
+    - OPINION — Lenny's Newsletter, Jen Abel, 24 nov. 2024 :
+      https://www.lennysnewsletter.com/p/master-founder-led-sales-jen-abel
+    - OPINION (équipe, pas solo) — Point Nine, Seth DeHart, 1er déc. 2020 :
+      https://writing.pointnine.com/p/sales-forecasts-and-pipeline-reviews
+    - OPINION, éditeur d'outil — Close, prospects perdus, 24 mars 2015 (maj
+      28 mai 2026) : https://www.close.com/blog/lost-prospects
+    - Éditeur d'outil, sans statistique — Gong Help, agents closed-lost,
+      n.d. : https://help.gong.io/docs/re-engage-closed-lost-deals-with-agents
+    - Non lu, non vérifié — causo.ai, playbook des 50 premiers deals :
+      https://hub.causo.ai/founder-led-sales-first-50-deals-playbook-2026
+  '';
 }

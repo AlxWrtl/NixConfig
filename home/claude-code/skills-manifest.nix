@@ -294,5 +294,50 @@ in
         }
       ];
     }
+    {
+      name = "prospection";
+      files = [
+        {
+          path = "SKILL.md";
+          text = skills.skillProspection;
+        }
+        {
+          path = "references/methodologie.md";
+          text = skills.prospectionMethodologie;
+        }
+        {
+          path = "references/enchainement.md";
+          text = skills.prospectionEnchainement;
+        }
+        {
+          path = "references/qualification.md";
+          text = skills.prospectionQualification;
+        }
+        {
+          path = "references/modeles-messages.md";
+          text = skills.prospectionModelesMessages;
+        }
+        {
+          path = "references/rituels.md";
+          text = skills.prospectionRituels;
+        }
+        {
+          path = "references/indicateurs.md";
+          text = skills.prospectionIndicateurs;
+        }
+        {
+          path = "references/rgpd.md";
+          text = skills.prospectionRgpd;
+        }
+        {
+          path = "references/hubspot.md";
+          text = skills.prospectionHubspot;
+        }
+        {
+          path = "references/sources.md";
+          text = skills.prospectionSources;
+        }
+      ];
+    }
   ];
 }

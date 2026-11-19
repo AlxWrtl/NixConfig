@@ -899,6 +899,21 @@ let
       needle = "version pin the real diff adds must have its source in `AC-docs:`";
       scope = skills.ttwStep04Validate;
     }
+    {
+      name = "validate: a skipped metrics mode is recorded";
+      needle = "one line `Metrics: skipped — {reason}`";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      name = "validate: a dup finding on the diff means reuse the helper";
+      needle = "a dup pair touching the diff means reuse the existing helper";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      name = "validate: mutate runs on High-stakes";
+      needle = "on High-stakes add `code-metrics mutate";
+      scope = skills.ttwStep04Validate;
+    }
     # Step 3 of the verify loop self-verifies in band: the AC rule is pinned
     # where each of its three decisions is made (plan, validate, verify).
     {

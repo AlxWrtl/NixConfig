@@ -31,6 +31,20 @@
       flake = false;
     };
 
+    # Sources of the `code-metrics` wrapper (Uncle Bob's CRAP / mutation / duplication tools), pinned by commit: `nix flake update` cannot move them. Bump = new sha + re-test.
+    crapper = {
+      url = "github:unclebob/crapper/c757ec79a6c15dc815238bbd9c2f4601eb54d3cc";
+      flake = false;
+    };
+    mutator = {
+      url = "github:unclebob/mutator/29afb427129b6bf03699286966fc55ec8a4830d7";
+      flake = false;
+    };
+    dryer = {
+      url = "github:unclebob/dryer/66ff6d21a42c04afcad89c78a80066176d1294b0";
+      flake = false;
+    };
+
     # security-audit skill (Cloudflare), pinned by commit: `nix flake update` cannot move it. Bump = new sha + re-read SKILL.md.
     cloudflare-security-audit = {
       url = "github:cloudflare/security-audit-skill/c1c8a8c1471069fb0e188eeaff69b8e8db6564a8";
@@ -94,6 +108,7 @@
           inherit pkgs;
           darwin = self.darwinConfigurations."alex-mbp".config;
         };
+        code-metrics = import ./checks/code-metrics.nix { inherit pkgs; };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };
         jev-locate = import ./checks/jev-locate.nix { inherit pkgs; };
         js-lint = import ./checks/js-lint.nix { inherit pkgs; };

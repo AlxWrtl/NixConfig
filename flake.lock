@@ -84,6 +84,23 @@
         "type": "github"
       }
     },
+    "crapper": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1794335884,
+        "narHash": "sha256-iWEXCRF60ax2vyWfs7ZQ0B8VwdGlgCCZwYFn4rN0URI=",
+        "owner": "unclebob",
+        "repo": "crapper",
+        "rev": "c757ec79a6c15dc815238bbd9c2f4601eb54d3cc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "unclebob",
+        "repo": "crapper",
+        "rev": "c757ec79a6c15dc815238bbd9c2f4601eb54d3cc",
+        "type": "github"
+      }
+    },
     "determinate": {
       "inputs": {
         "determinate-nixd-aarch64-darwin": "determinate-nixd-aarch64-darwin",
@@ -141,6 +158,23 @@
       "original": {
         "type": "file",
         "url": "https://install.determinate.systems/determinate-nixd/tag/v3.24.2/x86_64-linux"
+      }
+    },
+    "dryer": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1791068633,
+        "narHash": "sha256-EwoP89k6YllcN6dmn/rxbeqDoAMOQsKfjpzfykD6PKA=",
+        "owner": "unclebob",
+        "repo": "dryer",
+        "rev": "66ff6d21a42c04afcad89c78a80066176d1294b0",
+        "type": "github"
+      },
+      "original": {
+        "owner": "unclebob",
+        "repo": "dryer",
+        "rev": "66ff6d21a42c04afcad89c78a80066176d1294b0",
+        "type": "github"
       }
     },
     "emil-skills": {
@@ -237,6 +271,23 @@
         "owner": "nix-community",
         "ref": "master",
         "repo": "home-manager",
+        "type": "github"
+      }
+    },
+    "mutator": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1795020165,
+        "narHash": "sha256-wwK3tzn8pnGZIBu1i8i1FD+21q/88xGcBCpsVQ/fwlQ=",
+        "owner": "unclebob",
+        "repo": "mutator",
+        "rev": "29afb427129b6bf03699286966fc55ec8a4830d7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "unclebob",
+        "repo": "mutator",
+        "rev": "29afb427129b6bf03699286966fc55ec8a4830d7",
         "type": "github"
       }
     },
@@ -350,9 +401,12 @@
         "brag": "brag",
         "claude-video": "claude-video",
         "cloudflare-security-audit": "cloudflare-security-audit",
+        "crapper": "crapper",
         "determinate": "determinate",
+        "dryer": "dryer",
         "emil-skills": "emil-skills",
         "home-manager": "home-manager",
+        "mutator": "mutator",
         "nix-darwin": "nix-darwin",
         "nixpkgs": "nixpkgs_2"
       }

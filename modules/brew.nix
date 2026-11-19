@@ -49,7 +49,6 @@ _:
       "codex-app"
       "discord"
       "google-chrome"
-      "handy" # speech-to-text
       "notion"
       "obsidian"
       "openlogi"

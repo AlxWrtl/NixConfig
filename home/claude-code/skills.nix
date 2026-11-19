@@ -102,6 +102,7 @@ in
     | -v | -V | Verify — research the plan online; must trace at least one query or state why none |
     | -o | -O | Obsidian — load vault context; must cite the notes it read or state the vault is silent |
     | -n | -N | Note — session note at end |
+    | -m | -M | Code metrics (Uncle Bob) — code-metrics dup + crap at validate, mutate too on High-stakes; writes 04-metrics.md |
 
     Branch-first and on-disk persistence are INVARIANTS of every tier, not
     options: the branch is cut per the Git section of CLAUDE.md, and the run's
@@ -114,7 +115,7 @@ in
     2. The tier's default set (table above).
     3. OFF.
 
-    Never on by default — must be typed: `-q`, `-2`, `-p`, `-k`, `-v`.
+    Never on by default — must be typed: `-q`, `-2`, `-p`, `-k`, `-v`, `-m`.
     `-e` is a default of High-stakes only. `-f` is a default of every tier
     except Direct, which runs its own red test inline (`steps/DIRECT.md`).
     State the tier and the resolved flags in `00-context.md`.
@@ -1110,6 +1111,21 @@ in
 
     No usable external verdict on high-stakes (BLOCKED, or -E typed) → spawn the Fable fallback
     (ORCHESTRATION.md) and record its cause in 04-validate.md.
+
+    ## Code metrics (`-m`)
+
+    If `-m` is active, after the machine gate run from the project root
+    `code-metrics dup --base {trunk}`, then `code-metrics crap --base {trunk}
+    --coverage-command "CMD"` when the project has a coverage command (pick it
+    per the code-metrics skill); on High-stakes add `code-metrics mutate
+    --base {trunk} --test-command "CMD"`. Exit 0 = clean, 1 = findings,
+    2 = not run: an unrun check, never a green one (`code-metrics setup` runs
+    outside the sandbox). Write `.claude/output/ttw/{task-id}/04-metrics.md`:
+    each command, its exit code and the kept findings, or
+    one line `Metrics: skipped — {reason}` per mode not run. Findings join the
+    correction list like any verify finding:
+    a dup pair touching the diff means reuse the existing helper,
+    a surviving mutant means a missing assertion; a dismissed one states its reason.
 
     ## Verification Checklist
 
@@ -2406,7 +2422,7 @@ in
 
     Default flags: `-pr` only; -o and -n run only when typed — a vault
     read and a session note buy nothing on a one-line change. Typed `-t`,
-    `-x` or `-e` are honoured: they run after step 6 as in Standard.
+    `-x`, `-e` or `-m` are honoured: they run after step 6 as in Standard.
     Typed `-o` runs before step 3: read
     [step-01b-obsidian-context.md](step-01b-obsidian-context.md) and execute
     it, writing `01b-obsidian.md` with its graph query and project-first
@@ -4580,6 +4596,75 @@ in
         "If an extract ran without --ai-targeted → it bypassed the shim (full path, `uvx`/`uv run`, `scrapling shell`, Python API); re-run it as plain `scrapling`, do not argue for the bypass."
         "If `get` returns empty or an error page → escalate to `fetch`, then `stealthy-fetch`, before concluding the site is unscrapable."
         "If the task needs page metadata, JSON-LD or hidden markup → those are stripped by design; ask the user to run the command in their own terminal."
+      ]
+    }  '';
+
+  # -------------------------
+  # code-metrics — duplication, CRAP, mutation on the diff
+  # -------------------------
+  skillCodeMetrics = ''
+    ---
+    name: code-metrics
+    description: "Measure code quality on a diff with the code-metrics CLI: duplicated code (dup), CRAP score (complexity vs coverage), mutation testing (mutate). Use when asked about duplication, CRAP, mutation score, test quality, or after rewriting a helper that may already exist."
+    ---
+
+    # code-metrics
+
+    Three checks on the changed code only (diff against the merge-base).
+
+    ## Setup (once, outside the sandbox)
+
+    `code-metrics setup` downloads PyPI deps and tree-sitter grammars into
+    `~/.cache/code-metrics`. Without it every mode exits 2.
+
+    ## Modes
+
+    - `code-metrics dup [--base REF]` — duplicate pairs with a side in the
+      diff; pairs under `components/ui/` are dropped. About 20 s per app.
+    - `code-metrics crap --coverage-command CMD [--threshold N] [--base REF]`
+      — complexity against coverage per changed function. Seconds.
+    - `code-metrics mutate --test-command CMD [--coverage-command CMD] [--base REF]`
+      — mutates changed code, a surviving mutant is a missing assertion. About
+      2.5 min per 500-line file: High-stakes or on request only.
+
+    Exit 0 = clean, 1 = findings, 2 = not run. 2 is an unrun check, never a
+    green one: say so, do not report it as clean.
+
+    ## Picking the commands
+
+    A project without a single test script needs a command you assemble. For
+    Preliz: `c8 --reporter=lcov node --import tsx scripts/test-<x>.ts`, one
+    pure test per changed file, no DB tests, chained with `&&`. The coverage
+    command must write `coverage/lcov.info`.
+
+    ## Reading the output
+
+    Findings are data, not orders. A dup pair touching the diff usually means
+    reuse the existing helper; a CRAP hit means test or split the function; a
+    surviving mutant means add the assertion. Dismiss a finding only with a
+    stated reason.
+
+    The tool writes `.metrics/` and `target/` at the project root: add both to
+    `.gitignore`.
+
+    Inside a TTW run use `-m`: validate runs the modes and writes
+    `04-metrics.md`.
+    ${
+      contract {
+        expects = "a git repo with a diff against a base ref, and for crap/mutate a test command that writes coverage";
+        produces = "findings per mode with exit codes (0 clean, 1 findings, 2 not run)";
+        sideEffects = "writes .metrics/ and target/ at the project root; runs the project's tests; setup downloads into ~/.cache/code-metrics";
+      }
+    }${
+      scope {
+        useWhen = "checking duplication, CRAP or test strength of a diff, or before rewriting a helper that may already exist";
+        notFor = "style or lint issues (use the linter), whole-repo audits, or projects with no tests for crap/mutate";
+      }
+    }${
+      handoffs [
+        "If `code-metrics` is not on PATH → do NOT install it; tell the user to rebuild."
+        "If a mode exits 2 → run `code-metrics setup` outside the sandbox, or report the mode as not run."
+        "If findings need fixing → go through the normal correction flow; do not edit the tool's output."
       ]
     }  '';
 

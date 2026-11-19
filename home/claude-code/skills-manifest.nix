@@ -250,6 +250,15 @@ in
       ];
     }
     {
+      name = "code-metrics";
+      files = [
+        {
+          path = "SKILL.md";
+          text = skills.skillCodeMetrics;
+        }
+      ];
+    }
+    {
       # library/ (the awesome-design-md flake input) is a directory link,
       # declared in home/claude-code.nix: it is not skill text.
       name = "design-md";

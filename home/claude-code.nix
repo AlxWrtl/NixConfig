@@ -34,6 +34,10 @@ let
   ttwCiGate = import ./claude-code/ttw-ci-gate.nix { inherit pkgs; };
   ttwHealth = import ./claude-code/ttw-health.nix { inherit pkgs; };
   jevLocate = import ./claude-code/jev-locate.nix { inherit pkgs; };
+  codeMetrics = import ./claude-code/code-metrics.nix {
+    inherit pkgs;
+    inherit (inputs) crapper mutator dryer;
+  };
   ttwBoard = import ./claude-code/ttw-board.nix { inherit pkgs; };
   claudeDispatch = import ./claude-code/claude-dispatch.nix { inherit pkgs; };
   agentPane = import ./claude-code/agent-pane.nix { inherit pkgs; };
@@ -55,6 +59,7 @@ let
   inherit (ttwCiGate) ttwCiGatePkg;
   inherit (ttwHealth) ttwHealthPkg;
   inherit (jevLocate) jevLocatePkg;
+  inherit (codeMetrics) codeMetricsPkg;
   inherit (ttwBoard) ttwBoardPkg;
   inherit (claudeDispatch) claudeDispatchPkg;
   inherit (agentPane) agentPanePkg;
@@ -460,6 +465,7 @@ in
       ttwCiGatePkg
       ttwHealthPkg
       jevLocatePkg
+      codeMetricsPkg
       ttwBoardPkg
       claudeDispatchPkg
       pkgs.abduco

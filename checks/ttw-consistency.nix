@@ -790,6 +790,13 @@ let
       scope = skills.ttwStep00bSave;
     }
     {
+      # Free phase labels split one phase across many B3 keys (36 on
+      # 2026-11-20); the probe maps aliases, the list keeps new rows canonical.
+      name = "save: the token table phase cell uses the fixed vocabulary";
+      needle = "The `phase` cell is one word of this list, verbatim";
+      scope = skills.ttwStep00bSave;
+    }
+    {
       # Analyze is the most expensive phase; running it when the files are
       # already known buys nothing.
       name = "analyze: skipped when the files are already known";

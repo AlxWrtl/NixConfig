@@ -921,6 +921,10 @@ let
       hook = "ttw-metrics-probe.py";
       text = "return found[-1] if found else None";
     };
+    A-b6-analyze = {
+      hook = "ttw-metrics-probe.py";
+      text = "out[\"analyze\"] = \"ok\" if any(OUTCOME_LINE.search(t) for t in texts) else \"missing\"";
+    };
     A-cb-cron = {
       hook = "correction-budget.js";
       text = "if (typeof sp === \"string\" && sp.split(/\\r?\\n/).some((l) => TOKEN.test(l))) {";
@@ -2823,6 +2827,18 @@ let
         }
       ];
     }
+    # Outcome: line unchecked: an 01-analyze.md without it is never named.
+    {
+      id = "M-b6-analyze";
+      hook = "ttw-metrics-probe.py";
+      kills = "pr-analyze-nooutcome-emits";
+      swaps = [
+        {
+          anchor = "A-b6-analyze";
+          to = "out[\"analyze\"] = \"ok\"";
+        }
+      ];
+    }
     # Schedulers unchecked: the model schedules the user's grant line.
     {
       id = "M-cb-cron";
@@ -4318,6 +4334,8 @@ let
     "pr-e2-present-silent"
     "pr-e2-unconfirmed-silent"
     "pr-e2-symlink-silent"
+    "pr-analyze-nooutcome-emits"
+    "pr-analyze-outcome-silent"
     "graph-skipped-emits"
     "graph-nosection-emits"
     "graph-noquery-emits"
@@ -7038,6 +7056,15 @@ let
           ac_put "$PRO/r1/04-external-verify.json" "$AC_VPASS"
           ac_put "$PR/v2.json" "$AC_VPASS"
           ln -s "$PR/v2.json" "$PRO/r1/04-external-verify-2.json" || { why="cannot plant the 04-external-verify-2.json symlink"; return 1; }
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
+        # B6 analyze: an 01-analyze.md with no `Outcome:` line is named; the
+        # same run with the line is silent.
+        pr-analyze-nooutcome-emits)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md 01-analyze.md
+          run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; pr_emits r1 "the Outcome: line in 01-analyze.md" "02-acs.md (" "05-examine" ;;
+        pr-analyze-outcome-silent)
+          pr_repo || return 1; pr_run r1 "Tier: Standard" "Flags: -t -pr -o -n" feat/p 02-acs.md
+          ac_put "$PRO/r1/01-analyze.md" "# Analyze" "Outcome: confirmed"
           run "$lbl" "$2" "$PR" "$GITBIN" "$(pr_in "$PR_CMD")"; ac_silent ;;
         # ttw-metrics-probe --hook on a run's 01b-obsidian*.md: a graph not
         # queried, no graph section at all, or a section with no `- Query:`

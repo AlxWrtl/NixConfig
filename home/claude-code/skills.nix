@@ -365,6 +365,12 @@ in
       touches, read from its lockfile, never from memory (feeds the plan's `Docs:` line)
     - **Dependencies**: libraries, utilities, types to use
     - **Risks**: potential issues or unknowns
+    - **Outcome**: one line at column 0, no bullet (B5 and the PR hook
+      read it): `Outcome: confirmed` (init's `Files:` guess holds),
+      `Outcome: nothing` (no usable finding), or `Outcome: changed-plan — adds: `
+      then each added file, constraint or decision backticked (a repo path or
+      a short exact phrase the plan will reuse). An item the plan does not
+      reuse counts as unknown, never changed.
 
     ## Probe contract (every ad hoc probe)
 

@@ -204,6 +204,7 @@ TALLY = re.compile(r"\bconfirmed=(\d+)")
 TALLY_PAIR = re.compile(r"\bdismissed=\d+")
 WIKILINK = re.compile(r"\[\[([^\]\s|#][^\]\n]*)")
 FILES_LINE = re.compile(r"^Files:(.*)$", re.MULTILINE)
+OUTCOME_LINE = re.compile(r"^Outcome:[ \t]*[*`]*([A-Za-z-]*)[*`]*(.*)$", re.MULTILINE)
 PATH_TOKEN = re.compile(r"(?<![\w.~/-])[\w.~-]*(?:/[\w.-]+)+")  # starts at a token edge: linear
 GH_PR_CREATE = re.compile(r"^\s*gh\s+pr\s+create(\s|$)")
 TIER_LINE = re.compile(r"^Tier:\s*[*`]*([A-Za-z-]+)", re.MULTILINE)
@@ -215,6 +216,7 @@ NON_DIRECT = frozenset({"Standard", "High-stakes", "Diagnosis"})
 GIT_TIMEOUT = 2
 B6_SINCE = "2026-10-26"
 B6_ITEMS = (
+    ("analyze", "the Outcome: line in 01-analyze.md (changed-plan — adds: … | confirmed | nothing)"),
     ("acs", "02-acs.md (the ACs, each with its proving command)"),
     ("x", "the confirmed=N unique=U dismissed=D tally in 05-examine.md"),
     ("e", "the confirmed=N unique=U dismissed=D tally in 04-external-triage.md"),
@@ -472,6 +474,73 @@ B5_ANALYZE_FIXTURES = [
     ("context has no Files: line", "unknown",
      "The wiring lives in checks/hook-wiring.nix:108.\n",
      "Files: checks/hook-wiring.nix\n", "Tier: standard\n"),
+    # Outcome: line (02-plan rule 2-5); each case is built so the Files: diff
+    # alone gives another verdict.
+    ("Outcome confirmed", "not changed",
+     "Outcome: confirmed\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "## Files\n- checks/hook-wiring.nix\n", "Files: README.md\n"),
+    ("Outcome nothing", "not changed",
+     "Outcome: nothing\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix\n", "Tier: standard\n"),
+    ("Outcome value case-insensitive", "not changed",
+     "Outcome: NOTHING\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix\n", "Tier: standard\n"),
+    ("Outcome wins over Files: diff", "not changed",
+     "Outcome: confirmed\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix, README.md\n", "Files: README.md\n"),
+    ("changed-plan phrase in plan, not in context", "changed",
+     "Outcome: changed-plan — adds: `watchdog 5 s`\n",
+     "Files: README.md\nT1 keep the watchdog 5 s under the hook timeout.\n",
+     "Files: README.md\n"),
+    ("changed-plan path in plan prose, not in context", "changed",
+     "Outcome: changed-plan — adds: `checks/hook-wiring.nix`\n",
+     "Files: README.md\nT1 read checks/hook-wiring.nix first.\n", "Files: README.md\n"),
+    ("changed-plan item absent from plan", "unknown",
+     "Outcome: changed-plan — adds: `checks/foo-probe.sh`\n",
+     "Files: README.md\n", "Files: README.md\n"),
+    ("changed-plan item already in context", "unknown",
+     "Outcome: changed-plan — adds: `watchdog 5 s`\n"
+     "The wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix\nT1 keep the watchdog 5 s.\n",
+     "Files: README.md\nThe watchdog 5 s stays.\n"),
+    ("changed-plan with no item", "unknown",
+     "Outcome: changed-plan\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix, README.md\n", "Files: README.md\n"),
+    ("Outcome unknown value", "unknown",
+     "Outcome: maybe\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix, README.md\n", "Files: README.md\n"),
+]
+
+# Synthetic edges of the Outcome: line, same shape. skills.nix (ttwStep01Analyze)
+# says "one line at column 0, no bullet": a bold, bulleted or lowercase key is no
+# Outcome line, so the Files: diff decides (built to say "changed" where the
+# line, if read, would say "not changed"). A one-letter item met inside a word of
+# the plan is not a phrase the plan reuses: the intended verdict is unknown.
+B5_ANALYZE_EDGE_FIXTURES = [
+    ("ASCII hyphen separator", "changed",
+     "Outcome: changed-plan - adds: `checks/foo-probe.sh`\n",
+     "Files: README.md\nT1 add checks/foo-probe.sh.\n", "Files: README.md\n"),
+    ("bold key is no Outcome line", "changed",
+     "**Outcome:** confirmed\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix, README.md\n", "Files: README.md\n"),
+    ("bulleted key is no Outcome line", "changed",
+     "- Outcome: confirmed\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix, README.md\n", "Files: README.md\n"),
+    ("lowercase key is no Outcome line", "changed",
+     "outcome: confirmed\nThe wiring lives in checks/hook-wiring.nix:108.\n",
+     "Files: checks/hook-wiring.nix, README.md\n", "Files: README.md\n"),
+    ("two lines, first nothing wins", "not changed",
+     "Outcome: nothing\nOutcome: changed-plan — adds: `checks/foo-probe.sh`\n",
+     "Files: README.md\nT1 add checks/foo-probe.sh.\n", "Files: README.md\n"),
+    ("two lines, first changed-plan wins", "changed",
+     "Outcome: changed-plan — adds: `checks/foo-probe.sh`\nOutcome: confirmed\n",
+     "Files: README.md\nT1 add checks/foo-probe.sh.\n", "Files: README.md\n"),
+    ("one item verifiable, one not", "changed",
+     "Outcome: changed-plan — adds: `checks/foo-probe.sh`, `retry 3 times`\n",
+     "Files: README.md\nT1 add checks/foo-probe.sh.\n", "Files: README.md\n"),
+    ("one-letter item inside a plan word", "unknown",
+     "Outcome: changed-plan — adds: `a`\n",
+     "Files: README.md\nT1 read checks first.\n", "Files: README.md\n"),
 ]
 
 # Real 00-context.md lines, from .claude/output/ttw/<run>/ (run ids and names renamed to ttw in phase 4).
@@ -767,6 +836,21 @@ def files_line(text):
 
 
 def analyze_outcome(analyze, plan, context):
+    """The analyze's own `Outcome:` line first (02-plan of run 105): an item
+    counts only when the plan reuses it verbatim and the context lacks it;
+    without the line, the Files:-diff rule."""
+    m = OUTCOME_LINE.search(analyze)
+    if m is not None:
+        value = m.group(1).lower()
+        if value in ("confirmed", "nothing"):
+            return "not changed"
+        if value != "changed-plan":
+            return "unknown"
+        items = {i.strip() for i in SPAN.findall(m.group(2))} - {""}
+        def has(text, item):
+            return re.search(r"(?<!\w)" + re.escape(item) + r"(?!\w)", text) is not None
+
+        return "changed" if any(has(plan, i) and not has(context, i) for i in items) else "unknown"
     planned, guessed = files_line(plan), files_line(context)
     if planned is None or guessed is None:
         return "unknown"
@@ -963,7 +1047,15 @@ def run_gaps(run, cap):
     tallied = b5_tallied(run, cap)
     if tallied["x"] == "not run" and x_due(ctx):
         tallied["x"] = "unknown"
-    out = {"acs": _file_state(run / "02-acs.md")}
+    out = {}
+    an = sorted(run.glob("01-analyze*.md"))
+    if an:
+        texts = [_guarded_text(p, cap) for p in an]
+        if any(t is None for t in texts):
+            out["analyze"] = "unreadable"
+        else:
+            out["analyze"] = "ok" if any(OUTCOME_LINE.search(t) for t in texts) else "missing"
+    out["acs"] = _file_state(run / "02-acs.md")
     for step in ("x", "e"):
         got = tallied[step]
         if got != "not run":
@@ -1267,6 +1359,24 @@ def b5_self_test(failures):
     return len(B5_TALLY_FIXTURES) + len(B5_VAULT_FIXTURES) + len(B5_ANALYZE_FIXTURES)
 
 
+def b5_analyze_edge_self_test(failures):
+    """Outcome: line edges, same check as B5_ANALYZE_FIXTURES; the Files:-only
+    rule (Outcome lines stripped) must mislabel one, or the fixtures cannot fail."""
+    files_only_wrong = 0
+    for case, expected, analyze, plan, context in B5_ANALYZE_EDGE_FIXTURES:
+        got = analyze_outcome(analyze, plan, context)
+        if got != expected:
+            failures.append(f"B5 analyze-edge {case}: {got}, expected {expected}")
+        if analyze_outcome(OUTCOME_LINE.sub("", analyze), plan, context) != expected:
+            files_only_wrong += 1
+    missing = {"changed", "not changed", "unknown"} - {f[1] for f in B5_ANALYZE_EDGE_FIXTURES}
+    if missing:
+        failures.append(f"B5 analyze-edge table too thin: no fixture for {', '.join(sorted(missing))}")
+    if files_only_wrong == 0:
+        failures.append("B5 analyze-edge fixtures cannot fail: the Files:-only rule mislabels none of them")
+    return len(B5_ANALYZE_EDGE_FIXTURES)
+
+
 def self_test():
     failures = []
     v0_wrong = 0
@@ -1306,6 +1416,7 @@ def self_test():
     n_b3_phase = b3_phase_self_test(failures)
     n_b3_phase_edge = b3_phase_edge_self_test(failures)
     n_b5 = b5_self_test(failures)
+    n_b5_analyze_edge = b5_analyze_edge_self_test(failures)
     n_b6 = b6_self_test(failures)
     n_b7, b7_outcomes = b7_self_test(failures)
     n_b7_cite = b7_cite_self_test(failures)
@@ -1314,7 +1425,8 @@ def self_test():
     print(f"self-test fixtures={len(FIXTURES)} command={n_cmd} prose={n_prose} "
           f"v0_mislabels={v0_wrong} class_fixtures={len(CLASS_FIXTURES)} "
           f"unmarked_mislabels={unmarked_wrong} b3_fixtures={n_b3} b3_phase_fixtures={n_b3_phase} "
-          f"b3_phase_edge_fixtures={n_b3_phase_edge} b5_fixtures={n_b5} b6_fixtures={n_b6} "
+          f"b3_phase_edge_fixtures={n_b3_phase_edge} b5_fixtures={n_b5} "
+          f"b5_analyze_edge_fixtures={n_b5_analyze_edge} b6_fixtures={n_b6} "
           f"b7_fixtures={n_b7} b7_outcomes={b7_outcomes}/{len(GRAPH_OUTCOMES)} "
           f"b7_cite_fixtures={n_b7_cite} failures={len(failures)}")
     return 1 if failures else 0

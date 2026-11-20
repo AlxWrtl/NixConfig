@@ -515,6 +515,66 @@ B3_TOKEN_FIXTURES = [
     ("98-ttw-ci-gate/00-context.md:36", "--------", None),
 ]
 
+# Real `## Tokens` phase cells (1st column), from .claude/output/ttw/<run>/00-context.md.
+# (source, raw label, expected canonical phase, None = unmapped). No real label
+# names explore or premises, so those rules have no fixture.
+B3_PHASE_FIXTURES = [
+    ("code-metrics-skill/00-context.md:42", "01-analyze", "analyze"),
+    ("project-agent-context/00-context.md:21", "01b-obsidian", "obsidian"),
+    ("code-metrics-skill/00-context.md:43", "02-plan", "plan"),
+    # A round marker wins over the agent it resumed.
+    ("ttw-flags-fp-misses/00-context.md:38", "03-execute T2 + round 1", "correction"),
+    ("ttw-stale-steps/00-context.md:38", "execute (test-author r1)", "correction"),
+    ("84-agent-model-required/00-context.md:37", "r1", "correction"),
+    ("103-probe-b3-multi-round/00-context.md:40", "correction-1", "correction"),
+    ("02-veille-daily-launchd/00-context.md:43", "correction 1", "correction"),
+    ("ttw-stale-steps/00-context.md:39", "correction round 1", "correction"),
+    ("02-veille-daily-launchd/00-context.md:44", "examine (aveugle)", "examine"),
+    ("ttw-stale-steps/00-context.md:37", "examine (blind review)", "examine"),
+    ("84-agent-model-required/00-context.md:36", "05-examine", "examine"),
+    # A bare task id is an execute row.
+    ("code-metrics-skill/00-context.md:48", "T0", "execute"),
+    ("ttw-flags-fp-misses/00-context.md:37", "03-execute T1b", "execute"),
+    ("90-sandbox-auto-allow-bash/00-context.md:34", "execute T1", "execute"),
+    ("101-external-reverify/00-context.md:34", "test-first", "test-first"),
+    ("85-graph-memory/00-context.md:34", "test-author", "test-first"),
+    ("02-veille-daily-launchd/00-context.md:41", "execute (test-author)", "test-first"),
+    ("watch-instagram-skill/00-context.md:43", "execute (test-first)", "test-first"),
+    ("98-ttw-ci-gate/00-context.md:40", "implementer", "execute"),
+    ("status-bar-pace-svg/00-context.md:33", "execute (implementer)", "execute"),
+    ("ttw-flags-relative-ranges/00-context.md:42", "07-tests", "tests"),
+    ("84-agent-model-required/00-context.md:34", "02f-tests", "tests"),
+    ("sandbox-preliz-localdb/00-context.md:36", "fallback verify", "fallback-verify"),
+    ("02-veille-daily-launchd/00-context.md:45", "external verify", "external"),
+    ("ttw-phase4-writers-retire/00-context.md:44", "04-validate", "validate"),
+    ("ui-audit-board-deck/00-context.md:31", "(pre-run audit)", None),
+]
+
+# Synthetic labels for what the real ones do not exercise: every canonical word
+# verbatim, the documented `execute T2` suffix form, the `codex` alias, and words
+# that only contain a needle (`gate`, `plan`) as a substring, which map to nothing.
+B3_PHASE_EDGE_FIXTURES = [
+    ("synthetic", "correction", "correction"),
+    ("synthetic", "test-first", "test-first"),
+    ("synthetic", "examine", "examine"),
+    ("synthetic", "analyze", "analyze"),
+    ("synthetic", "explore", "explore"),
+    ("synthetic", "obsidian", "obsidian"),
+    ("synthetic", "plan", "plan"),
+    ("synthetic", "premises", "premises"),
+    ("synthetic", "external", "external"),
+    ("synthetic", "fallback-verify", "fallback-verify"),
+    ("synthetic", "tests", "tests"),
+    ("synthetic", "validate", "validate"),
+    ("synthetic", "execute", "execute"),
+    ("synthetic", "execute T2", "execute"),
+    ("synthetic", "codex", "external"),
+    ("synthetic", "investigate", None),
+    ("synthetic", "aggregate", None),
+    ("synthetic", "explanation", None),
+    ("synthetic", "", None),
+]
+
 # Real 01b-obsidian lines, from <repo>/.claude/output/ttw/<run>/ (browser/ = ~/Projects/browser).
 # (source, expected outcome, expected query recorded, text)
 B7_FIXTURES = [
@@ -1002,6 +1062,40 @@ def _parse_tokens_cell(cell: str) -> int | None:
     return int(max(float(t.rstrip("k")) * (1000 if t.endswith("k") else 1) for t in toks))
 
 
+def _b3_phase(label: str) -> str | None:
+    """The canonical phase of a B3 Tokens-table label, None when unmapped.
+    The label is normalized (lowercase, non-alnum -> "_", leading "01_" /
+    "01b_" step prefix dropped), then the first matching rule wins: a round
+    marker beats the agent it resumed, test-author beats execute."""
+    key = re.sub(r"^\d+[a-z]?_", "", re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_"))
+    toks = key.split("_")
+    if any(t in ("correction", "round") or re.fullmatch(r"r\d+", t) for t in toks):
+        return "correction"
+    rules = [
+        ("test-first", ("test_author", "test_first")),
+        ("examine", ("examine", "review")),
+        ("analyze", ("analy",)),
+        ("explore", ("explore",)),
+        ("obsidian", ("obsidian",)),
+        ("plan", ("plan",)),
+        ("premises", ("premise",)),
+        ("external", ("external", "codex")),
+        ("fallback-verify", ("fallback",)),
+    ]
+    # Whole `_` tokens only: as substrings they match explanation, investigate, aggregate.
+    whole = ("plan", "validate", "gate")
+    for phase, needles in rules:
+        if any((n in toks) if n in whole else (n in key) for n in needles):
+            return phase
+    if key in ("tests", "test") or key.startswith(("tests_", "run_tests")):
+        return "tests"
+    if any(t in toks for t in ("validate", "gate")):
+        return "validate"
+    if "execute" in key or "implementer" in key or re.fullmatch(r"t\d+[a-z]?", key):
+        return "execute"
+    return None
+
+
 def b3_self_test(failures):
     """Token count of real Tokens-table cells, multi-round ones included; the
     glued-digits rule must mislabel one, or the fixtures cannot fail."""
@@ -1023,6 +1117,44 @@ def b3_self_test(failures):
     if glued_wrong == 0:
         failures.append("B3 fixtures cannot fail: the glued-digits rule mislabels none of them")
     return len(B3_TOKEN_FIXTURES)
+
+
+def b3_phase_self_test(failures):
+    """Canonical phase of real Tokens-table labels; the normalized-key rule
+    must mislabel one, or the fixtures cannot fail."""
+
+    def normalized(label):
+        return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_") or "unnamed"
+
+    normalized_wrong = 0
+    for source, label, expected in B3_PHASE_FIXTURES:
+        got = _b3_phase(label)
+        if got != expected:
+            failures.append(f"B3-phase {source}: {label!r} got {got}, expected {expected}")
+        if normalized(label) != expected:
+            normalized_wrong += 1
+    if normalized_wrong == 0:
+        failures.append("B3-phase fixtures cannot fail: the normalized-key rule mislabels none of them")
+    return len(B3_PHASE_FIXTURES)
+
+
+def b3_phase_edge_self_test(failures):
+    """Canonical phase of synthetic edge labels, same check as the real ones;
+    the normalized-key rule must mislabel one, or the fixtures cannot fail."""
+
+    def normalized(label):
+        return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_") or "unnamed"
+
+    normalized_wrong = 0
+    for source, label, expected in B3_PHASE_EDGE_FIXTURES:
+        got = _b3_phase(label)
+        if got != expected:
+            failures.append(f"B3-phase-edge {source}: {label!r} got {got}, expected {expected}")
+        if normalized(label) != expected:
+            normalized_wrong += 1
+    if normalized_wrong == 0:
+        failures.append("B3-phase-edge fixtures cannot fail: the normalized-key rule mislabels none of them")
+    return len(B3_PHASE_EDGE_FIXTURES)
 
 
 def b6_self_test(failures):
@@ -1171,6 +1303,8 @@ def self_test():
     if unmarked_wrong == 0:
         failures.append("class fixtures cannot fail: the unmarked rule mislabels none of them")
     n_b3 = b3_self_test(failures)
+    n_b3_phase = b3_phase_self_test(failures)
+    n_b3_phase_edge = b3_phase_edge_self_test(failures)
     n_b5 = b5_self_test(failures)
     n_b6 = b6_self_test(failures)
     n_b7, b7_outcomes = b7_self_test(failures)
@@ -1179,7 +1313,8 @@ def self_test():
         print(f"FAIL {f}")
     print(f"self-test fixtures={len(FIXTURES)} command={n_cmd} prose={n_prose} "
           f"v0_mislabels={v0_wrong} class_fixtures={len(CLASS_FIXTURES)} "
-          f"unmarked_mislabels={unmarked_wrong} b3_fixtures={n_b3} b5_fixtures={n_b5} b6_fixtures={n_b6} "
+          f"unmarked_mislabels={unmarked_wrong} b3_fixtures={n_b3} b3_phase_fixtures={n_b3_phase} "
+          f"b3_phase_edge_fixtures={n_b3_phase_edge} b5_fixtures={n_b5} b6_fixtures={n_b6} "
           f"b7_fixtures={n_b7} b7_outcomes={b7_outcomes}/{len(GRAPH_OUTCOMES)} "
           f"b7_cite_fixtures={n_b7_cite} failures={len(failures)}")
     return 1 if failures else 0
@@ -1249,6 +1384,7 @@ def metrics(runs_roots, mem_root, since=B6_SINCE):
 
     # B3: tokens by phase from 00-context Tokens tables
     phase_tok = {}
+    unmapped = []  # labels with no canonical phase: counted, not dropped
     for f in sorted(f for root in runs_roots for f in root.glob("*/00-context.md")):
         m = re.search(r"## Tokens(.*?)(?:\n## |\Z)", _read(f), re.DOTALL)
         if not m:
@@ -1260,11 +1396,17 @@ def metrics(runs_roots, mem_root, since=B6_SINCE):
             val = _parse_tokens_cell(cells[3])
             if val is None:
                 continue  # header or separator row, no number in the cell
-            phase_tok.setdefault(cells[0], []).append(val)
+            phase = _b3_phase(cells[0])
+            if phase is None:
+                unmapped.append(cells[0])
+                continue
+            phase_tok.setdefault(phase, []).append(val)
     for ph, vals in phase_tok.items():
-        key = re.sub(r"[^a-z0-9]+", "_", ph.lower()).strip("_") or "unnamed"
+        key = ph.replace("-", "_")
         out[f"B3.{key}.n"] = len(vals)
         out[f"B3.{key}.median"] = sorted(vals)[len(vals) // 2]
+    out["B3.unmapped"] = len(unmapped)
+    out["B3.unmapped_labels"] = ", ".join(sorted(set(unmapped))) or "none"
 
     # B4: memory index health
     idx = _read(mem_root / "MEMORY.md")

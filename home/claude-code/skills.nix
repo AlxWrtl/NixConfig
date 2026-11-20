@@ -299,6 +299,12 @@ in
     `{start}` from the ttw-flags hook line `TTW start: context=N`, `{end}`
     read at end of run. Any value absent → write `unknown`, never a guess.
     These are context sizes, not billed tokens: never present them as cost.
+    The `phase` cell is one word of this list, verbatim: correction,
+    test-first, examine, analyze, explore, obsidian, plan, premises,
+    external, fallback-verify, tests, validate, execute; an execute task
+    may suffix its id (`execute T2`). A later round of a resumed agent
+    goes in that agent's cell as `N (r0) / N (r1)`; a fresh correction
+    agent gets its own `correction` row.
 
     Return to step-00-init flow.
   '';

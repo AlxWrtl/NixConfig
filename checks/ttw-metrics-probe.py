@@ -502,6 +502,19 @@ B6_FIXTURES = [
      "Date: 2026-10-07\nMode: Standard\nFlags: -t -pr -o -n\nBranch: feat/task-board-ui\n"),
 ]
 
+# Real `## Tokens` cells (4th column), from .claude/output/ttw/<run>/00-context.md.
+# (source, cell, expected tokens). Multi-round cells keep their largest round; no
+# real `Nk` cell exists in a Tokens table, so that one is synthetic.
+B3_TOKEN_FIXTURES = [
+    ("98-ttw-ci-gate/00-context.md:40", "94043 (r0) / 167977 (r1) / 180996 (r2)", 180996),
+    ("98-ttw-ci-gate/00-context.md:39", "130738 (r0) / 213034 (r1) / 225165 (r2)", 225165),
+    ("98-ttw-ci-gate/00-context.md:41", "71960", 71960),
+    ("synthetic", "97k", 97000),
+    ("84-agent-model-required/00-context.md:34", "unknown", None),
+    ("98-ttw-ci-gate/00-context.md:35", "tokens", None),
+    ("98-ttw-ci-gate/00-context.md:36", "--------", None),
+]
+
 # Real 01b-obsidian lines, from <repo>/.claude/output/ttw/<run>/ (browser/ = ~/Projects/browser).
 # (source, expected outcome, expected query recorded, text)
 B7_FIXTURES = [
@@ -978,6 +991,40 @@ def pr_hook(data):
     return 0
 
 
+def _parse_tokens_cell(cell: str) -> int | None:
+    """The token count of a B3 Tokens-table cell, None when it holds no number.
+    A multi-round cell ("94043 (r0) / 167977 (r1) / 180996 (r2)") lists one
+    agent's cumulative context after each round, so the count is its largest
+    value; parenthesized text is a note, not a count."""
+    toks = re.findall(r"\d+(?:\.\d+)?k?", re.sub(r"\([^)]*\)", "", cell.lower()))
+    if not toks:
+        return None
+    return int(max(float(t.rstrip("k")) * (1000 if t.endswith("k") else 1) for t in toks))
+
+
+def b3_self_test(failures):
+    """Token count of real Tokens-table cells, multi-round ones included; the
+    glued-digits rule must mislabel one, or the fixtures cannot fail."""
+
+    def glued(cell):
+        num = re.sub(r"[^\d.k]", "", cell.lower())
+        try:
+            return int(float(num.rstrip("k")) * (1000 if num.endswith("k") else 1))
+        except ValueError:
+            return None
+
+    glued_wrong = 0
+    for source, cell, expected in B3_TOKEN_FIXTURES:
+        got = _parse_tokens_cell(cell)
+        if got != expected:
+            failures.append(f"B3 {source}: got {got}, expected {expected}")
+        if glued(cell) != expected:
+            glued_wrong += 1
+    if glued_wrong == 0:
+        failures.append("B3 fixtures cannot fail: the glued-digits rule mislabels none of them")
+    return len(B3_TOKEN_FIXTURES)
+
+
 def b6_self_test(failures):
     """Tier and examine-due on real 00-context lines; the first-Tier-line rule
     must mislabel one, or the escalation fixture cannot fail."""
@@ -1123,6 +1170,7 @@ def self_test():
         failures.append(f"class table too thin: no fixture for {', '.join(missing)}")
     if unmarked_wrong == 0:
         failures.append("class fixtures cannot fail: the unmarked rule mislabels none of them")
+    n_b3 = b3_self_test(failures)
     n_b5 = b5_self_test(failures)
     n_b6 = b6_self_test(failures)
     n_b7, b7_outcomes = b7_self_test(failures)
@@ -1131,7 +1179,7 @@ def self_test():
         print(f"FAIL {f}")
     print(f"self-test fixtures={len(FIXTURES)} command={n_cmd} prose={n_prose} "
           f"v0_mislabels={v0_wrong} class_fixtures={len(CLASS_FIXTURES)} "
-          f"unmarked_mislabels={unmarked_wrong} b5_fixtures={n_b5} b6_fixtures={n_b6} "
+          f"unmarked_mislabels={unmarked_wrong} b3_fixtures={n_b3} b5_fixtures={n_b5} b6_fixtures={n_b6} "
           f"b7_fixtures={n_b7} b7_outcomes={b7_outcomes}/{len(GRAPH_OUTCOMES)} "
           f"b7_cite_fixtures={n_b7_cite} failures={len(failures)}")
     return 1 if failures else 0
@@ -1209,12 +1257,10 @@ def metrics(runs_roots, mem_root, since=B6_SINCE):
             cells = [c.strip() for c in row.strip("|").split("|")]
             if len(cells) < 4:
                 continue
-            num = re.sub(r"[^\d.k]", "", cells[3].lower())
-            try:
-                val = float(num.rstrip("k")) * (1000 if num.endswith("k") else 1)
-            except ValueError:
+            val = _parse_tokens_cell(cells[3])
+            if val is None:
                 continue  # header or separator row, no number in the cell
-            phase_tok.setdefault(cells[0], []).append(int(val))
+            phase_tok.setdefault(cells[0], []).append(val)
     for ph, vals in phase_tok.items():
         key = re.sub(r"[^a-z0-9]+", "_", ph.lower()).strip("_") or "unnamed"
         out[f"B3.{key}.n"] = len(vals)

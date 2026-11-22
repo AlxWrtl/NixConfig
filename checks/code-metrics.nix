@@ -23,14 +23,93 @@
 #       deleted / mode-only files omitted, `\ No newline` skipped, an added
 #       line reading `++ b/fake.md` (`+++ b/fake.md` in the diff) is content,
 #       not a file header: the next notes.md hunk stays on notes.md
+#   S8  `dup --base main` through the BUILT wrapper on two git repos, against a
+#       fake venv whose dryer is the pinned input's real cli/discover/model/
+#       report plus a stub scanner pairing every same-language file (no
+#       tree-sitter here). Repo A: git-ignored .claude/worktrees copies,
+#       x.test.ts and node_modules/ never in stdout; the top-level -dash.ts
+#       (an option if passed bare), app/-dash.ts and app/one.ts present; the
+#       committed then deleted app/gone.ts (still in `ls-files -c`) dropped;
+#       4 .ts files paired -> `kept=6 dropped_ui=0 total=6`, exit 1. Repo B
+#       (README.md tracked, only ignored sources):
+#       stdout exactly `kept=0 dropped_ui=0 total=0`, exit 0
 #
 # Canary C1: a copy of the filter with UI_SEGMENT -> "/nonexistent/" must FAIL
 # S2 on its count line; a guard fails the build if the anchor line is not
 # exactly once in the source (the mutant would equal it).
-{ pkgs }:
+# Canary C2: a copy of the built wrapper with `--exclude-standard` dropped
+# from `ls-files -co --exclude-standard -z` must FAIL S8 repo A on the
+# ignored-path assertion; same anchor guard, checked after S8.
+# Canaries C3/C4: a copy of the dryer-files script without the `./` prefix
+# (C3) or without its isfile check (C4), wired into a copy of the built
+# wrapper through its DRYER_FILES line, must FAIL S8 repo A on the
+# `  -dash.ts:` assertion, with dryer's `Unknown option: -dash.ts` (C3) or the
+# filter rejecting dryer's output, exit 2 (C4: app/gone.ts became a substring
+# filter) on stderr; same anchor guard, plus DRYER_FILES exactly once.
+{
+  pkgs,
+  crapper,
+  mutator,
+  dryer,
+}:
 
 let
   filter = ../home/claude-code/scripts/code-metrics-filter.py;
+  dryerFiles = ../home/claude-code/scripts/code-metrics-dryer-files.py;
+  wrapper = "${
+    (import ../home/claude-code/code-metrics.nix {
+      inherit
+        pkgs
+        crapper
+        mutator
+        dryer
+        ;
+    }).codeMetricsPkg
+  }/bin/code-metrics";
+
+  # Stands in for dryer.scan (tree-sitter): one 5-line entry per source file,
+  # every same-language pair scores 1.0, in the order of the files dryer's
+  # own cli selected.
+  stubScan = pkgs.writeText "dryer-scan-stub.py" ''
+    """Stub dryer.scan for checks/code-metrics.nix."""
+
+    from __future__ import annotations
+
+    from pathlib import Path
+
+    from dryer.discover import language_of
+    from dryer.model import Duplicate, Entry, Span
+
+
+    def display_path(path: Path, root: Path) -> str:
+        resolved = Path(path).resolve()
+        try:
+            return resolved.relative_to(Path(root).resolve()).as_posix()
+        except ValueError:
+            return resolved.as_posix()
+
+
+    def scan_files(files, root, min_lines, min_nodes):
+        entries = []
+        for path in files:
+            language = language_of(path)
+            if language is None:
+                continue
+            entries.append(Entry(language, display_path(path, root), 1, 5, 20, frozenset()))
+        return entries, []
+
+
+    def find_duplicates(entries, threshold):
+        found = []
+        for index, left in enumerate(entries):
+            for right in entries[index + 1:]:
+                if left.language != right.language:
+                    continue
+                found.append(
+                    Duplicate(1.0, left.language, Span(left.file, 1, 5), Span(right.file, 1, 5), 20, 20)
+                )
+        return found
+  '';
   runtimePath = pkgs.lib.makeBinPath [
     pkgs.python3
     pkgs.git
@@ -333,6 +412,91 @@ pkgs.runCommand "code-metrics-check" { } ''
   [ "$rc" = 0 ] && [ ! -s "$TMPDIR/s7-empty.out" ] || fail "S7 lines on an empty diff: exit $rc or stdout not empty"
   echo "code-metrics: S7 lines OK"
 
+  mkdir -p "$TMPDIR/stub/dryer" "$TMPDIR/xdg/code-metrics/venv/bin"
+  for f in __init__ __main__ cli discover model report; do
+    cp ${dryer}/src/dryer/$f.py "$TMPDIR/stub/dryer/$f.py"
+  done
+  cp ${stubScan} "$TMPDIR/stub/dryer/scan.py"
+  printf '#!%s\nexec %s "$@"\n' ${pkgs.runtimeShell} ${pkgs.python3}/bin/python3 > "$TMPDIR/xdg/code-metrics/venv/bin/python"
+  chmod +x "$TMPDIR/xdg/code-metrics/venv/bin/python"
+  printf '%s\n' ${crapper} ${mutator} ${dryer} > "$TMPDIR/xdg/code-metrics/.ready"
+
+  mkdir -p "$TMPDIR/repoA/app" "$TMPDIR/repoA/node_modules/m" "$TMPDIR/repoA/.claude/worktrees/old/app"
+  cd "$TMPDIR/repoA"
+  g init -q --template= --separate-git-dir "$TMPDIR/repoA.git" .
+  printf '.claude/\n' > .gitignore
+  printf 'export const b = 1;\n' > app/base.ts
+  printf 'export const g = 1;\n' > app/gone.ts
+  g add .gitignore app/base.ts app/gone.ts
+  g commit -qm base
+  rm app/gone.ts
+  for f in app/one.ts -dash.ts app/-dash.ts app/x.test.ts node_modules/m/i.ts .claude/worktrees/old/app/one.ts .claude/worktrees/old/app/two.ts; do
+    printf 'export const v = 1;\n' > "$f"
+  done
+  printf '# a\n' > README.md
+  g check-ignore -q .claude/worktrees/old/app/one.ts || fail "S8 fixture: repo A does not ignore .claude/"
+  [ "$(g ls-files | tr '\n' ' ')" = ".gitignore app/base.ts app/gone.ts " ] || fail "S8 fixture: repo A tracks the wrong files"
+  [ ! -e app/gone.ts ] && [ -f ./-dash.ts ] || fail "S8 fixture: repo A app/gone.ts not deleted or -dash.ts missing"
+  mkdir -p "$TMPDIR/repoB/.claude/worktrees/old"
+  cd "$TMPDIR/repoB"
+  g init -q --template= --separate-git-dir "$TMPDIR/repoB.git" .
+  mkdir -p "$TMPDIR/repoB.git/info"
+  printf '.claude/\n' > "$TMPDIR/repoB.git/info/exclude"
+  printf '# b\n' > README.md
+  g add README.md
+  g commit -qm base
+  printf 'export const a = 1;\n' > .claude/worktrees/old/a.ts
+  printf 'export const b = 1;\n' > .claude/worktrees/old/b.ts
+  [ "$(g ls-files -co --exclude-standard)" = README.md ] || fail "S8 fixture: repo B lists more than README.md"
+  cd "$TMPDIR"
+
+  # runcm WRAPPER REPO TAG -> $rc, $TMPDIR/TAG.out, $TMPDIR/TAG.err; the
+  # report dryer writes is removed so every run sees the same tree.
+  runcm() {
+    rc=0
+    (cd "$2" && XDG_CACHE_HOME="$TMPDIR/xdg" PYTHONPATH="$TMPDIR/stub" ${pkgs.bash}/bin/bash "$1" dup --base main) > "$TMPDIR/$3.out" 2> "$TMPDIR/$3.err" || rc=$?
+    rm -rf "$2/.metrics"
+  }
+
+  # s8a WRAPPER TAG: repo A; on failure returns 1 with the reason in $why.
+  # stdout is checked before the exit code, so a run that dies (exit 2,
+  # empty stdout) is reported by the first file it lost.
+  s8a() {
+    runcm "$1" "$TMPDIR/repoA" "$2"
+    o="$TMPDIR/$2.out"
+    if grep -qF '.claude/worktrees' "$o"; then why="$2 ignored path .claude/worktrees in stdout"; return 1; fi
+    for p in x.test.ts node_modules gone.ts; do
+      if grep -qF "$p" "$o"; then why="$2 $p in stdout"; return 1; fi
+    done
+    for p in '  -dash.ts:' 'app/-dash.ts:' 'app/one.ts:'; do
+      grep -qF -- "$p" "$o" || { why="$2 '$p' missing from stdout"; return 1; }
+    done
+    [ "$rc" = 1 ] || { why="$2 exit $rc, want 1"; return 1; }
+    got=$(tail -n 1 "$o")
+    [ "$got" = 'code-metrics dup: kept=6 dropped_ui=0 total=6' ] || { why="$2 count line: got '$got', want 'code-metrics dup: kept=6 dropped_ui=0 total=6'"; return 1; }
+  }
+
+  # dfmutant TAG ANCHOR SED: copy of the dryer-files script with SED applied
+  # (ANCHOR exactly once in the source, gone from the mutant), wired into a
+  # copy of the built wrapper -> $TMPDIR/cm-TAG.
+  dfmutant() {
+    sed "$3" ${dryerFiles} > "$TMPDIR/df-$1.py"
+    if [ "$(grep -cF -- "$2" ${dryerFiles})" != 1 ] || grep -qF -- "$2" "$TMPDIR/df-$1.py" || cmp -s ${dryerFiles} "$TMPDIR/df-$1.py"; then
+      fail "canary anchor '$2' not exactly once in the dryer-files script — the mutant equals the source"
+    fi
+    sed "s|^DRYER_FILES=.*|DRYER_FILES=\"$TMPDIR/df-$1.py\"|" ${wrapper} > "$TMPDIR/cm-$1"
+    if [ "$(grep -c '^DRYER_FILES=' ${wrapper})" != 1 ] || ! grep -qxF "DRYER_FILES=\"$TMPDIR/df-$1.py\"" "$TMPDIR/cm-$1"; then
+      fail "canary $1: DRYER_FILES not exactly once in the wrapper — the mutant is not wired"
+    fi
+  }
+
+  s8a ${wrapper} s8-a || fail "S8 repo A: $why"
+  runcm ${wrapper} "$TMPDIR/repoB" s8-b
+  [ "$rc" = 0 ] || fail "S8 repo B: exit $rc, want 0"
+  printf 'code-metrics dup: kept=0 dropped_ui=0 total=0\n' > "$TMPDIR/s8-b.want"
+  cmp -s "$TMPDIR/s8-b.want" "$TMPDIR/s8-b.out" || fail "S8 repo B: stdout is not exactly the empty count line"
+  echo "code-metrics: S8 wrapper dup on git-listed files OK"
+
   why=""
   if s2 "$TMPDIR/mutant.py" c1; then
     fail "canary C1 SURVIVED — UI_SEGMENT /nonexistent/ still passes S2"
@@ -343,6 +507,43 @@ pkgs.runCommand "code-metrics-check" { } ''
   esac
   echo "code-metrics: canary C1 killed — $why"
 
-  echo "code-metrics: 7 scenarios, 1 canary — OK"
+  anchor2='ls-files -co --exclude-standard -z'
+  sed "s|$anchor2|ls-files -co -z|" ${wrapper} > "$TMPDIR/cm-mutant"
+  if [ "$(grep -cF -- "$anchor2" ${wrapper})" != 1 ] || grep -qF -- "$anchor2" "$TMPDIR/cm-mutant" || cmp -s ${wrapper} "$TMPDIR/cm-mutant"; then
+    fail "canary anchor '$anchor2' not exactly once in the wrapper — the mutant equals the source"
+  fi
+  why=""
+  if s8a "$TMPDIR/cm-mutant" c2; then
+    fail "canary C2 SURVIVED — ls-files without --exclude-standard still passes S8"
+  fi
+  case $why in
+    "c2 ignored path"*) ;;
+    *) fail "canary C2 killed by the wrong assertion: $why" ;;
+  esac
+  echo "code-metrics: canary C2 killed — $why"
+
+  dfmutant c3 '"./" + ' 's|"\./" + ||'
+  why=""
+  if s8a "$TMPDIR/cm-c3" c3; then
+    fail "canary C3 SURVIVED — dryer-files without the ./ prefix still passes S8"
+  fi
+  case $why in
+    "c3 '  -dash.ts:' missing"*) grep -qF 'Unknown option: -dash.ts' "$TMPDIR/c3.err" || fail "canary C3 killed without dryer's option error: $why" ;;
+    *) fail "canary C3 killed by the wrong assertion: $why" ;;
+  esac
+  echo "code-metrics: canary C3 killed — $why"
+
+  dfmutant c4 'if not os.path.isfile(path):' 's|if not os\.path\.isfile(path):|if False:|'
+  why=""
+  if s8a "$TMPDIR/cm-c4" c4; then
+    fail "canary C4 SURVIVED — dryer-files without the isfile check still passes S8"
+  fi
+  case $why in
+    "c4 '  -dash.ts:' missing"*) [ "$rc" = 2 ] && grep -qF 'code-metrics-filter dup:' "$TMPDIR/c4.err" || fail "canary C4 killed without the filter rejecting dryer's output (exit $rc): $why" ;;
+    *) fail "canary C4 killed by the wrong assertion: $why" ;;
+  esac
+  echo "code-metrics: canary C4 killed — $why"
+
+  echo "code-metrics: 8 scenarios, 4 canaries — OK"
   touch $out
 ''

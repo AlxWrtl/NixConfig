@@ -12,6 +12,7 @@
 CRAPPER_SRC="@CRAPPER@"
 MUTATOR_SRC="@MUTATOR@"
 DRYER_SRC="@DRYER@"
+DRYER_FILES="@DRYER_FILES@"
 
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}/code-metrics"
 VENV="$CACHE/venv"
@@ -28,7 +29,8 @@ usage: code-metrics setup
 
 setup   install dryer, crapper and mutator into ~/.cache/code-metrics
         (network: run it outside the sandbox, once per tool update)
-dup     full dryer scan; keeps the pairs touching a changed file, minus
+dup     dryer on every file git lists (tracked + untracked, git-ignored
+        left out); keeps the pairs touching a changed file, minus
         components/ui/
 crap    crapper on the changed source files (tests and components/ui/ left out)
 mutate  mutator on the added lines of each changed source file (whole file
@@ -136,7 +138,8 @@ collect_changed() {
 
 run_dup() {
   local rc=0
-  tool dryer > "$work/dryer.txt" || rc=$?
+  g ls-files -co --exclude-standard -z > "$work/files" || die "git ls-files failed"
+  "$VENV/bin/python" -P "$DRYER_FILES" < "$work/files" > "$work/dryer.txt" || rc=$?
   [ "$rc" = 0 ] || die "dryer exited $rc"
   code-metrics-filter dup --changed "$work/changed" < "$work/dryer.txt"
 }

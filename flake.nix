@@ -108,7 +108,10 @@
           inherit pkgs;
           darwin = self.darwinConfigurations."alex-mbp".config;
         };
-        code-metrics = import ./checks/code-metrics.nix { inherit pkgs; };
+        code-metrics = import ./checks/code-metrics.nix {
+          inherit pkgs;
+          inherit (inputs) crapper mutator dryer;
+        };
         hook-wiring = import ./checks/hook-wiring.nix { inherit pkgs; };
         jev-locate = import ./checks/jev-locate.nix { inherit pkgs; };
         js-lint = import ./checks/js-lint.nix { inherit pkgs; };

@@ -104,7 +104,7 @@ let
       ) (builtins.filter (r: lib.hasInfix r script) publicRepos)
     )
     ++ lib.optional (
-      !(builtins.any (lib.hasInfix ''\"maxRunners\":4'') prelizDocs)
+      !(builtins.any (lib.hasInfix ''\"maxRunners\":4,'') prelizDocs)
     ) "preliz-mac must scale to maxRunners 4 (Preliz runs 4 parallel jobs)"
     ++ lib.optional (
       (settings.memory or 0) < 10

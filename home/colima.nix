@@ -62,7 +62,8 @@ let
           githubConfigUrl = "https://github.com/AlxWrtl/${repo}";
           githubConfigSecret = "pre-defined-secret";
           minRunners = 0;
-          maxRunners = 3;
+          # Preliz runs 4 parallel jobs (DB tests split in 2, 2026-11-23).
+          maxRunners = if name == "preliz-mac" then 4 else 3;
         };
       }
     ) scaleSets
@@ -110,11 +111,12 @@ in
       isActive = false;
       setDockerHost = false;
       settings = {
-        # 6 of the M1's 8 cores, 8 of its 16 GB: room freed by Docker Desktop's
-        # removal; `default` takes 2 + 2. A colima.yaml change needs a VM
-        # restart (the launchd plist does not change).
-        cpu = 6;
-        memory = 8;
+        # 7 of the M1's 8 cores, 10 of its 16 GB: 4 Preliz jobs peak at
+        # ~9.1 GB (checks/colima-ci.nix 9); `default` takes 2 + 2 (9 vCPUs on
+        # 8 cores), the host keeps 4 GB. A colima.yaml change needs a VM restart (the launchd
+        # plist does not change).
+        cpu = 7;
+        memory = 10;
         disk = 30;
         arch = "aarch64";
         runtime = "docker";

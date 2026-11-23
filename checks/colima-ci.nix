@@ -25,6 +25,9 @@
 #    it and fails on a read-only store path (an activation copies it instead).
 # 8. `arc-wake-watchdog` polls at most every 10 s: after a sleep, a listener
 #    keeps a dead long-poll for ~1 min and a job offered to it is lost.
+# 9. `preliz-mac` scales to 4 runners, and `ci` holds their peak (~9.1 GB:
+#    k3s 1, build 2.6, E2E 2.5, 2 DB jobs 3) in >= 10 GB; `ci` + `default`
+#    leave the M1's host at least 4 of its 16 GB (VZ never returns VM memory).
 {
   pkgs,
   hm,
@@ -58,6 +61,10 @@ let
   devSettings = if dev == null then { } else dev.settings;
   devAgent = hm.launchd.agents.colima-default.config or null;
   devAgentArgs = if devAgent == null then [ ] else devAgent.ProgramArguments or [ ];
+
+  prelizDocs = builtins.filter (lib.hasInfix ''"name":"preliz-mac"'') (
+    lib.splitString "\n---\n" script
+  );
 
   failures =
     lib.optional
@@ -96,6 +103,15 @@ let
         r: "provision script names the public repo ${r}: a fork's pull request would run on this Mac"
       ) (builtins.filter (r: lib.hasInfix r script) publicRepos)
     )
+    ++ lib.optional (
+      !(builtins.any (lib.hasInfix ''\"maxRunners\":4,'') prelizDocs)
+    ) "preliz-mac must scale to maxRunners 4 (Preliz runs 4 parallel jobs)"
+    ++ lib.optional (
+      (settings.memory or 0) < 10
+    ) "ci memory must be >= 10 GB (peak of 4 Preliz jobs ~9.1 GB, no swap in the VM)"
+    ++ lib.optional (
+      (settings.memory or 0) + (devSettings.memory or 0) > 12
+    ) "ci + default memory must be <= 12 GB (the host keeps 4 of its 16 GB)"
     ++ lib.optional (ci == null) "no `ci` profile"
     ++ lib.optional (agent == null) "launchd agent colima-ci is missing"
     ++ lib.optional (

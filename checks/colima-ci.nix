@@ -25,9 +25,15 @@
 #    it and fails on a read-only store path (an activation copies it instead).
 # 8. `arc-wake-watchdog` polls at most every 10 s: after a sleep, a listener
 #    keeps a dead long-poll for ~1 min and a job offered to it is lost.
-# 9. `preliz-mac` scales to 4 runners, and `ci` holds their peak (~9.1 GB:
-#    k3s 1, build 2.6, E2E 2.5, 2 DB jobs 3) in >= 10 GB; `ci` + `default`
-#    leave the M1's host at least 4 of its 16 GB (VZ never returns VM memory).
+# 9. `preliz-mac` scales to 4 runners: 2 DB shards + gitleaks + osv-scanner
+#    (Gate, Static, E2E moved to GitHub-hosted runners, Preliz #769). Peak
+#    measured 2026-11-24 (CI 45385722107 attempt 5 + Security 45385721612,
+#    `free -m` in the VM every 5 s): 5523 MiB used, k3s included. `ci` memory
+#    is at least that + 30 %, rounded up (no swap in the VM: less risks an OOM
+#    kill), cpu at least 4 (6.1 cores peak for ~30 s of 8 min); `ci` + `default`
+#    stay <= 12 GB so the host keeps 4 of its 16. Not measured: brasserie-mac,
+#    portfolio-mac and Preliz backup.yml (nightly); whether they overlap the
+#    DB shards is unknown.
 {
   pkgs,
   hm,
@@ -46,6 +52,9 @@ let
     "portfolio-mac"
   ];
   publicRepos = [ "NixConfig" ];
+  # Item 9: VM peak measured 2026-11-24; ceil(peak × 1.3 / 1024) in GB.
+  measuredPeakMiB = 5523;
+  ciMinMemoryGB = (measuredPeakMiB * 13 + 10239) / 10240;
 
   settings = if ci == null then { } else ci.settings;
   script =
@@ -106,9 +115,12 @@ let
     ++ lib.optional (
       !(builtins.any (lib.hasInfix ''\"maxRunners\":4,'') prelizDocs)
     ) "preliz-mac must scale to maxRunners 4 (Preliz runs 4 parallel jobs)"
+    ++
+      lib.optional ((settings.memory or 0) < ciMinMemoryGB)
+        "ci memory must be >= ${toString ciMinMemoryGB} GB (measured peak ${toString measuredPeakMiB} MiB + 30 %, 2026-11-24, no swap in the VM)"
     ++ lib.optional (
-      (settings.memory or 0) < 10
-    ) "ci memory must be >= 10 GB (peak of 4 Preliz jobs ~9.1 GB, no swap in the VM)"
+      (settings.cpu or 0) < 4
+    ) "ci cpu must be >= 4 (DB shards + Security, measured 2026-11-24)"
     ++ lib.optional (
       (settings.memory or 0) + (devSettings.memory or 0) > 12
     ) "ci + default memory must be <= 12 GB (the host keeps 4 of its 16 GB)"

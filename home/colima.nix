@@ -111,12 +111,12 @@ in
       isActive = false;
       setDockerHost = false;
       settings = {
-        # 7 of the M1's 8 cores, 10 of its 16 GB: 4 Preliz jobs peak at
-        # ~9.1 GB (checks/colima-ci.nix 9); `default` takes 2 + 2 (9 vCPUs on
-        # 8 cores), the host keeps 4 GB. A colima.yaml change needs a VM restart (the launchd
-        # plist does not change).
-        cpu = 7;
-        memory = 10;
+        # Only 2 DB shards + Security run here since Preliz #769: measured peak
+        # 5523 MiB, + 30 % → 8 GB, 4 vCPUs (checks/colima-ci.nix 9); `default`
+        # takes 2 + 2, the host keeps 6 GB. A colima.yaml change needs a VM
+        # restart (the launchd plist does not change).
+        cpu = 4;
+        memory = 8;
         disk = 30;
         arch = "aarch64";
         runtime = "docker";

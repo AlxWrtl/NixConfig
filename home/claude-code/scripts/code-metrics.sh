@@ -137,9 +137,19 @@ collect_changed() {
 }
 
 run_dup() {
-  local rc=0
+  local rc=0 had_dir=0 had_report=0
   g ls-files -co --exclude-standard -z > "$work/files" || die "git ls-files failed"
+  # dryer always writes .metrics/dry.edn in the repo top: drop what this run
+  # created so no project gains an untracked dir; a pre-existing one stays.
+  [ ! -e .metrics ] || had_dir=1
+  [ ! -e .metrics/dry.edn ] || had_report=1
   "$VENV/bin/python" -P "$DRYER_FILES" < "$work/files" > "$work/dryer.txt" || rc=$?
+  if [ "$had_report" = 0 ]; then
+    rm -f .metrics/dry.edn
+  fi
+  if [ "$had_dir" = 0 ] && [ -d .metrics ]; then
+    rmdir .metrics 2> /dev/null || true
+  fi
   [ "$rc" = 0 ] || die "dryer exited $rc"
   code-metrics-filter dup --changed "$work/changed" < "$work/dryer.txt"
 }

@@ -102,7 +102,7 @@ in
     | -v | -V | Verify — research the plan online; must trace at least one query or state why none |
     | -o | -O | Obsidian — load vault context; must cite the notes it read or state the vault is silent |
     | -n | -N | Note — session note at end |
-    | -m | -M | Code metrics (Uncle Bob) — code-metrics dup + crap at validate, mutate too on High-stakes; writes 04-metrics.md |
+    | -m | -M | Code metrics (Uncle Bob) — `crap` at validate, `mutate` too on High-stakes; `code-metrics dup` runs by default in every tier (`-M` turns it off); writes 04-metrics.md |
 
     Branch-first and on-disk persistence are INVARIANTS of every tier, not
     options: the branch is cut per the Git section of CLAUDE.md, and the run's
@@ -1124,10 +1124,13 @@ in
     No usable external verdict on high-stakes (BLOCKED, or -E typed) → spawn the Fable fallback
     (ORCHESTRATION.md) and record its cause in 04-validate.md.
 
-    ## Code metrics (`-m`)
+    ## Code metrics (dup by default, crap/mutate under `-m`)
 
-    If `-m` is active, after the machine gate run from the project root
-    `code-metrics dup --base {trunk}`, then `code-metrics crap --base {trunk}
+    After the machine gate, from the project root,
+    `code-metrics dup --base {trunk}` runs in every tier unless `-M`:
+    quality erodes with each agent iteration and prompt rules do not slow it
+    (SlopCodeBench, arXiv 2603.24755), so the duplication scan is measured,
+    not asked for. If `-m` is active, then `code-metrics crap --base {trunk}
     --coverage-command "CMD"` when the project has a coverage command (pick it
     per the code-metrics skill); on High-stakes add `code-metrics mutate
     --base {trunk} --test-command "CMD"`. Exit 0 = clean, 1 = findings,
@@ -1138,6 +1141,19 @@ in
     correction list like any verify finding:
     a dup pair touching the diff means reuse the existing helper,
     a surviving mutant means a missing assertion; a dismissed one states its reason.
+
+    ## Test-weakening scan (advisory)
+
+    After the machine gate, from the project root, run
+    `ttw-test-weaken --base {trunk}`: it flags removed assertions, added
+    skips/focus and lowered coverage or max-warnings thresholds in the diff,
+    untracked files included. Exit 0 = none, 1 = findings, 2 = not run: an
+    unrun check, never a green one. Copy each finding line into
+    `04-validate.md` as `confirmed | dismissed — reason`; confirmed ones join
+    the correction list like any verify finding. The scan is advisory,
+    never a blocker on its own: agent-roast is a static heuristic of this
+    kind and its author reports 25-66 % false positives on unknown repos,
+    so the triage decides.
 
     ## Verification Checklist
 
@@ -1208,6 +1224,12 @@ in
 
     ## If any AC is not met:
     Go back and fix it. Do not proceed until all ACs pass. A non prouvé AC is not met.
+
+    Stop rule: once the machine gate is green and every AC is proven, stop
+    editing — no polish, refactor or extra round; ideas left go to the
+    summary as follow-ups. On successful runs, the median share of steps
+    after the fix is 35-60 % depending on the model, and 1-8 % of cases
+    undo the fix (Termination Lag, arXiv 2611.14960).
 
     ## If save mode (-s):
     Update progress in context file.
@@ -2125,6 +2147,8 @@ in
        the residuals list verbatim and the failing output, or ask the user to type `ttw: +1 tour` alone on a line — the correction-grant hook (UserPromptSubmit) reads the raw prompt and grants that run one more round per prompt; a plain "continue" grants nothing. Without a grant, never run the round inline: the coordinator never grades its own work.
        Never weaken a check to make it pass, never declare success on partial
        green.
+       Stop rule: gate green and every AC proven → stop editing; no polish,
+       refactor or extra round, leftovers go to the summary as follow-ups.
 
     ## When this applies
 
@@ -2434,7 +2458,9 @@ in
 
     Default flags: `-pr` only; -o and -n run only when typed — a vault
     read and a session note buy nothing on a one-line change. Typed `-t`,
-    `-x`, `-e` or `-m` are honoured: they run after step 6 as in Standard.
+    `-x`, `-e` or `-m` are honoured: they run after step 6 as in Standard
+    (`-m` adds `crap`, and `mutate` once escalated to High-stakes; `dup`
+    already runs at step 6 unless `-M`).
     Typed `-o` runs before step 3: read
     [step-01b-obsidian-context.md](step-01b-obsidian-context.md) and execute
     it, writing `01b-obsidian.md` with its graph query and project-first
@@ -2500,6 +2526,11 @@ in
        the tail only (ORCHESTRATION.md "Coordinator context"). Re-run
        `ttw-ci-gate --run` if step 3 did. Compare on the `<file>:<job>` +
        name key: a FAIL whose key was PASS or absent at baseline is red.
+       Then run `code-metrics dup --base {trunk}` (unless `-M`) and
+       `ttw-test-weaken --base {trunk}` (advisory). Exit 2 = not run: record
+       it in `00-context.md` as unrun, never green. Triage each finding: a confirmed one is an escalation like a
+       red gate (step 7), a dismissed one states its reason in
+       `00-context.md`.
     7. **Tier re-check.** Run `ttw-tier --base {trunk}` and read its verdict
        line. Escalate when it is anything but `tier=direct`, OR the gate is
        red (a red gate never gets a fix inline):
@@ -2515,6 +2546,7 @@ in
     8. **Self-check.** Read `git diff` of the touched files and check each AC
        against it, one line per AC: `AC — met | not met — evidence`. A not-met
        AC is an escalation (step 7), not a second inline edit.
+       Stop rule: every AC met and the gate green → ship, no further edit.
     9. **Ship.** Commit, push, PR and merge per `steps/COMMANDS.md`
        (`-pr` default; `-PR` opts out of the whole ship step — no commit, the
        change stays uncommitted on the run's branch, as in Standard). Fill the `## Tokens`
@@ -4659,13 +4691,13 @@ in
     The tool writes `.metrics/` and `target/` at the project root: add both to
     `.gitignore`.
 
-    Inside a TTW run use `-m`: validate runs the modes and writes
-    `04-metrics.md`.
+    Inside a TTW run, validate runs `dup` by default in every tier (`-M`
+    turns it off, `-m` adds the other modes) and writes `04-metrics.md`.
     ${
       contract {
         expects = "a git repo with a diff against a base ref, and for crap/mutate a test command that writes coverage";
         produces = "findings per mode with exit codes (0 clean, 1 findings, 2 not run)";
-        sideEffects = "writes .metrics/ and target/ at the project root; runs the project's tests; setup downloads into ~/.cache/code-metrics";
+        sideEffects = "writes .metrics/ and target/ at the project root (dup removes the .metrics/dry.edn it created); runs the project's tests; setup downloads into ~/.cache/code-metrics";
       }
     }${
       scope {

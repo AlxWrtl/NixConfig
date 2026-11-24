@@ -983,6 +983,64 @@ let
       needle = "Proof beats prose: `nix eval";
       scope = rules.ruleNix;
     }
+    # Weakened-test guard and duplication scan at the gate, one needle per
+    # site: validate and Direct each run them, so a corpus-wide needle would
+    # stay green while one path silently stops running them.
+    {
+      name = "validate: the weakened-test guard runs on the diff";
+      needle = "ttw-test-weaken --base {trunk}";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      # Its findings are triaged confirmed/dismissed; a raw finding that
+      # blocked on its own would turn a heuristic into a gate.
+      name = "validate: weakened-test findings are advisory, never a blocker on their own";
+      needle = "never a blocker on its own";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      name = "validate: the duplication scan runs in every tier unless -M";
+      needle = "runs in every tier unless `-M`";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      # Gate green and every AC proven ends the verify loop: no polish,
+      # refactor or extra round; leftovers become follow-ups. Two needles,
+      # one per rendered line: hasInfix never spans the line break.
+      name = "orchestration: the verify loop stops once the gate is green and every AC proven";
+      needle = "gate green and every AC proven → stop editing; no polish,";
+      scope = skills.ttwOrchestration;
+    }
+    {
+      name = "orchestration: the stop rule bars refactors and extra rounds, leftovers become follow-ups";
+      needle = "refactor or extra round, leftovers go to the summary as follow-ups";
+      scope = skills.ttwOrchestration;
+    }
+    {
+      name = "validate: the stop rule bars polish, refactors and extra rounds";
+      needle = "no polish, refactor or extra round";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      name = "validate: each weakened-test finding is triaged in a fixed format";
+      needle = "`confirmed | dismissed — reason`";
+      scope = skills.ttwStep04Validate;
+    }
+    {
+      name = "direct: the weakened-test guard runs at the gate step";
+      needle = "ttw-test-weaken --base {trunk}";
+      scope = skills.ttwDirect;
+    }
+    {
+      name = "direct: the duplication scan runs at the gate step";
+      needle = "code-metrics dup --base {trunk}";
+      scope = skills.ttwDirect;
+    }
+    {
+      name = "direct: Direct carries the stop rule";
+      needle = "every AC met and the gate green → ship, no further edit";
+      scope = skills.ttwDirect;
+    }
   ];
 
   # The removed trigger, guarded by absence. The invariants above prove the

@@ -33,6 +33,13 @@
 #       4 .ts files paired -> `kept=6 dropped_ui=0 total=6`, exit 1. Repo B
 #       (README.md tracked, only ignored sources):
 #       stdout exactly `kept=0 dropped_ui=0 total=0`, exit 0
+#   S9  the dryer report: the pinned report module writes .metrics/dry.edn
+#       in the repo top on every analysis; after `dup` on repo A without
+#       .metrics/, neither git status nor the disk shows it; a pre-existing
+#       .metrics/dry.edn (rewritten by dryer) and a user file beside it are
+#       kept; a pre-existing .metrics/ without dry.edn keeps its files and
+#       loses only the new report; a pre-existing EMPTY .metrics/ survives
+#       (an rmdir would succeed on it) and loses only the new report
 #
 # Canary C1: a copy of the filter with UI_SEGMENT -> "/nonexistent/" must FAIL
 # S2 on its count line; a guard fails the build if the anchor line is not
@@ -46,6 +53,12 @@
 # `  -dash.ts:` assertion, with dryer's `Unknown option: -dash.ts` (C3) or the
 # filter rejecting dryer's output, exit 2 (C4: app/gone.ts became a substring
 # filter) on stderr; same anchor guard, plus DRYER_FILES exactly once.
+# Canary C5: a copy of the built wrapper with its `rm -f .metrics/dry.edn`
+# line turned into `:` must FAIL S9's first case on the git status assertion; same anchor
+# guard.
+# Canary C6: a copy of the built wrapper with its `had_dir` guard dropped (the
+# rmdir runs whenever .metrics/ exists) must FAIL S9's empty-dir case on the
+# dir-removed assertion; same anchor guard.
 {
   pkgs,
   crapper,
@@ -497,6 +510,62 @@ pkgs.runCommand "code-metrics-check" { } ''
   cmp -s "$TMPDIR/s8-b.want" "$TMPDIR/s8-b.out" || fail "S8 repo B: stdout is not exactly the empty count line"
   echo "code-metrics: S8 wrapper dup on git-listed files OK"
 
+  # s9 WRAPPER TAG: dup on repo A with no .metrics/ before; the pinned
+  # report module writes .metrics/dry.edn (its `Wrote` line on stderr), the
+  # wrapper must leave neither it nor the dir. Cleans up before asserting.
+  s9() {
+    rc=0
+    (cd "$TMPDIR/repoA" && XDG_CACHE_HOME="$TMPDIR/xdg" PYTHONPATH="$TMPDIR/stub" ${pkgs.bash}/bin/bash "$1" dup --base main) > "$TMPDIR/$2.out" 2> "$TMPDIR/$2.err" || rc=$?
+    st=$(cd "$TMPDIR/repoA" && g status --porcelain --untracked-files=all)
+    left=0
+    [ ! -e "$TMPDIR/repoA/.metrics" ] || left=1
+    rm -rf "$TMPDIR/repoA/.metrics"
+    grep -qF '/.metrics/dry.edn' "$TMPDIR/$2.err" || { why="$2 dryer wrote no .metrics/dry.edn (no Wrote line)"; return 1; }
+    case $st in *.metrics*) why="$2 .metrics left in git status"; return 1 ;; esac
+    [ "$left" = 0 ] || { why="$2 .metrics left on disk"; return 1; }
+    [ "$rc" = 1 ] || { why="$2 exit $rc, want 1"; return 1; }
+  }
+
+  [ ! -e "$TMPDIR/repoA/.metrics" ] || fail "S9 fixture: repo A already has .metrics/"
+  s9 ${wrapper} s9 || fail "S9 no .metrics before: $why"
+  # Pre-existing report (dryer rewrites it) and a file of the user's: kept.
+  mkdir -p "$TMPDIR/repoA/.metrics"
+  printf 'mine\n' > "$TMPDIR/repoA/.metrics/keep.txt"
+  printf 'old report\n' > "$TMPDIR/repoA/.metrics/dry.edn"
+  rc=0
+  (cd "$TMPDIR/repoA" && XDG_CACHE_HOME="$TMPDIR/xdg" PYTHONPATH="$TMPDIR/stub" ${pkgs.bash}/bin/bash ${wrapper} dup --base main) > "$TMPDIR/s9-kept.out" 2> "$TMPDIR/s9-kept.err" || rc=$?
+  [ "$rc" = 1 ] || fail "S9 pre-existing report: exit $rc, want 1"
+  [ -s "$TMPDIR/repoA/.metrics/dry.edn" ] || fail "S9 pre-existing .metrics/dry.edn removed"
+  [ "$(cat "$TMPDIR/repoA/.metrics/keep.txt")" = mine ] || fail "S9 pre-existing .metrics/keep.txt lost"
+  rm "$TMPDIR/repoA/.metrics/dry.edn"
+  rc=0
+  (cd "$TMPDIR/repoA" && XDG_CACHE_HOME="$TMPDIR/xdg" PYTHONPATH="$TMPDIR/stub" ${pkgs.bash}/bin/bash ${wrapper} dup --base main) > "$TMPDIR/s9-dir.out" 2> "$TMPDIR/s9-dir.err" || rc=$?
+  [ "$rc" = 1 ] || fail "S9 pre-existing dir: exit $rc, want 1"
+  [ ! -e "$TMPDIR/repoA/.metrics/dry.edn" ] || fail "S9 pre-existing dir: the new .metrics/dry.edn was left"
+  [ "$(cat "$TMPDIR/repoA/.metrics/keep.txt")" = mine ] || fail "S9 pre-existing dir: .metrics/ or keep.txt removed"
+  rm -rf "$TMPDIR/repoA/.metrics"
+
+  # s9e WRAPPER TAG: dup on repo A whose .metrics/ exists EMPTY: the new
+  # dry.edn goes, the dir stays (an rmdir would succeed on it, so only the
+  # had_dir guard keeps it). Cleans up before asserting.
+  s9e() {
+    rm -rf "$TMPDIR/repoA/.metrics"
+    mkdir "$TMPDIR/repoA/.metrics"
+    rc=0
+    (cd "$TMPDIR/repoA" && XDG_CACHE_HOME="$TMPDIR/xdg" PYTHONPATH="$TMPDIR/stub" ${pkgs.bash}/bin/bash "$1" dup --base main) > "$TMPDIR/$2.out" 2> "$TMPDIR/$2.err" || rc=$?
+    dir=0
+    [ -d "$TMPDIR/repoA/.metrics" ] || dir=1
+    report=0
+    [ ! -e "$TMPDIR/repoA/.metrics/dry.edn" ] || report=1
+    rm -rf "$TMPDIR/repoA/.metrics"
+    grep -qF '/.metrics/dry.edn' "$TMPDIR/$2.err" || { why="$2 dryer wrote no .metrics/dry.edn (no Wrote line)"; return 1; }
+    [ "$dir" = 0 ] || { why="$2 pre-existing empty .metrics/ removed"; return 1; }
+    [ "$report" = 0 ] || { why="$2 the new .metrics/dry.edn was left"; return 1; }
+    [ "$rc" = 1 ] || { why="$2 exit $rc, want 1"; return 1; }
+  }
+  s9e ${wrapper} s9-empty || fail "S9 pre-existing empty dir: $why"
+  echo "code-metrics: S9 dryer report cleaned only when this run created it OK"
+
   why=""
   if s2 "$TMPDIR/mutant.py" c1; then
     fail "canary C1 SURVIVED — UI_SEGMENT /nonexistent/ still passes S2"
@@ -544,6 +613,36 @@ pkgs.runCommand "code-metrics-check" { } ''
   esac
   echo "code-metrics: canary C4 killed — $why"
 
-  echo "code-metrics: 8 scenarios, 4 canaries — OK"
+  anchor5='^ *rm -f \.metrics/dry\.edn$'
+  sed "s|$anchor5|    :|" ${wrapper} > "$TMPDIR/cm-c5"
+  if [ "$(grep -c "$anchor5" ${wrapper})" != 1 ] || grep -q "$anchor5" "$TMPDIR/cm-c5" || cmp -s ${wrapper} "$TMPDIR/cm-c5"; then
+    fail "canary anchor '$anchor5' not exactly once in the wrapper — the mutant equals the source"
+  fi
+  why=""
+  if s9 "$TMPDIR/cm-c5" c5; then
+    fail "canary C5 SURVIVED — the wrapper without its dry.edn cleanup still passes S9"
+  fi
+  case $why in
+    "c5 .metrics left in git status") ;;
+    *) fail "canary C5 killed by the wrong assertion: $why" ;;
+  esac
+  echo "code-metrics: canary C5 killed — $why"
+
+  anchor6='^ *if \[ "\$had_dir" = 0 \] && \[ -d \.metrics \]; then$'
+  sed "s|$anchor6|  if [ -d .metrics ]; then|" ${wrapper} > "$TMPDIR/cm-c6"
+  if [ "$(grep -c "$anchor6" ${wrapper})" != 1 ] || grep -q "$anchor6" "$TMPDIR/cm-c6" || cmp -s ${wrapper} "$TMPDIR/cm-c6"; then
+    fail "canary anchor '$anchor6' not exactly once in the wrapper — the mutant equals the source"
+  fi
+  why=""
+  if s9e "$TMPDIR/cm-c6" c6; then
+    fail "canary C6 SURVIVED — the wrapper without its had_dir guard still keeps an empty pre-existing .metrics/"
+  fi
+  case $why in
+    "c6 pre-existing empty .metrics/ removed") ;;
+    *) fail "canary C6 killed by the wrong assertion: $why" ;;
+  esac
+  echo "code-metrics: canary C6 killed — $why"
+
+  echo "code-metrics: 9 scenarios, 6 canaries — OK"
   touch $out
 ''

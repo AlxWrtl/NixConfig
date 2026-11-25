@@ -229,9 +229,9 @@ func TestDeliveredReserve(t *testing.T) {
 	if c.Column != "done" || c.Flag != nil || len(c.Reasons) != 0 || c.Chips[len(c.Chips)-1].Title != "livré avec réserve : budget de correction épuisé (3/3)" {
 		t.Fatalf("09-finish reserve %+v", c)
 	}
-	// 09-finish not done: not delivered, the spent budget waits for the user.
+	// 09-finish not done: not delivered, the spent budget alone asks nothing of the user.
 	c = deliveredRun("| 09-finish | in progress | |\n", "", []string{"00-context.md"}, Budget{2, 0}, "")
-	if c.Column != "human" || slices.Contains(chipKeys(c), "reserve") {
+	if c.Column != "done" || len(c.Reasons) != 0 || slices.Contains(chipKeys(c), "reserve") {
 		t.Fatalf("09-finish open %+v", c)
 	}
 	// Delivered with a failed step or a BLOCKED line → still À toi.
@@ -242,14 +242,14 @@ func TestDeliveredReserve(t *testing.T) {
 	if c := deliveredRun("| 03-execute | in progress | |\n", "BLOCKED: waiting for the user", []string{"commit.txt"}, Budget{}, ""); c.Column != "human" {
 		t.Fatalf("delivered blocked %+v", c)
 	}
-	// Not delivered, budget spent or ext FAIL → À toi, no reserve chip.
-	for _, c := range []*Card{
-		deliveredRun("| 03-execute | in progress | |\n", "", []string{"00-context.md"}, Budget{2, 0}, ""),
-		deliveredRun("| 03-execute | in progress | |\n", "", []string{"00-context.md"}, Budget{}, `{"verdict":"FAIL"}`),
-	} {
-		if c.Column != "human" || slices.Contains(chipKeys(c), "reserve") {
-			t.Fatalf("not delivered %+v", c)
-		}
+	// Not delivered: ext FAIL → À toi; budget spent → its work column; no reserve chip.
+	c = deliveredRun("| 03-execute | in progress | |\n", "", []string{"00-context.md"}, Budget{}, `{"verdict":"FAIL"}`)
+	if c.Column != "human" || slices.Contains(chipKeys(c), "reserve") {
+		t.Fatalf("not delivered ext %+v", c)
+	}
+	c = deliveredRun("| 03-execute | in progress | |\n", "", []string{"00-context.md"}, Budget{2, 0}, "")
+	if c.Column != "execute" || len(c.Reasons) != 0 || slices.Contains(chipKeys(c), "reserve") {
+		t.Fatalf("not delivered budget %+v", c)
 	}
 	// Delivered with nothing wrong → no reserve chip.
 	c = deliveredRun("| 03-execute | pending | |\n", "", pr, Budget{1, 0}, `{"verdict":"PASS","findings":[]}`)

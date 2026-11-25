@@ -553,8 +553,8 @@ func reserveReasons(budget Budget, verdict *Verdict) []reason {
 	return reasons
 }
 
-// humanReasons: a delivered run's reserves (budget, verdict) are no such reason: they go to its
-// `reserve` chip.
+// humanReasons: a spent budget is no such reason (the session goes on without a round; corr
+// chips show it); a delivered run's verdict goes to its `reserve` chip instead.
 func humanReasons(ctx *Context, budget Budget, verdict *Verdict, isDelivered bool) []reason {
 	reasons := []reason{}
 	if ctx != nil {
@@ -571,7 +571,11 @@ func humanReasons(ctx *Context, budget Budget, verdict *Verdict, isDelivered boo
 		}
 	}
 	if !isDelivered {
-		reasons = append(reasons, reserveReasons(budget, verdict)...)
+		for _, r := range reserveReasons(budget, verdict) {
+			if r.hint != hintGrant {
+				reasons = append(reasons, r)
+			}
+		}
 	}
 	return reasons
 }
@@ -726,8 +730,8 @@ func (c *Card) key() string {
 	return c.Key
 }
 
-// deriveRun: 1. live = mtime < 6 h; 2. live and failed / BLOCKED / budget spent / ext not
-// PASS → À toi, except budget spent / ext not PASS on a delivered run (pr.md, commit.txt or
+// deriveRun: 1. live = mtime < 6 h; 2. live and failed / BLOCKED / ext not PASS → À toi (a
+// spent budget alone never), except ext not PASS on a delivered run (pr.md, commit.txt or
 // 09-finish done): Terminé with a « livré avec réserve » chip; 3. not live → Terminé (flag
 // `inactif` unless finished); 4-5. workColumn.
 func deriveRun(input *RunInput, now float64) *Card {

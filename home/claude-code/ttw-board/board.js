@@ -239,8 +239,9 @@
   }
 
   /**
-   * Why a live run waits for the user, each with its hint; empty when it does not. A delivered
-   * run's reserves (budget, verdict) are no such reason: they go to its `reserve` chip.
+   * Why a live run waits for the user, each with its hint; empty when it does not. A spent budget
+   * is no such reason (the session goes on without a round; corr chips show it); a delivered
+   * run's verdict goes to its `reserve` chip instead.
    */
   function humanReasons(ctx, budget, verdict, isDelivered) {
     const reasons = []
@@ -249,7 +250,7 @@
       if (s.kind === 'blocked') reasons.push({ text: `étape ${s.step} bloquée`, hint: HINT_SESSION })
     }
     if (ctx && ctx.blocked) reasons.push({ text: ctx.blocked.slice(0, 120), hint: HINT_SESSION })
-    if (!isDelivered) reasons.push(...reserveReasons(budget, verdict))
+    if (!isDelivered) reasons.push(...reserveReasons(budget, verdict).filter((r) => r.hint !== HINT_GRANT))
     return reasons
   }
 
@@ -296,8 +297,8 @@
    * A run's card: `input` = { id, context (text or null), mtimeMs (Last-Modified of 00-context.md,
    * or null), files (top-level names), budget ({ rounds, grants } or undefined), verdict (text of
    * the external verify file, or null) }.
-   * 1. live = mtime < 6 h; 2. live and failed / BLOCKED / budget spent / ext not PASS → À toi,
-   * except budget spent / ext not PASS on a delivered run (pr.md, commit.txt or 09-finish done):
+   * 1. live = mtime < 6 h; 2. live and failed / BLOCKED / ext not PASS → À toi (a spent budget
+   * alone never), except ext not PASS on a delivered run (pr.md, commit.txt or 09-finish done):
    * Terminé with a « livré avec réserve » chip; 3. not live → Terminé (flag `inactif` unless
    * finished); 4-5. workColumn.
    */

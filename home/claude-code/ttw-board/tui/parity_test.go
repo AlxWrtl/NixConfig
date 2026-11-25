@@ -111,15 +111,15 @@ func TestParityFixtures(t *testing.T) {
 	mustDo(t, json.Unmarshal([]byte(out), &tree))
 	where := map[string]string{}
 	more := 0
-	// The `# TTW:` run reads its title and its spent budget hints `ttw: +1 tour`.
+	// The `# TTW:` run reads its title; its spent budget alone hints nothing.
 	ttwSeen := false
 	for _, c := range tree.Columns {
 		for _, card := range c.Cards {
 			where[card.ID] = c.Key
 			if card.ID == "ttw-title" {
 				ttwSeen = true
-				if card.Title != "synthetic ttw-title" || len(card.Hints) == 0 || card.Hints[0] != "ttw: +1 tour" {
-					t.Fatalf("ttw-title: title %q hints %q, want %q and %q first", card.Title, card.Hints, "synthetic ttw-title", "ttw: +1 tour")
+				if card.Title != "synthetic ttw-title" || len(card.Hints) != 0 {
+					t.Fatalf("ttw-title: title %q hints %q, want %q and none", card.Title, card.Hints, "synthetic ttw-title")
 				}
 			}
 		}
@@ -131,11 +131,11 @@ func TestParityFixtures(t *testing.T) {
 		"vorssaint-cask": "init", "01-worktree-env-sync": "human", "worktree-idle": "done", "wrangler-oauth-config": "done",
 		"wrangler-execute": "execute", "live-failed": "human", "failed-red": "human", "failed-echoue": "human",
 		"failed-bold": "human", "blocked-step": "human", "blocked-line": "human", "blocked-status": "human",
-		"blocked-bullet": "human", "blocked-prose": "execute", "blocked-cell": "validate", "budget-spent": "human",
+		"blocked-bullet": "human", "blocked-prose": "execute", "blocked-cell": "validate", "budget-spent": "execute",
 		"budget-granted": "execute", "ext-pass": "validate", "ext-fail": "human", "ext-blocked": "human",
 		"ext-error": "human", "ext-half": "validate", "ext-rounds": "validate", "live-edge": "execute",
 		"stale-edge": "done", "stale": "done", "no-table": "validate", "no-table-plan": "plan", "unicode-edges": "human",
-		"ttw-title": "human",
+		"ttw-title": "execute",
 	}
 	if !ttwSeen {
 		t.Fatal("ttw-title fixture not on the board")

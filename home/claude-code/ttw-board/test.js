@@ -171,12 +171,12 @@ test('worktree: tier head, branch head, steps', () => {
   assert.strictEqual(c.blocked, null)
 })
 
-test('worktree: live, ext FAIL and 2 rounds used → À toi, grant hint first', () => {
+test('worktree: live, ext FAIL and 2 rounds used → À toi on the verdict only', () => {
   const r = run({ id: '01-worktree-env-sync', context: WORKTREE, files: WORKTREE_FILES, verdict: WORKTREE_VERDICT, budget: { rounds: 2, grants: 0 } })
   assert.strictEqual(r.column, 'human')
   assert.strictEqual(r.flag, 'à toi')
-  assert.deepStrictEqual(r.reasons, ['budget de correction épuisé (2/2)', 'vérif externe FAIL · 1 findings'])
-  assert.strictEqual(r.hints[0], 'ttw: +1 tour')
+  assert.deepStrictEqual(r.reasons, ['vérif externe FAIL · 1 findings'])
+  assert.ok(!r.hints.includes('ttw: +1 tour'))
   assert.deepStrictEqual(r.chips.map((c) => [c.key, c.state]), [['tier', 'info'], ['ext', 'fail'], ['corr1', 'used'], ['corr2', 'used']])
 })
 
@@ -263,13 +263,15 @@ test('live with a BLOCKED line → À toi; BLOCKED in prose, a table cell or a f
   assert.strictEqual(run({ context: ctx([['04-validate', 'complete'], ['05-examine', 'pending']]).replace('| complete | |', '| complete | -e BLOCKED timeout |') }).column, 'validate')
 })
 
-test('budget: rounds ≥ 2 + grants → À toi with `ttw: +1 tour`', () => {
+test('budget spent on a live run → stays in its work column, corr chips all used', () => {
   const text = ctx([['03-execute', 'in progress']])
   assert.strictEqual(run({ context: text, budget: { rounds: 1, grants: 0 } }).column, 'execute')
   assert.strictEqual(run({ context: text, budget: { rounds: 2, grants: 1 } }).column, 'execute')
   const r = run({ context: text, budget: { rounds: 3, grants: 1 } })
-  assert.strictEqual(r.column, 'human')
-  assert.deepStrictEqual(r.hints, ['ttw: +1 tour'])
+  assert.strictEqual(r.column, 'execute')
+  assert.strictEqual(r.flag, null)
+  assert.deepStrictEqual(r.reasons, [])
+  assert.deepStrictEqual(r.hints, [])
   assert.deepStrictEqual(r.chips.slice(2).map((c) => c.state), ['used', 'used', 'used'])
 })
 
@@ -307,10 +309,10 @@ test('delivered (09-finish done, no pr.md), live, budget spent → Terminé, res
   assert.deepStrictEqual(r.reasons, [])
   assert.deepStrictEqual(r.chips.map((c) => c.key), ['tier', 'ext', 'corr1', 'corr2', 'corr3', 'reserve'])
   assert.strictEqual(r.chips[5].title, 'livré avec réserve : budget de correction épuisé (3/3)')
-  // 09-finish not done yet: not delivered, the spent budget still waits for the user.
+  // 09-finish not done yet: not delivered, the spent budget alone asks nothing of the user.
   const open = run({ context: ctx([['08-run-tests', 'complete'], ['09-finish', 'in progress']]), budget: { rounds: 2, grants: 0 } })
-  assert.strictEqual(open.column, 'human')
-  assert.deepStrictEqual(open.reasons, ['budget de correction épuisé (2/2)'])
+  assert.strictEqual(open.column, 'done')
+  assert.deepStrictEqual(open.reasons, [])
 })
 
 test('delivered with a failed step or a BLOCKED line → still À toi, reserves stay chips', () => {
@@ -323,12 +325,13 @@ test('delivered with a failed step or a BLOCKED line → still À toi, reserves 
   assert.strictEqual(blocked.column, 'human')
 })
 
-test('not delivered, live, budget spent or ext FAIL → À toi, no reserve chip', () => {
-  for (const over of [{ budget: { rounds: 2, grants: 0 } }, { verdict: JSON.stringify({ verdict: 'FAIL' }) }]) {
-    const r = run({ context: ctx([['03-execute', 'in progress']]), ...over })
-    assert.strictEqual(r.column, 'human')
-    assert.ok(!r.chips.some((c) => c.key === 'reserve'))
-  }
+test('not delivered, live: ext FAIL → À toi; budget spent → work column; no reserve chip', () => {
+  const failed = run({ context: ctx([['03-execute', 'in progress']]), verdict: JSON.stringify({ verdict: 'FAIL' }) })
+  assert.strictEqual(failed.column, 'human')
+  assert.ok(!failed.chips.some((c) => c.key === 'reserve'))
+  const spent = run({ context: ctx([['03-execute', 'in progress']]), budget: { rounds: 2, grants: 0 } })
+  assert.strictEqual(spent.column, 'execute')
+  assert.ok(!spent.chips.some((c) => c.key === 'reserve'))
 })
 
 test('delivered with nothing wrong → no reserve chip', () => {

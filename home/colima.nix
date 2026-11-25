@@ -68,6 +68,43 @@ let
       }
     ) scaleSets
   );
+  # colima-ci-watchdog's script (see the agent below).
+  ciWatchdogScript = ''
+    state="$HOME/.cache/colima-ci-watchdog"
+    timeout 60 colima status ci >/dev/null 2>&1
+    src=$?
+    if [ "$src" -eq 0 ]; then
+      rm -f "$state"
+      exit 0
+    fi
+    # content = first-down epoch; mtime = last tick that saw the VM down
+    now=$(date +%s)
+    first=$(cat "$state" 2>/dev/null)
+    case "$first" in
+      "" | *[!0-9]*) first="" ;;
+      *) first=$((10#$first)) ;;
+    esac
+    seen=$(stat -c %Y "$state" 2>/dev/null) || seen=0
+    if [ -z "$first" ] || [ "$first" -gt "$now" ] || [ $((now - seen)) -gt 180 ]; then
+      mkdir -p "$HOME/.cache" && printf '%s\n' "$now" > "$state"
+      exit 0
+    fi
+    if [ $((now - first)) -lt 300 ]; then
+      touch "$state" || echo "$(date '+%F %T') cannot touch $state" >&2
+      exit 0
+    fi
+    since=$(date -d "@$first" '+%F %T' 2>/dev/null) || since="epoch $first"
+    echo "$(date '+%F %T') ci VM down since $since (status rc=$src), restarting colima-ci" >&2
+    /bin/launchctl kickstart -k gui/"$(id -u)"/org.nix-community.home.colima-ci
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+      echo "$(date '+%F %T') kickstart failed (exit $rc)" >&2
+    fi
+    if ! { mkdir -p "$HOME/.cache" && printf '%s\n' "$(date +%s)" > "$state"; }; then
+      echo "$(date '+%F %T') cannot re-arm $state" >&2
+    fi
+    exit "$rc"
+  '';
 in
 {
   services.colima = {
@@ -166,6 +203,34 @@ in
       ];
       StartInterval = 10;
       StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/arc-wake-watchdog.log";
+    };
+  };
+
+  # After the 2026-11-24 reboot the `ci` VM was Stopped while the launchd job
+  # `colima-ci` stayed `running`: it never exited, so KeepAlive (which needs an
+  # exit) could not relaunch it and CI jobs queued for 27 min and more. Every
+  # minute, poll the VM; once it has been down 5 min (a start takes ~1 min, do
+  # not kill it), `kickstart -k` the job, then wait 5 min again before the next;
+  # a stamp older than 3 ticks (reboot, sleep) restarts the grace.
+  # A deliberate `colima stop ci` is undone within ~5 min: for maintenance,
+  # stop the watchdog too (`launchctl bootout
+  # gui/$UID/org.nix-community.home.colima-ci-watchdog`). Jobs already queued
+  # while the VM was down do not restart by themselves (listener "assigned
+  # job=0"): `gh run cancel`, then `gh run rerun --failed`. Guarded by
+  # checks/colima-ci.nix 10. Unlike arc-wake-watchdog, the script is inline
+  # (`bash -c`): that check reads its text at eval time, and
+  # `nix flake check --no-build` cannot read a not-yet-built writeShellScript.
+  launchd.agents.colima-ci-watchdog = {
+    enable = true;
+    config = {
+      ProgramArguments = [
+        "${pkgs.bash}/bin/bash"
+        "-c"
+        ciWatchdogScript
+      ];
+      EnvironmentVariables = config.launchd.agents.colima-ci.config.EnvironmentVariables;
+      StartInterval = 60;
+      StandardErrorPath = "${config.home.homeDirectory}/Library/Logs/colima-ci-watchdog.log";
     };
   };
 

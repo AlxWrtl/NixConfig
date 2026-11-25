@@ -34,6 +34,19 @@
 #    stay <= 12 GB so the host keeps 4 of its 16. Not measured: brasserie-mac,
 #    portfolio-mac and Preliz backup.yml (nightly); whether they overlap the
 #    DB shards is unknown.
+# 10. `colima-ci-watchdog` restarts the `ci` VM when it stays down. On
+#    2026-11-24, after a reboot, the VM was Stopped while the launchd job
+#    `colima-ci` stayed `running`: it never exited, so KeepAlive could not
+#    relaunch it, and CI jobs queued 27 min and more. The watchdog polls
+#    `colima status ci` (StartInterval 30..300 s) with the `colima-ci` agent's
+#    own EnvironmentVariables (same PATH and COLIMA_HOME, reused, not copied),
+#    and kickstarts `org.nix-community.home.colima-ci` with `-k` (kill the
+#    stuck job first). Its script is inline (`bash -c <text>`), never a
+#    writeShellScript: `nix flake check --no-build` writes no new .drv, so a
+#    script not built yet cannot be read at eval time ("path … .drv is not
+#    valid", measured 2026-11-25). The text is plain ProgramArguments[2].
+#    Its behaviour (grace, stale stamp, kickstart) is graded by the manual
+#    checks/colima-ci-watchdog-probe.sh, run outside the sandbox.
 {
   pkgs,
   hm,
@@ -65,6 +78,36 @@ let
   agent = hm.launchd.agents.colima-ci.config or null;
   agentArgs = if agent == null then [ ] else agent.ProgramArguments or [ ];
   wakeAgent = hm.launchd.agents.arc-wake-watchdog.config or { };
+
+  # Item 10: the script is inline, `[ <…>/bin/bash "-c" <text> ]`. A
+  # writeShellScript's text cannot be read under `nix flake check --no-build`:
+  # neither its .drv nor (by IFD) its output exists for a script not built yet
+  # (measured 2026-11-25). Plain eval of ProgramArguments[2], no store read.
+  ciLabel = "org.nix-community.home.colima-ci";
+  # One needle for verb, flag, domain and label: separate ones would accept
+  # `kickstart -k gui/<uid>/<other label>` beside a stray mention of ciLabel.
+  ciVmWatchdogKick = ''/bin/launchctl kickstart -k gui/"$(id -u)"/${ciLabel}'';
+  ciVmWatchdog = hm.launchd.agents.colima-ci-watchdog or null;
+  ciVmWatchdogConfig = if ciVmWatchdog == null then { } else ciVmWatchdog.config or { };
+  ciVmWatchdogArgs = ciVmWatchdogConfig.ProgramArguments or [ ];
+  ciVmWatchdogShape = builtins.isList ciVmWatchdogArgs && builtins.length ciVmWatchdogArgs == 3;
+  ciVmWatchdogArg = n: if ciVmWatchdogShape then builtins.elemAt ciVmWatchdogArgs n else null;
+  ciVmWatchdogBash = ciVmWatchdogArg 0;
+  ciVmWatchdogBashOk =
+    builtins.isString ciVmWatchdogBash && lib.hasSuffix "/bin/bash" ciVmWatchdogBash;
+  ciVmWatchdogDashC = ciVmWatchdogArg 1 == "-c";
+  ciVmWatchdogText =
+    if ciVmWatchdogBashOk && ciVmWatchdogDashC && builtins.isString (ciVmWatchdogArg 2) then
+      ciVmWatchdogArg 2
+    else
+      "";
+  # `org.nix-community.home.colima-ci-watchdog` contains the target label:
+  # drop the longer labels so only the real target can satisfy the needle.
+  ciVmWatchdogTextNoSuffix =
+    builtins.replaceStrings [ "${ciLabel}-" "colima status ci-" ] [ "" "" ]
+      ciVmWatchdogText;
+  ciVmWatchdogInterval = ciVmWatchdogConfig.StartInterval or null;
+  ciAgentEnv = if agent == null then null else agent.EnvironmentVariables or null;
 
   dev = colima.profiles.default or null;
   devSettings = if dev == null then { } else dev.settings;
@@ -155,6 +198,48 @@ let
     ++
       lib.optional ((wakeAgent.StartInterval or 999) > 10)
         "launchd agent arc-wake-watchdog missing or slower than 10 s: a job offered to a dead listener session after a wake is lost"
+    ++
+      lib.optional (ciVmWatchdog == null)
+        "launchd agent colima-ci-watchdog is missing: a Stopped ci VM under a still-running colima-ci job is never restarted (KeepAlive needs an exit, 2026-11-24)"
+    ++ lib.optionals (ciVmWatchdog != null) (
+      lib.optional (
+        (ciVmWatchdog.enable or false) != true
+      ) "launchd agent colima-ci-watchdog must be enabled"
+      ++ lib.optional (
+        !(builtins.isInt ciVmWatchdogInterval && ciVmWatchdogInterval >= 30 && ciVmWatchdogInterval <= 300)
+      ) "launchd agent colima-ci-watchdog StartInterval must be an integer in 30..300 s"
+      ++ lib.optional (
+        !(lib.hasPrefix "${hm.home.homeDirectory}/Library/Logs/" (
+          ciVmWatchdogConfig.StandardErrorPath or ""
+        ))
+      ) "launchd agent colima-ci-watchdog StandardErrorPath must be under ~/Library/Logs/"
+      ++
+        lib.optional
+          (
+            ciAgentEnv == null
+            || ciAgentEnv == { }
+            || (ciVmWatchdogConfig.EnvironmentVariables or null) != ciAgentEnv
+          )
+          "launchd agent colima-ci-watchdog EnvironmentVariables must equal colima-ci's (its colima PATH and COLIMA_HOME)"
+      ++
+        lib.optional (!ciVmWatchdogShape)
+          "launchd agent colima-ci-watchdog ProgramArguments must be exactly [ <bash> \"-c\" <script> ] (the inline script is what this check reads)"
+      ++ lib.optional (
+        ciVmWatchdogShape && !ciVmWatchdogBashOk
+      ) "launchd agent colima-ci-watchdog ProgramArguments[0] must end in /bin/bash"
+      ++ lib.optional (
+        ciVmWatchdogShape && !ciVmWatchdogDashC
+      ) "launchd agent colima-ci-watchdog ProgramArguments[1] must be \"-c\""
+      ++ lib.optional (
+        ciVmWatchdogShape && !(builtins.isString (ciVmWatchdogArg 2))
+      ) "launchd agent colima-ci-watchdog ProgramArguments[2] must be the script text"
+      ++ lib.optional (
+        !(lib.hasInfix "colima status ci" ciVmWatchdogTextNoSuffix)
+      ) "colima-ci-watchdog script must poll `colima status ci`"
+      ++
+        lib.optional (!(lib.hasInfix ciVmWatchdogKick ciVmWatchdogTextNoSuffix))
+          "colima-ci-watchdog script must run exactly `${ciVmWatchdogKick}` (-k kills the stuck colima-ci job first; the label must be colima-ci's)"
+    )
     ++ lib.optional (devAgent == null) "launchd agent colima-default is missing"
     ++ lib.optional (
       devAgent != null && !(builtins.elem "--activate=true" devAgentArgs)

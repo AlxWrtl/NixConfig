@@ -2147,6 +2147,12 @@ in
        the residuals list verbatim and the failing output, or ask the user to type `ttw: +1 tour` alone on a line — the correction-grant hook (UserPromptSubmit) reads the raw prompt and grants that run one more round per prompt; a plain "continue" grants nothing. Without a grant, never run the round inline: the coordinator never grades its own work.
        Never weaken a check to make it pass, never declare success on partial
        green.
+       Advisor (pilot, only when the session has the advisor tool): the
+       coordinator consults it at two points only — before a correction round
+       whose `TTW-FAILING` set equals the previous round's (the same error
+       twice), and before 02-plan fixes a Diagnosis root cause. Never as a
+       verifier: it reads the whole transcript, rationale included. Log each
+       call in 00-context.md as `Advisor: {moment} -> {followed | contradicted: evidence}`.
        Stop rule: gate green and every AC proven → stop editing; no polish,
        refactor or extra round, leftovers go to the summary as follow-ups.
 

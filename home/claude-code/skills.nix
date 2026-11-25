@@ -2631,6 +2631,18 @@ in
     the PR once its checks are green — each a standalone command per the
     rule above. Never commit to `main`/`master`; never force-push or rewrite
     pushed history without asking.
+
+    Before the merge, with remote checks (`gh pr checks` lists any), watch
+    them: `gh pr checks <n> --watch`, run in the background. A red check:
+    read `gh run view <run-id> --log-failed` first. A failure named flaky in
+    the run files or repo docs gets ONE `gh run rerun <run-id> --failed`;
+    any other red is a fix counted in the correction budget, re-gated
+    locally, then pushed, and the watch starts again. A conflict with
+    `{trunk}`: `git fetch origin`, `git merge origin/{trunk}`, re-gate, push —
+    never a rebase or a force-push. Still red after that: stop and report
+    the failing check, never merge.
+    Why: Preliz PR CI, 2026-11-08 → 25, went red on 9 of 69 runs (8 more
+    green only on a rerun), after a green local gate.
   '';
 
   # -------------------------

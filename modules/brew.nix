@@ -88,6 +88,10 @@ _:
         greedy = true;
       }
       {
+        name = "tailscale-app";
+        greedy = true;
+      }
+      {
         name = "transmission";
         greedy = true;
       }

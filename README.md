@@ -284,7 +284,7 @@ list, deliberately not duplicated here.
 | Layer | Tool | Contents |
 |-------|------|----------|
 | CLI tools | Nix (`modules/packages.nix`) | eza, bat, fd, ripgrep, fzf, atuin, zoxide, btop, jq/yq, git-crypt, gh, nodejs, pnpm, bun, python3, uv, ruff, sqlite, postgresql, redis, nixd/nil/nixfmt … |
-| GUI apps | Homebrew casks (`modules/brew.nix`) | 1Password, Arc, Ghostty, VS Code, Zed, Docker, Raycast, Obsidian, Jellyfin … apps without an auto-updater are marked `greedy` |
+| GUI apps | Homebrew casks (`modules/brew.nix`) | 1Password, Arc, Ghostty, VS Code, Zed, Docker, Raycast, Obsidian, Jellyfin, Tailscale … apps without an auto-updater are marked `greedy` |
 | Formulae & taps | Homebrew (`modules/brew.nix`) | cloudflared, ffmpeg, displayplacer, mas, postgresql@16, trash, `rtk-ai/tap/rtk` |
 | App Store | mas (`modules/brew.nix`) | DaisyDisk, Trello, iWork (Keynote/Numbers/Pages), Microsoft Office, Affinity Photo & Publisher |
 | Fonts | Nix (`modules/ui.nix`) | Nerd Fonts (JetBrains Mono, Meslo LG, Hack, Fira Code, Sauce Code Pro), Cascadia Code, Inconsolata, Noto (+ CJK, emoji) |
@@ -375,7 +375,7 @@ that one is un-approved or stale. Its silence is not proof of protection.
 - [ ] 1Password logged in + browser extension
 - [ ] iCloud signed in (Desktop & Documents sync)
 - [ ] Arc signed in (sync spaces)
-- [ ] App logins: Discord, WhatsApp, Spark, Teams
+- [ ] App logins: Discord, WhatsApp, Spark, Teams, Tailscale
 - [ ] Raycast settings imported (if backed up)
 - [ ] `nix flake check` green
 - [ ] `code-metrics setup` once, outside the sandbox (downloads PyPI deps + tree-sitter grammars to `~/.cache/code-metrics`)

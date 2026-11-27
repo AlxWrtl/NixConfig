@@ -116,6 +116,8 @@ flake.nix                        # inputs, checks, darwinConfigurations, devShel
 │   ├── codex/                   # hooks.json generator, activation, hook & merge scripts
 │   ├── colima.nix               # Colima dev VM `default` (dev containers, active
 │   │                            #   Docker context `colima`)
+│   ├── media-mount.nix          # launchd agent `mount-rog-media`: ROG Samba share
+│   │                            #   `media` over Tailscale, password from the Keychain
 │   ├── veille.nix               # TTW watch: launchd agents `veille-ttw` (daily 08:30)
 │   │                            #   and `veille-hebdo` (Monday 10:00)
 │   ├── veille/                  # fetch.py (HN, releases, arXiv), Haiku sort

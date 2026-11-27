@@ -56,7 +56,6 @@ _:
       "readdle-spark"
       "vorssaint" # keep-awake, closed-lid mode
       "whatsapp"
-      "jellyfin"
 
       # No auto-updater — greedy keeps them current
       {
@@ -81,10 +80,6 @@ _:
       }
       {
         name = "keka";
-        greedy = true;
-      }
-      {
-        name = "ollama-app";
         greedy = true;
       }
       {

@@ -100,7 +100,7 @@
         claude-dispatch = import ./checks/claude-dispatch.nix { inherit pkgs; };
         claude-mods = import ./checks/claude-mods.nix { inherit pkgs; };
         codex-config = import ./checks/codex-config.nix { inherit pkgs; };
-        colima-ci = import ./checks/colima-ci.nix {
+        colima = import ./checks/colima.nix {
           inherit pkgs;
           hm = self.darwinConfigurations."alex-mbp".config.home-manager.users.alx;
         };

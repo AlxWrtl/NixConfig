@@ -55,7 +55,7 @@
     pkgs.postgresql
     pkgs.redis
 
-    # Containers (Colima VMs; replaces Docker.app's /usr/local/bin symlinks)
+    # Containers (Colima dev VM; replaces Docker.app's /usr/local/bin symlinks)
     pkgs.docker-client
     pkgs.docker-compose
     pkgs.docker-buildx
